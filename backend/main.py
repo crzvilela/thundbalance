@@ -1,7 +1,8 @@
 from fastapi import FastAPI
-import psycopg2
+
 from datetime import datetime, timedelta
 from pydantic import BaseModel
+from database import conn
 
 from fastapi.middleware.cors import CORSMiddleware
 from google_calendar import (
@@ -111,12 +112,7 @@ class ApproveRequest(BaseModel):
 
     start_date: str
 
-conn = psycopg2.connect(
-    host="localhost",
-    database="thundbalance",
-    user="postgres",
-    password="123456"
-)
+
 
 def trainer_is_available(
     trainer_id,
