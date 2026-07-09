@@ -3,6 +3,7 @@ import { signOut } from 'firebase/auth'
 import { useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import Navbar from '../components/Navbar'
+import { API_URL } from '../config'
 
 function Dashboard() {
 
@@ -21,7 +22,7 @@ function Dashboard() {
         const email = auth.currentUser.email
 
         const userResponse = await fetch(
-          `http://127.0.0.1:8000/users/email/${email}`
+          `${API_URL}/users/email/${email}`
         )
 
         
@@ -32,7 +33,7 @@ function Dashboard() {
         
 
         const sessionsResponse = await fetch(
-          `http://127.0.0.1:8000/sessions/user/${userData.id}`
+          `${API_URL}/sessions/user/${userData.id}`
         )
 
         const sessionsData = await sessionsResponse.json()

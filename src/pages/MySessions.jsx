@@ -7,6 +7,7 @@ import Calendar from 'react-calendar'
 
 import 'react-datepicker/dist/react-datepicker.css'
 import 'react-calendar/dist/Calendar.css'
+import { API_URL } from '../config'
 
 function MySessions() {
 
@@ -30,13 +31,13 @@ function MySessions() {
       const email = auth.currentUser.email
 
       const userResponse = await fetch(
-        `http://127.0.0.1:8000/users/email/${email}`
+        `${API_URL}/users/email/${email}`
       )
 
       const userData = await userResponse.json()
 
       const sessionsResponse = await fetch(
-        `http://127.0.0.1:8000/sessions/user/${userData.id}`
+        `${API_URL}/sessions/user/${userData.id}`
       )
 
       const sessionsData = await sessionsResponse.json()
@@ -91,7 +92,7 @@ function MySessions() {
 
     const response = await fetch(
 
-      `http://127.0.0.1:8000/trainer/${trainerId}/available-times/${formattedDate}`
+      `${API_URL}/trainer/${trainerId}/available-times/${formattedDate}`
 
     )
 
@@ -110,7 +111,7 @@ function MySessions() {
     try {
 
       await fetch(
-        `http://127.0.0.1:8000/sessions/${sessionId}`,
+        `${API_URL}/sessions/${sessionId}`,
         {
           method: 'PUT',
           headers: {
@@ -145,7 +146,7 @@ function MySessions() {
   try {
 
     await fetch(
-      `http://127.0.0.1:8000/sessions/${sessionId}`,
+      `${API_URL}/sessions/${sessionId}`,
       {
         method: 'DELETE'
       }

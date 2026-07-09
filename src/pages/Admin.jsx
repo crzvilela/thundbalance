@@ -4,6 +4,7 @@ import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import Calendar from 'react-calendar'
 import 'react-calendar/dist/Calendar.css'
+import { API_URL } from '../config'
 
 function Admin() {
 
@@ -45,7 +46,7 @@ function Admin() {
     try {
 
       await fetch(
-        'http://127.0.0.1:8000/admin/assign-plan',
+        '${API_URL}/admin/assign-plan',
         {
           method: 'POST',
 
@@ -77,7 +78,7 @@ function Admin() {
 
     const loadData = async () => {
       const requestsResponse = await fetch(
-        'http://127.0.0.1:8000/admin/client-requests'
+        '${API_URL}/admin/client-requests'
       )
 
       const requestsData =
@@ -88,7 +89,7 @@ function Admin() {
       try {
 
         const statsResponse = await fetch(
-          'http://127.0.0.1:8000/admin/stats'
+          '${API_URL}/admin/stats'
         )
 
         const statsData = await statsResponse.json()
@@ -96,7 +97,7 @@ function Admin() {
         setStats(statsData)
 
         const usersResponse = await fetch(
-          'http://127.0.0.1:8000/admin/users'
+          '${API_URL}/admin/users'
         )
 
         const usersData = await usersResponse.json()
@@ -104,7 +105,7 @@ function Admin() {
         setUsers(usersData)
 
         const trainersResponse = await fetch(
-          'http://127.0.0.1:8000/admin/trainers'
+          '${API_URL}/admin/trainers'
         )
 
         const trainersData = await trainersResponse.json()
@@ -112,7 +113,7 @@ function Admin() {
         setTrainers(trainersData)
 
         const sessionsResponse = await fetch(
-          'http://127.0.0.1:8000/admin/sessions'
+          '${API_URL}/admin/sessions'
         )
 
         const sessionsData = await sessionsResponse.json()
@@ -136,7 +137,7 @@ function Admin() {
     try {
 
       const sessionsResponse = await fetch(
-        `http://127.0.0.1:8000/admin/sessions/email/${searchEmail}`
+        `${API_URL}/admin/sessions/email/${searchEmail}`
       )
 
       const sessionsData =
@@ -148,7 +149,7 @@ function Admin() {
 
       const progressResponse =
         await fetch(
-          `http://127.0.0.1:8000/admin/client-progress/${searchEmail}`
+          `${API_URL}/admin/client-progress/${searchEmail}`
         )
 
       const progressData =
@@ -194,7 +195,7 @@ function Admin() {
       }
 
       await fetch(
-        'http://127.0.0.1:8000/admin/approve-request',
+        '${API_URL}/admin/approve-request',
         {
           method: 'POST',
 

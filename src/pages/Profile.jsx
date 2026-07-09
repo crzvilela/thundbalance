@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { auth } from '../firebase/auth'
 import Navbar from '../components/Navbar'
+import { API_URL } from '../config'
 
 function Profile() {
 
@@ -12,7 +13,7 @@ function Profile() {
     try {
 
       await fetch(
-        `http://127.0.0.1:8000/profile/${profile.id}`,
+        `${API_URL}/profile/${profile.id}`,
         {
           method: 'PUT',
           headers: {
@@ -55,13 +56,13 @@ function Profile() {
         const email = auth.currentUser.email
 
         const userResponse = await fetch(
-          `http://127.0.0.1:8000/users/email/${email}`
+          `${API_URL}/users/email/${email}`
         )
 
         const userData = await userResponse.json()
 
         const profileResponse = await fetch(
-          `http://127.0.0.1:8000/profile/${userData.id}`
+          `${API_URL}/profile/${userData.id}`
         )
 
         const profileData = await profileResponse.json()

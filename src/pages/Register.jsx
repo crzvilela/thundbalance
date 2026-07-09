@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { API_URL } from '../config'
 
 import {
   createUserWithEmailAndPassword,
@@ -44,7 +45,7 @@ function Register() {
       )
 
       await fetch(
-        'http://127.0.0.1:8000/users',
+        '${API_URL}/users',
         {
           method: 'POST',
           headers: {

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Navbar from '../components/Navbar'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
+import { API_URL } from '../config'
 
 function TrialSession() {
 
@@ -34,7 +35,7 @@ function TrialSession() {
       }
 
       const response = await fetch(
-        'http://127.0.0.1:8000/trial-sessions',
+        '${API_URL}/trial-sessions',
         {
           method: 'POST',
           headers: {

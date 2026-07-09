@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { auth } from '../firebase/auth'
 import { useNavigate } from 'react-router-dom'
 import Navbar from '../components/Navbar'
+import { API_URL } from '../config'
 
 function ChoosePlan() {
 
@@ -16,7 +17,7 @@ function ChoosePlan() {
       try {
 
         const response = await fetch(
-          'http://127.0.0.1:8000/plans'
+          '${API_URL}/plans'
         )
 
         const data = await response.json()
@@ -42,13 +43,13 @@ function ChoosePlan() {
       const email = auth.currentUser.email
 
       const userResponse = await fetch(
-        `http://127.0.0.1:8000/users/email/${email}`
+        `${API_URL}/users/email/${email}`
       )
 
       const userData = await userResponse.json()
 
       await fetch(
-        'http://127.0.0.1:8000/user-plan',
+        '${API_URL}/user-plan',
         {
           method: 'POST',
           headers: {

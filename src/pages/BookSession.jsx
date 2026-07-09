@@ -4,6 +4,7 @@ import { auth } from '../firebase/auth'
 import Navbar from '../components/Navbar'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
+import { API_URL } from '../config'
 
 function BookSession() {
 
@@ -42,7 +43,7 @@ function BookSession() {
           days[selectedDate.getDay()]
 
         const response = await fetch(
-          `http://127.0.0.1:8000/available-trainers/${dayName}/${time}`
+          `${API_URL}/available-trainers/${dayName}/${time}`
         )
 
         const data = await response.json()
@@ -86,13 +87,13 @@ function BookSession() {
       const email = auth.currentUser.email
 
       const userResponse = await fetch(
-        `http://127.0.0.1:8000/users/email/${email}`
+        `${API_URL}/users/email/${email}`
       )
 
       const userData = await userResponse.json()
 
       const response = await fetch(
-        'http://127.0.0.1:8000/sessions',
+        '${API_URL}/sessions',
         {
           method: 'POST',
           headers: {
