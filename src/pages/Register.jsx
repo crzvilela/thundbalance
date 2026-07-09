@@ -45,7 +45,7 @@ function Register() {
       )
 
       await fetch(
-        '${API_URL}/users',
+        `${API_URL}/users`,
         {
           method: 'POST',
           headers: {
