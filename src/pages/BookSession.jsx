@@ -93,7 +93,7 @@ function BookSession() {
       const userData = await userResponse.json()
 
       const response = await fetch(
-        '${API_URL}/sessions',
+        `${API_URL}/sessions`,
         {
           method: 'POST',
           headers: {

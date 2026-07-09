@@ -47,7 +47,7 @@ function TrainingRequest() {
       const userData = await userResponse.json()
 
       const response = await fetch(
-        '${API_URL}/client-requests',
+        `${API_URL}/client-requests`,
         {
           method: 'POST',
 
@@ -61,19 +61,28 @@ function TrainingRequest() {
 
             plan_id: parseInt(planId),
 
-            sessions_per_week:
-              parseInt(sessionsPerWeek),
+            sessions_per_week: parseInt(sessionsPerWeek),
 
-            preferred_days:
-              preferredDays.join(','),
+            preferred_days: preferredDays.join(','),
 
-            preferred_time:
-              preferredTime
+            preferred_time: preferredTime
 
           })
 
         }
       )
+
+      if (!response.ok) {
+
+        const error = await response.text()
+
+        console.log(error)
+
+        alert(error)
+
+        return
+
+      }
 
       const data = await response.json()
 

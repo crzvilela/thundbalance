@@ -33,11 +33,11 @@ function Login() {
 
       alert('Login successful!')
 
-      navigate('/')
+      navigate('/dashboard')
 
     } catch (error) {
 
-      console.log(error)
+      console.error(error)
 
       alert(error.message)
 
@@ -57,7 +57,7 @@ function Login() {
       const user = result.user
 
       await fetch(
-        '${API_URL}/users',
+        `${API_URL}/users`,
         {
           method: 'POST',
           headers: {
@@ -67,7 +67,12 @@ function Login() {
             firebase_uid: user.uid,
             nome: user.displayName,
             email: user.email,
-            foto: user.photoURL
+            foto: user.photoURL,
+            telefone: null,
+            codigo_pais: null,
+            cidade: null,
+            morada: null,
+            cep: null
           })
         }
       )
@@ -78,9 +83,9 @@ function Login() {
 
     } catch (error) {
 
-      console.log(error)
+      console.error(error)
 
-      alert('Error during login')
+      alert(error.message)
 
     }
 
@@ -110,6 +115,7 @@ function Login() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="bg-transparent border border-white/20 px-6 py-4 outline-none"
+            required
           />
 
           <input
@@ -118,6 +124,7 @@ function Login() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="bg-transparent border border-white/20 px-6 py-4 outline-none"
+            required
           />
 
           <button
@@ -137,7 +144,7 @@ function Login() {
 
           <p className="text-center text-gray-400 text-sm mt-4">
 
-            Don’t have an account?{' '}
+            Don’t have an account?{" "}
 
             <Link
               to="/register"

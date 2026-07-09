@@ -17,7 +17,7 @@ function ChoosePlan() {
       try {
 
         const response = await fetch(
-          '${API_URL}/plans'
+          `${API_URL}/plans`
         )
 
         const data = await response.json()
@@ -49,7 +49,7 @@ function ChoosePlan() {
       const userData = await userResponse.json()
 
       await fetch(
-        '${API_URL}/user-plan',
+        `${API_URL}/user-plan`,
         {
           method: 'POST',
           headers: {

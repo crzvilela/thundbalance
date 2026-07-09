@@ -46,7 +46,7 @@ function Admin() {
     try {
 
       await fetch(
-        '${API_URL}/admin/assign-plan',
+        `${API_URL}/admin/assign-plan`,
         {
           method: 'POST',
 
@@ -195,7 +195,7 @@ function Admin() {
       }
 
       await fetch(
-        '${API_URL}/admin/approve-request',
+        `${API_URL}/admin/approve-request`,
         {
           method: 'POST',
 

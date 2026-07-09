@@ -35,7 +35,7 @@ function TrialSession() {
       }
 
       const response = await fetch(
-        '${API_URL}/trial-sessions',
+        `${API_URL}/trial-sessions`,
         {
           method: 'POST',
           headers: {
