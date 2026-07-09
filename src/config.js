@@ -1,1 +1,1 @@
-export const API_URL = "https://thundbalance.onrender.com"
+export const API_URL = "https://thundbalance-api.onrender.com";
