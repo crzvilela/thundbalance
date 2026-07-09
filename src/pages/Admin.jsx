@@ -78,7 +78,7 @@ function Admin() {
 
     const loadData = async () => {
       const requestsResponse = await fetch(
-        '${API_URL}/admin/client-requests'
+        `${API_URL}/admin/client-requests`
       )
 
       const requestsData =
@@ -89,7 +89,7 @@ function Admin() {
       try {
 
         const statsResponse = await fetch(
-          '${API_URL}/admin/stats'
+          `${API_URL}/admin/stats`
         )
 
         const statsData = await statsResponse.json()
@@ -97,7 +97,7 @@ function Admin() {
         setStats(statsData)
 
         const usersResponse = await fetch(
-          '${API_URL}/admin/users'
+          `${API_URL}/admin/users`
         )
 
         const usersData = await usersResponse.json()
@@ -105,7 +105,7 @@ function Admin() {
         setUsers(usersData)
 
         const trainersResponse = await fetch(
-          '${API_URL}/admin/trainers'
+          `${API_URL}/admin/trainers`
         )
 
         const trainersData = await trainersResponse.json()
@@ -113,7 +113,7 @@ function Admin() {
         setTrainers(trainersData)
 
         const sessionsResponse = await fetch(
-          '${API_URL}/admin/sessions'
+          `${API_URL}/admin/sessions`
         )
 
         const sessionsData = await sessionsResponse.json()
