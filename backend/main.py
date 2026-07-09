@@ -2,8 +2,7 @@ from fastapi import FastAPI
 
 from datetime import datetime, timedelta
 from pydantic import BaseModel
-from database import conn
-
+from database import get_connection
 from fastapi.middleware.cors import CORSMiddleware
 from google_calendar import (
     create_calendar_event,
@@ -13,8 +12,8 @@ from google_calendar import (
     clear_calendar
 )
 
-DAY_MAP = {
 
+DAY_MAP = {
     "Monday": 0,
     "Tuesday": 1,
     "Wednesday": 2,
@@ -22,23 +21,27 @@ DAY_MAP = {
     "Friday": 4,
     "Saturday": 5,
     "Sunday": 6
-
 }
-
 
 
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+
         "http://localhost:5173",
+
+        "http://127.0.0.1:5173",
+
         "https://thundbalance.vercel.app"
-        
+
     ],
+    
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 class SessionCreate(BaseModel):
     user_id: int
@@ -46,21 +49,23 @@ class SessionCreate(BaseModel):
     session_date: str
     session_time: str
 
+
 class UserCreate(BaseModel):
     firebase_uid: str
     nome: str
     email: str
     foto: str | None = None
-
     telefone: str | None = None
     codigo_pais: str | None = None
     cidade: str | None = None
     morada: str | None = None
     cep: str | None = None
 
+
 class UpdateSession(BaseModel):
     session_date: str
     session_time: str
+
 
 class UpdateProfile(BaseModel):
     telefone: str
@@ -69,14 +74,13 @@ class UpdateProfile(BaseModel):
     morada: str
     cep: str
 
+
 class UserPlanCreate(BaseModel):
     user_id: int
     plan_id: int
 
 
-
 class TrialSessionCreate(BaseModel):
-
     full_name: str
     email: str
     phone: str
@@ -86,43 +90,32 @@ class TrialSessionCreate(BaseModel):
     session_date: str
     session_time: str
 
+
 class AssignPlan(BaseModel):
-
     user_id: int
-
     plan_id: int
 
 
 class ClientRequestCreate(BaseModel):
-
     user_id: int
-
     plan_id: int
-
     sessions_per_week: int
-
     preferred_days: str
-
     preferred_time: str
 
 
 class ApproveRequest(BaseModel):
-
     request_id: int
-
     trainer_id: int
-
     start_date: str
 
 
-
 def trainer_is_available(
+    cursor,
     trainer_id,
     session_date,
     session_time
 ):
-
-    cursor = conn.cursor()
 
     cursor.execute(
         """
@@ -142,8 +135,6 @@ def trainer_is_available(
 
     existing_session = cursor.fetchone()
 
-    cursor.close()
-
     return existing_session is None
 
 
@@ -154,11 +145,8 @@ def generate_session_dates(
 ):
 
     selected_days = [
-
         DAY_MAP[day.strip()]
-
         for day in preferred_days.split(",")
-
     ]
 
     current_date = datetime.strptime(
@@ -173,14 +161,13 @@ def generate_session_dates(
         if current_date.weekday() in selected_days:
 
             dates.append(
-                current_date.strftime(
-                    "%Y-%m-%d"
-                )
+                current_date.strftime("%Y-%m-%d")
             )
 
         current_date += timedelta(days=1)
 
     return dates
+
 
 @app.get("/")
 def home():
@@ -188,46 +175,63 @@ def home():
         "message": "ThundBalance API Running"
     }
 
+
 @app.get("/plans")
 def get_plans():
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT *
-        FROM plans
-        """
-    )
+    try:
 
-    plans = cursor.fetchall()
+        cursor.execute(
+            """
+            SELECT *
+            FROM plans
+            """
+        )
 
-    return plans
+        return cursor.fetchall()
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
 
 @app.get("/trainers")
 def get_trainers():
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT *
-        FROM trainers
-        """
-    )
+    try:
 
-    trainers = cursor.fetchall()
+        cursor.execute(
+            """
+            SELECT *
+            FROM trainers
+            """
+        )
 
-    return trainers
+        return cursor.fetchall()
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
 
 @app.post("/sessions")
 def create_session(session: SessionCreate):
 
+    conn = get_connection()
+    cursor = conn.cursor()
+
     try:
 
-        cursor = conn.cursor()
-
         if not trainer_is_available(
+            cursor,
             session.trainer_id,
             session.session_date,
             session.session_time
@@ -322,483 +326,585 @@ def create_session(session: SessionCreate):
         return {
             "error": str(e)
         }
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
+
 @app.get("/sessions")
 def get_sessions():
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT *
-        FROM sessions
-        """
-    )
+    try:
 
-    sessions = cursor.fetchall()
+        cursor.execute(
+            """
+            SELECT *
+            FROM sessions
+            """
+        )
 
-    return sessions
+        return cursor.fetchall()
+
+    finally:
+
+        cursor.close()
+        conn.close()
 
 
 @app.post("/users")
 def create_user(user: UserCreate):
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT id
-        FROM users
-        WHERE email = %s
-        """,
-        (user.email,)
-    )
+    try:
 
-    existing_user = cursor.fetchone()
+        cursor.execute(
+            """
+            SELECT id
+            FROM users
+            WHERE email = %s
+            """,
+            (user.email,)
+        )
 
-    if existing_user:
+        existing_user = cursor.fetchone()
 
-        cursor.close()
+        if existing_user:
+
+            return {
+                "message": "User already exists"
+            }
+
+        cursor.execute(
+            """
+            INSERT INTO users
+            (
+                firebase_uid,
+                nome,
+                email,
+                foto,
+                telefone,
+                codigo_pais,
+                cidade,
+                morada,
+                cep
+            )
+
+            VALUES
+            (
+                %s, %s, %s, %s,
+                %s, %s, %s, %s, %s
+            )
+            """,
+            (
+                user.firebase_uid,
+                user.nome,
+                user.email,
+                user.foto,
+                user.telefone,
+                user.codigo_pais,
+                user.cidade,
+                user.morada,
+                user.cep
+            )
+        )
+
+        conn.commit()
 
         return {
-            "message": "User already exists"
+            "message": "User created successfully"
         }
 
-    cursor.execute(
-        """
-        INSERT INTO users
-        (
-            firebase_uid,
-            nome,
-            email,
-            foto,
-            telefone,
-            codigo_pais,
-            cidade,
-            morada,
-            cep
-        )
+    except Exception as e:
 
-        VALUES
-        (
-            %s, %s, %s, %s,
-            %s, %s, %s, %s, %s
-        )
-        """,
-        (
-            user.firebase_uid,
-            user.nome,
-            user.email,
-            user.foto,
-            user.telefone,
-            user.codigo_pais,
-            user.cidade,
-            user.morada,
-            user.cep
-        )
-    )
+        conn.rollback()
 
-    conn.commit()
+        return {
+            "error": str(e)
+        }
 
-    cursor.close()
+    finally:
 
-    return {
-        "message": "User created successfully"
-    }
+        cursor.close()
+        conn.close()
+
 
 @app.get("/users")
 def get_users():
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT *
-        FROM users
-        """
-    )
+    try:
 
-    users = cursor.fetchall()
+        cursor.execute(
+            """
+            SELECT *
+            FROM users
+            """
+        )
 
-    return users
+        return cursor.fetchall()
+
+    finally:
+
+        cursor.close()
+        conn.close()
 
 
 @app.get("/users/email/{email}")
 def get_user_by_email(email: str):
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT
-            u.id,
-            u.nome,
-            u.email,
-            p.nome
+    try:
 
-        FROM users u
+        cursor.execute(
+            """
+            SELECT
+                u.id,
+                u.nome,
+                u.email,
+                p.nome
 
-        LEFT JOIN user_plans up
-            ON u.id = up.user_id
+            FROM users u
 
-        LEFT JOIN plans p
-            ON up.plan_id = p.id
+            LEFT JOIN user_plans up
+                ON u.id = up.user_id
 
-        WHERE u.email = %s
-        """,
-        (email,)
-    )
+            LEFT JOIN plans p
+                ON up.plan_id = p.id
 
-    user = cursor.fetchone()
+            WHERE u.email = %s
+            """,
+            (email,)
+        )
 
-    cursor.close()
+        user = cursor.fetchone()
 
-    if not user:
+        if not user:
+
+            return {
+                "message": "User not found"
+            }
 
         return {
-            "message": "User not found"
+            "id": user[0],
+            "nome": user[1],
+            "email": user[2],
+            "plano": user[3]
         }
 
-    return {
-        "id": user[0],
-        "nome": user[1],
-        "email": user[2],
-        "plano": user[3]
-    }
+    finally:
+
+        cursor.close()
+        conn.close()
 
 
 @app.get("/sessions/user/{user_id}")
 def get_user_sessions(user_id: int):
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT
-            s.id,
-            s.session_date,
-            s.session_time,
-            t.nome,
-            s.status,
-            s.rescheduled,
-            s.session_number
+    try:
 
-        FROM sessions s
+        cursor.execute(
+            """
+            SELECT
+                s.id,
+                s.session_date,
+                s.session_time,
+                t.nome,
+                s.status,
+                s.rescheduled,
+                s.session_number
 
-        JOIN trainers t
-            ON s.trainer_id = t.id
+            FROM sessions s
 
-        WHERE s.user_id = %s
+            JOIN trainers t
+                ON s.trainer_id = t.id
 
-        ORDER BY s.session_date ASC
-        """,
-        (user_id,)
-    )
+            WHERE s.user_id = %s
 
-    sessions = cursor.fetchall()
+            ORDER BY s.session_date ASC
+            """,
+            (user_id,)
+        )
 
-    return sessions
+        return cursor.fetchall()
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
+
 @app.delete("/sessions/{session_id}")
 def cancel_session(session_id: int):
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT google_event_id
-        FROM sessions
-        WHERE id = %s
-        """,
-        (session_id,)
-    )
+    try:
 
-    result = cursor.fetchone()
-
-    if not result:
-
-        return {
-            "error": "Session not found"
-        }
-
-    google_event_id = result[0]
-
-    if google_event_id:
-
-        delete_calendar_event(
-            google_event_id
+        cursor.execute(
+            """
+            SELECT google_event_id
+            FROM sessions
+            WHERE id = %s
+            """,
+            (session_id,)
         )
 
-    cursor.execute(
-        """
-        UPDATE sessions
-        SET status = 'Cancelled'
-        WHERE id = %s
-        """,
-        (session_id,)
-    )
+        result = cursor.fetchone()
 
-    conn.commit()
+        if not result:
 
-    return {
-        "message": "Session cancelled successfully"
-    }
+            return {
+                "error": "Session not found"
+            }
+
+        google_event_id = result[0]
+
+        if google_event_id:
+
+            delete_calendar_event(
+                google_event_id
+            )
+
+        cursor.execute(
+            """
+            UPDATE sessions
+            SET status = 'Cancelled'
+            WHERE id = %s
+            """,
+            (session_id,)
+        )
+
+        conn.commit()
+
+        return {
+            "message": "Session cancelled successfully"
+        }
+
+    except Exception as e:
+
+        conn.rollback()
+
+        return {
+            "error": str(e)
+        }
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
+
 @app.get("/profile/{user_id}")
 def get_profile(user_id: int):
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT
-            u.id,
-            u.nome,
-            u.email,
-            u.foto,
-            u.telefone,
-            u.codigo_pais,
-            u.cidade,
-            u.morada,
-            u.cep,
-            p.nome
+    try:
 
-        FROM users u
+        cursor.execute(
+            """
+            SELECT
+                u.id,
+                u.nome,
+                u.email,
+                u.foto,
+                u.telefone,
+                u.codigo_pais,
+                u.cidade,
+                u.morada,
+                u.cep,
+                p.nome
 
-        LEFT JOIN user_plans up
-            ON u.id = up.user_id
+            FROM users u
 
-        LEFT JOIN plans p
-            ON up.plan_id = p.id
+            LEFT JOIN user_plans up
+                ON u.id = up.user_id
 
-        WHERE u.id = %s
-        """,
-        (user_id,)
-    )
+            LEFT JOIN plans p
+                ON up.plan_id = p.id
 
-    profile = cursor.fetchone()
+            WHERE u.id = %s
+            """,
+            (user_id,)
+        )
 
-    cursor.close()
+        profile = cursor.fetchone()
 
-    return {
-        "id": profile[0],
-        "nome": profile[1],
-        "email": profile[2],
-        "foto": profile[3],
-        "telefone": profile[4],
-        "codigo_pais": profile[5],
-        "cidade": profile[6],
-        "morada": profile[7],
-        "cep": profile[8],
-        "plano": profile[9]
-    }
+        return {
+            "id": profile[0],
+            "nome": profile[1],
+            "email": profile[2],
+            "foto": profile[3],
+            "telefone": profile[4],
+            "codigo_pais": profile[5],
+            "cidade": profile[6],
+            "morada": profile[7],
+            "cep": profile[8],
+            "plano": profile[9]
+        }
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
 
 @app.put("/sessions/{session_id}")
-
 def update_session(
     session_id: int,
     session: UpdateSession
 ):
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT
-            trainer_id,
-            google_event_id,
-            rescheduled
-        FROM sessions
-        WHERE id = %s
-        """,
-        (session_id,)
-    )
+    try:
 
-    result = cursor.fetchone()
-
-    if not result:
-
-        return {
-            "error": "Session not found"
-        }
-
-    trainer_id = result[0]
-    google_event_id = result[1]
-    rescheduled = result[2]
-
-    if rescheduled:
-
-        return {
-            "error": "This session has already been rescheduled"
-        }
-
-    cursor.execute(
-        """
-        SELECT id
-        FROM sessions
-        WHERE trainer_id = %s
-        AND session_date = %s
-        AND session_time = %s
-        AND status = 'Booked'
-        AND id != %s
-        """,
-        (
-            trainer_id,
-            session.session_date,
-            session.session_time,
-            session_id
-        )
-    )
-
-    conflict = cursor.fetchone()
-
-    if conflict:
-
-        return {
-            "error": "Trainer already booked at this time"
-        }
-
-    cursor.execute(
-        """
-        UPDATE sessions
-        SET
-            session_date = %s,
-            session_time = %s,
-            rescheduled = TRUE
-        WHERE id = %s
-        """,
-        (
-            session.session_date,
-            session.session_time,
-            session_id
-        )
-    )
-
-    if google_event_id:
-
-        update_calendar_event(
-            google_event_id,
-            session.session_date,
-            session.session_time
+        cursor.execute(
+            """
+            SELECT
+                trainer_id,
+                google_event_id,
+                rescheduled
+            FROM sessions
+            WHERE id = %s
+            """,
+            (session_id,)
         )
 
-    conn.commit()
+        result = cursor.fetchone()
 
-    return {
-        "message": "Session updated successfully"
-    }
+        if not result:
 
-@app.get("/trainers")
-def get_trainers():
+            return {
+                "error": "Session not found"
+            }
 
-    cursor = conn.cursor()
+        trainer_id = result[0]
+        google_event_id = result[1]
+        rescheduled = result[2]
 
-    cursor.execute(
-        """
-        SELECT *
-        FROM trainers
-        """
-    )
+        if rescheduled:
 
-    trainers = cursor.fetchall()
+            return {
+                "error": "This session has already been rescheduled"
+            }
 
-    return trainers
+        cursor.execute(
+            """
+            SELECT id
+            FROM sessions
+            WHERE trainer_id = %s
+            AND session_date = %s
+            AND session_time = %s
+            AND status = 'Booked'
+            AND id != %s
+            """,
+            (
+                trainer_id,
+                session.session_date,
+                session.session_time,
+                session_id
+            )
+        )
 
+        conflict = cursor.fetchone()
+
+        if conflict:
+
+            return {
+                "error": "Trainer already booked at this time"
+            }
+
+        cursor.execute(
+            """
+            UPDATE sessions
+            SET
+                session_date = %s,
+                session_time = %s,
+                rescheduled = TRUE
+            WHERE id = %s
+            """,
+            (
+                session.session_date,
+                session.session_time,
+                session_id
+            )
+        )
+
+        if google_event_id:
+
+            update_calendar_event(
+                google_event_id,
+                session.session_date,
+                session.session_time
+            )
+
+        conn.commit()
+
+        return {
+            "message": "Session updated successfully"
+        }
+
+    except Exception as e:
+
+        conn.rollback()
+
+        return {
+            "error": str(e)
+        }
+
+    finally:
+
+        cursor.close()
+        conn.close()
 
 
 @app.get("/admin/stats")
 def get_admin_stats():
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT COUNT(*) FROM users")
-    total_users = cursor.fetchone()[0]
+    try:
 
-    cursor.execute("SELECT COUNT(*) FROM trainers")
-    total_trainers = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM users")
+        total_users = cursor.fetchone()[0]
 
-    cursor.execute("SELECT COUNT(*) FROM sessions")
-    total_sessions = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM trainers")
+        total_trainers = cursor.fetchone()[0]
 
-    return {
-        "users": total_users,
-        "trainers": total_trainers,
-        "sessions": total_sessions
-    }
+        cursor.execute("SELECT COUNT(*) FROM sessions")
+        total_sessions = cursor.fetchone()[0]
+
+        return {
+            "users": total_users,
+            "trainers": total_trainers,
+            "sessions": total_sessions
+        }
+
+    finally:
+
+        cursor.close()
+        conn.close()
 
 
 @app.get("/admin/users")
 def admin_users():
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT
+    try:
 
-            u.id,
+        cursor.execute(
+            """
+            SELECT
 
-            u.nome,
+                u.id,
 
-            u.email,
+                u.nome,
 
-            COALESCE(
-                p.nome,
-                'No Plan'
-            )
+                u.email,
 
-        FROM users u
+                COALESCE(
+                    p.nome,
+                    'No Plan'
+                )
 
-        LEFT JOIN user_plans up
-            ON u.id = up.user_id
+            FROM users u
 
-        LEFT JOIN plans p
-            ON up.plan_id = p.id
+            LEFT JOIN user_plans up
+                ON u.id = up.user_id
 
-        ORDER BY u.id
-        """
-    )
+            LEFT JOIN plans p
+                ON up.plan_id = p.id
 
-    return cursor.fetchall()
+            ORDER BY u.id
+            """
+        )
+
+        return cursor.fetchall()
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
 
 @app.get("/admin/trainers")
 def admin_trainers():
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT id, nome, especialidade
-        FROM trainers
-        ORDER BY id
-        """
-    )
+    try:
 
-    return cursor.fetchall()
+        cursor.execute(
+            """
+            SELECT id, nome, especialidade
+            FROM trainers
+            ORDER BY id
+            """
+        )
 
+        return cursor.fetchall()
+
+    finally:
+
+        cursor.close()
+        conn.close()
 
 
 @app.get("/admin/sessions")
 def admin_sessions():
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT
-            s.id,
-            u.nome,
-            t.nome,
-            s.session_date,
-            s.session_time,
-            s.status
-        FROM sessions s
-        JOIN users u
-            ON s.user_id = u.id
-        JOIN trainers t
-            ON s.trainer_id = t.id
-        ORDER BY s.session_date ASC
-        """
-    )
+    try:
 
-    return cursor.fetchall()
+        cursor.execute(
+            """
+            SELECT
+                s.id,
+                u.nome,
+                t.nome,
+                s.session_date,
+                s.session_time,
+                s.status
+            FROM sessions s
+            JOIN users u
+                ON s.user_id = u.id
+            JOIN trainers t
+                ON s.trainer_id = t.id
+            ORDER BY s.session_date ASC
+            """
+        )
+
+        return cursor.fetchall()
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
 
 @app.put("/profile/{user_id}")
 def update_profile(
@@ -806,100 +912,133 @@ def update_profile(
     profile: UpdateProfile
 ):
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        UPDATE users
-        SET
-            telefone = %s,
-            codigo_pais = %s,
-            cidade = %s,
-            morada = %s,
-            cep = %s
-        WHERE id = %s
-        """,
-        (
-            profile.telefone,
-            profile.codigo_pais,
-            profile.cidade,
-            profile.morada,
-            profile.cep,
-            user_id
+    try:
+
+        cursor.execute(
+            """
+            UPDATE users
+            SET
+                telefone = %s,
+                codigo_pais = %s,
+                cidade = %s,
+                morada = %s,
+                cep = %s
+            WHERE id = %s
+            """,
+            (
+                profile.telefone,
+                profile.codigo_pais,
+                profile.cidade,
+                profile.morada,
+                profile.cep,
+                user_id
+            )
         )
-    )
 
-    conn.commit()
+        conn.commit()
 
-    cursor.close()
+        return {
+            "message": "Profile updated successfully"
+        }
 
-    return {
-        "message": "Profile updated successfully"
-    }
+    except Exception as e:
+
+        conn.rollback()
+
+        return {
+            "error": str(e)
+        }
+
+    finally:
+
+        cursor.close()
+        conn.close()
 
 
 @app.post("/user-plan")
 def assign_plan(data: UserPlanCreate):
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        DELETE FROM user_plans
-        WHERE user_id = %s
-        """,
-        (data.user_id,)
-    )
+    try:
 
-    cursor.execute(
-        """
-        INSERT INTO user_plans
-        (user_id, plan_id)
-
-        VALUES (%s, %s)
-        """,
-        (
-            data.user_id,
-            data.plan_id
+        cursor.execute(
+            """
+            DELETE FROM user_plans
+            WHERE user_id = %s
+            """,
+            (data.user_id,)
         )
-    )
 
-    conn.commit()
+        cursor.execute(
+            """
+            INSERT INTO user_plans
+            (user_id, plan_id)
 
-    cursor.close()
+            VALUES (%s, %s)
+            """,
+            (
+                data.user_id,
+                data.plan_id
+            )
+        )
 
-    return {
-        "message": "Plan assigned successfully"
-    }
+        conn.commit()
+
+        return {
+            "message": "Plan assigned successfully"
+        }
+
+    except Exception as e:
+
+        conn.rollback()
+
+        return {
+            "error": str(e)
+        }
+
+    finally:
+
+        cursor.close()
+        conn.close()
 
 
 @app.get("/available-trainers/{day}/{time}")
 def available_trainers(day: str, time: str):
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT
-            t.id,
-            t.nome
+    try:
 
-        FROM trainers t
+        cursor.execute(
+            """
+            SELECT
+                t.id,
+                t.nome
 
-        JOIN trainer_availability ta
-            ON t.id = ta.trainer_id
+            FROM trainers t
 
-        WHERE
-            ta.day_of_week = %s
-            AND %s BETWEEN ta.start_time AND ta.end_time
-        """,
-        (day, time)
-    )
+            JOIN trainer_availability ta
+                ON t.id = ta.trainer_id
 
-    trainers = cursor.fetchall()
+            WHERE
+                ta.day_of_week = %s
+                AND %s BETWEEN ta.start_time AND ta.end_time
+            """,
+            (day, time)
+        )
 
-    return trainers
+        return cursor.fetchall()
 
+    finally:
+
+        cursor.close()
+        conn.close()
 
 
 @app.post("/trial-sessions")
@@ -907,9 +1046,10 @@ def create_trial_session(
     trial: TrialSessionCreate
 ):
 
-    try:
+    conn = get_connection()
+    cursor = conn.cursor()
 
-        cursor = conn.cursor()
+    try:
 
         cursor.execute(
             """
@@ -969,44 +1109,65 @@ def create_trial_session(
         return {
             "error": str(e)
         }
-    
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
+
 @app.post("/admin/assign-plan")
-def assign_plan(
+def admin_assign_plan(
     data: AssignPlan
 ):
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        DELETE FROM user_plans
-        WHERE user_id = %s
-        """,
-        (data.user_id,)
-    )
+    try:
 
-    cursor.execute(
-        """
-        INSERT INTO user_plans
-        (
-            user_id,
-            plan_id
+        cursor.execute(
+            """
+            DELETE FROM user_plans
+            WHERE user_id = %s
+            """,
+            (data.user_id,)
         )
 
-        VALUES (%s, %s)
-        """,
-        (
-            data.user_id,
-            data.plan_id
+        cursor.execute(
+            """
+            INSERT INTO user_plans
+            (
+                user_id,
+                plan_id
+            )
+
+            VALUES (%s, %s)
+            """,
+            (
+                data.user_id,
+                data.plan_id
+            )
         )
-    )
 
-    conn.commit()
+        conn.commit()
 
-    return {
-        "message": "Plan assigned successfully"
-    }
+        return {
+            "message": "Plan assigned successfully"
+        }
 
+    except Exception as e:
+
+        conn.rollback()
+
+        return {
+            "error": str(e)
+        }
+
+    finally:
+
+        cursor.close()
+        conn.close()
 
 
 @app.post("/client-requests")
@@ -1014,76 +1175,98 @@ def create_client_request(
     request: ClientRequestCreate
 ):
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        INSERT INTO client_requests
-        (
-            user_id,
-            plan_id,
-            sessions_per_week,
-            preferred_days,
-            preferred_time
+    try:
+
+        cursor.execute(
+            """
+            INSERT INTO client_requests
+            (
+                user_id,
+                plan_id,
+                sessions_per_week,
+                preferred_days,
+                preferred_time
+            )
+
+            VALUES
+            (%s,%s,%s,%s,%s)
+            """,
+            (
+                request.user_id,
+                request.plan_id,
+                request.sessions_per_week,
+                request.preferred_days,
+                request.preferred_time
+            )
         )
 
-        VALUES
-        (%s,%s,%s,%s,%s)
-        """,
-        (
-            request.user_id,
-            request.plan_id,
-            request.sessions_per_week,
-            request.preferred_days,
-            request.preferred_time
-        )
-    )
+        conn.commit()
 
-    conn.commit()
+        return {
+            "message": "Request submitted successfully"
+        }
 
-    return {
-        "message": "Request submitted successfully"
-    }
+    except Exception as e:
 
+        conn.rollback()
+
+        return {
+            "error": str(e)
+        }
+
+    finally:
+
+        cursor.close()
+        conn.close()
 
 
 @app.get("/admin/client-requests")
 def admin_client_requests():
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT
+    try:
 
-            cr.id,
+        cursor.execute(
+            """
+            SELECT
 
-            u.nome,
+                cr.id,
 
-            p.nome,
+                u.nome,
 
-            cr.sessions_per_week,
+                p.nome,
 
-            cr.preferred_days,
+                cr.sessions_per_week,
 
-            cr.preferred_time,
+                cr.preferred_days,
 
-            cr.status
+                cr.preferred_time,
 
-        FROM client_requests cr
+                cr.status
 
-        JOIN users u
-            ON cr.user_id = u.id
+            FROM client_requests cr
 
-        JOIN plans p
-            ON cr.plan_id = p.id
+            JOIN users u
+                ON cr.user_id = u.id
 
-        ORDER BY cr.id DESC
-        """
-    )
+            JOIN plans p
+                ON cr.plan_id = p.id
 
-    return cursor.fetchall()
+            ORDER BY cr.id DESC
+            """
+        )
 
+        return cursor.fetchall()
+
+    finally:
+
+        cursor.close()
+        conn.close()
 
 
 @app.post("/admin/approve-request")
@@ -1091,9 +1274,10 @@ def approve_request(
     data: ApproveRequest
 ):
 
-    try:
+    conn = get_connection()
+    cursor = conn.cursor()
 
-        cursor = conn.cursor()
+    try:
 
         cursor.execute(
             """
@@ -1267,13 +1451,8 @@ def approve_request(
         conn.commit()
 
         return {
-
-            "message":
-            "Request approved successfully",
-
-            "total_sessions":
-            total_sessions
-
+            "message": "Request approved successfully",
+            "total_sessions": total_sessions
         }
 
     except Exception as e:
@@ -1286,158 +1465,138 @@ def approve_request(
             "error": str(e)
         }
 
-@app.get("/admin/sessions/email/{email}")
-def get_sessions_by_email(email: str):
+    finally:
 
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        SELECT
-
-            s.session_number,
-
-            s.session_date,
-
-            s.session_time,
-
-            s.status,
-
-            t.nome
-
-        FROM sessions s
-
-        JOIN users u
-            ON s.user_id = u.id
-
-        JOIN trainers t
-            ON s.trainer_id = t.id
-
-        WHERE u.email = %s
-
-        ORDER BY s.session_date
-        """,
-        (email,)
-    )
-
-    return cursor.fetchall()
+        cursor.close()
+        conn.close()
 
 
 @app.get("/admin/sessions/email/{email}")
 def get_sessions_by_email(email: str):
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT
+    try:
 
-            s.session_number,
+        cursor.execute(
+            """
+            SELECT
 
-            s.session_date,
+                s.session_number,
 
-            s.session_time,
+                s.session_date,
 
-            s.status,
+                s.session_time,
 
-            t.nome
+                s.status,
 
-        FROM sessions s
+                t.nome
 
-        JOIN users u
-            ON s.user_id = u.id
+            FROM sessions s
 
-        JOIN trainers t
-            ON s.trainer_id = t.id
+            JOIN users u
+                ON s.user_id = u.id
 
-        WHERE u.email = %s
+            JOIN trainers t
+                ON s.trainer_id = t.id
 
-        ORDER BY s.session_date
-        """,
-        (email,)
-    )
+            WHERE u.email = %s
 
-    return cursor.fetchall()
+            ORDER BY s.session_date
+            """,
+            (email,)
+        )
+
+        return cursor.fetchall()
+
+    finally:
+
+        cursor.close()
+        conn.close()
 
 
 @app.get("/admin/client-progress/{email}")
 def client_progress(email: str):
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT
+    try:
 
-            COUNT(*)
+        cursor.execute(
+            """
+            SELECT
 
-        FROM sessions s
+                COUNT(*)
 
-        JOIN users u
-            ON s.user_id = u.id
+            FROM sessions s
 
-        WHERE
+            JOIN users u
+                ON s.user_id = u.id
 
-            u.email = %s
+            WHERE
 
-            AND s.session_date < CURRENT_DATE
-        """,
-        (email,)
-    )
+                u.email = %s
 
-    completed = cursor.fetchone()[0]
+                AND s.session_date < CURRENT_DATE
+            """,
+            (email,)
+        )
 
-    cursor.execute(
-        """
-        SELECT
+        completed = cursor.fetchone()[0]
 
-            COUNT(*)
+        cursor.execute(
+            """
+            SELECT
 
-        FROM sessions s
+                COUNT(*)
 
-        JOIN users u
-            ON s.user_id = u.id
+            FROM sessions s
 
-        WHERE u.email = %s
-        """,
-        (email,)
-    )
+            JOIN users u
+                ON s.user_id = u.id
 
-    total = cursor.fetchone()[0]
+            WHERE u.email = %s
+            """,
+            (email,)
+        )
 
-    cursor.execute(
-        """
-        SELECT
+        total = cursor.fetchone()[0]
 
-            MIN(session_date)
+        cursor.execute(
+            """
+            SELECT
 
-        FROM sessions s
+                MIN(session_date)
 
-        JOIN users u
-            ON s.user_id = u.id
+            FROM sessions s
 
-        WHERE
+            JOIN users u
+                ON s.user_id = u.id
 
-            u.email = %s
+            WHERE
 
-            AND session_date >= CURRENT_DATE
-        """,
-        (email,)
-    )
+                u.email = %s
 
-    next_session = cursor.fetchone()[0]
+                AND session_date >= CURRENT_DATE
+            """,
+            (email,)
+        )
 
-    return {
+        next_session = cursor.fetchone()[0]
 
-        "completed": completed,
+        return {
+            "completed": completed,
+            "total": total,
+            "remaining": total - completed,
+            "next_session": next_session
+        }
 
-        "total": total,
+    finally:
 
-        "remaining": total - completed,
-
-        "next_session": next_session
-
-    }
+        cursor.close()
+        conn.close()
 
 
 @app.get("/trainer/{trainer_id}/available-times/{session_date}")
@@ -1447,7 +1606,6 @@ def get_available_times(
 ):
 
     AVAILABLE_TIMES = [
-
         "07:00",
         "08:00",
         "09:00",
@@ -1462,48 +1620,46 @@ def get_available_times(
         "18:00",
         "19:00",
         "20:00"
-
     ]
 
+    conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        SELECT session_time
+    try:
 
-        FROM sessions
+        cursor.execute(
+            """
+            SELECT session_time
 
-        WHERE trainer_id = %s
+            FROM sessions
 
-        AND session_date = %s
+            WHERE trainer_id = %s
 
-        AND status = 'Booked'
-        """,
-        (
-            trainer_id,
-            session_date
+            AND session_date = %s
+
+            AND status = 'Booked'
+            """,
+            (
+                trainer_id,
+                session_date
+            )
         )
-    )
 
-    booked_times = [
+        booked_times = [
+            row[0]
+            for row in cursor.fetchall()
+        ]
 
-        row[0]
+        return [
+            time
+            for time in AVAILABLE_TIMES
+            if time not in booked_times
+        ]
 
-        for row in cursor.fetchall()
+    finally:
 
-    ]
-
-    available_times = [
-
-        time
-
-        for time in AVAILABLE_TIMES
-
-        if time not in booked_times
-
-    ]
-
-    return available_times
+        cursor.close()
+        conn.close()
 
 
 @app.delete("/admin/clear-calendar")

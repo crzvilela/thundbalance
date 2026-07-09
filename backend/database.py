@@ -3,19 +3,15 @@ import psycopg2
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-if DATABASE_URL:
+def get_connection():
 
-    conn = psycopg2.connect(DATABASE_URL)
+    if DATABASE_URL:
 
-    print("Connected to Neon Database!")
+        return psycopg2.connect(DATABASE_URL)
 
-else:
-
-    conn = psycopg2.connect(
+    return psycopg2.connect(
         host="localhost",
         database="thundbalance",
         user="postgres",
         password="123456"
     )
-
-    print("Connected to Local PostgreSQL!")
