@@ -1,3 +1,4 @@
+
 import { useEffect } from 'react'
 
 function Testimonials() {
@@ -26,7 +27,10 @@ function Testimonials() {
           </h2>
         </div>
 
-        
+        <div
+          className="elfsight-app-ad21ff0a-7d99-486d-a394-b51a8007f2c6"
+          data-elfsight-app-lazy
+        ></div>
 
       </div>
     </section>
@@ -34,3 +38,5 @@ function Testimonials() {
 }
 
 export default Testimonials
+
+
