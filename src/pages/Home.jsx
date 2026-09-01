@@ -1,35 +1,26 @@
+import { useSearchParams } from 'react-router-dom'
 import Navbar from '../components/Navbar'
-import Hero from '../components/Hero'
-import About from '../components/About'
-import Services from '../components/Services'
-import Pricing from '../components/Pricing'
-import Testimonials from '../components/Testimonials'
-import Contact from '../components/Contact'
 import Footer from '../components/Footer'
+import LandingSections from '../components/LandingSections'
+import { LandingContentProvider } from '../content/LandingContentContext'
 
 function Home() {
+  const [searchParams] = useSearchParams()
+  const isPreview = searchParams.get('preview') === 'true'
+
   return (
-    <div className="bg-black min-h-screen text-white overflow-x-hidden">
+    <LandingContentProvider mode="view" version={isPreview ? 'draft' : 'published'}>
+      <div className="bg-black min-h-screen text-white overflow-x-hidden">
 
-      <Navbar />
+        <Navbar />
 
-      <Hero />
+        <LandingSections />
 
-      <About />
+        <Footer />
 
-      <Services />
-
-      <Pricing />
-
-      <Testimonials />
-
-      <Contact />
-
-      <Footer />
-
-    </div>
+      </div>
+    </LandingContentProvider>
   )
 }
 
 export default Home
-

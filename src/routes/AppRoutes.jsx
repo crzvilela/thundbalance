@@ -8,6 +8,7 @@ import BookSession from '../pages/BookSession'
 import MySessions from '../pages/MySessions'
 import Profile from '../pages/Profile'
 import Admin from '../pages/Admin'
+import LandingPageEditor from '../pages/admin/LandingPageEditor'
 import ChoosePlan from '../pages/ChoosePlan'
 import TrialSession from '../pages/Trialsession'
 import TrainingRequest from '../pages/TrainingRequest'
@@ -35,6 +36,8 @@ function AppRoutes() {
         <Route path="/profile" element={<Profile />} />
       
         <Route path="/admin" element={<Admin />} />
+
+        <Route path="/admin/landing-editor" element={<LandingPageEditor />} />
       
         <Route path="/choose-plan" element={<ChoosePlan />} />
 

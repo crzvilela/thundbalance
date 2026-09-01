@@ -1,46 +1,68 @@
 import heroImage from '../assets/images/hero.jpg'
 import { useNavigate } from 'react-router-dom'
+import {
+  EditableText,
+  EditableCtaButton,
+  useSectionSelection,
+  SectionEditOverlay
+} from './editor/Editable'
+import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
 
 function Hero() {
   const navigate = useNavigate()
-  return (
-    <section className="relative h-screen flex items-center justify-center text-white overflow-hidden">
+  const { section, isEditMode, isSelected, onSectionClick, visible } = useSectionSelection('hero')
 
-      <img
-        src={heroImage}
-        alt="Fitness"
-        className="absolute inset-0 w-full h-full object-cover opacity-40 scale-105"
+  if (!visible && !isEditMode) return null
+
+  return (
+    <section
+      onClick={onSectionClick}
+      style={sectionBackgroundStyle(section.background)}
+      className={`relative isolate h-screen flex items-center justify-center text-white overflow-hidden ${!visible ? 'opacity-40' : ''}`}
+    >
+      <SectionEditOverlay isEditMode={isEditMode} isSelected={isSelected} hidden={!visible} label="Hero" />
+
+      <SectionBackgroundImage
+        background={section.background}
+        fallbackSrc={heroImage}
+        imageClassName="scale-105"
       />
 
-     <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/60 to-black"></div>
-      <div className="absolute bottom-0 left-0 w-full h-40 bg-gradient-to-t from-black to-transparent"></div>
+      <div className="absolute bottom-0 left-0 w-full h-40 bg-gradient-to-t from-black to-transparent" />
+
       <div className="relative z-10 text-center px-6">
+        <EditableText
+          as="p"
+          path="sections.hero.eyebrow"
+          styleObj="sections.hero.eyebrowStyle"
+          label="Hero Eyebrow"
+          className="uppercase tracking-[6px] text-sm text-gray-400 mb-6"
+        />
 
-        <p className="uppercase tracking-[6px] text-sm text-gray-400 mb-6">
-          Private Fitness Studio
-        </p>
+        <EditableText
+          as="h1"
+          path="sections.hero.title"
+          styleObj="sections.hero.titleStyle"
+          label="Hero Title"
+          className="text-5xl sm:text-6xl md:text-8xl font-bold uppercase leading-tight max-w-5xl mx-auto"
+        />
 
-        <h1
-          style={{ fontFamily: 'Bebas Neue' }}
-          className="text-5xl sm:text-6xl md:text-8xl font-bold uppercase leading-tight max-w-5xl"
-        >
-          Transform Your Body And Performance
-        </h1>
+        <EditableText
+          as="p"
+          path="sections.hero.subtitle"
+          styleObj="sections.hero.subtitleStyle"
+          label="Hero Subtitle"
+          className="text-gray-300 mt-8 max-w-2xl text-base md:text-lg mx-auto block"
+        />
 
-        <p className="text-gray-300 mt-8 max-w-2xl text-base md:text-lg mx-auto">
-          Personalized 1:1 training sessions focused on performance,
-          health, rehabilitation and real results.
-        </p>
-
-       <button
-          onClick={() => navigate('/trial-session')}
-          className="mt-10 border border-white px-10 py-4 uppercase text-sm tracking-[3px] hover:bg-white hover:text-black transition-all duration-500 hover:scale-105 hover:tracking-[5px]"
-        >
-          BOOK A TRIAL SESSION
-        </button>
-
+        <div className="mt-10 flex justify-center">
+          <EditableCtaButton
+            path="sections.hero.button"
+            className="px-10 py-4 uppercase text-sm tracking-[3px] hover:scale-105 hover:tracking-[5px]"
+            onNavigate={(link) => navigate(link || '/trial-session')}
+          />
+        </div>
       </div>
-
     </section>
   )
 }

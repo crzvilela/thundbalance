@@ -1,7 +1,10 @@
-
 import { useEffect } from 'react'
+import { EditableText, useSectionSelection, SectionEditOverlay } from './editor/Editable'
+import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
 
-function Testimonials() {
+function Testimonials({ sectionId }) {
+  const { section, isEditMode, isSelected, onSectionClick, visible } = useSectionSelection(sectionId, 'Testimonials')
+
   useEffect(() => {
     if (document.querySelector('script[src*="elfsight"]')) return
 
@@ -11,20 +14,37 @@ function Testimonials() {
     document.body.appendChild(script)
   }, [])
 
+  if (!visible && !isEditMode) return null
+
   return (
-    <section id="testimonials" className="bg-black text-white py-40 px-6">
+    <section
+      id={sectionId}
+      onClick={onSectionClick}
+      style={sectionBackgroundStyle(section.background)}
+      className={`relative isolate bg-black text-white py-20 md:py-40 px-6 ${!visible ? 'opacity-40' : ''}`}
+    >
+      <SectionEditOverlay isEditMode={isEditMode} isSelected={isSelected} hidden={!visible} label="Testimonials" />
+      <SectionBackgroundImage background={section.background} />
+
       <div className="max-w-7xl mx-auto">
 
-        <div className="mb-20 text-center">
-          <p className="uppercase tracking-[5px] text-sm text-gray-400 mb-6">
-            Testimonials
-          </p>
-          <h2
+        <div className="mb-12 md:mb-20 text-center">
+          <EditableText
+            as="p"
+            path={`sections.${sectionId}.eyebrow`}
+            styleObj={`sections.${sectionId}.eyebrowStyle`}
+            label="Testimonials Eyebrow"
+            className="uppercase tracking-[5px] text-sm text-gray-400 mb-6"
+          />
+
+          <EditableText
+            as="h2"
+            path={`sections.${sectionId}.title`}
+            styleObj={`sections.${sectionId}.titleStyle`}
+            label="Testimonials Title"
             style={{ fontFamily: 'Bebas Neue' }}
-            className="text-5xl md:text-7xl"
-          >
-            Real Experiences
-          </h2>
+            className="text-4xl sm:text-5xl md:text-7xl"
+          />
         </div>
 
         <div
@@ -38,5 +58,3 @@ function Testimonials() {
 }
 
 export default Testimonials
-
-
