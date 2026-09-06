@@ -45,3 +45,14 @@ export function getEmbedUrl(url, { autoplay = false, loop = false, muted = false
   // Unknown provider: best effort, use the link directly as the iframe src.
   return url
 }
+
+// Converts a public Instagram Reel/post link into its embed URL by
+// appending /embed — the standard public embed format that needs no
+// API/auth for public content. Strips any query string first (Instagram
+// share links sometimes include tracking params like ?igsh=...).
+export function getInstagramEmbedUrl(url) {
+  if (!url) return ''
+  const withoutQuery = url.split('?')[0]
+  const trimmed = withoutQuery.replace(/\/+$/, '')
+  return `${trimmed}/embed`
+}

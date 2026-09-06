@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
@@ -263,44 +262,6 @@ function Admin() {
           >
             Admin Dashboard
           </h1>
-
-          <div className="mb-12 flex flex-col sm:flex-row gap-4">
-
-            <Link
-              to="/admin/landing-editor"
-              className="inline-flex items-center gap-3 border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 transition px-6 py-4 rounded-2xl"
-            >
-              <span className="text-2xl">🎨</span>
-
-              <span>
-                <span className="block font-semibold">
-                  Landing Page Editor
-                </span>
-
-                <span className="block text-xs text-gray-400">
-                  Visually edit the public landing page — texts, images, colors and sections
-                </span>
-              </span>
-            </Link>
-
-            <Link
-              to="/admin/training-videos"
-              className="inline-flex items-center gap-3 border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 transition px-6 py-4 rounded-2xl"
-            >
-              <span className="text-2xl">🎥</span>
-
-              <span>
-                <span className="block font-semibold">
-                  Training Videos
-                </span>
-
-                <span className="block text-xs text-gray-400">
-                  Manage the Training Tips video library (Instagram, YouTube, Vimeo or upload)
-                </span>
-              </span>
-            </Link>
-
-          </div>
 
           <div className="grid md:grid-cols-3 gap-6 mb-12">
 

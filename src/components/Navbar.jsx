@@ -218,7 +218,7 @@ function Navbar() {
             <div className="flex items-center gap-1.5 sm:gap-4">
 
               <Link
-                to="/login"
+                to="/training-tips"
                 className="inline-flex items-center hover:text-gray-400 transition duration-300 uppercase text-xs md:text-sm px-1"
               >
                 Login
