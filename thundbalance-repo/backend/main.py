@@ -1,9 +1,15 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File, HTTPException
 
+import os
+import json
+import uuid
 from datetime import datetime, timedelta
+from typing import Any
 from pydantic import BaseModel
 from database import get_connection
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from psycopg2.extras import Json as PgJson
 from google_calendar import (
     create_calendar_event,
     update_calendar_event,
@@ -11,6 +17,7 @@ from google_calendar import (
     create_trial_session_event,
     clear_calendar
 )
+from landing_page_default import DEFAULT_LANDING_CONTENT
 
 
 DAY_MAP = {
@@ -41,6 +48,94 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"}
+MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024  # 8MB
+
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov"}
+MAX_VIDEO_SIZE_BYTES = 50 * 1024 * 1024  # 50MB
+
+
+@app.on_event("startup")
+def ensure_landing_page_table():
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS landing_page_content (
+                id SERIAL PRIMARY KEY,
+                version TEXT UNIQUE NOT NULL,
+                content JSONB NOT NULL,
+                updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+
+        for version in ("draft", "published", "default_base"):
+
+            cursor.execute(
+                """
+                INSERT INTO landing_page_content (version, content)
+                VALUES (%s, %s)
+                ON CONFLICT (version) DO NOTHING
+                """,
+                (version, PgJson(DEFAULT_LANDING_CONTENT))
+            )
+
+        conn.commit()
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
+
+@app.on_event("startup")
+def ensure_training_videos_table():
+
+    # Independent of the Landing Page Editor's JSON-versioned content — this
+    # is a plain relational table, same pattern as sessions/client_requests.
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS training_videos (
+                id SERIAL PRIMARY KEY,
+                title TEXT NOT NULL,
+                description TEXT,
+                video_source TEXT NOT NULL,
+                video_url TEXT NOT NULL,
+                display_order INT DEFAULT 0,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+
+        conn.commit()
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
+
+class LandingContentPayload(BaseModel):
+    content: dict[str, Any]
 
 
 class SessionCreate(BaseModel):
@@ -108,6 +203,24 @@ class ApproveRequest(BaseModel):
     request_id: int
     trainer_id: int
     start_date: str
+
+
+class TrainingVideoCreate(BaseModel):
+    title: str
+    description: str | None = None
+    video_source: str
+    video_url: str
+
+
+class TrainingVideoUpdate(BaseModel):
+    title: str
+    description: str | None = None
+    video_source: str
+    video_url: str
+
+
+class TrainingVideoReorder(BaseModel):
+    ordered_ids: list[int]
 
 
 def trainer_is_available(
@@ -1670,3 +1783,478 @@ def clear_google_calendar():
     return {
         "message": "Google Calendar cleared successfully"
     }
+
+
+# ---------------------------------------------------------------------------
+# Landing Page Editor (visual page builder)
+# ---------------------------------------------------------------------------
+# Content is stored as a single JSON document per "version" (draft / published).
+# The public site always reads the "published" version. The admin editor reads
+# and writes the "draft" version, and only overwrites "published" when the
+# admin explicitly clicks Publish.
+
+
+@app.get("/landing-page/content")
+def get_landing_page_content(version: str = "published"):
+
+    if version not in ("draft", "published"):
+        raise HTTPException(status_code=400, detail="Invalid version")
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            SELECT content, updated_at
+            FROM landing_page_content
+            WHERE version = %s
+            """,
+            (version,)
+        )
+
+        row = cursor.fetchone()
+
+        if not row:
+
+            return {
+                "version": version,
+                "content": DEFAULT_LANDING_CONTENT,
+                "updated_at": None
+            }
+
+        content, updated_at = row
+
+        return {
+            "version": version,
+            "content": content,
+            "updated_at": updated_at.isoformat() if updated_at else None
+        }
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
+
+@app.put("/landing-page/content/draft")
+def save_landing_page_draft(payload: LandingContentPayload):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            INSERT INTO landing_page_content (version, content, updated_at)
+            VALUES ('draft', %s, NOW())
+            ON CONFLICT (version)
+            DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
+            """,
+            (PgJson(payload.content),)
+        )
+
+        conn.commit()
+
+        return {"message": "Draft saved successfully"}
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
+
+@app.post("/landing-page/publish")
+def publish_landing_page(payload: LandingContentPayload | None = None):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+
+        if payload is not None:
+
+            # Publish this exact content and keep the draft in sync with it.
+            cursor.execute(
+                """
+                INSERT INTO landing_page_content (version, content, updated_at)
+                VALUES ('draft', %s, NOW())
+                ON CONFLICT (version)
+                DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
+                """,
+                (PgJson(payload.content),)
+            )
+
+            cursor.execute(
+                """
+                INSERT INTO landing_page_content (version, content, updated_at)
+                VALUES ('published', %s, NOW())
+                ON CONFLICT (version)
+                DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
+                """,
+                (PgJson(payload.content),)
+            )
+
+        else:
+
+            # No content sent: publish whatever is currently saved as draft.
+            cursor.execute(
+                "SELECT content FROM landing_page_content WHERE version = 'draft'"
+            )
+
+            row = cursor.fetchone()
+
+            draft_content = row[0] if row else DEFAULT_LANDING_CONTENT
+
+            cursor.execute(
+                """
+                INSERT INTO landing_page_content (version, content, updated_at)
+                VALUES ('published', %s, NOW())
+                ON CONFLICT (version)
+                DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
+                """,
+                (PgJson(draft_content),)
+            )
+
+        conn.commit()
+
+        return {"message": "Landing page published successfully"}
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
+
+@app.post("/landing-page/reset")
+def reset_landing_page(version: str = "draft"):
+
+    # 'default_base' is an immutable snapshot written once on first startup
+    # (see ensure_landing_page_table) and must never be a valid destination
+    # for this endpoint — that's exactly what would let it be overwritten.
+    if version not in ("draft", "published"):
+        raise HTTPException(status_code=400, detail="Invalid version")
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+
+        cursor.execute(
+            "SELECT content FROM landing_page_content WHERE version = 'default_base'"
+        )
+
+        row = cursor.fetchone()
+
+        # Should always exist after ensure_landing_page_table runs on startup,
+        # but fall back to the in-code default just in case.
+        base_content = row[0] if row else DEFAULT_LANDING_CONTENT
+
+        cursor.execute(
+            """
+            INSERT INTO landing_page_content (version, content, updated_at)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (version)
+            DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
+            """,
+            (version, PgJson(base_content))
+        )
+
+        conn.commit()
+
+        return {"message": f"{version} restored from default_base"}
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
+
+@app.post("/landing-page/upload-image")
+async def upload_landing_page_image(file: UploadFile = File(...)):
+
+    original_name = file.filename or "image"
+    extension = os.path.splitext(original_name)[1].lower()
+
+    if extension not in ALLOWED_IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Unsupported image type")
+
+    contents = await file.read()
+
+    if len(contents) > MAX_IMAGE_SIZE_BYTES:
+        raise HTTPException(status_code=400, detail="Image is too large (max 8MB)")
+
+    filename = f"{uuid.uuid4().hex}{extension}"
+    destination = os.path.join(UPLOAD_DIR, filename)
+
+    with open(destination, "wb") as f:
+        f.write(contents)
+
+    return {"url": f"/uploads/{filename}"}
+
+
+@app.post("/landing-page/upload-video")
+async def upload_landing_page_video(file: UploadFile = File(...)):
+
+    # Same pattern as upload_landing_page_image above, just with video
+    # extensions and a larger size ceiling. Videos are stored in the same
+    # backend/uploads/ directory and served the same way.
+
+    original_name = file.filename or "video"
+    extension = os.path.splitext(original_name)[1].lower()
+
+    if extension not in ALLOWED_VIDEO_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Unsupported video type")
+
+    contents = await file.read()
+
+    if len(contents) > MAX_VIDEO_SIZE_BYTES:
+        raise HTTPException(status_code=400, detail="Video is too large (max 50MB)")
+
+    filename = f"{uuid.uuid4().hex}{extension}"
+    destination = os.path.join(UPLOAD_DIR, filename)
+
+    with open(destination, "wb") as f:
+        f.write(contents)
+
+    return {"url": f"/uploads/{filename}"}
+
+
+# ---------------------------------------------------------------------------
+# Training Videos (student-facing video library)
+# ---------------------------------------------------------------------------
+# Plain relational table (see ensure_training_videos_table above), saved
+# directly — no draft/publish versioning like the Landing Page Editor.
+# video_source is one of: 'instagram' | 'youtube' | 'vimeo' | 'upload'.
+# For uploads, video_url is reused from POST /landing-page/upload-video
+# (that endpoint isn't specific to the landing page despite its name — it
+# just stores a file under backend/uploads/ and returns its path).
+
+
+@app.get("/training-videos")
+def get_training_videos():
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            SELECT
+                id,
+                title,
+                description,
+                video_source,
+                video_url,
+                display_order
+            FROM training_videos
+            ORDER BY display_order ASC, id ASC
+            """
+        )
+
+        rows = cursor.fetchall()
+
+        return [
+            {
+                "id": row[0],
+                "title": row[1],
+                "description": row[2],
+                "video_source": row[3],
+                "video_url": row[4],
+                "display_order": row[5]
+            }
+            for row in rows
+        ]
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
+
+@app.post("/training-videos")
+def create_training_video(video: TrainingVideoCreate):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            SELECT COALESCE(MAX(display_order), -1) + 1
+            FROM training_videos
+            """
+        )
+
+        next_order = cursor.fetchone()[0]
+
+        cursor.execute(
+            """
+            INSERT INTO training_videos
+            (title, description, video_source, video_url, display_order)
+
+            VALUES (%s, %s, %s, %s, %s)
+
+            RETURNING id
+            """,
+            (
+                video.title,
+                video.description,
+                video.video_source,
+                video.video_url,
+                next_order
+            )
+        )
+
+        video_id = cursor.fetchone()[0]
+
+        conn.commit()
+
+        return {
+            "message": "Training video created successfully",
+            "id": video_id
+        }
+
+    except Exception as e:
+
+        conn.rollback()
+
+        return {
+            "error": str(e)
+        }
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
+
+# Declared BEFORE /training-videos/{video_id} so "reorder" is never
+# swallowed by the {video_id}: int path parameter.
+@app.put("/training-videos/reorder")
+def reorder_training_videos(payload: TrainingVideoReorder):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+
+        for index, video_id in enumerate(payload.ordered_ids):
+
+            cursor.execute(
+                """
+                UPDATE training_videos
+                SET display_order = %s
+                WHERE id = %s
+                """,
+                (index, video_id)
+            )
+
+        conn.commit()
+
+        return {
+            "message": "Training videos reordered successfully"
+        }
+
+    except Exception as e:
+
+        conn.rollback()
+
+        return {
+            "error": str(e)
+        }
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
+
+@app.put("/training-videos/{video_id}")
+def update_training_video(
+    video_id: int,
+    video: TrainingVideoUpdate
+):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            UPDATE training_videos
+            SET
+                title = %s,
+                description = %s,
+                video_source = %s,
+                video_url = %s
+            WHERE id = %s
+            """,
+            (
+                video.title,
+                video.description,
+                video.video_source,
+                video.video_url,
+                video_id
+            )
+        )
+
+        conn.commit()
+
+        return {
+            "message": "Training video updated successfully"
+        }
+
+    except Exception as e:
+
+        conn.rollback()
+
+        return {
+            "error": str(e)
+        }
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
+
+@app.delete("/training-videos/{video_id}")
+def delete_training_video(video_id: int):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            DELETE FROM training_videos
+            WHERE id = %s
+            """,
+            (video_id,)
+        )
+
+        conn.commit()
+
+        return {
+            "message": "Training video deleted successfully"
+        }
+
+    except Exception as e:
+
+        conn.rollback()
+
+        return {
+            "error": str(e)
+        }
+
+    finally:
+
+        cursor.close()
+        conn.close()

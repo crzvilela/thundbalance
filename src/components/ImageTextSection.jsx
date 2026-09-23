@@ -9,7 +9,7 @@ import { BLANK_IMAGE_PLACEHOLDER } from '../utils/placeholderImage'
 // from "+ Add Section" for new content that needs media without a bespoke
 // component.
 function ImageTextSection({ sectionId }) {
-  const { section, isEditMode, isSelected, onSectionClick, visible } = useSectionSelection(sectionId, 'Image + Text')
+  const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'Image + Text')
 
   if (!visible && !isEditMode) return null
 
@@ -55,6 +55,7 @@ function ImageTextSection({ sectionId }) {
             path={`sections.${sectionId}.eyebrow`}
             styleObj={`sections.${sectionId}.eyebrowStyle`}
             label="Eyebrow"
+            style={{ fontFamily: theme.typography.accentFont }}
             className="uppercase tracking-[5px] text-sm text-gray-400 mb-6"
           />
 
@@ -63,7 +64,7 @@ function ImageTextSection({ sectionId }) {
             path={`sections.${sectionId}.title`}
             styleObj={`sections.${sectionId}.titleStyle`}
             label="Title"
-            style={{ fontFamily: 'Bebas Neue' }}
+            style={{ fontFamily: theme.typography.headingFont }}
             className="text-4xl sm:text-5xl md:text-7xl leading-none mb-8"
           />
 
@@ -72,6 +73,7 @@ function ImageTextSection({ sectionId }) {
             path={`sections.${sectionId}.body`}
             styleObj={`sections.${sectionId}.bodyStyle`}
             label="Body"
+            style={{ fontFamily: theme.typography.bodyFont }}
             className="text-lg leading-8 text-gray-300 block"
           />
         </div>

@@ -1,9 +1,12 @@
 import { useRef, useState } from 'react'
 import { useLandingContent } from '../../content/LandingContentContext'
 import { getPath } from '../../utils/objectPath'
+import { resolveText, setTextForLanguage } from '../../utils/multilingual'
+import { useI18n } from '../../i18n/I18nContext'
 import { resolveImageUrl, uploadLandingImage, uploadLandingVideo } from '../../api/landingPage'
 import { isKnownEmbedProvider } from '../../utils/videoEmbed'
-import { SECTION_LABELS, SECTION_TYPE_INFO, makeDefaultServiceItem, makeDefaultPricingPlan } from '../../content/defaultContent'
+import { SECTION_LABELS, SECTION_TYPE_INFO, makeDefaultServiceItem, makeDefaultPricingPlan, makeDefaultTestimonialMedia } from '../../content/defaultContent'
+import ConfirmDialog from './ConfirmDialog'
 import {
   FieldGroup,
   TextField,
@@ -57,6 +60,13 @@ const VIDEO_TEXT_POSITION_OPTIONS = [
   { value: 'below', label: 'Below Video' }
 ]
 
+const FONT_OPTIONS = [
+  { value: 'Bebas Neue', label: 'Bebas Neue' },
+  { value: 'Inter', label: 'Inter' },
+  { value: 'Roboto', label: 'Roboto' },
+  { value: 'Aldrich', label: 'Aldrich' }
+]
+
 export default function PropertiesPanel() {
   const { content, selection, select } = useLandingContent()
 
@@ -75,6 +85,9 @@ export default function PropertiesPanel() {
         )}
         {selection?.type === 'video' && (
           <VideoPanel key={selection.path} selection={selection} onClose={() => select(null)} />
+        )}
+        {selection?.type === 'testimonialMedia' && (
+          <TestimonialMediaPanel key={selection.path} selection={selection} onClose={() => select(null)} />
         )}
         {selection?.type === 'button' && (
           <ButtonPanel key={selection.path} selection={selection} onClose={() => select(null)} />
@@ -125,8 +138,24 @@ function ThemePanel({ content }) {
       <ColorField label="Border" value={colors.border} onChange={(v) => updateField('theme.colors.border', v)} />
 
       <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-8">Typography</p>
-      <TextField label="Heading Font" value={typography.headingFont} onChange={(v) => updateField('theme.typography.headingFont', v)} />
-      <TextField label="Body Font" value={typography.bodyFont} onChange={(v) => updateField('theme.typography.bodyFont', v)} />
+      <SelectField
+        label="Heading Font"
+        value={typography.headingFont}
+        options={FONT_OPTIONS}
+        onChange={(v) => updateField('theme.typography.headingFont', v)}
+      />
+      <SelectField
+        label="Body Font"
+        value={typography.bodyFont}
+        options={FONT_OPTIONS}
+        onChange={(v) => updateField('theme.typography.bodyFont', v)}
+      />
+      <SelectField
+        label="Accent Font (buttons, labels)"
+        value={typography.accentFont}
+        options={FONT_OPTIONS}
+        onChange={(v) => updateField('theme.typography.accentFont', v)}
+      />
       <TextField label="Button Font Size" value={typography.buttonSize} onChange={(v) => updateField('theme.typography.buttonSize', v)} />
 
       <p className="text-[11px] text-gray-500 mt-6">
@@ -191,6 +220,7 @@ function SectionPanel({ sectionKey, onClose }) {
       {section.type === 'contact' && <ContactImageFields sectionKey={sectionKey} section={section} updateField={updateField} />}
       {section.type === 'services' && <ServicesSectionFields sectionKey={sectionKey} content={content} updateField={updateField} />}
       {section.type === 'pricing' && <PricingSectionFields sectionKey={sectionKey} content={content} updateField={updateField} />}
+      {section.type === 'testimonials' && <TestimonialsMediaFields sectionKey={sectionKey} content={content} updateField={updateField} />}
       {section.type === 'imageText' && <ImageTextSectionFields sectionKey={sectionKey} section={section} updateField={updateField} />}
       {section.type === 'videoBlock' && <VideoBlockSectionFields sectionKey={sectionKey} section={section} updateField={updateField} />}
       {sectionKey === 'navbar' && <NavbarFields section={section} updateField={updateField} />}
@@ -427,6 +457,49 @@ function VideoFields({ path, video, updateField }) {
 }
 
 function AboutTextFields({ sectionKey, section, updateField }) {
+  const { language, setLanguage, supportedLanguages } = useI18n()
+  const carousel = section.carousel || []
+
+  const [uploading, setUploading] = useState(false)
+  const [deleteIndex, setDeleteIndex] = useState(null)
+  const inputRef = useRef(null)
+
+  const carouselPath = `sections.${sectionKey}.carousel`
+
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const url = await uploadLandingImage(file)
+      updateField(carouselPath, [...carousel, { image: url, caption: '' }])
+    } catch (err) {
+      console.error(err)
+      alert('Could not upload image. Please try a smaller file.')
+    } finally {
+      setUploading(false)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  const removePhoto = (index) => {
+    updateField(carouselPath, carousel.filter((_, i) => i !== index))
+    setDeleteIndex(null)
+  }
+
+  const movePhoto = (index, direction) => {
+    const target = index + direction
+    if (target < 0 || target >= carousel.length) return
+    const next = [...carousel]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    updateField(carouselPath, next)
+  }
+
+  const updateCaption = (index, caption) => {
+    const next = carousel.map((item, i) => (i === index ? { ...item, caption: setTextForLanguage(item.caption, language, caption) } : item))
+    updateField(carouselPath, next)
+  }
+
   return (
     <>
       <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">Text</p>
@@ -440,6 +513,80 @@ function AboutTextFields({ sectionKey, section, updateField }) {
         image={section.image}
         updateField={updateField}
         label="Content Image (optional)"
+      />
+
+      <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">360° View</p>
+      <FieldGroup
+        label="360° embed URL"
+        hint='In Google Maps: open the 360° photo → Share or embed image → Embed a map → copy the src="..." URL and paste it here. Leave empty to hide this block.'
+      >
+        <textarea
+          value={section.embed360Url ?? ''}
+          rows={2}
+          onChange={(e) => updateField(`sections.${sectionKey}.embed360Url`, e.target.value)}
+          className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-emerald-500 transition resize-none"
+        />
+      </FieldGroup>
+
+      <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">Photo Carousel</p>
+
+      <FieldGroup label="Editing Language" hint="Applies to the photo captions below.">
+        <ButtonRow>
+          {supportedLanguages.map((lang) => (
+            <SmallButton key={lang} variant={language === lang ? 'primary' : 'default'} onClick={() => setLanguage(lang)}>
+              {lang.toUpperCase()}
+            </SmallButton>
+          ))}
+        </ButtonRow>
+      </FieldGroup>
+
+      <p className="text-[11px] text-gray-500 mb-3">
+        Carousel Photos ({carousel.length})
+      </p>
+
+      {carousel.map((item, index) => (
+        <div key={index} className="border border-white/10 rounded-lg px-3 py-2 mb-2">
+          <div className="flex items-center gap-3 mb-2">
+            {resolveImageUrl(item.image) && (
+              <img src={resolveImageUrl(item.image)} alt="" className="w-12 h-12 rounded object-cover shrink-0" />
+            )}
+            <input
+              type="text"
+              value={resolveText(item.caption, language)}
+              placeholder={`Caption (${language.toUpperCase()}, optional)`}
+              onChange={(e) => updateCaption(index, e.target.value)}
+              className="flex-1 min-w-0 bg-[#111] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-emerald-500 transition"
+            />
+            <button
+              onClick={() => setDeleteIndex(index)}
+              className="text-red-400 text-xs uppercase tracking-wider hover:text-red-300 shrink-0"
+            >
+              Remove
+            </button>
+          </div>
+          <ButtonRow>
+            <SmallButton onClick={() => movePhoto(index, -1)} disabled={index === 0}>Move Up</SmallButton>
+            <SmallButton onClick={() => movePhoto(index, 1)} disabled={index === carousel.length - 1}>Move Down</SmallButton>
+          </ButtonRow>
+        </div>
+      ))}
+
+      <ButtonRow>
+        <SmallButton onClick={() => inputRef.current?.click()} disabled={uploading}>
+          {uploading ? 'Uploading…' : '+ Add Photo'}
+        </SmallButton>
+      </ButtonRow>
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />
+
+      <ConfirmDialog
+        open={deleteIndex !== null}
+        title="Remove this photo?"
+        description="This cannot be undone with the undo button once saved."
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={() => removePhoto(deleteIndex)}
+        onCancel={() => setDeleteIndex(null)}
       />
     </>
   )
@@ -569,6 +716,9 @@ function NavbarFields({ section, updateField }) {
 }
 
 function FooterFields({ section, updateField }) {
+  const address = section.address || {}
+  const { language, setLanguage, supportedLanguages } = useI18n()
+
   return (
     <>
       <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">Brand</p>
@@ -578,11 +728,91 @@ function FooterFields({ section, updateField }) {
         value={section.showBrandText !== false}
         onChange={(v) => updateField('sections.footer.showBrandText', v)}
       />
+
+      <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">Address</p>
+
+      <FieldGroup label="Editing Language" hint="Applies to the address text below (the map link is the same in every language).">
+        <ButtonRow>
+          {supportedLanguages.map((lang) => (
+            <SmallButton key={lang} variant={language === lang ? 'primary' : 'default'} onClick={() => setLanguage(lang)}>
+              {lang.toUpperCase()}
+            </SmallButton>
+          ))}
+        </ButtonRow>
+      </FieldGroup>
+
+      <TextField
+        label={`Address text (${language.toUpperCase()})`}
+        value={resolveText(address.text, language)}
+        onChange={(v) => updateField('sections.footer.address.text', setTextForLanguage(address.text, language, v))}
+      />
+      <TextField
+        label="Google Maps link (address click-through)"
+        value={address.mapsLink}
+        onChange={(v) => updateField('sections.footer.address.mapsLink', v)}
+      />
+
+      <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">Map &amp; 360°</p>
+      <FieldGroup
+        label="Map embed URL"
+        hint='In Google Maps: Share → Embed a map → copy the src="..." URL from the <iframe> code and paste it here.'
+      >
+        <textarea
+          value={section.mapEmbedUrl ?? ''}
+          rows={2}
+          onChange={(e) => updateField('sections.footer.mapEmbedUrl', e.target.value)}
+          className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-emerald-500 transition resize-none"
+        />
+      </FieldGroup>
+      <FieldGroup
+        label="360° / Street View embed URL"
+        hint='In Google Maps: open the 360° photo you want → Share or embed image → Embed a map → copy the src="..." URL and paste it here. Leave empty to hide this block.'
+      >
+        <textarea
+          value={section.streetView360EmbedUrl ?? ''}
+          rows={2}
+          onChange={(e) => updateField('sections.footer.streetView360EmbedUrl', e.target.value)}
+          className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-emerald-500 transition resize-none"
+        />
+      </FieldGroup>
+
+      <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">Contact Links</p>
+      <TextField
+        label="Contact us URL"
+        value={section.contactUsUrl}
+        onChange={(v) => updateField('sections.footer.contactUsUrl', v)}
+      />
+      <TextField
+        label="Join us (mailto link)"
+        value={section.joinUsEmail}
+        onChange={(v) => updateField('sections.footer.joinUsEmail', v)}
+      />
+      <TextField
+        label="Contact email"
+        value={section.contactEmail}
+        onChange={(v) => updateField('sections.footer.contactEmail', v)}
+      />
+      <TextField
+        label="WhatsApp number (display text)"
+        value={section.whatsappNumber}
+        onChange={(v) => updateField('sections.footer.whatsappNumber', v)}
+      />
+      <TextField
+        label="WhatsApp link (wa.me/...)"
+        value={section.whatsappLink}
+        onChange={(v) => updateField('sections.footer.whatsappLink', v)}
+      />
+      <TextField
+        label="Instagram URL"
+        value={section.instagramUrl}
+        onChange={(v) => updateField('sections.footer.instagramUrl', v)}
+      />
     </>
   )
 }
 
 function ServicesSectionFields({ sectionKey, content, updateField }) {
+  const { language } = useI18n()
   const items = content.sections[sectionKey]?.items || []
   const path = `sections.${sectionKey}.items`
 
@@ -611,7 +841,7 @@ function ServicesSectionFields({ sectionKey, content, updateField }) {
       {items.map((item, index) => (
         <div key={index} className="border border-white/10 rounded-lg px-3 py-2 mb-2">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm truncate">{item.title || `Item ${index + 1}`}</span>
+            <span className="text-sm truncate">{resolveText(item.title, language) || `Item ${index + 1}`}</span>
             <button
               onClick={() => removeItem(index)}
               className="text-red-400 text-xs uppercase tracking-wider hover:text-red-300"
@@ -632,6 +862,7 @@ function ServicesSectionFields({ sectionKey, content, updateField }) {
 }
 
 function PricingSectionFields({ sectionKey, content, updateField }) {
+  const { language } = useI18n()
   const plans = content.sections[sectionKey]?.plans || []
   const path = `sections.${sectionKey}.plans`
 
@@ -658,7 +889,7 @@ function PricingSectionFields({ sectionKey, content, updateField }) {
 
   const addFeature = (index) => {
     const plan = plans[index]
-    const newFeatures = [...(plan.features || []), 'New feature']
+    const newFeatures = [...(plan.features || []), { en: 'New feature', es: 'Nueva característica', ca: 'Nova característica' }]
     const newPlans = plans.map((p, i) => (i === index ? { ...p, features: newFeatures } : p))
     updateField(path, newPlans)
   }
@@ -679,7 +910,7 @@ function PricingSectionFields({ sectionKey, content, updateField }) {
       {plans.map((plan, index) => (
         <div key={index} className="border border-white/10 rounded-lg px-3 py-3 mb-3">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium truncate">{plan.name || `Plan ${index + 1}`}</span>
+            <span className="text-sm font-medium truncate">{resolveText(plan.name, language) || `Plan ${index + 1}`}</span>
             <button
               onClick={() => removePlan(index)}
               className="text-red-400 text-xs uppercase tracking-wider hover:text-red-300"
@@ -702,7 +933,7 @@ function PricingSectionFields({ sectionKey, content, updateField }) {
           <p className="text-[11px] uppercase tracking-wider text-gray-500 mb-2">Features</p>
           {(plan.features || []).map((feature, featureIndex) => (
             <div key={featureIndex} className="flex items-center justify-between text-xs text-gray-300 mb-1">
-              <span className="truncate">• {feature}</span>
+              <span className="truncate">• {resolveText(feature, language)}</span>
               <button
                 onClick={() => removeFeature(index, featureIndex)}
                 className="text-red-400 hover:text-red-300 ml-2"
@@ -725,21 +956,228 @@ function PricingSectionFields({ sectionKey, content, updateField }) {
   )
 }
 
+function TestimonialsMediaFields({ sectionKey, content, updateField }) {
+  const { language } = useI18n()
+  const media = content.sections[sectionKey]?.media || []
+  const path = `sections.${sectionKey}.media`
+
+  const [adding, setAdding] = useState(false)
+  const [draftType, setDraftType] = useState('image')
+  const [draftVideoSourceType, setDraftVideoSourceType] = useState('upload')
+  const [draftUrl, setDraftUrl] = useState('')
+  const [draftClientName, setDraftClientName] = useState('')
+  const [draftCaption, setDraftCaption] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [deleteIndex, setDeleteIndex] = useState(null)
+  const inputRef = useRef(null)
+
+  const resetDraft = () => {
+    setAdding(false)
+    setDraftType('image')
+    setDraftVideoSourceType('upload')
+    setDraftUrl('')
+    setDraftClientName('')
+    setDraftCaption('')
+  }
+
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const url = draftType === 'video' ? await uploadLandingVideo(file) : await uploadLandingImage(file)
+      setDraftUrl(url)
+    } catch (err) {
+      console.error(err)
+      alert('Could not upload file. Please try a smaller one.')
+    } finally {
+      setUploading(false)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  const confirmAdd = () => {
+    if (!draftUrl.trim()) {
+      alert('Please add an image, upload a video, or paste a video link first.')
+      return
+    }
+
+    const videoSourceType = draftType === 'video'
+      ? (draftVideoSourceType === 'upload' ? 'upload' : (/vimeo\.com/i.test(draftUrl) ? 'vimeo' : 'youtube'))
+      : ''
+
+    const newItem = {
+      ...makeDefaultTestimonialMedia(draftType),
+      url: draftUrl,
+      videoSourceType,
+      clientName: draftClientName,
+      caption: draftCaption
+    }
+
+    updateField(path, [...media, newItem])
+    resetDraft()
+  }
+
+  const removeItem = (index) => {
+    updateField(path, media.filter((_, i) => i !== index))
+    setDeleteIndex(null)
+  }
+
+  const moveItem = (index, direction) => {
+    const target = index + direction
+    if (target < 0 || target >= media.length) return
+    const next = [...media]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    updateField(path, next)
+  }
+
+  return (
+    <>
+      <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">
+        Testimonial Media ({media.length})
+      </p>
+
+      {media.map((item, index) => (
+        <div key={index} className="flex items-center gap-3 border border-white/10 rounded-lg px-3 py-2 mb-2">
+          <div className="w-12 h-12 rounded bg-[#111] overflow-hidden shrink-0 flex items-center justify-center text-gray-500">
+            {item.type === 'image' ? (
+              resolveImageUrl(item.url) && <img src={resolveImageUrl(item.url)} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-lg">▶</span>
+            )}
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <p className="text-sm truncate">{resolveText(item.clientName, language) || `Item ${index + 1}`}</p>
+            {resolveText(item.caption, language) && <p className="text-xs text-gray-500 truncate">{resolveText(item.caption, language)}</p>}
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            <SmallButton onClick={() => moveItem(index, -1)} disabled={index === 0}>Up</SmallButton>
+            <SmallButton onClick={() => moveItem(index, 1)} disabled={index === media.length - 1}>Down</SmallButton>
+          </div>
+
+          <button
+            onClick={() => setDeleteIndex(index)}
+            className="text-red-400 text-xs uppercase tracking-wider hover:text-red-300 shrink-0"
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+
+      {adding ? (
+        <div className="border border-white/10 rounded-lg p-3 mb-3">
+          <FieldGroup label="Media Type">
+            <ButtonRow>
+              <SmallButton variant={draftType === 'image' ? 'primary' : 'default'} onClick={() => { setDraftType('image'); setDraftUrl('') }}>
+                Image
+              </SmallButton>
+              <SmallButton variant={draftType === 'video' ? 'primary' : 'default'} onClick={() => { setDraftType('video'); setDraftUrl('') }}>
+                Video
+              </SmallButton>
+            </ButtonRow>
+          </FieldGroup>
+
+          {draftType === 'image' ? (
+            <>
+              {draftUrl && (
+                <img src={resolveImageUrl(draftUrl)} alt="" className="w-full h-24 object-cover rounded-lg mb-2 border border-white/10" />
+              )}
+              <ButtonRow>
+                <SmallButton onClick={() => inputRef.current?.click()} disabled={uploading}>
+                  {uploading ? 'Uploading…' : draftUrl ? 'Replace Image' : 'Upload Image'}
+                </SmallButton>
+              </ButtonRow>
+              <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />
+            </>
+          ) : (
+            <>
+              <FieldGroup label="Video Source">
+                <ButtonRow>
+                  <SmallButton variant={draftVideoSourceType === 'upload' ? 'primary' : 'default'} onClick={() => { setDraftVideoSourceType('upload'); setDraftUrl('') }}>
+                    Upload
+                  </SmallButton>
+                  <SmallButton variant={draftVideoSourceType !== 'upload' ? 'primary' : 'default'} onClick={() => { setDraftVideoSourceType('link'); setDraftUrl('') }}>
+                    YouTube/Vimeo Link
+                  </SmallButton>
+                </ButtonRow>
+              </FieldGroup>
+
+              {draftVideoSourceType === 'upload' ? (
+                <>
+                  <ButtonRow>
+                    <SmallButton onClick={() => inputRef.current?.click()} disabled={uploading}>
+                      {uploading ? 'Uploading…' : draftUrl ? 'Replace Video' : 'Upload Video'}
+                    </SmallButton>
+                  </ButtonRow>
+                  <input ref={inputRef} type="file" accept="video/mp4,video/webm,video/quicktime" className="hidden" onChange={handleUpload} />
+                  {draftUrl && <p className="text-[11px] text-emerald-400 mb-3">Video uploaded.</p>}
+                </>
+              ) : (
+                <TextField
+                  label="YouTube or Vimeo link"
+                  value={draftUrl}
+                  onChange={setDraftUrl}
+                  placeholder="https://www.youtube.com/watch?v=..."
+                />
+              )}
+            </>
+          )}
+
+          <TextField label="Client Name (optional)" value={draftClientName} onChange={setDraftClientName} placeholder="e.g. Maria S." />
+          <TextField label="Caption (optional)" value={draftCaption} onChange={setDraftCaption} placeholder="e.g. Lost 8kg in 3 months" />
+
+          <ButtonRow>
+            <SmallButton variant="primary" onClick={confirmAdd}>Add</SmallButton>
+            <SmallButton onClick={resetDraft}>Cancel</SmallButton>
+          </ButtonRow>
+        </div>
+      ) : (
+        <SmallButton variant="primary" onClick={() => setAdding(true)}>+ Add Testimonial Media</SmallButton>
+      )}
+
+      <ConfirmDialog
+        open={deleteIndex !== null}
+        title="Remove this testimonial media?"
+        description="This cannot be undone with the undo button once saved."
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={() => removeItem(deleteIndex)}
+        onCancel={() => setDeleteIndex(null)}
+      />
+    </>
+  )
+}
+
 // --- Text panel ---------------------------------------------------------------
 
 function TextPanel({ selection, onClose }) {
   const { content, updateField } = useLandingContent()
-  const value = getPath(content, selection.path, '')
+  const { language, setLanguage, supportedLanguages } = useI18n()
+  const raw = getPath(content, selection.path, '')
+  const value = resolveText(raw, language)
   const styleObj = selection.styleObj ? getPath(content, selection.styleObj, {}) : null
 
   return (
     <div>
       <PanelHeader title={selection.label || 'Text'} subtitle="Text content" onClose={onClose} />
 
+      <FieldGroup label="Editing Language" hint="This also switches the preview — you're editing exactly what visitors see in that language.">
+        <ButtonRow>
+          {supportedLanguages.map((lang) => (
+            <SmallButton key={lang} variant={language === lang ? 'primary' : 'default'} onClick={() => setLanguage(lang)}>
+              {lang.toUpperCase()}
+            </SmallButton>
+          ))}
+        </ButtonRow>
+      </FieldGroup>
+
       <TextAreaField
-        label="Content"
+        label={`Content (${language.toUpperCase()})`}
         value={value}
-        onChange={(v) => updateField(selection.path, v)}
+        onChange={(v) => updateField(selection.path, setTextForLanguage(raw, language, v))}
       />
 
       {styleObj && Object.keys(styleObj).length > 0 && (
@@ -942,11 +1380,126 @@ function VideoPanel({ selection, onClose }) {
   )
 }
 
+// --- Testimonial media panel (click-to-edit in canvas) -----------------------
+
+function TestimonialMediaPanel({ selection, onClose }) {
+  const { content, updateField } = useLandingContent()
+  const { language, setLanguage, supportedLanguages } = useI18n()
+  const item = getPath(content, selection.path, {})
+  const isVideo = item.type === 'video'
+  const isVideoUpload = isVideo && item.videoSourceType === 'upload'
+  const [uploading, setUploading] = useState(false)
+  const inputRef = useRef(null)
+
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const url = isVideo ? await uploadLandingVideo(file) : await uploadLandingImage(file)
+      updateField(`${selection.path}.url`, url)
+      if (isVideo) updateField(`${selection.path}.videoSourceType`, 'upload')
+    } catch (err) {
+      console.error(err)
+      alert('Could not upload file. Please try a smaller one.')
+    } finally {
+      setUploading(false)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  return (
+    <div>
+      <PanelHeader title={selection.label || 'Testimonial Media'} subtitle="Client photo or video" onClose={onClose} />
+
+      <FieldGroup label="Media Type">
+        <ButtonRow>
+          <SmallButton variant={!isVideo ? 'primary' : 'default'} onClick={() => updateField(`${selection.path}.type`, 'image')}>
+            Image
+          </SmallButton>
+          <SmallButton variant={isVideo ? 'primary' : 'default'} onClick={() => updateField(`${selection.path}.type`, 'video')}>
+            Video
+          </SmallButton>
+        </ButtonRow>
+      </FieldGroup>
+
+      {isVideo && (
+        <FieldGroup label="Video Source">
+          <ButtonRow>
+            <SmallButton variant={isVideoUpload ? 'primary' : 'default'} onClick={() => updateField(`${selection.path}.videoSourceType`, 'upload')}>
+              Upload
+            </SmallButton>
+            <SmallButton variant={!isVideoUpload ? 'primary' : 'default'} onClick={() => updateField(`${selection.path}.videoSourceType`, 'youtube')}>
+              YouTube/Vimeo Link
+            </SmallButton>
+          </ButtonRow>
+        </FieldGroup>
+      )}
+
+      {(!isVideo || isVideoUpload) ? (
+        <>
+          {!isVideo && resolveImageUrl(item.url) && (
+            <img src={resolveImageUrl(item.url)} alt="" className="w-full h-32 object-cover rounded-lg mb-3 border border-white/10" />
+          )}
+          <ButtonRow>
+            <SmallButton onClick={() => inputRef.current?.click()} disabled={uploading}>
+              {uploading ? 'Uploading…' : `Replace ${isVideo ? 'Video' : 'Image'}`}
+            </SmallButton>
+          </ButtonRow>
+          <input
+            ref={inputRef}
+            type="file"
+            accept={isVideo ? 'video/mp4,video/webm,video/quicktime' : 'image/*'}
+            className="hidden"
+            onChange={handleUpload}
+          />
+        </>
+      ) : (
+        <TextField
+          label="YouTube or Vimeo link"
+          value={item.url}
+          onChange={(v) => {
+            updateField(`${selection.path}.url`, v)
+            updateField(`${selection.path}.videoSourceType`, /vimeo\.com/i.test(v) ? 'vimeo' : 'youtube')
+          }}
+          placeholder="https://www.youtube.com/watch?v=..."
+        />
+      )}
+
+      <FieldGroup label="Editing Language" hint="Applies to the client name and caption below.">
+        <ButtonRow>
+          {supportedLanguages.map((lang) => (
+            <SmallButton key={lang} variant={language === lang ? 'primary' : 'default'} onClick={() => setLanguage(lang)}>
+              {lang.toUpperCase()}
+            </SmallButton>
+          ))}
+        </ButtonRow>
+      </FieldGroup>
+
+      <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">Caption</p>
+      <TextField
+        label={`Client Name (${language.toUpperCase()})`}
+        value={resolveText(item.clientName, language)}
+        onChange={(v) => updateField(`${selection.path}.clientName`, setTextForLanguage(item.clientName, language, v))}
+        placeholder="e.g. Maria S."
+      />
+      <TextField
+        label={`Caption (${language.toUpperCase()})`}
+        value={resolveText(item.caption, language)}
+        onChange={(v) => updateField(`${selection.path}.caption`, setTextForLanguage(item.caption, language, v))}
+        placeholder="e.g. Lost 8kg in 3 months"
+      />
+    </div>
+  )
+}
+
 // --- Button panel ---------------------------------------------------------------
 
 function ButtonPanel({ selection, onClose }) {
   const { content, updateField } = useLandingContent()
+  const { language, setLanguage, supportedLanguages } = useI18n()
   const btn = getPath(content, selection.path, {})
+  const buttonText = resolveText(btn.text, language)
 
   const set = (field, value) => updateField(`${selection.path}.${field}`, value)
 
@@ -954,7 +1507,21 @@ function ButtonPanel({ selection, onClose }) {
     <div>
       <PanelHeader title={selection.label || 'Button'} subtitle="Call-to-action button" onClose={onClose} />
 
-      <TextField label="Button Text" value={btn.text} onChange={(v) => set('text', v)} />
+      <FieldGroup label="Editing Language" hint="This also switches the preview — you're editing exactly what visitors see in that language.">
+        <ButtonRow>
+          {supportedLanguages.map((lang) => (
+            <SmallButton key={lang} variant={language === lang ? 'primary' : 'default'} onClick={() => setLanguage(lang)}>
+              {lang.toUpperCase()}
+            </SmallButton>
+          ))}
+        </ButtonRow>
+      </FieldGroup>
+
+      <TextField
+        label={`Button Text (${language.toUpperCase()})`}
+        value={buttonText}
+        onChange={(v) => set('text', setTextForLanguage(btn.text, language, v))}
+      />
       <TextField label="Link / URL" value={btn.link} onChange={(v) => set('link', v)} />
       <ColorField label="Background Color" value={btn.bgColor || 'transparent'} onChange={(v) => set('bgColor', v)} />
       <ColorField label="Text Color" value={btn.textColor || '#ffffff'} onChange={(v) => set('textColor', v)} />

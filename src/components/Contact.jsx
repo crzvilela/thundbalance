@@ -1,9 +1,11 @@
 import { EditableText, EditableImage, useSectionSelection, SectionEditOverlay } from './editor/Editable'
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
 import { BLANK_IMAGE_PLACEHOLDER } from '../utils/placeholderImage'
+import { useI18n } from '../i18n/I18nContext'
 
 function Contact({ sectionId }) {
-  const { section, isEditMode, isSelected, onSectionClick, visible } = useSectionSelection(sectionId, 'Contact')
+  const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'Contact')
+  const { t } = useI18n()
 
   if (!visible && !isEditMode) return null
 
@@ -16,6 +18,7 @@ function Contact({ sectionId }) {
         path={`sections.${sectionId}.eyebrow`}
         styleObj={`sections.${sectionId}.eyebrowStyle`}
         label="Contact Eyebrow"
+        style={{ fontFamily: theme.typography.accentFont }}
         className="uppercase tracking-[5px] text-sm text-gray-500 mb-6"
       />
 
@@ -24,7 +27,7 @@ function Contact({ sectionId }) {
         path={`sections.${sectionId}.title`}
         styleObj={`sections.${sectionId}.titleStyle`}
         label="Contact Title"
-        style={{ fontFamily: 'Bebas Neue' }}
+        style={{ fontFamily: theme.typography.headingFont }}
         className="text-4xl sm:text-5xl md:text-7xl mb-8"
       />
 
@@ -33,6 +36,7 @@ function Contact({ sectionId }) {
         path={`sections.${sectionId}.body`}
         styleObj={`sections.${sectionId}.bodyStyle`}
         label="Contact Body"
+        style={{ fontFamily: theme.typography.bodyFont }}
         className="text-gray-600 text-lg mb-16 block"
       />
 
@@ -40,26 +44,27 @@ function Contact({ sectionId }) {
 
         <input
           type="text"
-          placeholder="Your Name"
+          placeholder={t('contact_placeholder_name')}
           className="border border-black/20 px-6 py-4 outline-none"
         />
 
         <input
           type="email"
-          placeholder="Your Email"
+          placeholder={t('contact_placeholder_email')}
           className="border border-black/20 px-6 py-4 outline-none"
         />
 
         <textarea
-          placeholder="Your Message"
+          placeholder={t('contact_placeholder_message')}
           rows="6"
           className="border border-black/20 px-6 py-4 outline-none resize-none"
         ></textarea>
 
         <button
+          style={{ fontFamily: theme.typography.accentFont }}
           className="mt-10 border border-white px-10 py-4 uppercase text-sm tracking-[3px] hover:bg-white hover:text-black transition-all duration-500 hover:scale-105 hover:tracking-[5px]"
         >
-          Send Message
+          {t('contact_button_send')}
         </button>
 
       </form>

@@ -6,7 +6,7 @@ import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/Section
 // above or below it. The "type: videoBlock" template an admin picks from
 // "+ Add Section" for a video-first section without a bespoke component.
 function VideoBlockSection({ sectionId }) {
-  const { section, isEditMode, isSelected, onSectionClick, visible } = useSectionSelection(sectionId, 'Video Block')
+  const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'Video Block')
 
   if (!visible && !isEditMode) return null
 
@@ -19,6 +19,7 @@ function VideoBlockSection({ sectionId }) {
         path={`sections.${sectionId}.eyebrow`}
         styleObj={`sections.${sectionId}.eyebrowStyle`}
         label="Eyebrow"
+        style={{ fontFamily: theme.typography.accentFont }}
         className="uppercase tracking-[5px] text-sm text-gray-400 mb-6"
       />
 
@@ -27,7 +28,7 @@ function VideoBlockSection({ sectionId }) {
         path={`sections.${sectionId}.title`}
         styleObj={`sections.${sectionId}.titleStyle`}
         label="Title"
-        style={{ fontFamily: 'Bebas Neue' }}
+        style={{ fontFamily: theme.typography.headingFont }}
         className="text-4xl sm:text-5xl md:text-7xl"
       />
     </div>

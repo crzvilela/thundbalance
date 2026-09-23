@@ -6,7 +6,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { EditableText, EditableImage, useSectionSelection, SectionEditOverlay } from './editor/Editable'
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
 import { useLandingContent } from '../content/LandingContentContext'
-import { BLANK_IMAGE_PLACEHOLDER } from '../utils/placeholderImage'
+import { useI18n } from '../i18n/I18nContext'
+import LanguageSwitcher from './LanguageSwitcher'
+import logo from '../assets/images/nuevo logo (1).png'
 
 function Navbar() {
 
@@ -19,8 +21,9 @@ function Navbar() {
   const navRef = useRef(null)
 
   const { content } = useLandingContent()
+  const { t } = useI18n()
 
-  const { section, isEditMode, isSelected, onSectionClick, visible } = useSectionSelection('navbar')
+  const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection('navbar')
 
   // Sections are now dynamic IDs, not fixed names, so the in-page anchor
   // links below need to look up whichever section instance currently has
@@ -81,16 +84,14 @@ function Navbar() {
 
   const brandBlock = (
     <div className="flex items-center gap-2 sm:gap-3">
-      {(section.logoImage || isEditMode) && (
-        <EditableImage
-          path="sections.navbar.logoImage"
-          defaultSrc={BLANK_IMAGE_PLACEHOLDER}
-          alt="Logo"
-          containerClassName="h-8 w-auto sm:h-10"
-          imageClassName="h-8 w-auto sm:h-10 object-contain"
-          label="Navbar Logo"
-        />
-      )}
+      <EditableImage
+        path="sections.navbar.logoImage"
+        defaultSrc={logo}
+        alt="Logo"
+        containerClassName="h-8 w-auto sm:h-10"
+        imageClassName="h-8 w-auto sm:h-10 object-contain"
+        label="Navbar Logo"
+      />
       {section.showBrandText !== false && (
         <EditableText
           as="span"
@@ -104,18 +105,35 @@ function Navbar() {
   )
 
   const guestLinks = [
-    { href: `#${aboutId}`, label: 'About' },
-    { href: `#${servicesId}`, label: 'Services' },
-    { href: `#${pricingId}`, label: 'Pricing' },
-    { href: `#${contactId}`, label: 'Contact' }
+    { href: `#${aboutId}`, label: t('nav_about') },
+    { href: `#${servicesId}`, label: t('nav_services') },
+    { href: `#${pricingId}`, label: t('nav_pricing') },
+    { href: `#${contactId}`, label: t('nav_contact') }
   ]
 
   const userLinks = [
-    { to: '/', label: 'Home' },
-    { to: '/dashboard', label: 'Dashboard' },
-    { to: '/profile', label: 'Profile' },
-    { to: '/my-sessions', label: 'Sessions' }
+    { to: '/', label: t('nav_home') },
+    { to: '/dashboard', label: t('nav_dashboard') },
+    { to: '/profile', label: t('nav_profile') },
+    { to: '/my-sessions', label: t('nav_sessions') }
   ]
+
+  const activeLinks = !user ? guestLinks : userLinks
+
+  // Links mix in-page anchors (href, scroll to a homepage section) and real
+  // routes (to, e.g. the About Us page) in the same list, so render each
+  // one with the right tag instead of assuming the whole list is one kind.
+  const renderNavLink = (link, onLinkClick, className = 'hover:text-gray-400 transition duration-300') => (
+    link.href ? (
+      <a href={link.href} onClick={onLinkClick} className={className}>
+        {link.label}
+      </a>
+    ) : (
+      <Link to={link.to} onClick={onLinkClick} className={className}>
+        {link.label}
+      </Link>
+    )
+  )
 
   return (
     <nav
@@ -145,41 +163,13 @@ function Navbar() {
 
         <div className="flex items-center gap-3 sm:gap-4 md:gap-10">
 
-          {!user ? (
-
-            <ul className="hidden md:flex gap-8 text-sm uppercase tracking-wider">
-
-              {guestLinks.map((link) => (
-                <li key={link.href}>
-                  <a
-                    href={link.href}
-                    className="hover:text-gray-400 transition duration-300"
-                  >
-                    {link.label}
-                  </a>
-                </li>
-              ))}
-
-            </ul>
-
-          ) : (
-
-            <ul className="hidden md:flex gap-8 text-sm uppercase tracking-wider">
-
-              {userLinks.map((link) => (
-                <li key={link.to}>
-                  <Link
-                    to={link.to}
-                    className="hover:text-gray-400 transition duration-300"
-                  >
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-
-            </ul>
-
-          )}
+          <ul className="hidden md:flex gap-8 text-sm uppercase tracking-wider" style={{ fontFamily: theme.typography.accentFont }}>
+            {activeLinks.map((link) => (
+              <li key={link.href || link.to}>
+                {renderNavLink(link)}
+              </li>
+            ))}
+          </ul>
 
           {/* Hamburger — public site only, hidden from md up (desktop nav takes over) */}
           {!isEditMode && (
@@ -189,7 +179,7 @@ function Navbar() {
                 e.stopPropagation()
                 setMobileMenuOpen((v) => !v)
               }}
-              aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+              aria-label={mobileMenuOpen ? t('nav_aria_close_menu') : t('nav_aria_open_menu')}
               aria-expanded={mobileMenuOpen}
               className="md:hidden w-11 h-11 flex items-center justify-center rounded-lg hover:bg-white/10 transition shrink-0"
             >
@@ -213,22 +203,24 @@ function Navbar() {
             </button>
           )}
 
+          {!isEditMode && <LanguageSwitcher className="hidden md:block" />}
+
           {!user ? (
 
-            <div className="flex items-center gap-1.5 sm:gap-4">
+            <div className="flex items-center gap-1.5 sm:gap-4" style={{ fontFamily: theme.typography.accentFont }}>
 
               <Link
                 to="/training-tips"
                 className="inline-flex items-center hover:text-gray-400 transition duration-300 uppercase text-xs md:text-sm px-1"
               >
-                Login
+                {t('nav_login')}
               </Link>
 
               <Link
                 to="/register"
                 className="inline-flex items-center border border-white/20 px-2.5 sm:px-3 md:px-4 py-2.5 rounded-lg hover:bg-white hover:text-black transition duration-300 uppercase text-xs md:text-sm whitespace-nowrap"
               >
-                Register
+                {t('nav_register')}
               </Link>
 
             </div>
@@ -268,35 +260,35 @@ function Navbar() {
                     to="/dashboard"
                     className="block px-4 py-3 hover:bg-white/10 transition duration-300"
                   >
-                    Dashboard
+                    {t('nav_dashboard')}
                   </Link>
 
                   <Link
                     to="/profile"
                     className="block px-4 py-3 hover:bg-white/10 transition duration-300"
                   >
-                    Profile
+                    {t('nav_profile')}
                   </Link>
 
                   <Link
                     to="/my-sessions"
                     className="block px-4 py-3 hover:bg-white/10 transition duration-300"
                   >
-                    My Sessions
+                    {t('nav_my_sessions')}
                   </Link>
 
                   <Link
                     to="/book-session"
                     className="block px-4 py-3 hover:bg-white/10 transition duration-300"
                   >
-                    Book Session
+                    {t('nav_book_session')}
                   </Link>
 
                   <button
                     onClick={handleLogout}
                     className="w-full text-left px-4 py-3 text-red-400 hover:bg-red-500 hover:text-white transition duration-300"
                   >
-                    Logout
+                    {t('nav_logout')}
                   </button>
 
                 </div>
@@ -322,39 +314,20 @@ function Navbar() {
               transition={{ duration: 0.2 }}
               className="md:hidden relative z-10 max-w-7xl mx-auto mt-3 backdrop-blur-md bg-black/80 border border-white/10 rounded-2xl overflow-hidden"
             >
-              <ul className="flex flex-col divide-y divide-white/10 text-sm uppercase tracking-wider">
-
-                {!user ? (
-
-                  guestLinks.map((link) => (
-                    <li key={link.href}>
-                      <a
-                        href={link.href}
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="block px-6 py-4 hover:bg-white/10 transition duration-200"
-                      >
-                        {link.label}
-                      </a>
-                    </li>
-                  ))
-
-                ) : (
-
-                  userLinks.map((link) => (
-                    <li key={link.to}>
-                      <Link
-                        to={link.to}
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="block px-6 py-4 hover:bg-white/10 transition duration-200"
-                      >
-                        {link.label}
-                      </Link>
-                    </li>
-                  ))
-
-                )}
-
+              <ul className="flex flex-col divide-y divide-white/10 text-sm uppercase tracking-wider" style={{ fontFamily: theme.typography.accentFont }}>
+                {activeLinks.map((link) => (
+                  <li key={link.href || link.to}>
+                    {renderNavLink(link, () => setMobileMenuOpen(false), 'block px-6 py-4 hover:bg-white/10 transition duration-200')}
+                  </li>
+                ))}
               </ul>
+
+              <div className="px-6 py-4 border-t border-white/10 flex items-center justify-between">
+                <span className="text-xs text-gray-500 uppercase tracking-wider">
+                  {t('language_switcher_aria')}
+                </span>
+                <LanguageSwitcher />
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

@@ -1,6 +1,8 @@
 import { useLandingContent } from '../../content/LandingContentContext'
 import { getPath } from '../../utils/objectPath'
 import { resolveImageUrl } from '../../api/landingPage'
+import { resolveText } from '../../utils/multilingual'
+import { useI18n } from '../../i18n/I18nContext'
 import { SECTION_LABELS, SECTION_TYPE_INFO } from '../../content/defaultContent'
 
 function buildInlineStyle(styleObj) {
@@ -31,7 +33,7 @@ export function useSectionSelection(sectionKey, label) {
     select({ type: 'section', path: sectionKey, label: resolvedLabel })
   }
 
-  return { section, isEditMode, isSelected, onSectionClick, visible: section.visible !== false }
+  return { section, isEditMode, isSelected, onSectionClick, visible: section.visible !== false, theme: content.theme }
 }
 
 // Absolutely-positioned overlay a section renders as its first child.
@@ -73,7 +75,9 @@ export function EditableText({
   ...rest
 }) {
   const { content, isEditMode, select, selection } = useLandingContent()
-  const value = getPath(content, path, '')
+  const { language } = useI18n()
+  const raw = getPath(content, path, '')
+  const value = resolveText(raw, language)
   const isSelected = isEditMode && selection?.type === 'text' && selection.path === path
   const inlineStyle = { ...(style || {}), ...buildInlineStyle(styleObj ? getPath(content, styleObj, {}) : null) }
 
@@ -151,12 +155,15 @@ export function EditableImage({
 
 // --- Editable CTA button (text + link + full styling) ----------------------
 
-export function EditableCtaButton({ path, className = '', fallbackClassName = '', onNavigate }) {
+export function EditableCtaButton({ path, className = '', fallbackClassName = '', onNavigate, style: styleProp }) {
   const { content, isEditMode, select, selection } = useLandingContent()
+  const { language } = useI18n()
   const btn = getPath(content, path, {})
+  const buttonText = resolveText(btn.text, language)
   const isSelected = isEditMode && selection?.type === 'button' && selection.path === path
 
   const style = {
+    ...(styleProp || {}),
     backgroundColor: btn.bgColor || 'transparent',
     color: btn.textColor || '#ffffff',
     borderColor: btn.borderColor || '#ffffff',
@@ -185,7 +192,7 @@ export function EditableCtaButton({ path, className = '', fallbackClassName = ''
           : ''
       }`}
     >
-      {btn.text}
+      {buttonText}
     </button>
   )
 }

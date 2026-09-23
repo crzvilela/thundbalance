@@ -7,7 +7,7 @@ import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/Section
 const DEFAULT_IMAGES = [service1, service2, service3]
 
 function Services({ sectionId }) {
-  const { section, isEditMode, isSelected, onSectionClick, visible } = useSectionSelection(sectionId, 'Services')
+  const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'Services')
 
   if (!visible && !isEditMode) return null
 
@@ -31,6 +31,7 @@ function Services({ sectionId }) {
             path={`sections.${sectionId}.eyebrow`}
             styleObj={`sections.${sectionId}.eyebrowStyle`}
             label="Services Eyebrow"
+            style={{ fontFamily: theme.typography.accentFont }}
             className="uppercase tracking-[5px] text-sm text-gray-400 mb-6"
           />
 
@@ -39,7 +40,7 @@ function Services({ sectionId }) {
             path={`sections.${sectionId}.title`}
             styleObj={`sections.${sectionId}.titleStyle`}
             label="Services Title"
-            style={{ fontFamily: 'Bebas Neue' }}
+            style={{ fontFamily: theme.typography.headingFont }}
             className="text-4xl sm:text-5xl md:text-7xl"
           />
         </div>
@@ -67,6 +68,7 @@ function Services({ sectionId }) {
                   path={`sections.${sectionId}.items.${index}.title`}
                   styleObj={`sections.${sectionId}.items.${index}.titleStyle`}
                   label={`Service ${index + 1} Title`}
+                  style={{ fontFamily: theme.typography.headingFont }}
                   className="text-2xl mb-6 uppercase tracking-wide block"
                 />
 
@@ -75,6 +77,7 @@ function Services({ sectionId }) {
                   path={`sections.${sectionId}.items.${index}.description`}
                   styleObj={`sections.${sectionId}.items.${index}.descriptionStyle`}
                   label={`Service ${index + 1} Description`}
+                  style={{ fontFamily: theme.typography.bodyFont }}
                   className="text-gray-400 leading-7 block"
                 />
               </div>

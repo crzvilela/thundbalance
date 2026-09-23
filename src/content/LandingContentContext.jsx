@@ -51,6 +51,17 @@ function withLegacyMigrations(mergedContent) {
     }
   }
 
+  // theme.typography.bodyFont used to default to the literal CSS keyword
+  // 'inherit' (relying on body's own font-family in index.css) rather than
+  // a real font name, which isn't one of the dropdown's options in
+  // PropertiesPanel. Normalize it once to the font it actually resolved to
+  // visually (Inter, per index.css's `body { font-family: 'Inter',
+  // sans-serif }`), without touching anyone who already picked a real font
+  // explicitly.
+  if (mergedContent.theme?.typography?.bodyFont === 'inherit') {
+    mergedContent.theme.typography.bodyFont = 'Inter'
+  }
+
   return mergedContent
 }
 

@@ -10,7 +10,7 @@ import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/Section
 
 function Hero() {
   const navigate = useNavigate()
-  const { section, isEditMode, isSelected, onSectionClick, visible } = useSectionSelection('hero')
+  const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection('hero')
 
   if (!visible && !isEditMode) return null
 
@@ -36,6 +36,7 @@ function Hero() {
           path="sections.hero.eyebrow"
           styleObj="sections.hero.eyebrowStyle"
           label="Hero Eyebrow"
+          style={{ fontFamily: theme.typography.accentFont }}
           className="uppercase tracking-[6px] text-sm text-gray-400 mb-6"
         />
 
@@ -44,6 +45,7 @@ function Hero() {
           path="sections.hero.title"
           styleObj="sections.hero.titleStyle"
           label="Hero Title"
+          style={{ fontFamily: theme.typography.headingFont }}
           className="text-5xl sm:text-6xl md:text-8xl font-bold uppercase leading-tight max-w-5xl mx-auto"
         />
 
@@ -52,12 +54,14 @@ function Hero() {
           path="sections.hero.subtitle"
           styleObj="sections.hero.subtitleStyle"
           label="Hero Subtitle"
+          style={{ fontFamily: theme.typography.bodyFont }}
           className="text-gray-300 mt-8 max-w-2xl text-base md:text-lg mx-auto block"
         />
 
         <div className="mt-10 flex justify-center">
           <EditableCtaButton
             path="sections.hero.button"
+            style={{ fontFamily: theme.typography.accentFont }}
             className="px-10 py-4 uppercase text-sm tracking-[3px] hover:scale-105 hover:tracking-[5px]"
             onNavigate={(link) => navigate(link || '/trial-session')}
           />

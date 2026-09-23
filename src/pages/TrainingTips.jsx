@@ -3,11 +3,13 @@ import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
 import TrainingVideoCard from '../components/TrainingVideoCard'
 import { LandingContentProvider } from '../content/LandingContentContext'
+import { useI18n } from '../i18n/I18nContext'
 import { fetchTrainingVideos } from '../api/trainingVideos'
 
 function TrainingTips() {
   const [videos, setVideos] = useState([])
   const [loading, setLoading] = useState(true)
+  const { t } = useI18n()
 
   useEffect(() => {
     let cancelled = false
@@ -42,21 +44,21 @@ function TrainingTips() {
 
             <div className="mb-12 md:mb-20 text-center">
               <p className="uppercase tracking-[5px] text-sm text-gray-400 mb-6">
-                Video Library
+                {t('training_tips_eyebrow')}
               </p>
 
               <h1
                 style={{ fontFamily: 'Bebas Neue' }}
                 className="text-4xl sm:text-5xl md:text-7xl"
               >
-                Training Tips
+                {t('training_tips_title')}
               </h1>
             </div>
 
             {loading ? (
-              <p className="text-center text-gray-400">Loading videos…</p>
+              <p className="text-center text-gray-400">{t('training_tips_loading')}</p>
             ) : videos.length === 0 ? (
-              <p className="text-center text-gray-400">No videos yet — check back soon.</p>
+              <p className="text-center text-gray-400">{t('training_tips_empty')}</p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
                 {videos.map((video) => (

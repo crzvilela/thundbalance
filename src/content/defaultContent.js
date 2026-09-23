@@ -65,6 +65,17 @@ function sectionBackground(overrides = {}) {
   }
 }
 
+// Shorthand for a multilingual text field: { en, es, ca }. Used only for
+// real editable text (titles, body copy, button labels) — never for colors,
+// URLs, image paths, emails, phone numbers or proper nouns like the brand
+// name, which are the same in every language. Resolved at render time via
+// resolveText() (src/utils/multilingual.js), which also gracefully treats
+// a plain string as "same text in every language" for any field not yet
+// converted to this shape (e.g. new blank sections the admin adds).
+function ml(en, es, ca) {
+  return { en, es, ca }
+}
+
 export const defaultContent = {
   theme: {
     colors: {
@@ -78,8 +89,9 @@ export const defaultContent = {
       border: 'rgba(255,255,255,0.15)'
     },
     typography: {
-      headingFont: 'Bebas Neue',
-      bodyFont: 'inherit',
+      headingFont: 'Aldrich',
+      bodyFont: 'Inter',
+      accentFont: 'Roboto',
       buttonSize: '0.875rem'
     }
   },
@@ -104,19 +116,23 @@ export const defaultContent = {
 
     hero: {
       visible: true,
-      eyebrow: 'Private Fitness Studio',
+      eyebrow: ml('Private Fitness Studio', 'Estudio de Fitness Privado', 'Estudi de Fitness Privat'),
       eyebrowStyle: textStyle(),
-      title: 'Transform Your Body And Performance',
+      title: ml('Transform Your Body And Performance', 'Transforma Tu Cuerpo Y Rendimiento', 'Transforma El Teu Cos I Rendiment'),
       titleStyle: textStyle({
         fontWeight: '700',
         letterSpacing: '',
         lineHeight: '',
         textAlign: 'center'
       }),
-      subtitle: 'Personalized 1:1 training sessions focused on performance, health, rehabilitation and real results.',
+      subtitle: ml(
+        'Personalized 1:1 training sessions focused on performance, health, rehabilitation and real results.',
+        'Sesiones de entrenamiento personalizado 1 a 1 centradas en el rendimiento, la salud, la rehabilitación y resultados reales.',
+        "Sessions d'entrenament personalitzat 1 a 1 centrades en el rendiment, la salut, la rehabilitació i resultats reals."
+      ),
       subtitleStyle: textStyle(),
       button: {
-        text: 'BOOK A TRIAL SESSION',
+        text: ml('BOOK A TRIAL SESSION', 'RESERVA UNA SESIÓN DE PRUEBA', 'RESERVA UNA SESSIÓ DE PROVA'),
         link: '/trial-session',
         bgColor: 'transparent',
         textColor: '#ffffff',
@@ -136,14 +152,26 @@ export const defaultContent = {
     about: {
       type: 'about',
       visible: true,
-      eyebrow: 'About Us',
+      eyebrow: ml('About Us', 'Sobre Nosotros', 'Sobre Nosaltres'),
       eyebrowStyle: textStyle(),
-      title: 'Private Training Focused On Real Results',
+      title: ml('Private Training Focused On Real Results', 'Entrenamiento Privado Centrado En Resultados Reales', 'Entrenament Privat Centrat En Resultats Reals'),
       titleStyle: textStyle(),
-      body: 'ThundBalance is a private fitness studio focused on personalized 1:1 and dual training sessions. Every client receives individual support, training plans, nutritional guidance and body metrics monitoring in an exclusive and professional environment.',
+      body: ml(
+        'ThundBalance is a private fitness studio focused on personalized 1:1 and dual training sessions. Every client receives individual support, training plans, nutritional guidance and body metrics monitoring in an exclusive and professional environment.',
+        'ThundBalance es un estudio de fitness privado centrado en sesiones de entrenamiento personalizado 1 a 1 y en pareja. Cada cliente recibe apoyo individual, planes de entrenamiento, orientación nutricional y seguimiento de métricas corporales en un entorno exclusivo y profesional.',
+        "ThundBalance és un estudi de fitness privat centrat en sessions d'entrenament personalitzat 1 a 1 i en parella. Cada client rep suport individual, plans d'entrenament, orientació nutricional i seguiment de mètriques corporals en un entorn exclusiu i professional."
+      ),
       bodyStyle: textStyle(),
       image: null,
       imageStyle: imageStyle(),
+      // 360° photo sphere embed, built from the exact coordinates/heading/
+      // tilt in the admin's own Google Maps share link for this specific
+      // 360° photo (not a generic geocoded guess) — see PropertiesPanel for
+      // how to replace it if it doesn't show the right photo.
+      embed360Url: 'https://www.google.com/maps?layer=c&cbll=41.404704,2.2027016&cbp=12,255.85,0,0,-38.06&output=svembed',
+      // Migrated from the old standalone /about-us page (now removed) —
+      // same structure ImageCarousel already expects: [{ image, caption }].
+      carousel: [],
       background: sectionBackground({ color: '#ffffff' }),
       textColor: '#000000'
     },
@@ -151,32 +179,44 @@ export const defaultContent = {
     services: {
       type: 'services',
       visible: true,
-      eyebrow: 'Services',
+      eyebrow: ml('Services', 'Servicios', 'Serveis'),
       eyebrowStyle: textStyle(),
-      title: 'Personalized Training Experience',
+      title: ml('Personalized Training Experience', 'Experiencia De Entrenamiento Personalizado', "Experiència D'Entrenament Personalitzat"),
       titleStyle: textStyle(),
       background: sectionBackground(),
       items: [
         {
-          title: '1:1 Training',
+          title: ml('1:1 Training', 'Entrenamiento 1 a 1', 'Entrenament 1 a 1'),
           titleStyle: textStyle(),
-          description: 'Individual sessions fully focused on your goals, performance and physical condition.',
+          description: ml(
+            'Individual sessions fully focused on your goals, performance and physical condition.',
+            'Sesiones individuales totalmente centradas en tus objetivos, rendimiento y condición física.',
+            'Sessions individuals totalment centrades en els teus objectius, rendiment i condició física.'
+          ),
           descriptionStyle: textStyle(),
           image: null,
           imageStyle: imageStyle()
         },
         {
-          title: 'Dual Sessions',
+          title: ml('Dual Sessions', 'Sesiones En Pareja', 'Sessions En Parella'),
           titleStyle: textStyle(),
-          description: 'Train together with a partner while maintaining personalized coaching and guidance.',
+          description: ml(
+            'Train together with a partner while maintaining personalized coaching and guidance.',
+            'Entrena junto a un compañero manteniendo un coaching y una orientación personalizados.',
+            'Entrena juntament amb un company mantenint un coaching i una orientació personalitzats.'
+          ),
           descriptionStyle: textStyle(),
           image: null,
           imageStyle: imageStyle()
         },
         {
-          title: 'Nutrition & Metrics',
+          title: ml('Nutrition & Metrics', 'Nutrición Y Métricas', 'Nutrició I Mètriques'),
           titleStyle: textStyle(),
-          description: 'Training plans, nutritional guidance and body metrics tracking included in every program.',
+          description: ml(
+            'Training plans, nutritional guidance and body metrics tracking included in every program.',
+            'Planes de entrenamiento, orientación nutricional y seguimiento de métricas corporales incluidos en cada programa.',
+            "Plans d'entrenament, orientació nutricional i seguiment de mètriques corporals inclosos a cada programa."
+          ),
           descriptionStyle: textStyle(),
           image: null,
           imageStyle: imageStyle()
@@ -187,62 +227,78 @@ export const defaultContent = {
     pricing: {
       type: 'pricing',
       visible: true,
-      eyebrow: 'Pricing',
+      eyebrow: ml('Pricing', 'Precios', 'Preus'),
       eyebrowStyle: textStyle(),
-      title: 'Training Packages',
+      title: ml('Training Packages', 'Paquetes De Entrenamiento', "Paquets D'Entrenament"),
       titleStyle: textStyle(),
       background: sectionBackground(),
       plans: [
         {
-          name: 'Monthly Plan',
+          name: ml('Monthly Plan', 'Plan Mensual', 'Pla Mensual'),
           nameStyle: textStyle(),
           price: '€65',
           priceStyle: textStyle(),
-          period: '/session',
+          period: ml('/session', '/sesión', '/sessió'),
           periodStyle: textStyle(),
-          description: 'Includes 1 to 5 training sessions per week with full coaching support.',
+          description: ml(
+            'Includes 1 to 5 training sessions per week with full coaching support.',
+            'Incluye de 1 a 5 sesiones de entrenamiento por semana con apoyo completo de coaching.',
+            "Inclou d'1 a 5 sessions d'entrenament per setmana amb suport complet de coaching."
+          ),
           descriptionStyle: textStyle(),
-          features: ['1-5 sessions per week', 'Personal Training', 'Flexible Scheduling'],
-          buttonText: 'Get Started',
+          features: [
+            ml('1-5 sessions per week', 'De 1 a 5 sesiones por semana', "D'1 a 5 sessions per setmana"),
+            ml('Personal Training', 'Entrenamiento Personal', 'Entrenament Personal'),
+            ml('Flexible Scheduling', 'Horario Flexible', 'Horari Flexible')
+          ],
+          buttonText: ml('Get Started', 'Empezar', 'Començar'),
           buttonTextStyle: textStyle(),
           highlighted: false
         },
         {
-          name: 'Quarterly Plan',
+          name: ml('Quarterly Plan', 'Plan Trimestral', 'Pla Trimestral'),
           nameStyle: textStyle(),
           price: '€60',
           priceStyle: textStyle(),
-          period: '/session',
+          period: ml('/session', '/sesión', '/sessió'),
           periodStyle: textStyle(),
-          description: 'Designed for long-term progress with training and nutrition follow-up.',
+          description: ml(
+            'Designed for long-term progress with training and nutrition follow-up.',
+            'Diseñado para un progreso a largo plazo con seguimiento de entrenamiento y nutrición.',
+            "Dissenyat per a un progrés a llarg termini amb seguiment d'entrenament i nutrició."
+          ),
           descriptionStyle: textStyle(),
           features: [
-            '1-5 sessions per week',
-            '1 Body Metrics Assessment',
-            '3 Training Plan Reviews',
-            '3 Nutrition Plan Reviews'
+            ml('1-5 sessions per week', 'De 1 a 5 sesiones por semana', "D'1 a 5 sessions per setmana"),
+            ml('1 Body Metrics Assessment', '1 Evaluación de Métricas Corporales', '1 Avaluació de Mètriques Corporals'),
+            ml('3 Training Plan Reviews', '3 Revisiones del Plan de Entrenamiento', "3 Revisions del Pla d'Entrenament"),
+            ml('3 Nutrition Plan Reviews', '3 Revisiones del Plan de Nutrición', '3 Revisions del Pla de Nutrició')
           ],
-          buttonText: 'Most Popular',
+          buttonText: ml('Most Popular', 'Más Popular', 'Més Popular'),
           buttonTextStyle: textStyle(),
           highlighted: true
         },
         {
-          name: 'Semiannual Plan',
+          name: ml('Semiannual Plan', 'Plan Semestral', 'Pla Semestral'),
           nameStyle: textStyle(),
           price: '€55',
           priceStyle: textStyle(),
-          period: '/session',
+          period: ml('/session', '/sesión', '/sessió'),
           periodStyle: textStyle(),
-          description: 'The most complete package for maximum results and continuous monitoring.',
+          description: ml(
+            'The most complete package for maximum results and continuous monitoring.',
+            'El paquete más completo para obtener el máximo resultado y un seguimiento continuo.',
+            'El paquet més complet per obtenir el màxim resultat i un seguiment continu.'
+          ),
           descriptionStyle: textStyle(),
           features: [
-            '1-5 sessions per week',
-            '2 Body Metrics Assessments',
-            '6 Training Plan Reviews',
-            '6 Nutrition Plan Reviews',
-            '1 Personal Consultation'
+            ml('1-5 sessions per week', 'De 1 a 5 sesiones por semana', "D'1 a 5 sessions per setmana"),
+            ml('2 Body Metrics Assessments', '2 Evaluaciones de Métricas Corporales', '2 Avaluacions de Mètriques Corporals'),
+            ml('6 Training Plan Reviews', '6 Revisiones del Plan de Entrenamiento', "6 Revisions del Pla d'Entrenament"),
+            ml('6 Nutrition Plan Reviews', '6 Revisiones del Plan de Nutrición', '6 Revisions del Pla de Nutrició'),
+            ml('1 Personal Consultation', '1 Consulta Personal', '1 Consulta Personal')
           ],
-          buttonText: 'Best Value',
+          buttonText: ml('Best Value', 'Mejor Valor', 'Millor Valor'),
           buttonTextStyle: textStyle(),
           highlighted: false
         }
@@ -252,21 +308,29 @@ export const defaultContent = {
     testimonials: {
       type: 'testimonials',
       visible: true,
-      eyebrow: 'Testimonials',
+      eyebrow: ml('Testimonials', 'Testimonios', 'Testimonis'),
       eyebrowStyle: textStyle(),
-      title: 'Real Experiences',
+      title: ml('Real Experiences', 'Experiencias Reales', 'Experiències Reals'),
       titleStyle: textStyle(),
-      background: sectionBackground()
+      background: sectionBackground(),
+      // Optional admin-curated client photos/videos, shown as a grid below
+      // the Elfsight reviews widget. Empty by default — see Testimonials.jsx,
+      // which hides the grid entirely when this is empty.
+      media: []
     },
 
     contact: {
       type: 'contact',
       visible: true,
-      eyebrow: 'Contact',
+      eyebrow: ml('Contact', 'Contacto', 'Contacte'),
       eyebrowStyle: textStyle(),
-      title: 'Start Your Transformation',
+      title: ml('Start Your Transformation', 'Comienza Tu Transformación', 'Comença La Teva Transformació'),
       titleStyle: textStyle(),
-      body: 'Book your first session and discover a personalized training experience focused on real results.',
+      body: ml(
+        'Book your first session and discover a personalized training experience focused on real results.',
+        'Reserva tu primera sesión y descubre una experiencia de entrenamiento personalizado centrada en resultados reales.',
+        "Reserva la teva primera sessió i descobreix una experiència d'entrenament personalitzat centrada en resultats reals."
+      ),
       bodyStyle: textStyle(),
       image: null,
       imageStyle: imageStyle(),
@@ -277,11 +341,43 @@ export const defaultContent = {
       visible: true,
       brand: 'THUNDBALANCE',
       brandStyle: textStyle(),
-      text: '© 2026 ThundBalance. All rights reserved.',
+      text: ml(
+        '© 2026 ThundBalance. All rights reserved.',
+        '© 2026 ThundBalance. Todos los derechos reservados.',
+        '© 2026 ThundBalance. Tots els drets reservats.'
+      ),
       textStyle: textStyle(),
       logoImage: null,
       showBrandText: true,
-      background: sectionBackground()
+      background: sectionBackground(),
+
+      // Address, map/360 embeds and contact links — all plain fields edited
+      // only via PropertiesPanel (not click-to-select in the canvas, since
+      // there's no sensible way to "click to edit" a Google iframe).
+      address: {
+        text: ml(
+          'Carrer de Pallars, 286, Sant Martí, 08005 Barcelona, Spain',
+          'Carrer de Pallars, 286, Sant Martí, 08005 Barcelona, España',
+          'Carrer de Pallars, 286, Sant Martí, 08005 Barcelona, Espanya'
+        ),
+        mapsLink: 'https://www.google.com/maps/place//data=!4m2!3m1!1s0x12a4a385af63a49b:0x841dd304c428a382?sa=X&ved=1t:8290&ictx=111'
+      },
+      // Text-query embed — works with no API key, Google resolves the
+      // address server-side. See PropertiesPanel for how the admin can
+      // replace this with a "Share > Embed a map" iframe src instead.
+      mapEmbedUrl: 'https://www.google.com/maps?q=Carrer+de+Pallars+286+Barcelona&output=embed',
+      // Empty by default on purpose — see README/Footer section for why an
+      // automatic Street View embed wasn't used here (real risk of showing
+      // the generic street view instead of the gym's own 360° photo). The
+      // admin pastes the "Share or embed image" iframe src from Google
+      // Maps once they've picked the right photo.
+      streetView360EmbedUrl: '',
+      contactUsUrl: 'https://www.thundbalance.com/contactus',
+      joinUsEmail: 'mailto:info@thundbalance.com?subject=I%20am%20interested%20to%20join%20TB%20team',
+      contactEmail: 'info@thundbalance.com',
+      whatsappNumber: '+34 617 21 33 60',
+      whatsappLink: 'https://wa.me/+34617213360',
+      instagramUrl: 'https://www.instagram.com/thundbalance'
     }
   }
 }
@@ -317,6 +413,8 @@ export const SECTION_TYPE_DEFAULTS = {
     bodyStyle: textStyle(),
     image: null,
     imageStyle: imageStyle(),
+    embed360Url: '',
+    carousel: [],
     background: sectionBackground(),
     textColor: '#000000'
   }),
@@ -350,7 +448,8 @@ export const SECTION_TYPE_DEFAULTS = {
     eyebrowStyle: textStyle(),
     title: 'New Section Title',
     titleStyle: textStyle(),
-    background: sectionBackground()
+    background: sectionBackground(),
+    media: []
   }),
 
   contact: () => ({
@@ -468,14 +567,26 @@ export function makeDefaultPricingPlan() {
     nameStyle: textStyle(),
     price: '€0',
     priceStyle: textStyle(),
-    period: '/session',
+    period: ml('/session', '/sesión', '/sessió'),
     periodStyle: textStyle(),
     description: 'Describe this plan.',
     descriptionStyle: textStyle(),
-    features: ['Feature one'],
+    features: ['Feature one'].map((f) => ml(f, 'Característica uno', 'Característica u')),
     buttonText: 'Get Started',
     buttonTextStyle: textStyle(),
     highlighted: false
+  }
+}
+
+// Template used when the admin adds a new Testimonials media item
+// (client photo or video) from the editor.
+export function makeDefaultTestimonialMedia(type = 'image') {
+  return {
+    type,
+    url: '',
+    videoSourceType: type === 'video' ? 'upload' : '',
+    clientName: '',
+    caption: ''
   }
 }
 

@@ -2,7 +2,7 @@ import { EditableText, useSectionSelection, SectionEditOverlay } from './editor/
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
 
 function Pricing({ sectionId }) {
-  const { section, isEditMode, isSelected, onSectionClick, visible } = useSectionSelection(sectionId, 'Pricing')
+  const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'Pricing')
 
   if (!visible && !isEditMode) return null
 
@@ -26,6 +26,7 @@ function Pricing({ sectionId }) {
             path={`sections.${sectionId}.eyebrow`}
             styleObj={`sections.${sectionId}.eyebrowStyle`}
             label="Pricing Eyebrow"
+            style={{ fontFamily: theme.typography.accentFont }}
             className="uppercase tracking-[5px] text-sm text-gray-500 mb-6"
           />
 
@@ -34,7 +35,7 @@ function Pricing({ sectionId }) {
             path={`sections.${sectionId}.title`}
             styleObj={`sections.${sectionId}.titleStyle`}
             label="Pricing Title"
-            style={{ fontFamily: 'Bebas Neue' }}
+            style={{ fontFamily: theme.typography.headingFont }}
             className="text-4xl sm:text-5xl md:text-7xl"
           />
         </div>
@@ -58,6 +59,7 @@ function Pricing({ sectionId }) {
                   path={`sections.${sectionId}.plans.${index}.name`}
                   styleObj={`sections.${sectionId}.plans.${index}.nameStyle`}
                   label={`Plan ${index + 1} Name`}
+                  style={{ fontFamily: theme.typography.headingFont }}
                   className="text-3xl mb-4 uppercase block"
                 />
 
@@ -82,6 +84,7 @@ function Pricing({ sectionId }) {
                   path={`sections.${sectionId}.plans.${index}.description`}
                   styleObj={`sections.${sectionId}.plans.${index}.descriptionStyle`}
                   label={`Plan ${index + 1} Description`}
+                  style={{ fontFamily: theme.typography.bodyFont }}
                   className={`leading-7 mb-8 block ${highlighted ? 'text-gray-300' : 'text-gray-600'}`}
                 />
 
@@ -93,6 +96,7 @@ function Pricing({ sectionId }) {
                         as="span"
                         path={`sections.${sectionId}.plans.${index}.features.${featureIndex}`}
                         label={`Plan ${index + 1} Feature ${featureIndex + 1}`}
+                        style={{ fontFamily: theme.typography.bodyFont }}
                       />
                     </li>
                   ))}
@@ -103,6 +107,7 @@ function Pricing({ sectionId }) {
                   path={`sections.${sectionId}.plans.${index}.buttonText`}
                   styleObj={`sections.${sectionId}.plans.${index}.buttonTextStyle`}
                   label={`Plan ${index + 1} Button`}
+                  style={{ fontFamily: theme.typography.accentFont }}
                   className={`border px-6 py-3 uppercase text-sm tracking-[3px] transition duration-300 ${
                     highlighted
                       ? 'border-white hover:bg-white hover:text-black'

@@ -6,7 +6,7 @@ import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/Section
 // template an admin picks from "+ Add Section" for freeform content that
 // doesn't need its own bespoke component.
 function TextBlockSection({ sectionId }) {
-  const { section, isEditMode, isSelected, onSectionClick, visible } = useSectionSelection(sectionId, 'Text Block')
+  const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'Text Block')
 
   if (!visible && !isEditMode) return null
 
@@ -27,6 +27,7 @@ function TextBlockSection({ sectionId }) {
           path={`sections.${sectionId}.eyebrow`}
           styleObj={`sections.${sectionId}.eyebrowStyle`}
           label="Eyebrow"
+          style={{ fontFamily: theme.typography.accentFont }}
           className="uppercase tracking-[5px] text-sm text-gray-400 mb-6"
         />
 
@@ -35,7 +36,7 @@ function TextBlockSection({ sectionId }) {
           path={`sections.${sectionId}.title`}
           styleObj={`sections.${sectionId}.titleStyle`}
           label="Title"
-          style={{ fontFamily: 'Bebas Neue' }}
+          style={{ fontFamily: theme.typography.headingFont }}
           className="text-4xl sm:text-5xl md:text-7xl mb-8"
         />
 
@@ -44,6 +45,7 @@ function TextBlockSection({ sectionId }) {
           path={`sections.${sectionId}.body`}
           styleObj={`sections.${sectionId}.bodyStyle`}
           label="Body"
+          style={{ fontFamily: theme.typography.bodyFont }}
           className="text-gray-300 text-lg leading-8 block"
         />
 
