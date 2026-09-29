@@ -43,7 +43,8 @@ export function deepClone(value) {
 // override with the ones from base. Arrays in `override` fully replace
 // arrays in `base` (so admins can add/remove list items like services).
 export function deepMerge(base, override) {
-  if (override === undefined || override === null) return base
+  if (override === undefined) return base
+  if (override === null) return null
   if (Array.isArray(base) || Array.isArray(override)) return override
 
   if (

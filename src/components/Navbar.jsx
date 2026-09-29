@@ -84,14 +84,16 @@ function Navbar() {
 
   const brandBlock = (
     <div className="flex items-center gap-2 sm:gap-3">
+      <div className="h-5 w-[30px] sm:h-6 sm:w-[38px] shrink-0 overflow-hidden mix-blend-screen">
       <EditableImage
         path="sections.navbar.logoImage"
         defaultSrc={logo}
-        alt="Logo"
-        containerClassName="h-8 w-auto sm:h-10"
-        imageClassName="h-8 w-auto sm:h-10 object-contain"
+        alt="ThundBalance"
+        containerClassName="h-5 w-[30px] sm:h-6 sm:w-[38px]"
+        imageClassName="h-5 w-[30px] sm:h-6 sm:w-[38px] object-cover object-[45%_50%] scale-[1.6] invert mix-blend-screen"
         label="Navbar Logo"
       />
+      </div>
       {section.showBrandText !== false && (
         <EditableText
           as="span"

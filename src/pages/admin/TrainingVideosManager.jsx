@@ -6,7 +6,6 @@ import ConfirmDialog from '../../components/editor/ConfirmDialog'
 import {
   TextField,
   TextAreaField,
-  SelectField,
   ButtonRow,
   SmallButton
 } from '../../components/editor/fields'
@@ -18,16 +17,15 @@ import {
   reorderTrainingVideos
 } from '../../api/trainingVideos'
 import { uploadLandingVideo } from '../../api/landingPage'
-import { isKnownEmbedProvider } from '../../utils/videoEmbed'
 
-const SOURCE_OPTIONS = [
-  { value: 'instagram', label: 'Instagram Reel' },
-  { value: 'youtube', label: 'YouTube' },
-  { value: 'vimeo', label: 'Vimeo' },
-  { value: 'upload', label: 'Upload File' }
-]
-
-const EMPTY_FORM = { title: '', description: '', video_source: 'instagram', video_url: '' }
+// Upload-only — YouTube/Vimeo/Instagram Reel embeds were removed per request
+// (kept things simpler for the admin, and avoided embed-related upload
+// confusion). video_source is always 'upload' for anything created here now.
+// Older videos already saved with a different source (if any) will still
+// play fine on the public page (TrainingVideoPlayer still supports all
+// sources) — they just can't be re-picked as youtube/vimeo/instagram when
+// edited here anymore; re-uploading a file for them switches them to 'upload'.
+const EMPTY_FORM = { title: '', description: '', video_source: 'upload', video_url: '' }
 
 function TrainingVideosManager() {
   const [videos, setVideos] = useState([])
@@ -62,8 +60,8 @@ function TrainingVideosManager() {
     setForm({
       title: video.title,
       description: video.description || '',
-      video_source: video.video_source,
-      video_url: video.video_url
+      video_source: 'upload',
+      video_url: video.video_source === 'upload' ? video.video_url : ''
     })
     setEditingId(video.id)
   }
@@ -141,9 +139,6 @@ function TrainingVideosManager() {
     }
   }
 
-  const showEmbedWarning = ['youtube', 'vimeo'].includes(form.video_source) &&
-    form.video_url && !isKnownEmbedProvider(form.video_url)
-
   return (
     <div className="min-h-screen bg-black text-white">
       <Navbar />
@@ -182,54 +177,25 @@ function TrainingVideosManager() {
                 onChange={(v) => setForm((f) => ({ ...f, description: v }))}
               />
 
-              <SelectField
-                label="Video Source"
-                value={form.video_source}
-                options={SOURCE_OPTIONS}
-                onChange={(v) => setForm((f) => ({ ...f, video_source: v, video_url: '' }))}
+              <ButtonRow>
+                <SmallButton onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                  {uploading ? 'Uploading…' : form.video_url ? 'Replace Video' : 'Upload Video'}
+                </SmallButton>
+              </ButtonRow>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/mp4,video/webm,video/quicktime"
+                className="hidden"
+                onChange={handleUpload}
               />
-
-              {form.video_source === 'upload' ? (
-                <>
-                  <ButtonRow>
-                    <SmallButton onClick={() => fileInputRef.current?.click()} disabled={uploading}>
-                      {uploading ? 'Uploading…' : form.video_url ? 'Replace Video' : 'Upload Video'}
-                    </SmallButton>
-                  </ButtonRow>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="video/mp4,video/webm,video/quicktime"
-                    className="hidden"
-                    onChange={handleUpload}
-                  />
-                  {form.video_url && (
-                    <p className="text-[11px] text-emerald-400 mb-4">Video uploaded.</p>
-                  )}
-                </>
-              ) : (
-                <>
-                  <TextField
-                    label={form.video_source === 'instagram' ? 'Instagram Reel link' : 'Video link'}
-                    value={form.video_url}
-                    onChange={(v) => setForm((f) => ({ ...f, video_url: v }))}
-                    placeholder={
-                      form.video_source === 'instagram'
-                        ? 'https://www.instagram.com/reel/XXXXXXXXX/'
-                        : 'https://www.youtube.com/watch?v=...'
-                    }
-                  />
-                  {showEmbedWarning && (
-                    <p className="text-[11px] text-yellow-500 mb-4">
-                      Embed support is best with YouTube or Vimeo links.
-                    </p>
-                  )}
-                </>
+              {form.video_url && (
+                <p className="text-[11px] text-emerald-400 mb-4">Video uploaded.</p>
               )}
 
               {form.video_url && (
                 <div className="mb-4">
-                  <TrainingVideoPlayer source={form.video_source} url={form.video_url} />
+                  <TrainingVideoPlayer source="upload" url={form.video_url} />
                 </div>
               )}
 

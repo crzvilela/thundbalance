@@ -60,7 +60,7 @@ ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"}
 MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024  # 8MB
 
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov"}
-MAX_VIDEO_SIZE_BYTES = 50 * 1024 * 1024  # 50MB
+MAX_VIDEO_SIZE_BYTES = 300 * 1024 * 1024  # 300MB — raised from 50MB, phone-recorded workout clips were hitting the old limit
 
 
 @app.on_event("startup")
@@ -2011,7 +2011,7 @@ async def upload_landing_page_video(file: UploadFile = File(...)):
     contents = await file.read()
 
     if len(contents) > MAX_VIDEO_SIZE_BYTES:
-        raise HTTPException(status_code=400, detail="Video is too large (max 50MB)")
+        raise HTTPException(status_code=400, detail="Video is too large (max 300MB)")
 
     filename = f"{uuid.uuid4().hex}{extension}"
     destination = os.path.join(UPLOAD_DIR, filename)

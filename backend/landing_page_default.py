@@ -2,6 +2,16 @@
 # is added/removed/renamed.
 
 
+def _embed_layout():
+    def all_devices(value):
+        return {device: value for device in ("desktop", "tablet", "mobile")}
+    return {
+        "width": all_devices("100%"), "height": all_devices("152px"),
+        "align": all_devices("left"), "marginTop": all_devices("0px"),
+        "marginBottom": all_devices("0px")
+    }
+
+
 def _text_style(**overrides):
     """Shared shape for every text element's companion 'Style' object.
     Defaults are '' (empty string), meaning 'don't override the Tailwind
@@ -119,6 +129,7 @@ def make_default_testimonial_media(media_type="image"):
 
 
 DEFAULT_LANDING_CONTENT = {
+    "bundledImagesVersion": 2,
     "theme": {
         "colors": {
             "primary": "#ffffff",
@@ -143,7 +154,7 @@ DEFAULT_LANDING_CONTENT = {
             "visible": True,
             "brand": "THUNDBALANCE",
             "brandStyle": _text_style(),
-            "logoImage": None,
+            "logoImage": "/site-images/logo.png",
             "showBrandText": True,
             "background": _section_background()
         },
@@ -172,7 +183,7 @@ DEFAULT_LANDING_CONTENT = {
                 "borderColor": "#ffffff",
                 "radius": "0px"
             },
-            "background": _section_background(overlayOpacity=0.6)
+            "background": _section_background(type="image", image="/site-images/hero.jpg", overlayOpacity=0.6)
         },
         "about": {
             "type": "about",
@@ -187,7 +198,7 @@ DEFAULT_LANDING_CONTENT = {
                 "ThundBalance \u00e9s un estudi de fitness privat centrat en sessions d'entrenament personalitzat 1 a 1 i en parella. Cada client rep suport individual, plans d'entrenament, orientaci\u00f3 nutricional i seguiment de m\u00e8triques corporals en un entorn exclusiu i professional."
             ),
             "bodyStyle": _text_style(),
-            "image": None,
+            "image": "/site-images/service1.jpg",
             "imageStyle": _image_style(),
             "embed360Url": "https://www.google.com/maps?layer=c&cbll=41.404704,2.2027016&cbp=12,255.85,0,0,-38.06&output=svembed",
             "carousel": [],
@@ -212,7 +223,7 @@ DEFAULT_LANDING_CONTENT = {
                         "Sessions individuals totalment centrades en els teus objectius, rendiment i condici\u00f3 f\u00edsica."
                     ),
                     "descriptionStyle": _text_style(),
-                    "image": None,
+                    "image": "/site-images/service1.jpg",
                     "imageStyle": _image_style()
                 },
                 {
@@ -224,7 +235,7 @@ DEFAULT_LANDING_CONTENT = {
                         "Entrena juntament amb un company mantenint un coaching i una orientaci\u00f3 personalitzats."
                     ),
                     "descriptionStyle": _text_style(),
-                    "image": None,
+                    "image": "/site-images/service2.jpg",
                     "imageStyle": _image_style()
                 },
                 {
@@ -236,7 +247,7 @@ DEFAULT_LANDING_CONTENT = {
                         "Plans d'entrenament, orientaci\u00f3 nutricional i seguiment de m\u00e8triques corporals inclosos a cada programa."
                     ),
                     "descriptionStyle": _text_style(),
-                    "image": None,
+                    "image": "/site-images/service3.jpg",
                     "imageStyle": _image_style()
                 }
             ]
@@ -349,6 +360,8 @@ DEFAULT_LANDING_CONTENT = {
             "background": _section_background()
         },
         "footer": {
+            "mapLayout": _embed_layout(),
+            "streetView360Layout": _embed_layout(),
             "visible": True,
             "brand": "THUNDBALANCE",
             "brandStyle": _text_style(),
@@ -358,7 +371,7 @@ DEFAULT_LANDING_CONTENT = {
                 "\u00a9 2026 ThundBalance. Tots els drets reservats."
             ),
             "textStyle": _text_style(),
-            "logoImage": None,
+            "logoImage": "/site-images/logo.png",
             "showBrandText": True,
             "background": _section_background(),
             "address": {

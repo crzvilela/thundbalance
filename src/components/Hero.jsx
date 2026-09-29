@@ -1,4 +1,3 @@
-import heroImage from '../assets/images/hero.jpg'
 import { useNavigate } from 'react-router-dom'
 import {
   EditableText,
@@ -24,7 +23,6 @@ function Hero() {
 
       <SectionBackgroundImage
         background={section.background}
-        fallbackSrc={heroImage}
         imageClassName="scale-105"
       />
 

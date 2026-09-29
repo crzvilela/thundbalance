@@ -7,6 +7,8 @@
 // Shared shape for every text element's companion "Style" object. All
 // defaults are '' (empty string) which means "don't override the Tailwind
 // value" — see buildInlineStyle() in Editable.jsx, which skips empty values.
+import { makeEmbedLayout } from '../utils/responsiveLayout'
+
 function textStyle(overrides = {}) {
   return {
     fontSize: '',
@@ -77,6 +79,7 @@ function ml(en, es, ca) {
 }
 
 export const defaultContent = {
+  bundledImagesVersion: 2,
   theme: {
     colors: {
       primary: '#ffffff',
@@ -109,7 +112,7 @@ export const defaultContent = {
       visible: true,
       brand: 'THUNDBALANCE',
       brandStyle: textStyle(),
-      logoImage: null,
+      logoImage: '/site-images/logo.png',
       showBrandText: true,
       background: sectionBackground()
     },
@@ -139,7 +142,7 @@ export const defaultContent = {
         borderColor: '#ffffff',
         radius: '0px'
       },
-      background: sectionBackground({ overlayOpacity: 0.6 })
+      background: sectionBackground({ type: 'image', image: '/site-images/hero.jpg', overlayOpacity: 0.6 })
     },
 
     // The 5 sections below use fixed, human-readable keys as their "ID" —
@@ -162,7 +165,7 @@ export const defaultContent = {
         "ThundBalance és un estudi de fitness privat centrat en sessions d'entrenament personalitzat 1 a 1 i en parella. Cada client rep suport individual, plans d'entrenament, orientació nutricional i seguiment de mètriques corporals en un entorn exclusiu i professional."
       ),
       bodyStyle: textStyle(),
-      image: null,
+      image: '/site-images/service1.jpg',
       imageStyle: imageStyle(),
       // 360° photo sphere embed, built from the exact coordinates/heading/
       // tilt in the admin's own Google Maps share link for this specific
@@ -194,7 +197,7 @@ export const defaultContent = {
             'Sessions individuals totalment centrades en els teus objectius, rendiment i condició física.'
           ),
           descriptionStyle: textStyle(),
-          image: null,
+          image: '/site-images/service1.jpg',
           imageStyle: imageStyle()
         },
         {
@@ -206,7 +209,7 @@ export const defaultContent = {
             'Entrena juntament amb un company mantenint un coaching i una orientació personalitzats.'
           ),
           descriptionStyle: textStyle(),
-          image: null,
+          image: '/site-images/service2.jpg',
           imageStyle: imageStyle()
         },
         {
@@ -218,7 +221,7 @@ export const defaultContent = {
             "Plans d'entrenament, orientació nutricional i seguiment de mètriques corporals inclosos a cada programa."
           ),
           descriptionStyle: textStyle(),
-          image: null,
+          image: '/site-images/service3.jpg',
           imageStyle: imageStyle()
         }
       ]
@@ -338,6 +341,8 @@ export const defaultContent = {
     },
 
     footer: {
+      mapLayout: makeEmbedLayout(),
+      streetView360Layout: makeEmbedLayout(),
       visible: true,
       brand: 'THUNDBALANCE',
       brandStyle: textStyle(),
@@ -347,7 +352,7 @@ export const defaultContent = {
         '© 2026 ThundBalance. Tots els drets reservats.'
       ),
       textStyle: textStyle(),
-      logoImage: null,
+      logoImage: '/site-images/logo.png',
       showBrandText: true,
       background: sectionBackground(),
 

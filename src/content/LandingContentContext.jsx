@@ -1,7 +1,7 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useReducer } from 'react'
 import { defaultContent, SECTION_TYPE_DEFAULTS } from './defaultContent'
 import { deepMerge, deepClone, setPath } from '../utils/objectPath'
-import { migrateSectionsToInstances, migrateBackgroundTypes } from './migrateContent'
+import { migrateSectionsToInstances, migrateBackgroundTypes, migrateBundledImages } from './migrateContent'
 import {
   fetchLandingContent,
   saveDraftContent,
@@ -88,7 +88,7 @@ function pruneOrphanedSections(mergedContent) {
 // versus current defaults -> fix up known old-schema quirks -> backfill
 // list-item shapes -> drop now-unreferenced stub sections.
 function normalizeLoadedContent(rawContent) {
-  const migrated = migrateBackgroundTypes(migrateSectionsToInstances(rawContent))
+  const migrated = migrateBackgroundTypes(migrateSectionsToInstances(migrateBundledImages(rawContent)))
   const merged = deepMerge(defaultContent, migrated)
   return pruneOrphanedSections(withArrayItemDefaults(withLegacyMigrations(merged)))
 }
@@ -123,12 +123,32 @@ export function useLandingContent() {
   return useContext(LandingContentContext)
 }
 
+// Keep content and its history in a pure reducer. React StrictMode can call
+// reducers twice; no nested state updates may create duplicate Undo entries.
+function contentHistoryReducer(state, action) {
+  if (action.type === 'load') {
+    return { content: action.content, history: [deepClone(action.content)], historyIndex: 0 }
+  }
+  if (action.type === 'undo' || action.type === 'redo') {
+    const index = state.historyIndex + (action.type === 'undo' ? -1 : 1)
+    if (index < 0 || index >= state.history.length) return state
+    return { ...state, content: deepClone(state.history[index]), historyIndex: index }
+  }
+  const next = action.type === 'reset' ? action.content : setPath(state.content, action.path, action.value)
+  if (action.commit === false) return { ...state, content: next }
+  const past = state.history.length ? state.history.slice(0, state.historyIndex + 1) : [deepClone(state.content)]
+  const history = [...past, deepClone(next)]
+  return { content: next, history, historyIndex: history.length - 1 }
+}
+
 // mode: 'view' (public site, read-only) | 'edit' (admin page builder)
 // version: only used in 'view' mode -> 'published' (default) or 'draft' (preview)
 export function LandingContentProvider({ mode = 'view', version = 'published', children }) {
   const isEditMode = mode === 'edit'
 
-  const [content, setContent] = useState(defaultContent)
+  const [{ content, history, historyIndex }, dispatch] = useReducer(contentHistoryReducer, {
+    content: defaultContent, history: [], historyIndex: -1
+  })
   const [loading, setLoading] = useState(true)
   const [selection, setSelection] = useState(null)
   const [device, setDevice] = useState('desktop')
@@ -137,8 +157,6 @@ export function LandingContentProvider({ mode = 'view', version = 'published', c
   const [dirty, setDirty] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState(null)
 
-  const [history, setHistory] = useState([])
-  const [historyIndex, setHistoryIndex] = useState(-1)
 
   useEffect(() => {
     let cancelled = false
@@ -152,9 +170,7 @@ export function LandingContentProvider({ mode = 'view', version = 'published', c
         if (cancelled) return
 
         const merged = normalizeLoadedContent(data.content)
-        setContent(merged)
-        setHistory([deepClone(merged)])
-        setHistoryIndex(0)
+        dispatch({ type: 'load', content: merged })
       } catch (err) {
         console.error('Failed to load landing page content, using defaults:', err)
       } finally {
@@ -166,25 +182,12 @@ export function LandingContentProvider({ mode = 'view', version = 'published', c
     return () => { cancelled = true }
   }, [isEditMode, version])
 
-  const commitHistory = useCallback((nextContent) => {
-    setHistory(prevHistory => {
-      const trimmed = prevHistory.slice(0, historyIndex + 1)
-      return [...trimmed, deepClone(nextContent)]
-    })
-    setHistoryIndex(prevIndex => prevIndex + 1)
-  }, [historyIndex])
-
-  // options.commit=false lets callers (e.g. a color input firing on every
-  // drag frame) skip flooding the undo history; the final change should
-  // still call updateField with commit true (the default).
+  // Non-committed updates (for example color dragging) update the preview;
+  // the final committed update adds one history entry.
   const updateField = useCallback((path, value, options = {}) => {
-    setContent(prev => {
-      const next = setPath(prev, path, value)
-      if (options.commit !== false) commitHistory(next)
-      return next
-    })
+    dispatch({ type: 'change', path, value, commit: options.commit })
     setDirty(true)
-  }, [commitHistory])
+  }, [])
 
   const select = useCallback((sel) => {
     if (!isEditMode) return
@@ -193,19 +196,15 @@ export function LandingContentProvider({ mode = 'view', version = 'published', c
 
   const undo = useCallback(() => {
     if (historyIndex <= 0) return
-    const newIndex = historyIndex - 1
-    setContent(deepClone(history[newIndex]))
-    setHistoryIndex(newIndex)
+    dispatch({ type: 'undo' })
     setDirty(true)
-  }, [history, historyIndex])
+  }, [historyIndex])
 
   const redo = useCallback(() => {
     if (historyIndex >= history.length - 1) return
-    const newIndex = historyIndex + 1
-    setContent(deepClone(history[newIndex]))
-    setHistoryIndex(newIndex)
+    dispatch({ type: 'redo' })
     setDirty(true)
-  }, [history, historyIndex])
+  }, [history.length, historyIndex])
 
   const save = useCallback(async () => {
     setSaving(true)
@@ -234,11 +233,10 @@ export function LandingContentProvider({ mode = 'view', version = 'published', c
     await resetLandingContent('draft')
     const data = await fetchLandingContent('draft')
     const merged = normalizeLoadedContent(data.content)
-    setContent(merged)
-    commitHistory(merged)
+    dispatch({ type: 'reset', content: merged })
     setDirty(true)
     setSelection(null)
-  }, [commitHistory])
+  }, [])
 
   const value = {
     content,

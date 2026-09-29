@@ -121,11 +121,18 @@ export function EditableImage({
   const { content, isEditMode, select, selection } = useLandingContent()
   const stored = getPath(content, path, null)
   const src = resolveImageUrl(stored) || defaultSrc
+  const handleImageError = (event) => {
+    // Keep the bundled image visible if an old uploaded file is unavailable.
+    const img = event.currentTarget
+    if (defaultSrc && img.getAttribute('src') !== defaultSrc) {
+      img.src = defaultSrc
+    }
+  }
   const isSelected = isEditMode && selection?.type === 'image' && selection.path === path
   const inlineStyle = buildInlineStyle(styleObj ? getPath(content, styleObj, {}) : null)
 
   if (!isEditMode) {
-    return <img src={src} alt={alt} style={inlineStyle} className={`${containerClassName} ${imageClassName}`} />
+    return <img src={src} onError={handleImageError} alt={alt} style={inlineStyle} className={`${containerClassName} ${imageClassName}`} />
   }
 
   return (
@@ -139,6 +146,7 @@ export function EditableImage({
     >
       <img
         src={src}
+        onError={handleImageError}
         alt={alt}
         className={`${imageClassName} transition ${
           isSelected ? 'ring-2 ring-emerald-400 ring-inset' : 'group-hover/img:ring-2 group-hover/img:ring-emerald-400/60 group-hover/img:ring-inset'

@@ -109,3 +109,42 @@ linked from the Admin Dashboard).
   planned for a future phase — until then, treat `backend/uploads/` on such
   platforms as non-durable, especially for video.
 
+
+
+## Responsive Footer embeds
+
+The Footer stores independent `mapLayout` and `streetView360Layout` objects.
+Each contains `width`, `height`, `align`, `marginTop` and `marginBottom`, with
+`desktop`, `tablet` and `mobile` values. Missing fields are backfilled from the
+defaults without replacing saved values. The original frame size is retained:
+100% of its grid column, 152px high (150px iframe plus borders), left aligned,
+with zero margins. Public breakpoints are mobile below 768px, tablet from 768px,
+and desktop from 1024px. The editor uses its existing device selector instead
+of the browser viewport, including the Footer's column layout.
+
+Drag the green corner handle to resize; live pixel dimensions appear during
+the gesture. Release to commit one Undo/Redo entry, or press Escape to cancel.
+The handle supports arrow keys (1px) and Shift + arrow keys (10px). Resizing
+stays within the grid column, with an 80px minimum and 2000px maximum drag
+height. The panel accepts positive px/% sizes, committed on blur or Enter;
+invalid input does not overwrite saved content. Width percentages reference
+the column; height percentages reference the original 152px frame because
+the parent grid row has automatic height. Alignment and vertical margins also
+apply independently to the selected device. The existing frame, map color
+filter, contacts and links remain in place.
+
+### Local browser verification
+
+`VITE_API_URL` optionally overrides the API URL (production default unchanged).
+To run `tests/footer-layout.mjs`, start FastAPI on 127.0.0.1:8001 with
+`DATABASE_URL` pointing to an **isolated local test database**, and Vite on
+127.0.0.1:5173 with `VITE_API_URL=http://127.0.0.1:8001`.
+Install Playwright locally with `npm install --no-save --package-lock=false playwright`
+and run `node tests/footer-layout.mjs`. The script uses installed Microsoft
+Edge in headless mode, seeds and publishes local test content, and writes
+screenshots plus layout JSON to `artifacts/footer-layout/`. It tests both
+embeds on all editor devices, default dimensions, dragging, cancellation,
+keyboard sizing, input validation, percentages, alignment, margins, atomic
+Undo/Redo, Save/Publish, Preview, reload and public CSS at seven viewport widths.
+External frames/widgets are blocked during automation; the tests verify their
+container layout and do not depend on Google or other third-party services.

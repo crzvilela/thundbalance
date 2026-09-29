@@ -3,6 +3,8 @@ import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/Section
 import { BLANK_IMAGE_PLACEHOLDER } from '../utils/placeholderImage'
 import { useI18n } from '../i18n/I18nContext'
 import { resolveText } from '../utils/multilingual'
+import { useLandingContent } from '../content/LandingContentContext'
+import ResizableBlock from './editor/ResizableBlock'
 
 function PinIcon() {
   return (
@@ -49,6 +51,7 @@ function ArrowUpRightIcon() {
 }
 
 function Footer() {
+  const { device } = useLandingContent()
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection('footer')
   const { t, language } = useI18n()
 
@@ -84,7 +87,7 @@ function Footer() {
 
       <div className="max-w-7xl mx-auto">
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-12 mb-14">
+        <div className={`grid ${isEditMode ? (device === 'mobile' ? 'grid-cols-1' : 'grid-cols-2') : 'grid-cols-1 md:grid-cols-2'} gap-12 mb-14`}>
 
           {/* Column 1 — brand */}
           <div className="flex flex-col gap-4">
@@ -219,28 +222,28 @@ function Footer() {
               {t('footer_visit_us')}
             </h3>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="footer-embed-grid" data-editor-device={isEditMode ? device : undefined}>
               {section.mapEmbedUrl && (
-                <div className="rounded-xl overflow-hidden border border-white/10 shadow-lg">
+                <ResizableBlock path="sections.footer.mapLayout" label="Map">
                   <iframe
                     src={section.mapEmbedUrl}
                     width="100%"
-                    height="320"
+                    height="150"
                     style={{ border: 0 }}
                     loading="lazy"
                     referrerPolicy="no-referrer-when-downgrade"
                     title="Location map"
                     className={`w-full h-full ${mapDarkFilterClass}`}
                   />
-                </div>
+                </ResizableBlock>
               )}
 
               {section.streetView360EmbedUrl && (
-                <div className="rounded-xl overflow-hidden border border-white/10 shadow-lg">
+                <ResizableBlock path="sections.footer.streetView360Layout" label="360°">
                   <iframe
                     src={section.streetView360EmbedUrl}
                     width="100%"
-                    height="320"
+                    height="150"
                     style={{ border: 0 }}
                     loading="lazy"
                     referrerPolicy="no-referrer-when-downgrade"
@@ -248,7 +251,7 @@ function Footer() {
                     title="360° view"
                     className="w-full h-full"
                   />
-                </div>
+                </ResizableBlock>
               )}
             </div>
           </div>

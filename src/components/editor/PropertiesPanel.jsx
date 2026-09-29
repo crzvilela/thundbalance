@@ -7,6 +7,7 @@ import { resolveImageUrl, uploadLandingImage, uploadLandingVideo } from '../../a
 import { isKnownEmbedProvider } from '../../utils/videoEmbed'
 import { SECTION_LABELS, SECTION_TYPE_INFO, makeDefaultServiceItem, makeDefaultPricingPlan, makeDefaultTestimonialMedia } from '../../content/defaultContent'
 import ConfirmDialog from './ConfirmDialog'
+import { layoutAtDevice, validLayoutSize } from '../../utils/responsiveLayout'
 import {
   FieldGroup,
   TextField,
@@ -715,6 +716,42 @@ function NavbarFields({ section, updateField }) {
   )
 }
 
+function LayoutSizeField({ label, value, onCommit }) {
+  const [draft, setDraft] = useState(value)
+  const invalid = !validLayoutSize(draft)
+  const commit = () => { if (!invalid && draft !== value) onCommit(draft) }
+  return <>
+    <TextField label={label} value={draft} onChange={setDraft} onBlur={commit}
+      invalid={invalid} placeholder="300px or 80%"
+      onKeyDown={event => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+        if (event.key === 'Escape') setDraft(value)
+      }} />
+    {invalid && <p className="text-xs text-red-400 mb-4" role="alert">Enter a positive size in px or %, for example 300px or 80%.</p>}
+  </>
+}
+
+function FooterLayoutFields({ layout, layoutKey, label, updateField }) {
+  const { device } = useLandingContent()
+  const values = layoutAtDevice(layout, device)
+  const path = `sections.footer.${layoutKey}`
+  return <div className="border border-white/10 rounded-lg p-3 mb-5" data-layout-fields={layoutKey}>
+    <p className="text-xs uppercase tracking-wider text-emerald-400 mb-3">{label} size &amp; position</p>
+    <p className="text-xs text-gray-400 mb-4">Editing: <strong>{device[0].toUpperCase() + device.slice(1)}</strong> - selected in the top bar.</p>
+    {['width', 'height'].map(field => <LayoutSizeField key={`${device}-${field}-${values[field]}`}
+      label={`${label} ${field}`} value={values[field]}
+      onCommit={value => updateField(`${path}.${field}.${device}`, value)} />)}
+    <p className="text-[11px] text-gray-500 mb-4">Width % uses the column width. Height % uses the original 152px frame. Width stays inside its column; height is capped at 2000px.</p>
+    <SelectField label={`${label} alignment`} value={values.align}
+      options={['left', 'center', 'right'].map(value => ({ value, label: value[0].toUpperCase() + value.slice(1) }))}
+      onChange={value => updateField(`${path}.align.${device}`, value)} />
+    <NumberField label={`${label} margin top`} value={values.marginTop}
+      onChange={value => updateField(`${path}.marginTop.${device}`, value)} />
+    <NumberField label={`${label} margin bottom`} value={values.marginBottom}
+      onChange={value => updateField(`${path}.marginBottom.${device}`, value)} />
+  </div>
+}
+
 function FooterFields({ section, updateField }) {
   const address = section.address || {}
   const { language, setLanguage, supportedLanguages } = useI18n()
@@ -775,6 +812,9 @@ function FooterFields({ section, updateField }) {
           className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-emerald-500 transition resize-none"
         />
       </FieldGroup>
+
+      <FooterLayoutFields layout={section.mapLayout} layoutKey="mapLayout" label="Map" updateField={updateField} />
+      <FooterLayoutFields layout={section.streetView360Layout} layoutKey="streetView360Layout" label="360°" updateField={updateField} />
 
       <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">Contact Links</p>
       <TextField

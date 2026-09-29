@@ -118,7 +118,7 @@ function About({ sectionId }) {
       )}
 
       {section.embed360Url && (
-        <div className="max-w-4xl mx-auto mt-14 md:mt-20">
+        <div className="max-w-6xl mx-auto mt-14 md:mt-20">
           <div className="rounded-xl overflow-hidden border border-white/10 shadow-lg">
             <iframe
               src={section.embed360Url}
@@ -129,7 +129,7 @@ function About({ sectionId }) {
               referrerPolicy="no-referrer-when-downgrade"
               allowFullScreen
               title="360° view"
-              className="w-full h-full"
+              className="w-full h-[420px] sm:h-[500px] md:h-[600px]"
             />
           </div>
         </div>

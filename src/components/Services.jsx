@@ -1,10 +1,7 @@
-import service1 from '../assets/images/service1.jpg'
-import service2 from '../assets/images/service2.jpg'
-import service3 from '../assets/images/service3.jpg'
+import { BLANK_IMAGE_PLACEHOLDER } from '../utils/placeholderImage'
 import { EditableText, EditableImage, useSectionSelection, SectionEditOverlay } from './editor/Editable'
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
 
-const DEFAULT_IMAGES = [service1, service2, service3]
 
 function Services({ sectionId }) {
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'Services')
@@ -55,7 +52,7 @@ function Services({ sectionId }) {
               <EditableImage
                 path={`sections.${sectionId}.items.${index}.image`}
                 styleObj={`sections.${sectionId}.items.${index}.imageStyle`}
-                defaultSrc={DEFAULT_IMAGES[index] || service1}
+                defaultSrc={BLANK_IMAGE_PLACEHOLDER}
                 alt=""
                 containerClassName="w-full h-72 overflow-hidden"
                 imageClassName="w-full h-72 object-cover hover:scale-110 transition duration-700"

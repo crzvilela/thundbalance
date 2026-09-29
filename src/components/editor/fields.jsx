@@ -12,11 +12,15 @@ export function FieldGroup({ label, children, hint }) {
   )
 }
 
-export function TextField({ value, onChange, placeholder, label }) {
+export function TextField({ value, onChange, placeholder, label, onBlur, onKeyDown, invalid }) {
   return (
     <FieldGroup label={label}>
       <input
         type="text"
+        aria-label={label}
+        aria-invalid={invalid || undefined}
+        onBlur={onBlur}
+        onKeyDown={onKeyDown}
         value={value ?? ''}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
@@ -61,6 +65,7 @@ export function NumberField({ value, onChange, label, unit = 'px', placeholder =
       <div className="flex items-center gap-2">
         <input
           type="number"
+          aria-label={label}
           value={numericValue}
           placeholder={placeholder}
           onChange={(e) => handleChange(e.target.value)}
@@ -100,6 +105,7 @@ export function SelectField({ value, onChange, options, label }) {
   return (
     <FieldGroup label={label}>
       <select
+        aria-label={label}
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value)}
         className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-emerald-500 transition"

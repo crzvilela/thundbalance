@@ -90,6 +90,8 @@ export async function uploadLandingVideo(file) {
 // - relative ("/uploads/xxx") -> prefixed with the API base URL
 export function resolveImageUrl(path) {
   if (!path) return null
+  // Bundled site images belong to the frontend, uploads to the API.
+  if (path.startsWith('/site-images/')) return `${import.meta.env.BASE_URL}${path.slice(1)}`
   if (/^(https?:)?\/\//.test(path) || path.startsWith('data:')) return path
   return `${API_URL}${path}`
 }

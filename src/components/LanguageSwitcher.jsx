@@ -7,10 +7,20 @@ const LANGUAGE_OPTIONS = [
   { code: 'ca', label: 'Català' }
 ]
 
+function GlobeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4 shrink-0">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3c2.5 2.5 4 5.5 4 9s-1.5 6.5-4 9c-2.5-2.5-4-5.5-4-9s1.5-6.5 4-9Z" />
+    </svg>
+  )
+}
+
 // Globe icon button + dropdown, used in both the desktop Navbar (near
-// Login/Register or the avatar) and inside the mobile hamburger menu. No
-// icon library is installed in this project, so a plain 🌐 emoji is used
-// instead of adding a new dependency for one icon.
+// Login/Register or the avatar) and inside the mobile hamburger menu. An
+// inline SVG (not an emoji) so the icon's color actually follows Tailwind
+// text-color classes — emoji glyphs render in their own fixed colors
+// regardless of CSS.
 function LanguageSwitcher({ className = '' }) {
   const { language, setLanguage, t } = useI18n()
   const [open, setOpen] = useState(false)
@@ -39,9 +49,9 @@ function LanguageSwitcher({ className = '' }) {
         }}
         aria-label={t('language_switcher_aria')}
         aria-expanded={open}
-        className="w-9 h-9 flex items-center justify-center rounded-full border border-white/15 text-gray-300 hover:text-white hover:border-white transition text-base shrink-0"
+        className="w-9 h-9 flex items-center justify-center rounded-full border border-white text-white hover:bg-white/10 transition shrink-0"
       >
-        🌐
+        <GlobeIcon />
       </button>
 
       {open && (
