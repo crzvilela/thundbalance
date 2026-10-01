@@ -5,6 +5,9 @@ import { useI18n } from '../i18n/I18nContext'
 import { resolveText } from '../utils/multilingual'
 import { useLandingContent } from '../content/LandingContentContext'
 import ResizableBlock from './editor/ResizableBlock'
+import { footerPositionStyle } from '../utils/footerPosition'
+import { contactItems, socialLinks, contactHref, safeLink } from '../utils/footerContent'
+import './Footer.css'
 
 function PinIcon() {
   return (
@@ -57,7 +60,11 @@ function Footer() {
 
   if (!visible && !isEditMode) return null
 
-  const address = section.address || {}
+  const positionProps = key => ({
+    className: 'footer-position',
+    'data-footer-position': key,
+    style: footerPositionStyle(section.contactPositions?.[key], isEditMode ? device : undefined),
+  })
   const accentStyle = { fontFamily: theme.typography.accentFont }
   const bodyStyle = { fontFamily: theme.typography.bodyFont }
 
@@ -119,111 +126,49 @@ function Footer() {
           </div>
 
           {/* Column 2 — get in touch */}
-          <div className="flex flex-col gap-5">
+          <div {...positionProps('group')} className="footer-position flex flex-col gap-5">
             <h3 className="uppercase tracking-[3px] text-xs text-gray-500" style={accentStyle}>
-              {t('footer_get_in_touch')}
+              {resolveText(section.contactHeading, language) || t('footer_get_in_touch')}
             </h3>
 
             <ul className="flex flex-col gap-3 text-sm text-gray-400" style={bodyStyle}>
-              {address.text && (
-                <li>
-                  <a
-                    href={address.mapsLink || undefined}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={handleLinkClick}
-                    className="flex items-start gap-2.5 hover:text-white transition"
-                  >
-                    <PinIcon />
-                    <span>{resolveText(address.text, language)}</span>
+              {contactItems(section).filter(item => item.visible !== false).map(item => {
+                const href = contactHref(item, language)
+                const Icon = { pin: PinIcon, mail: MailIcon, whatsapp: WhatsAppIcon, arrow: ArrowUpRightIcon }[item.icon]
+                const Tag = href ? 'a' : 'span'
+                return (
+                  <li key={item.id} {...positionProps(item.id)}>
+                    <Tag href={href} target={href?.startsWith('http') ? '_blank' : undefined}
+                      rel={href?.startsWith('http') ? 'noopener noreferrer' : undefined}
+                      onClick={handleLinkClick} className="flex items-center gap-2.5 hover:text-white transition">
+                      {Icon && <Icon />}
+                      <span>{resolveText(item.label, language) || resolveText(item.value, language)}</span>
+                    </Tag>
+                  </li>
+                )
+              })}
+              {socialLinks(section).filter(item => item.visible !== false).map(item => (
+                <li key={item.id} {...positionProps(item.id)}>
+                  <a href={safeLink(item.url)} target="_blank" rel="noopener noreferrer"
+                    onClick={handleLinkClick} className="flex items-center gap-2.5 hover:text-white transition">
+                    {item.label.toLowerCase() === 'instagram' ? <InstagramIcon /> : <ArrowUpRightIcon />}
+                    <span>{item.label}</span>
                   </a>
                 </li>
-              )}
-
-              {section.contactEmail && (
-                <li>
-                  <a
-                    href={`mailto:${section.contactEmail}`}
-                    onClick={handleLinkClick}
-                    className="flex items-center gap-2.5 hover:text-white transition"
-                  >
-                    <MailIcon />
-                    <span>{section.contactEmail}</span>
-                  </a>
-                </li>
-              )}
-
-              {section.whatsappLink && (
-                <li>
-                  <a
-                    href={section.whatsappLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={handleLinkClick}
-                    className="flex items-center gap-2.5 hover:text-white transition"
-                  >
-                    <WhatsAppIcon />
-                    <span>{section.whatsappNumber || t('footer_whatsapp_fallback')}</span>
-                  </a>
-                </li>
-              )}
-
-              {section.contactUsUrl && (
-                <li>
-                  <a
-                    href={section.contactUsUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={handleLinkClick}
-                    className="group flex items-center gap-2 hover:text-white transition"
-                  >
-                    <span>{t('footer_contact_us')}</span>
-                    <ArrowUpRightIcon />
-                  </a>
-                </li>
-              )}
-
-              {section.joinUsEmail && (
-                <li>
-                  <a
-                    href={section.joinUsEmail}
-                    onClick={handleLinkClick}
-                    className="group flex items-center gap-2 hover:text-white transition"
-                  >
-                    <span>{t('footer_join_us')}</span>
-                    <ArrowUpRightIcon />
-                  </a>
-                </li>
-              )}
-
-              {section.instagramUrl && (
-                <li>
-                  <a
-                    href={section.instagramUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={handleLinkClick}
-                    aria-label={t('footer_instagram_aria')}
-                    className="flex items-center gap-2.5 hover:text-white transition"
-                  >
-                    <InstagramIcon />
-                    <span>Instagram</span>
-                  </a>
-                </li>
-              )}
+              ))}
             </ul>
           </div>
 
         </div>
 
-        {(section.mapEmbedUrl || section.streetView360EmbedUrl) && (
+        {((section.mapVisible !== false && section.mapEmbedUrl) || (section.streetViewVisible !== false && section.streetView360EmbedUrl)) && (
           <div className="mb-14">
             <h3 className="uppercase tracking-[3px] text-xs text-gray-500 mb-5" style={accentStyle}>
               {t('footer_visit_us')}
             </h3>
 
             <div className="footer-embed-grid" data-editor-device={isEditMode ? device : undefined}>
-              {section.mapEmbedUrl && (
+              {section.mapVisible !== false && section.mapEmbedUrl && (
                 <ResizableBlock path="sections.footer.mapLayout" label="Map">
                   <iframe
                     src={section.mapEmbedUrl}
@@ -238,7 +183,7 @@ function Footer() {
                 </ResizableBlock>
               )}
 
-              {section.streetView360EmbedUrl && (
+              {section.streetViewVisible !== false && section.streetView360EmbedUrl && (
                 <ResizableBlock path="sections.footer.streetView360Layout" label="360°">
                   <iframe
                     src={section.streetView360EmbedUrl}

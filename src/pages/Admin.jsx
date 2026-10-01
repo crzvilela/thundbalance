@@ -6,6 +6,7 @@ import 'react-datepicker/dist/react-datepicker.css'
 import Calendar from 'react-calendar'
 import 'react-calendar/dist/Calendar.css'
 import { API_URL } from '../config'
+import { adminFetch } from '../api/admin'
 
 function Admin() {
 
@@ -46,7 +47,7 @@ function Admin() {
 
     try {
 
-      await fetch(
+      await adminFetch(
         `${API_URL}/admin/assign-plan`,
         {
           method: 'POST',
@@ -78,7 +79,7 @@ function Admin() {
   useEffect(() => {
 
     const loadData = async () => {
-      const requestsResponse = await fetch(
+      const requestsResponse = await adminFetch(
         `${API_URL}/admin/client-requests`
       )
 
@@ -89,7 +90,7 @@ function Admin() {
 
       try {
 
-        const statsResponse = await fetch(
+        const statsResponse = await adminFetch(
           `${API_URL}/admin/stats`
         )
 
@@ -97,7 +98,7 @@ function Admin() {
 
         setStats(statsData)
 
-        const usersResponse = await fetch(
+        const usersResponse = await adminFetch(
           `${API_URL}/admin/users`
         )
 
@@ -105,7 +106,7 @@ function Admin() {
 
         setUsers(usersData)
 
-        const trainersResponse = await fetch(
+        const trainersResponse = await adminFetch(
           `${API_URL}/admin/trainers`
         )
 
@@ -113,7 +114,7 @@ function Admin() {
 
         setTrainers(trainersData)
 
-        const sessionsResponse = await fetch(
+        const sessionsResponse = await adminFetch(
           `${API_URL}/admin/sessions`
         )
 
@@ -137,7 +138,7 @@ function Admin() {
 
     try {
 
-      const sessionsResponse = await fetch(
+      const sessionsResponse = await adminFetch(
         `${API_URL}/admin/sessions/email/${searchEmail}`
       )
 
@@ -149,7 +150,7 @@ function Admin() {
       )
 
       const progressResponse =
-        await fetch(
+        await adminFetch(
           `${API_URL}/admin/client-progress/${searchEmail}`
         )
 
@@ -195,7 +196,7 @@ function Admin() {
 
       }
 
-      await fetch(
+      await adminFetch(
         `${API_URL}/admin/approve-request`,
         {
           method: 'POST',
@@ -266,6 +267,9 @@ function Admin() {
 
           <div className="mb-12 flex flex-col sm:flex-row gap-4">
 
+            <Link to="/admin/footer" className="inline-flex items-center gap-3 border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 transition px-6 py-4 rounded-2xl">
+              <span><span className="block font-semibold">Footer</span><span className="block text-xs text-gray-400">Edit the map, contacts and social links with a live preview</span></span>
+            </Link>
             <Link
               to="/admin/landing-editor"
               className="inline-flex items-center gap-3 border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 transition px-6 py-4 rounded-2xl"

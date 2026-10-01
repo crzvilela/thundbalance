@@ -8,12 +8,15 @@ import BookSession from '../pages/BookSession'
 import MySessions from '../pages/MySessions'
 import Profile from '../pages/Profile'
 import Admin from '../pages/Admin'
+import FooterEditor from '../pages/admin/FooterEditor'
 import LandingPageEditor from '../pages/admin/LandingPageEditor'
 import TrainingVideosManager from '../pages/admin/TrainingVideosManager'
 import TrainingTips from '../pages/TrainingTips'
 import ChoosePlan from '../pages/ChoosePlan'
 import TrialSession from '../pages/Trialsession'
 import TrainingRequest from '../pages/TrainingRequest'
+import AdminLogin from '../pages/admin/AdminLogin'
+import RequireAdmin from '../components/admin/RequireAdmin'
 
 function AppRoutes() {
   return (
@@ -37,11 +40,15 @@ function AppRoutes() {
         
         <Route path="/profile" element={<Profile />} />
       
-        <Route path="/admin" element={<Admin />} />
+        <Route path="/admin/login" element={<AdminLogin />} />
 
-        <Route path="/admin/landing-editor" element={<LandingPageEditor />} />
+        <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
 
-        <Route path="/admin/training-videos" element={<TrainingVideosManager />} />
+        <Route path="/admin/footer" element={<RequireAdmin><FooterEditor /></RequireAdmin>} />
+
+        <Route path="/admin/landing-editor" element={<RequireAdmin><LandingPageEditor /></RequireAdmin>} />
+
+        <Route path="/admin/training-videos" element={<RequireAdmin><TrainingVideosManager /></RequireAdmin>} />
 
         <Route path="/training-tips" element={<TrainingTips />} />
       

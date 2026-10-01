@@ -1,3 +1,4 @@
+import { FOOTER_POSITION_ITEMS, footerOffset } from '../../utils/footerPosition'
 import { useRef, useState } from 'react'
 import { useLandingContent } from '../../content/LandingContentContext'
 import { getPath } from '../../utils/objectPath'
@@ -752,103 +753,40 @@ function FooterLayoutFields({ layout, layoutKey, label, updateField }) {
   </div>
 }
 
+function FooterPositionFields({ section, updateField }) {
+  const { device } = useLandingContent()
+  return <div className="border border-white/10 rounded-lg p-3 mb-5">
+    <p className="text-xs uppercase tracking-wider text-emerald-400 mb-3">Posição dos contactos</p>
+    <p className="text-xs text-gray-400 mb-4">Get in touch - {device}. Escolha o dispositivo na barra superior. Valores negativos movem para a esquerda ou para cima; positivos para a direita ou para baixo. Cada botão move-se com o seu símbolo.</p>
+    {FOOTER_POSITION_ITEMS.map(([key, label]) => {
+      const position = section.contactPositions?.[key]?.[device]
+      const path = `sections.footer.contactPositions.${key}.${device}`
+      return <details key={key} className="border-t border-white/10 py-3">
+        <summary className="cursor-pointer text-sm text-white">{label}</summary>
+        <div className="mt-3">
+          <NumberField label={`${label} - Horizontal`} value={footerOffset(position?.x)}
+            onChange={value => updateField(`${path}.x`, footerOffset(value))} />
+          <NumberField label={`${label} - Vertical`} value={footerOffset(position?.y)}
+            onChange={value => updateField(`${path}.y`, footerOffset(value))} />
+          <SmallButton onClick={() => updateField(path, { x: '0px', y: '0px' })}>Repor posição</SmallButton>
+        </div>
+      </details>
+    })}
+  </div>
+}
+
 function FooterFields({ section, updateField }) {
-  const address = section.address || {}
-  const { language, setLanguage, supportedLanguages } = useI18n()
-
-  return (
-    <>
-      <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">Brand</p>
-      <p className="text-[11px] text-gray-500 mb-3">Click the logo/brand in the preview to set a logo image.</p>
-      <ToggleField
-        label="Show brand text"
-        value={section.showBrandText !== false}
-        onChange={(v) => updateField('sections.footer.showBrandText', v)}
-      />
-
-      <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">Address</p>
-
-      <FieldGroup label="Editing Language" hint="Applies to the address text below (the map link is the same in every language).">
-        <ButtonRow>
-          {supportedLanguages.map((lang) => (
-            <SmallButton key={lang} variant={language === lang ? 'primary' : 'default'} onClick={() => setLanguage(lang)}>
-              {lang.toUpperCase()}
-            </SmallButton>
-          ))}
-        </ButtonRow>
-      </FieldGroup>
-
-      <TextField
-        label={`Address text (${language.toUpperCase()})`}
-        value={resolveText(address.text, language)}
-        onChange={(v) => updateField('sections.footer.address.text', setTextForLanguage(address.text, language, v))}
-      />
-      <TextField
-        label="Google Maps link (address click-through)"
-        value={address.mapsLink}
-        onChange={(v) => updateField('sections.footer.address.mapsLink', v)}
-      />
-
-      <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">Map &amp; 360°</p>
-      <FieldGroup
-        label="Map embed URL"
-        hint='In Google Maps: Share → Embed a map → copy the src="..." URL from the <iframe> code and paste it here.'
-      >
-        <textarea
-          value={section.mapEmbedUrl ?? ''}
-          rows={2}
-          onChange={(e) => updateField('sections.footer.mapEmbedUrl', e.target.value)}
-          className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-emerald-500 transition resize-none"
-        />
-      </FieldGroup>
-      <FieldGroup
-        label="360° / Street View embed URL"
-        hint='In Google Maps: open the 360° photo you want → Share or embed image → Embed a map → copy the src="..." URL and paste it here. Leave empty to hide this block.'
-      >
-        <textarea
-          value={section.streetView360EmbedUrl ?? ''}
-          rows={2}
-          onChange={(e) => updateField('sections.footer.streetView360EmbedUrl', e.target.value)}
-          className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-emerald-500 transition resize-none"
-        />
-      </FieldGroup>
-
-      <FooterLayoutFields layout={section.mapLayout} layoutKey="mapLayout" label="Map" updateField={updateField} />
-      <FooterLayoutFields layout={section.streetView360Layout} layoutKey="streetView360Layout" label="360°" updateField={updateField} />
-
-      <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">Contact Links</p>
-      <TextField
-        label="Contact us URL"
-        value={section.contactUsUrl}
-        onChange={(v) => updateField('sections.footer.contactUsUrl', v)}
-      />
-      <TextField
-        label="Join us (mailto link)"
-        value={section.joinUsEmail}
-        onChange={(v) => updateField('sections.footer.joinUsEmail', v)}
-      />
-      <TextField
-        label="Contact email"
-        value={section.contactEmail}
-        onChange={(v) => updateField('sections.footer.contactEmail', v)}
-      />
-      <TextField
-        label="WhatsApp number (display text)"
-        value={section.whatsappNumber}
-        onChange={(v) => updateField('sections.footer.whatsappNumber', v)}
-      />
-      <TextField
-        label="WhatsApp link (wa.me/...)"
-        value={section.whatsappLink}
-        onChange={(v) => updateField('sections.footer.whatsappLink', v)}
-      />
-      <TextField
-        label="Instagram URL"
-        value={section.instagramUrl}
-        onChange={(v) => updateField('sections.footer.instagramUrl', v)}
-      />
-    </>
-  )
+  return <>
+    <p className="text-xs text-gray-400 mt-5 mb-4">Use the Footer editor to manage your location, contacts and social links. Save any page changes before opening it.</p>
+    <a href="/admin/footer" target="_blank" rel="noopener noreferrer" className="block text-emerald-400 mb-5">Open Footer editor ↗</a>
+    <ToggleField label="Show brand text" value={section.showBrandText !== false}
+      onChange={value => updateField('sections.footer.showBrandText', value)} />
+    <TextField label="360° / Street View URL" value={section.streetView360EmbedUrl}
+      onChange={value => updateField('sections.footer.streetView360EmbedUrl', value)} />
+    <FooterPositionFields section={section} updateField={updateField} />
+    <FooterLayoutFields layout={section.mapLayout} layoutKey="mapLayout" label="Map" updateField={updateField} />
+    <FooterLayoutFields layout={section.streetView360Layout} layoutKey="streetView360Layout" label="360°" updateField={updateField} />
+  </>
 }
 
 function ServicesSectionFields({ sectionKey, content, updateField }) {

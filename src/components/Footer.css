@@ -1,0 +1,13 @@
+.footer-position {
+  position: relative;
+  left: var(--footer-x-mobile, 0px);
+  top: var(--footer-y-mobile, 0px);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (min-width: 768px) {
+  .footer-position { left: var(--footer-x-tablet, 0px); top: var(--footer-y-tablet, 0px); }
+}
+@media (min-width: 1024px) {
+  .footer-position { left: var(--footer-x-desktop, 0px); top: var(--footer-y-desktop, 0px); }
+}

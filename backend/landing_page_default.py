@@ -129,6 +129,7 @@ def make_default_testimonial_media(media_type="image"):
 
 
 DEFAULT_LANDING_CONTENT = {
+    "heroImageVersion": 1,
     "bundledImagesVersion": 2,
     "theme": {
         "colors": {
@@ -183,7 +184,7 @@ DEFAULT_LANDING_CONTENT = {
                 "borderColor": "#ffffff",
                 "radius": "0px"
             },
-            "background": _section_background(type="image", image="/site-images/hero.jpg", overlayOpacity=0.6)
+            "background": _section_background(type="image", image="/site-images/hero.png", overlayOpacity=0.6)
         },
         "about": {
             "type": "about",

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header
 
 import os
 import json
@@ -18,6 +18,8 @@ from google_calendar import (
     clear_calendar
 )
 from landing_page_default import DEFAULT_LANDING_CONTENT
+from google.auth.transport.requests import Request as GoogleAuthRequest
+from google.oauth2 import id_token
 
 
 DAY_MAP = {
@@ -48,6 +50,37 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "thundbalance").strip()
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "david@admin.es").strip().casefold()
+firebase_token_request = GoogleAuthRequest()
+
+
+def require_admin(authorization: str | None = Header(default=None)):
+    """Verify a Firebase ID token and allow only the configured admin email."""
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.casefold() != "bearer" or not token:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        claims = id_token.verify_firebase_token(
+            token,
+            firebase_token_request,
+            audience=FIREBASE_PROJECT_ID,
+        )
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired login")
+
+    expected_issuer = f"https://securetoken.google.com/{FIREBASE_PROJECT_ID}"
+    if claims.get("iss") != expected_issuer:
+        raise HTTPException(status_code=401, detail="Invalid login issuer")
+
+    token_email = str(claims.get("email", "")).strip().casefold()
+    if not ADMIN_EMAIL or token_email != ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="Administrator access required")
+
+    return claims
 
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
@@ -889,7 +922,7 @@ def update_session(
         conn.close()
 
 
-@app.get("/admin/stats")
+@app.get("/admin/stats", dependencies=[Depends(require_admin)])
 def get_admin_stats():
 
     conn = get_connection()
@@ -918,7 +951,7 @@ def get_admin_stats():
         conn.close()
 
 
-@app.get("/admin/users")
+@app.get("/admin/users", dependencies=[Depends(require_admin)])
 def admin_users():
 
     conn = get_connection()
@@ -961,7 +994,7 @@ def admin_users():
         conn.close()
 
 
-@app.get("/admin/trainers")
+@app.get("/admin/trainers", dependencies=[Depends(require_admin)])
 def admin_trainers():
 
     conn = get_connection()
@@ -985,7 +1018,7 @@ def admin_trainers():
         conn.close()
 
 
-@app.get("/admin/sessions")
+@app.get("/admin/sessions", dependencies=[Depends(require_admin)])
 def admin_sessions():
 
     conn = get_connection()
@@ -1229,7 +1262,7 @@ def create_trial_session(
         conn.close()
 
 
-@app.post("/admin/assign-plan")
+@app.post("/admin/assign-plan", dependencies=[Depends(require_admin)])
 def admin_assign_plan(
     data: AssignPlan
 ):
@@ -1336,7 +1369,7 @@ def create_client_request(
         conn.close()
 
 
-@app.get("/admin/client-requests")
+@app.get("/admin/client-requests", dependencies=[Depends(require_admin)])
 def admin_client_requests():
 
     conn = get_connection()
@@ -1382,7 +1415,7 @@ def admin_client_requests():
         conn.close()
 
 
-@app.post("/admin/approve-request")
+@app.post("/admin/approve-request", dependencies=[Depends(require_admin)])
 def approve_request(
     data: ApproveRequest
 ):
@@ -1584,7 +1617,7 @@ def approve_request(
         conn.close()
 
 
-@app.get("/admin/sessions/email/{email}")
+@app.get("/admin/sessions/email/{email}", dependencies=[Depends(require_admin)])
 def get_sessions_by_email(email: str):
 
     conn = get_connection()
@@ -1629,7 +1662,7 @@ def get_sessions_by_email(email: str):
         conn.close()
 
 
-@app.get("/admin/client-progress/{email}")
+@app.get("/admin/client-progress/{email}", dependencies=[Depends(require_admin)])
 def client_progress(email: str):
 
     conn = get_connection()
@@ -1775,7 +1808,7 @@ def get_available_times(
         conn.close()
 
 
-@app.delete("/admin/clear-calendar")
+@app.delete("/admin/clear-calendar", dependencies=[Depends(require_admin)])
 def clear_google_calendar():
 
     clear_calendar()
@@ -1795,10 +1828,16 @@ def clear_google_calendar():
 
 
 @app.get("/landing-page/content")
-def get_landing_page_content(version: str = "published"):
+def get_landing_page_content(
+    version: str = "published",
+    authorization: str | None = Header(default=None),
+):
 
     if version not in ("draft", "published"):
         raise HTTPException(status_code=400, detail="Invalid version")
+
+    if version == "draft":
+        require_admin(authorization)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -1838,7 +1877,44 @@ def get_landing_page_content(version: str = "published"):
         conn.close()
 
 
-@app.put("/landing-page/content/draft")
+class FooterContentPayload(BaseModel):
+    footer: dict[str, Any]
+    previous_footer: dict[str, Any]
+
+
+@app.put("/landing-page/footer", dependencies=[Depends(require_admin)])
+def save_footer_content(payload: FooterContentPayload):
+    """Publish just the footer, retaining unrelated draft and published content."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT version, content FROM landing_page_content "
+            "WHERE version IN ('draft', 'published') ORDER BY version FOR UPDATE"
+        )
+        versions = dict(cursor.fetchall())
+        published = versions.get('published', DEFAULT_LANDING_CONTENT)
+        if published.get('sections', {}).get('footer', {}) != payload.previous_footer:
+            raise HTTPException(status_code=409, detail="Footer has changed since it was loaded")
+        for version in ('draft', 'published'):
+            content = versions.get(version, DEFAULT_LANDING_CONTENT)
+            updated = {**content, 'sections': {**content.get('sections', {}), 'footer': payload.footer}}
+            cursor.execute(
+                "INSERT INTO landing_page_content (version, content, updated_at) VALUES (%s, %s, NOW()) "
+                "ON CONFLICT (version) DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()",
+                (version, PgJson(updated)),
+            )
+        conn.commit()
+        return {"message": "Footer saved successfully"}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.put("/landing-page/content/draft", dependencies=[Depends(require_admin)])
 def save_landing_page_draft(payload: LandingContentPayload):
 
     conn = get_connection()
@@ -1866,7 +1942,7 @@ def save_landing_page_draft(payload: LandingContentPayload):
         conn.close()
 
 
-@app.post("/landing-page/publish")
+@app.post("/landing-page/publish", dependencies=[Depends(require_admin)])
 def publish_landing_page(payload: LandingContentPayload | None = None):
 
     conn = get_connection()
@@ -1928,7 +2004,7 @@ def publish_landing_page(payload: LandingContentPayload | None = None):
         conn.close()
 
 
-@app.post("/landing-page/reset")
+@app.post("/landing-page/reset", dependencies=[Depends(require_admin)])
 def reset_landing_page(version: str = "draft"):
 
     # 'default_base' is an immutable snapshot written once on first startup
@@ -1972,7 +2048,7 @@ def reset_landing_page(version: str = "draft"):
         conn.close()
 
 
-@app.post("/landing-page/upload-image")
+@app.post("/landing-page/upload-image", dependencies=[Depends(require_admin)])
 async def upload_landing_page_image(file: UploadFile = File(...)):
 
     original_name = file.filename or "image"
@@ -1995,7 +2071,7 @@ async def upload_landing_page_image(file: UploadFile = File(...)):
     return {"url": f"/uploads/{filename}"}
 
 
-@app.post("/landing-page/upload-video")
+@app.post("/landing-page/upload-video", dependencies=[Depends(require_admin)])
 async def upload_landing_page_video(file: UploadFile = File(...)):
 
     # Same pattern as upload_landing_page_image above, just with video
@@ -2075,7 +2151,7 @@ def get_training_videos():
         conn.close()
 
 
-@app.post("/training-videos")
+@app.post("/training-videos", dependencies=[Depends(require_admin)])
 def create_training_video(video: TrainingVideoCreate):
 
     conn = get_connection()
@@ -2135,7 +2211,7 @@ def create_training_video(video: TrainingVideoCreate):
 
 # Declared BEFORE /training-videos/{video_id} so "reorder" is never
 # swallowed by the {video_id}: int path parameter.
-@app.put("/training-videos/reorder")
+@app.put("/training-videos/reorder", dependencies=[Depends(require_admin)])
 def reorder_training_videos(payload: TrainingVideoReorder):
 
     conn = get_connection()
@@ -2174,7 +2250,7 @@ def reorder_training_videos(payload: TrainingVideoReorder):
         conn.close()
 
 
-@app.put("/training-videos/{video_id}")
+@app.put("/training-videos/{video_id}", dependencies=[Depends(require_admin)])
 def update_training_video(
     video_id: int,
     video: TrainingVideoUpdate
@@ -2224,7 +2300,7 @@ def update_training_video(
         conn.close()
 
 
-@app.delete("/training-videos/{video_id}")
+@app.delete("/training-videos/{video_id}", dependencies=[Depends(require_admin)])
 def delete_training_video(video_id: int):
 
     conn = get_connection()

@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useReducer } from 'react'
 import { defaultContent, SECTION_TYPE_DEFAULTS } from './defaultContent'
 import { deepMerge, deepClone, setPath } from '../utils/objectPath'
-import { migrateSectionsToInstances, migrateBackgroundTypes, migrateBundledImages } from './migrateContent'
+import { migrateSectionsToInstances, migrateBackgroundTypes, migrateBundledImages, migrateHeroImage } from './migrateContent'
 import {
   fetchLandingContent,
   saveDraftContent,
@@ -88,7 +88,7 @@ function pruneOrphanedSections(mergedContent) {
 // versus current defaults -> fix up known old-schema quirks -> backfill
 // list-item shapes -> drop now-unreferenced stub sections.
 function normalizeLoadedContent(rawContent) {
-  const migrated = migrateBackgroundTypes(migrateSectionsToInstances(migrateBundledImages(rawContent)))
+  const migrated = migrateHeroImage(migrateBackgroundTypes(migrateSectionsToInstances(migrateBundledImages(rawContent))))
   const merged = deepMerge(defaultContent, migrated)
   return pruneOrphanedSections(withArrayItemDefaults(withLegacyMigrations(merged)))
 }
@@ -265,4 +265,9 @@ export function LandingContentProvider({ mode = 'view', version = 'published', c
       {children}
     </LandingContentContext.Provider>
   )
+}
+
+// Render public components against an unsaved local snapshot.
+export function LandingContentPreviewProvider({ content, children }) {
+  return <LandingContentContext.Provider value={{ ...defaultContextValue, content }}>{children}</LandingContentContext.Provider>
 }

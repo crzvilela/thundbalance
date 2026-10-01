@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { resolveImageUrl } from '../../api/landingPage'
 import { VideoMedia } from './EditableVideo'
 
@@ -46,6 +47,7 @@ function OverlayLayer({ background }) {
 // site from Phases 1-2 keeps working unchanged.)
 export function SectionBackgroundImage({ background, fallbackSrc, wrapperClassName = '', imageClassName = '' }) {
   const bg = background || {}
+  const [loadedImage, setLoadedImage] = useState(null)
 
   if (bg.type === 'video') {
     if (!bg.video?.url) return null
@@ -63,9 +65,21 @@ export function SectionBackgroundImage({ background, fallbackSrc, wrapperClassNa
 
   return (
     <div className={`absolute inset-0 -z-10 overflow-hidden pointer-events-none ${wrapperClassName}`}>
+      {fallbackSrc && imageUrl !== fallbackSrc && loadedImage !== imageUrl && (
+        <img src={fallbackSrc} alt="" aria-hidden="true"
+          style={{ objectPosition: bg.position || 'center' }}
+          className={`absolute inset-0 w-full h-full object-cover ${imageClassName}`} />
+      )}
       <img
+        key={imageUrl}
         src={imageUrl}
         alt=""
+        onLoad={() => setLoadedImage(imageUrl)}
+        onError={event => {
+          if (!fallbackSrc || event.currentTarget.dataset.fallbackApplied) return
+          event.currentTarget.dataset.fallbackApplied = 'true'
+          event.currentTarget.src = fallbackSrc
+        }}
         style={{ objectPosition: bg.position || 'center' }}
         className={`absolute inset-0 w-full h-full object-cover ${imageClassName}`}
       />

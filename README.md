@@ -17,6 +17,28 @@ If you are developing a production application, we recommend using TypeScript wi
 
 ## Landing Page Editor (visual page builder)
 
+### Admin access
+
+The `/admin`, `/admin/landing-editor`, and `/admin/training-videos` routes are
+restricted to the configured Firebase account. The default administrator is
+`david@admin.es`; configure the same address as `VITE_ADMIN_EMAIL` in the
+frontend and `ADMIN_EMAIL` in the backend when changing it. Create the account
+manually in Firebase Authentication with Email/Password enabled. The backend
+verifies Firebase ID tokens on all `/admin/*` endpoints, draft reads/writes,
+publishing, uploads, and training-video changes. Published landing-page content
+and public video reads remain available to visitors.
+
+### Google reviews
+
+The Testimonials section uses Google's Places UI Kit when
+`VITE_GOOGLE_MAPS_API_KEY` is configured. Enable Maps JavaScript API and Places
+API (New) for the Google Cloud project, add the key to the frontend environment
+(including the production host), and restrict the key to the website's HTTP
+referrers. The section finds ThundBalance at Carrer de Pallars 286 in Barcelona
+and displays its current Google rating and reviews. Until the key is configured
+or if Google is temporarily unavailable, the existing reviews widget remains
+visible as a fallback.
+
 A new admin-only feature was added: a Squarespace/Webflow-style visual editor
 for the public landing page, available at **`/admin/landing-editor`** (also
 linked from the Admin Dashboard).

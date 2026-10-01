@@ -1,4 +1,5 @@
 import { API_URL } from '../config'
+import { adminFetch } from './admin'
 
 export async function fetchTrainingVideos() {
   const response = await fetch(`${API_URL}/training-videos`)
@@ -11,7 +12,7 @@ export async function fetchTrainingVideos() {
 }
 
 export async function createTrainingVideo(video) {
-  const response = await fetch(`${API_URL}/training-videos`, {
+  const response = await adminFetch(`${API_URL}/training-videos`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(video)
@@ -25,7 +26,7 @@ export async function createTrainingVideo(video) {
 }
 
 export async function updateTrainingVideo(id, video) {
-  const response = await fetch(`${API_URL}/training-videos/${id}`, {
+  const response = await adminFetch(`${API_URL}/training-videos/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(video)
@@ -39,7 +40,7 @@ export async function updateTrainingVideo(id, video) {
 }
 
 export async function deleteTrainingVideo(id) {
-  const response = await fetch(`${API_URL}/training-videos/${id}`, {
+  const response = await adminFetch(`${API_URL}/training-videos/${id}`, {
     method: 'DELETE'
   })
 
@@ -52,7 +53,7 @@ export async function deleteTrainingVideo(id) {
 
 // `orderedIds` is the full list of video IDs in their new display order.
 export async function reorderTrainingVideos(orderedIds) {
-  const response = await fetch(`${API_URL}/training-videos/reorder`, {
+  const response = await adminFetch(`${API_URL}/training-videos/reorder`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ordered_ids: orderedIds })

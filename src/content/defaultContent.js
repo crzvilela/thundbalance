@@ -79,6 +79,7 @@ function ml(en, es, ca) {
 }
 
 export const defaultContent = {
+  heroImageVersion: 1,
   bundledImagesVersion: 2,
   theme: {
     colors: {
@@ -142,7 +143,7 @@ export const defaultContent = {
         borderColor: '#ffffff',
         radius: '0px'
       },
-      background: sectionBackground({ type: 'image', image: '/site-images/hero.jpg', overlayOpacity: 0.6 })
+      background: sectionBackground({ type: 'image', image: '/site-images/hero.png', overlayOpacity: 0.6 })
     },
 
     // The 5 sections below use fixed, human-readable keys as their "ID" —
@@ -317,8 +318,8 @@ export const defaultContent = {
       titleStyle: textStyle(),
       background: sectionBackground(),
       // Optional admin-curated client photos/videos, shown as a grid below
-      // the Elfsight reviews widget. Empty by default — see Testimonials.jsx,
-      // which hides the grid entirely when this is empty.
+      // the Google reviews. Empty by default; Testimonials.jsx hides this grid
+      // when there are no media items.
       media: []
     },
 
