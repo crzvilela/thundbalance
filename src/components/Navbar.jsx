@@ -9,6 +9,8 @@ import { useLandingContent } from '../content/LandingContentContext'
 import { useI18n } from '../i18n/I18nContext'
 import LanguageSwitcher from './LanguageSwitcher'
 import logo from '../assets/images/nuevo logo (1).png'
+import { navbarLogoStyle } from '../utils/navbarLogo'
+import './Navbar.css'
 
 function Navbar() {
 
@@ -20,7 +22,7 @@ function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const navRef = useRef(null)
 
-  const { content } = useLandingContent()
+  const { content, device } = useLandingContent()
   const { t } = useI18n()
 
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection('navbar')
@@ -84,13 +86,13 @@ function Navbar() {
 
   const brandBlock = (
     <div className="flex items-center gap-2 sm:gap-3">
-      <div className="h-5 w-[30px] sm:h-6 sm:w-[38px] shrink-0 overflow-hidden mix-blend-screen">
+      <div data-navbar-logo className="navbar-logo shrink-0 mix-blend-screen" style={navbarLogoStyle(section.logoLayout, isEditMode ? device : undefined)}>
       <EditableImage
         path="sections.navbar.logoImage"
         defaultSrc={logo}
         alt="ThundBalance"
-        containerClassName="h-5 w-[30px] sm:h-6 sm:w-[38px]"
-        imageClassName="h-5 w-[30px] sm:h-6 sm:w-[38px] object-cover object-[45%_50%] scale-[1.6] invert mix-blend-screen"
+        containerClassName="h-full w-full overflow-hidden"
+        imageClassName="h-full w-full object-cover object-[45%_50%] scale-[1.6] invert mix-blend-screen"
         label="Navbar Logo"
       />
       </div>

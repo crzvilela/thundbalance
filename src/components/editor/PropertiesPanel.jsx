@@ -8,6 +8,7 @@ import { isKnownEmbedProvider } from '../../utils/videoEmbed'
 import { SECTION_LABELS, SECTION_TYPE_INFO, makeDefaultServiceItem, makeDefaultPricingPlan, makeDefaultTestimonialMedia } from '../../content/defaultContent'
 import ConfirmDialog from './ConfirmDialog'
 import FooterElementPanel from './FooterElementPanel'
+import NavbarLogoFields from './NavbarLogoFields'
 import {
   FieldGroup,
   TextField,
@@ -1221,6 +1222,8 @@ function ImagePanel({ selection, onClose }) {
   return (
     <div>
       <PanelHeader title={selection.label || 'Image'} subtitle="Image" onClose={onClose} />
+
+      {selection.path === 'sections.navbar.logoImage' && <NavbarLogoFields />}
 
       {currentUrl && (
         <img src={currentUrl} alt="" className="w-full h-40 object-cover rounded-lg mb-3 border border-white/10" />

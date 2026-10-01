@@ -21,13 +21,15 @@ const {default:{createRoot}} = await import('/node_modules/.vite/deps/react-dom_
 const {LandingContentProvider,useLandingContent} = await import('/src/content/LandingContentContext.jsx');
 const {I18nProvider} = await import('/src/i18n/I18nContext.jsx');
 const {default:Footer} = await import('/src/components/Footer.jsx');
+const {default:Navbar} = await import('/src/components/Navbar.jsx');
+const {BrowserRouter} = await import('/tests/editor-router.js');
 const {default:Panel} = await import('/src/components/editor/PropertiesPanel.jsx');
 await import('/src/index.css');
 const h=React.createElement;
 function Workspace(){const ctx=useLandingContent();return h('div',null,
 h('div',null,...['desktop','tablet','mobile'].map(d=>h('button',{onClick:()=>ctx.setDevice(d)},d)),h('button',{onClick:ctx.undo},'Undo'),h('button',{onClick:ctx.redo},'Redo'),h('button',{onClick:ctx.save},'Save'),h('button',{onClick:ctx.publish},'Publish')),
-h('div',{style:{display:'flex'}},h('div',{style:{width:ctx.device==='mobile'?390:ctx.device==='tablet'?834:1200}},h(Footer)),h(Panel)));}
-createRoot(document.getElementById('root')).render(h(I18nProvider,null,h(LandingContentProvider,{mode:new URLSearchParams(location.search).get('view')?'view':'edit'},h(Workspace))));
+h('div',{style:{display:'flex'}},h('div',{style:{position:'relative',paddingTop:160,width:ctx.device==='mobile'?390:ctx.device==='tablet'?834:1200}},h(Navbar),h(Footer)),h(Panel)));}
+createRoot(document.getElementById('root')).render(h(BrowserRouter,null,h(I18nProvider,null,h(LandingContentProvider,{mode:new URLSearchParams(location.search).get('view')?'view':'edit'},h(Workspace)))));
 </script></body></html>`
 try {
   await page.route('**/*', async route => {
@@ -44,6 +46,12 @@ try {
   })
   await page.goto(`${base}/footer-test`)
   const item = key => page.locator(`[data-footer-element="${key}"]`)
+  await page.locator('[data-navbar-logo]').click()
+  await page.getByRole('spinbutton', { name: 'Largura da logo', exact: true }).fill('80')
+  await page.getByRole('spinbutton', { name: 'Altura da logo', exact: true }).fill('40')
+  await page.getByRole('spinbutton', { name: 'Posição horizontal da logo (X)', exact: true }).fill('12')
+  assert.equal(await page.locator('[data-navbar-logo]').evaluate(el => getComputedStyle(el).width), '80px')
+  assert.equal(await page.locator('[data-navbar-logo]').evaluate(el => getComputedStyle(el).left), '12px')
   await item('contact').click()
   await page.getByRole('textbox', { name: 'Texto', exact: true }).fill('Talk to us')
   await page.getByRole('textbox', { name: 'URL', exact: true }).fill('/#contact-test')
@@ -75,16 +83,20 @@ try {
   assert.equal(await item('contact').textContent(), 'Talk to us')
   assert.equal(await item('contact').getAttribute('href'), '/#contact-test')
   assert.equal(await item('map').evaluate(el => getComputedStyle(el).height), '160px')
+  assert.equal(await page.locator('[data-navbar-logo]').evaluate(el => getComputedStyle(el).width), '80px')
   await page.goto(`${base}/footer-test?view=true`)
   await item('visit').waitFor()
   assert.equal(await item('visit').textContent(), 'Find us')
   assert.equal(await item('address').evaluate(el => getComputedStyle(el).top), '9px')
   await page.setViewportSize({ width: 390, height: 900 })
   assert.equal(await item('map').evaluate(el => getComputedStyle(el).height), '90px')
+  assert.equal(await page.locator('[data-navbar-logo]').evaluate(el => getComputedStyle(el).width), '30px')
   assert.equal(await item('contact').evaluate(el => getComputedStyle(el).left), '0px')
   assert.deepEqual(errors, [])
   console.log('Footer editing: selection, text, URL, icons, size, position, devices, undo/redo, publishing and reload passed')
 } finally { await browser.close() }
+
+
 
 
 
