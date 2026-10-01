@@ -1,222 +1,83 @@
-import { EditableText, EditableImage, useSectionSelection, SectionEditOverlay } from './editor/Editable'
-import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
-import { BLANK_IMAGE_PLACEHOLDER } from '../utils/placeholderImage'
+﻿import { useSectionSelection, SectionEditOverlay } from './editor/Editable'
+import { useLandingContent } from '../content/LandingContentContext'
+import { defaultContent } from '../content/defaultContent'
 import { useI18n } from '../i18n/I18nContext'
 import { resolveText } from '../utils/multilingual'
-import { useLandingContent } from '../content/LandingContentContext'
-import ResizableBlock from './editor/ResizableBlock'
-import { footerPositionStyle } from '../utils/footerPosition'
-import { contactItems, socialLinks, contactHref, safeLink } from '../utils/footerContent'
+import { safeLink } from '../utils/footerContent'
+import { footerElement, footerElementStyle } from '../utils/footerElements'
 import './Footer.css'
 
-function PinIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4 shrink-0 mt-0.5">
-      <path d="M12 22s7-7.16 7-12a7 7 0 1 0-14 0c0 4.84 7 12 7 12Z" />
-      <circle cx="12" cy="10" r="2.5" />
-    </svg>
-  )
-}
+const footerLink = url => typeof url === 'string' && /^\/(?!\/)|^#/.test(url) ? url : safeLink(url, true)
 
-function MailIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4 shrink-0">
-      <rect x="3" y="5" width="18" height="14" rx="2" />
-      <path d="m3 7 9 6 9-6" />
-    </svg>
-  )
-}
-
-function WhatsAppIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 shrink-0">
-      <path d="M12.01 2C6.48 2 2 6.48 2 12c0 1.86.51 3.6 1.4 5.09L2 22l5.06-1.33A9.94 9.94 0 0 0 12.01 22C17.53 22 22 17.52 22 12S17.53 2 12.01 2Zm5.61 14.24c-.24.67-1.4 1.28-1.93 1.34-.5.06-1.02.28-3.43-.72-2.91-1.2-4.79-4.12-4.94-4.32-.14-.2-1.18-1.58-1.18-3s.74-2.13 1-2.42c.26-.29.57-.36.76-.36h.55c.18 0 .42-.03.64.5.24.58.82 2 .89 2.15.07.15.11.32.02.51-.1.2-.15.32-.29.5-.15.18-.31.4-.44.53-.15.15-.3.32-.13.62.17.3.75 1.24 1.61 2 1.11.99 2.05 1.3 2.35 1.44.3.15.47.13.65-.08.18-.2.76-.88.96-1.19.2-.3.4-.25.67-.15.27.1 1.71.81 2 .96.29.15.48.22.55.35.07.13.07.75-.17 1.44Z" />
-    </svg>
-  )
-}
-
-function InstagramIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4 shrink-0">
-      <rect x="3" y="3" width="18" height="18" rx="5" />
-      <circle cx="12" cy="12" r="4" />
-      <circle cx="17.2" cy="6.8" r="0.9" fill="currentColor" stroke="none" />
-    </svg>
-  )
-}
-
-function ArrowUpRightIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 shrink-0 opacity-60 group-hover:opacity-100 transition">
-      <path d="M7 17 17 7M9 7h8v8" />
-    </svg>
-  )
+function Icon({ name }) {
+  const paths = {
+    instagram: <><rect x="3" y="3" width="18" height="18" rx="5" /><circle cx="12" cy="12" r="4" /><circle cx="17.5" cy="6.5" r=".8" fill="currentColor" stroke="none" /></>,
+    whatsapp: <><path d="M20.5 11.5a8.5 8.5 0 0 1-12.7 7.4L3 20l1.2-4.7a8.5 8.5 0 1 1 16.3-3.8Z" /><path d="M8 7.5c-1 1-.5 3 1.5 5s4 2.5 5 1.5l1-1-3-1.5-.8.8a7 7 0 0 1-2.5-2.5l.8-.8-1.5-2Z" /></>,
+    youtube: <><rect x="2" y="5" width="20" height="14" rx="4" /><path d="m10 9 5 3-5 3Z" fill="currentColor" stroke="none" /></>,
+    gmail: <><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m3 6 9 7 9-7M3 19V7m18 12V7" /></>,
+    location: <><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></>,
+    phone: <path d="m5 3 4 1 1 5-2 1c1 3 3 5 6 6l1-2 5 1 1 4c-1 4-7 2-12-3S2 4 5 3Z" />,
+    arrow: <path d="M5 19 19 5M7 5h12v12" />,
+    globe: <><circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18" /></>
+  }
+  if (!paths[name]) return null
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
 }
 
 function Footer() {
-  const { device } = useLandingContent()
-  const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection('footer')
-  const { t, language } = useI18n()
+  const { content, device, select, selection } = useLandingContent()
+  const { language } = useI18n()
+  const { section, isEditMode, isSelected, onSectionClick, visible } = useSectionSelection('footer')
+  const contactId = (content.sectionOrder || []).find(id => content.sections[id]?.type === 'contact' && content.sections[id]?.visible !== false) || 'contact'
+  const element = key => footerElement(section, key, `/#${contactId}`)
+  const editable = key => ({
+    'data-footer-element': key,
+    style: footerElementStyle(element(key), isEditMode ? device : undefined),
+    className: `footer-element ${isEditMode ? 'is-editable' : ''} ${isEditMode && selection?.type === 'footerElement' && selection.path === key ? 'is-selected' : ''}`,
+    onClick: event => {
+      if (!isEditMode) return
+      event.preventDefault()
+      event.stopPropagation()
+      select({ type: 'footerElement', path: key })
+    }
+  })
+  const address = resolveText(section.address?.text, language) || resolveText(defaultContent.sections.footer.address.text, language)
+  const mapsLink = safeLink(section.address?.mapsLink || defaultContent.sections.footer.address.mapsLink)
+  const mapEmbedUrl = section.mapEmbedUrl || defaultContent.sections.footer.mapEmbedUrl
+  const contact = element('contact')
+  const contactProps = editable('contact')
+  const visitProps = editable('visit')
+  const addressProps = editable('address')
+  const mapProps = editable('map')
 
   if (!visible && !isEditMode) return null
 
-  const positionProps = key => ({
-    className: 'footer-position',
-    'data-footer-position': key,
-    style: footerPositionStyle(section.contactPositions?.[key], isEditMode ? device : undefined),
-  })
-  const accentStyle = { fontFamily: theme.typography.accentFont }
-  const bodyStyle = { fontFamily: theme.typography.bodyFont }
-
-  const handleLinkClick = (e) => {
-    if (!isEditMode) return
-    e.preventDefault()
-    e.stopPropagation()
-  }
-
-  // Google's free Maps embed always ships light/white — this is the
-  // well-known no-cost CSS trick for a "dark mode" look. Applied only to
-  // the flat map (mostly solid fills + text labels, which invert cleanly),
-  // NOT to the 360°/Street View embed below: that one shows real
-  // photographic imagery, and inverting a photo's colors just looks like a
-  // negative, not "dark mode" — so it intentionally keeps its natural
-  // colors, framed the same way as the map for visual consistency.
-  const mapDarkFilterClass = '[filter:invert(90%)_hue-rotate(180deg)]'
-
   return (
-    <footer
-      onClick={onSectionClick}
-      style={sectionBackgroundStyle(section.background)}
-      className={`relative isolate bg-black text-white pt-20 pb-8 px-6 border-t border-white/10 ${!visible ? 'opacity-40' : ''}`}
-    >
+    <footer onClick={onSectionClick} data-device={isEditMode ? device : undefined} className={`compact-footer relative bg-black px-6 py-6 text-white sm:px-8 ${!visible ? 'opacity-40' : ''}`}>
       <SectionEditOverlay isEditMode={isEditMode} isSelected={isSelected} hidden={!visible} label="Footer" />
-      <SectionBackgroundImage background={section.background} />
-
-      <div className="max-w-7xl mx-auto">
-
-        <div className={`grid ${isEditMode ? (device === 'mobile' ? 'grid-cols-1' : 'grid-cols-2') : 'grid-cols-1 md:grid-cols-2'} gap-12 mb-14`}>
-
-          {/* Column 1 — brand */}
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-3">
-              {(section.logoImage || isEditMode) && (
-                <EditableImage
-                  path="sections.footer.logoImage"
-                  defaultSrc={BLANK_IMAGE_PLACEHOLDER}
-                  alt="Logo"
-                  containerClassName="h-10 w-auto"
-                  imageClassName="h-10 w-auto object-contain"
-                  label="Footer Logo"
-                />
-              )}
-              {section.showBrandText !== false && (
-                <EditableText
-                  as="h2"
-                  path="sections.footer.brand"
-                  styleObj="sections.footer.brandStyle"
-                  label="Footer Brand"
-                  className="tracking-[4px] text-xl font-bold"
-                />
-              )}
-            </div>
-
-            <p className="text-gray-500 text-sm leading-6 max-w-xs" style={bodyStyle}>
-              {t('footer_tagline')}
-            </p>
-          </div>
-
-          {/* Column 2 — get in touch */}
-          <div {...positionProps('group')} className="footer-position flex flex-col gap-5">
-            <h3 className="uppercase tracking-[3px] text-xs text-gray-500" style={accentStyle}>
-              {resolveText(section.contactHeading, language) || t('footer_get_in_touch')}
-            </h3>
-
-            <ul className="flex flex-col gap-3 text-sm text-gray-400" style={bodyStyle}>
-              {contactItems(section).filter(item => item.visible !== false).map(item => {
-                const href = contactHref(item, language)
-                const Icon = { pin: PinIcon, mail: MailIcon, whatsapp: WhatsAppIcon, arrow: ArrowUpRightIcon }[item.icon]
-                const Tag = href ? 'a' : 'span'
-                return (
-                  <li key={item.id} {...positionProps(item.id)}>
-                    <Tag href={href} target={href?.startsWith('http') ? '_blank' : undefined}
-                      rel={href?.startsWith('http') ? 'noopener noreferrer' : undefined}
-                      onClick={handleLinkClick} className="flex items-center gap-2.5 hover:text-white transition">
-                      {Icon && <Icon />}
-                      <span>{resolveText(item.label, language) || resolveText(item.value, language)}</span>
-                    </Tag>
-                  </li>
-                )
-              })}
-              {socialLinks(section).filter(item => item.visible !== false).map(item => (
-                <li key={item.id} {...positionProps(item.id)}>
-                  <a href={safeLink(item.url)} target="_blank" rel="noopener noreferrer"
-                    onClick={handleLinkClick} className="flex items-center gap-2.5 hover:text-white transition">
-                    {item.label.toLowerCase() === 'instagram' ? <InstagramIcon /> : <ArrowUpRightIcon />}
-                    <span>{item.label}</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
-
+      <div className="footer-grid grid grid-cols-1 items-center gap-8 md:grid-cols-3 md:gap-6">
+        <div className="justify-self-start">
+          <a {...contactProps} href={footerLink(contact.url)} className={`${contactProps.className} inline-flex items-center justify-center gap-2 border border-white/30 px-6 py-3 uppercase tracking-[3px] transition hover:border-white hover:bg-white hover:text-black focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white`}><Icon name={contact.icon} />{resolveText(contact.text, language)}</a>
         </div>
-
-        {((section.mapVisible !== false && section.mapEmbedUrl) || (section.streetViewVisible !== false && section.streetView360EmbedUrl)) && (
-          <div className="mb-14">
-            <h3 className="uppercase tracking-[3px] text-xs text-gray-500 mb-5" style={accentStyle}>
-              {t('footer_visit_us')}
-            </h3>
-
-            <div className="footer-embed-grid" data-editor-device={isEditMode ? device : undefined}>
-              {section.mapVisible !== false && section.mapEmbedUrl && (
-                <ResizableBlock path="sections.footer.mapLayout" label="Map">
-                  <iframe
-                    src={section.mapEmbedUrl}
-                    width="100%"
-                    height="150"
-                    style={{ border: 0 }}
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                    title="Location map"
-                    className={`w-full h-full ${mapDarkFilterClass}`}
-                  />
-                </ResizableBlock>
-              )}
-
-              {section.streetViewVisible !== false && section.streetView360EmbedUrl && (
-                <ResizableBlock path="sections.footer.streetView360Layout" label="360°">
-                  <iframe
-                    src={section.streetView360EmbedUrl}
-                    width="100%"
-                    height="150"
-                    style={{ border: 0 }}
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                    allowFullScreen
-                    title="360° view"
-                    className="w-full h-full"
-                  />
-                </ResizableBlock>
-              )}
-            </div>
+        <nav aria-label="Social media and email" className="flex items-center justify-center gap-5 justify-self-center">
+          {['instagram', 'whatsapp', 'youtube', 'gmail'].map(key => {
+            const link = element(key)
+            const props = editable(key)
+            return <a key={key} {...props} href={footerLink(link.url)} target="_blank" rel="noopener noreferrer" aria-label={link.label} title={link.label} className={`${props.className} inline-flex shrink-0 items-center justify-center rounded-full border border-white/15 text-gray-300 transition hover:border-white/50 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white`}><Icon name={link.icon} /></a>
+          })}
+        </nav>
+        <div className="w-full max-w-sm justify-self-end">
+          <h2 {...visitProps} className={`${visitProps.className} mb-3 uppercase tracking-[3px]`}>{resolveText(element('visit').text, language)}</h2>
+          <a {...addressProps} href={mapsLink} target="_blank" rel="noopener noreferrer" className={`${addressProps.className} mb-3 flex items-start gap-2 leading-relaxed text-gray-400 transition hover:text-white`}><Icon name="location" /><span>{address}</span></a>
+          <div {...mapProps} className={`${mapProps.className} footer-map rounded-md overflow-hidden`}>
+            <iframe src={mapEmbedUrl} title="Thundbalance location on Google Maps" loading="lazy" referrerPolicy="no-referrer-when-downgrade" className="h-full w-full border-0" />
+            {isEditMode && <button type="button" aria-label="Editar Google Maps" onClick={mapProps.onClick} className="absolute inset-0 cursor-pointer" />}
           </div>
-        )}
-
-        <div className="pt-6 border-t border-white/10 text-center sm:text-left">
-          <EditableText
-            as="p"
-            path="sections.footer.text"
-            styleObj="sections.footer.textStyle"
-            label="Footer Text"
-            style={bodyStyle}
-            className="text-gray-500 text-xs"
-          />
         </div>
-
       </div>
-
     </footer>
   )
 }
 
 export default Footer
+

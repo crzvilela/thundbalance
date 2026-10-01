@@ -8,6 +8,7 @@
 // defaults are '' (empty string) which means "don't override the Tailwind
 // value" — see buildInlineStyle() in Editable.jsx, which skips empty values.
 import { makeEmbedLayout } from '../utils/responsiveLayout'
+import { createDefaultFooterSettings } from '../utils/footerSettings'
 
 function textStyle(overrides = {}) {
   return {
@@ -79,7 +80,7 @@ function ml(en, es, ca) {
 }
 
 export const defaultContent = {
-  heroImageVersion: 1,
+  heroImageVersion: 2,
   bundledImagesVersion: 2,
   theme: {
     colors: {
@@ -143,7 +144,7 @@ export const defaultContent = {
         borderColor: '#ffffff',
         radius: '0px'
       },
-      background: sectionBackground({ type: 'image', image: '/site-images/hero.png', overlayOpacity: 0.6 })
+      background: sectionBackground({ type: 'image', image: '/site-images/hero.jpg', overlayOpacity: 0.6 })
     },
 
     // The 5 sections below use fixed, human-readable keys as their "ID" —
@@ -342,6 +343,7 @@ export const defaultContent = {
     },
 
     footer: {
+      settings: { ...createDefaultFooterSettings(), layout: 'brand-contact-map', backgroundColor: '#050505', textColor: '#ffffff', accentColor: '#22c55e', dividerColor: 'rgba(255,255,255,0.12)', topPadding: 40, bottomPadding: 24, horizontalPadding: 24, containerWidth: 1280, roundedCorners: 0, mapWidth: 100, mapHeight: 150, mapRadius: 12, mapShadow: false, mapSpacing: 16, mapAlignment: 'left', contactWidth: 100, contactSpacing: 12, contactAlignment: 'left', socialSize: 18, socialGap: 12, socialAlignment: 'left', fontFamily: '', titleSize: 12, textSize: 14, fontWeight: 400, letterSpacing: 1 },
       mapLayout: makeEmbedLayout(),
       streetView360Layout: makeEmbedLayout(),
       visible: true,

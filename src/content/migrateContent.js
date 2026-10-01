@@ -157,12 +157,14 @@ export function migrateBundledImages(content) {
 // Repair the old empty/default Hero once, without locking future admin uploads
 // or restoring an image the administrator subsequently chooses to remove.
 export function migrateHeroImage(content) {
-  if (!content?.sections?.hero || content.heroImageVersion >= 1) return content
+  if (!content?.sections?.hero || content.heroImageVersion >= 2) return content
   const next = deepClone(content)
   const background = next.sections.hero.background || {}
-  if (background.type !== 'video' && (!background.image || background.image === '/site-images/hero.jpg')) {
-    next.sections.hero.background = { ...background, type: 'image', image: '/site-images/hero.png' }
+  const isBundledDefault = background.image === '/site-images/hero.png' || background.image === '/site-images/hero.jpg'
+  const isLegacyEmpty = !content.heroImageVersion && !background.image
+  if (background.type !== 'video' && (isBundledDefault || isLegacyEmpty)) {
+    next.sections.hero.background = { ...background, type: 'image', image: '/site-images/hero.jpg' }
   }
-  next.heroImageVersion = 1
+  next.heroImageVersion = 2
   return next
 }

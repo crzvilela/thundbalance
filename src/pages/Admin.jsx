@@ -267,9 +267,6 @@ function Admin() {
 
           <div className="mb-12 flex flex-col sm:flex-row gap-4">
 
-            <Link to="/admin/footer" className="inline-flex items-center gap-3 border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 transition px-6 py-4 rounded-2xl">
-              <span><span className="block font-semibold">Footer</span><span className="block text-xs text-gray-400">Edit the map, contacts and social links with a live preview</span></span>
-            </Link>
             <Link
               to="/admin/landing-editor"
               className="inline-flex items-center gap-3 border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 transition px-6 py-4 rounded-2xl"

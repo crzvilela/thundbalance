@@ -15,6 +15,6 @@ try {
   await page.locator('section img[data-fallback-applied="true"]').waitFor()
   const fallback = page.locator('section img[data-fallback-applied="true"]')
   await fallback.evaluate(img => img.decode())
-  assert.match(await fallback.getAttribute('src'), /site-images\/hero.png/)
-  console.log('Reload with failed upload keeps decoded local hero.png; uploaded image is not locked')
+  assert.match(await fallback.getAttribute('src'), /site-images\/hero.jpg/)
+  console.log('Reload with failed upload keeps decoded local hero.jpg; uploaded image is not locked')
 } finally { await browser.close() }

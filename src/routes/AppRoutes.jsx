@@ -8,7 +8,6 @@ import BookSession from '../pages/BookSession'
 import MySessions from '../pages/MySessions'
 import Profile from '../pages/Profile'
 import Admin from '../pages/Admin'
-import FooterEditor from '../pages/admin/FooterEditor'
 import LandingPageEditor from '../pages/admin/LandingPageEditor'
 import TrainingVideosManager from '../pages/admin/TrainingVideosManager'
 import TrainingTips from '../pages/TrainingTips'
@@ -44,7 +43,6 @@ function AppRoutes() {
 
         <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
 
-        <Route path="/admin/footer" element={<RequireAdmin><FooterEditor /></RequireAdmin>} />
 
         <Route path="/admin/landing-editor" element={<RequireAdmin><LandingPageEditor /></RequireAdmin>} />
 

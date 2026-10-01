@@ -267,7 +267,3 @@ export function LandingContentProvider({ mode = 'view', version = 'published', c
   )
 }
 
-// Render public components against an unsaved local snapshot.
-export function LandingContentPreviewProvider({ content, children }) {
-  return <LandingContentContext.Provider value={{ ...defaultContextValue, content }}>{children}</LandingContentContext.Provider>
-}
