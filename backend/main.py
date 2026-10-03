@@ -1097,6 +1097,46 @@ def admin_sessions():
         conn.close()
 
 
+@app.post("/profile/{user_id}/photo")
+async def upload_profile_photo(user_id: int, file: UploadFile = File(...), claims=Depends(require_client)):
+    extension = os.path.splitext(file.filename or "")[1].lower()
+    if extension not in {".jpg", ".jpeg", ".png", ".webp"}:
+        raise HTTPException(status_code=400, detail="Use a JPG, PNG or WebP image")
+    contents = await file.read(5 * 1024 * 1024 + 1)
+    if not contents or len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image must be smaller than 5MB")
+    valid_image = (
+        (extension in {".jpg", ".jpeg"} and contents.startswith(b"\xff\xd8\xff"))
+        or (extension == ".png" and contents.startswith(b"\x89PNG\r\n\x1a\n"))
+        or (extension == ".webp" and contents[:4] == b"RIFF" and contents[8:12] == b"WEBP")
+    )
+    if not valid_image:
+        raise HTTPException(status_code=400, detail="Invalid image file")
+    conn = get_connection()
+    cursor = conn.cursor()
+    destination = None
+    try:
+        cursor.execute("SELECT id FROM users WHERE id = %s AND firebase_uid = %s", (user_id, claims.get("sub")))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=403, detail="You can only update your own photo")
+        filename = f"{uuid.uuid4().hex}{extension}"
+        destination = os.path.join(UPLOAD_DIR, filename)
+        with open(destination, "wb") as image_file:
+            image_file.write(contents)
+        photo_url = f"/uploads/{filename}"
+        cursor.execute("UPDATE users SET foto = %s WHERE id = %s", (photo_url, user_id))
+        conn.commit()
+        return {"url": photo_url}
+    except Exception:
+        conn.rollback()
+        if destination and os.path.exists(destination):
+            os.remove(destination)
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @app.put("/profile/{user_id}")
 def update_profile(
     user_id: int,

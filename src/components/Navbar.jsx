@@ -1,5 +1,5 @@
 import { auth } from '../firebase/auth'
-import { signOut } from 'firebase/auth'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { Link, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -10,13 +10,30 @@ import { useI18n } from '../i18n/I18nContext'
 import LanguageSwitcher from './LanguageSwitcher'
 import logo from '../assets/images/nuevo logo (1).png'
 import { navbarLogoStyle } from '../utils/navbarLogo'
+import { ADMIN_EMAIL } from '../config'
 import './Navbar.css'
 
 function Navbar() {
 
   const navigate = useNavigate()
 
-  const user = auth.currentUser
+  const [user, setUser] = useState(auth.currentUser)
+  const [profilePhoto, setProfilePhoto] = useState(auth.currentUser?.photoURL)
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, currentUser => {
+      setUser(currentUser)
+      setProfilePhoto(currentUser?.photoURL)
+    })
+    const refreshPhoto = () => setProfilePhoto(auth.currentUser?.photoURL)
+    window.addEventListener('profile-photo-updated', refreshPhoto)
+    return () => {
+      unsubscribe()
+      window.removeEventListener('profile-photo-updated', refreshPhoto)
+    }
+  }, [])
+
+  const isAdmin = Boolean(user && user.email?.trim().toLowerCase() === ADMIN_EMAIL)
 
   const [openMenu, setOpenMenu] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -119,7 +136,9 @@ function Navbar() {
     { to: '/', labelPath: 'home', label: t('nav_home') },
     { to: '/dashboard', labelPath: 'dashboard', label: t('nav_dashboard') },
     { to: '/profile', labelPath: 'profile', label: t('nav_profile') },
-    { to: '/my-sessions', labelPath: 'sessions', label: t('nav_sessions') }
+    { to: '/my-sessions', labelPath: 'sessions', label: t('nav_sessions') },
+    { to: '/training-tips', label: t('training_tips_title') },
+    ...(isAdmin ? [{ to: '/admin', label: 'Admin' }] : [])
   ]
 
   const activeLinks = !user ? guestLinks : userLinks
@@ -217,7 +236,7 @@ function Navbar() {
             <div className="flex items-center gap-1.5 sm:gap-4" style={{ fontFamily: theme.typography.accentFont }}>
 
               <Link
-                to="/training-tips"
+                to="/login"
                 className="inline-flex items-center hover:text-gray-400 transition duration-300 uppercase text-xs md:text-sm px-1"
               >
                 <EditableText as="span" path="sections.navbar.labels.login" label="Navbar Login" />
@@ -238,7 +257,7 @@ function Navbar() {
 
               <img
                 src={
-                  user.photoURL ||
+                  profilePhoto ||
                   'https://ui-avatars.com/api/?name=' +
                   encodeURIComponent(user.displayName || 'User')
                 }
@@ -290,6 +309,24 @@ function Navbar() {
                   >
                     {t('nav_book_session')}
                   </Link>
+
+                  <Link
+                    to="/training-tips"
+                    onClick={() => setOpenMenu(false)}
+                    className="block px-4 py-3 hover:bg-white/10 transition duration-300"
+                  >
+                    {t('training_tips_title')}
+                  </Link>
+
+                  {isAdmin && (
+                    <Link
+                      to="/admin"
+                      onClick={() => setOpenMenu(false)}
+                      className="block px-4 py-3 text-emerald-400 hover:bg-white/10 transition duration-300"
+                    >
+                      Admin
+                    </Link>
+                  )}
 
                   <button
                     onClick={handleLogout}
