@@ -16,6 +16,8 @@ function Admin() {
 
   const [trainers, setTrainers] = useState([])
 
+  const [plans, setPlans] = useState([])
+
   const [sessions, setSessions] = useState([])
 
   const [requests, setRequests] = useState([])
@@ -24,6 +26,10 @@ function Admin() {
 
 
   const [startDates, setStartDates] = useState({})
+
+  const [selectedPlan, setSelectedPlan] = useState({})
+
+  const [selectedFrequency, setSelectedFrequency] = useState({})
 
   const [showSessions, setShowSessions] = useState(false)
 
@@ -114,6 +120,9 @@ function Admin() {
 
         setTrainers(trainersData)
 
+        const plansResponse = await fetch(`${API_URL}/plans`)
+        setPlans(await plansResponse.json())
+
         const sessionsResponse = await adminFetch(
           `${API_URL}/admin/sessions`
         )
@@ -182,6 +191,8 @@ function Admin() {
 
       const startDate =
         startDates[requestId]
+      const planId = selectedPlan[requestId]
+      const frequency = selectedFrequency[requestId]
 
       if (
         !trainerId ||
@@ -196,7 +207,7 @@ function Admin() {
 
       }
 
-      await adminFetch(
+      const response = await adminFetch(
         `${API_URL}/admin/approve-request`,
         {
           method: 'POST',
@@ -213,12 +224,17 @@ function Admin() {
               parseInt(trainerId),
 
             start_date:
-              startDate
+              startDate,
+            ...(planId ? { plan_id: parseInt(planId) } : {}),
+            ...(frequency ? { sessions_per_week: parseInt(frequency) } : {})
 
           })
 
         }
       )
+
+      const result = await response.json()
+      if (!response.ok || result.error) throw new Error(result.detail || result.error || 'Could not approve request')
 
       alert(
         'Request approved!'
@@ -232,6 +248,19 @@ function Admin() {
 
     }
 
+  }
+
+  const rejectRequest = async (requestId) => {
+    const reason = window.prompt('Optional: tell the client why this request was declined.')
+    if (reason === null) return
+    try {
+      const response = await adminFetch(`${API_URL}/admin/reject-request`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_id: requestId, reason }),
+      })
+      if (!response.ok) throw new Error((await response.json()).detail || 'Could not reject request')
+      window.location.reload()
+    } catch (error) { alert(error.message || 'Could not reject request') }
   }
 
   if (!stats) {
@@ -494,7 +523,9 @@ function Admin() {
                   {request[6]}
                 </p>
 
-                <div className="mt-4">
+                {request[7] && <p className="text-red-300 mt-2">Reason: {request[7]}</p>}
+
+                {String(request[6]).toLowerCase() === 'pending' && <div className="mt-4 flex flex-wrap gap-3 items-center">
 
                   <select
                     value={
@@ -532,6 +563,15 @@ function Admin() {
 
                     ))}
 
+                  </select>
+
+                  <select value={selectedPlan[request[0]] || ''} onChange={e => setSelectedPlan({ ...selectedPlan, [request[0]]: e.target.value })} className="bg-black border border-white/20 p-3">
+                    <option value="">Requested package</option>
+                    {plans.map(plan => <option key={plan[0]} value={plan[0]}>{plan[1]}</option>)}
+                  </select>
+
+                  <select value={selectedFrequency[request[0]] || request[3]} onChange={e => setSelectedFrequency({ ...selectedFrequency, [request[0]]: e.target.value })} className="bg-black border border-white/20 p-3" aria-label="Sessions per week">
+                    {[1, 2, 3, 4, 5, 6, 7].map(value => <option key={value} value={value}>{value} sessions/week</option>)}
                   </select>
 
                   <DatePicker
@@ -585,7 +625,9 @@ function Admin() {
                     Approve
                   </button>
 
-                </div>
+                  <button onClick={() => rejectRequest(request[0])} className="border border-red-400 text-red-300 px-4 py-3 rounded">Reject</button>
+
+                </div>}
 
               </div>
 

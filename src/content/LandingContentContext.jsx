@@ -1,7 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback, useReducer } from 'react'
 import { defaultContent, SECTION_TYPE_DEFAULTS } from './defaultContent'
 import { deepMerge, deepClone, setPath } from '../utils/objectPath'
-import { migrateSectionsToInstances, migrateBackgroundTypes, migrateBundledImages, migrateHeroImage } from './migrateContent'
+import { migrateLegacyTypography } from '../utils/typography'
+import { migrateSectionsToInstances, migrateBackgroundTypes, migrateBundledImages, migrateHeroImage, migrateFooterEmbeds } from './migrateContent'
 import {
   fetchLandingContent,
   saveDraftContent,
@@ -88,8 +89,9 @@ function pruneOrphanedSections(mergedContent) {
 // versus current defaults -> fix up known old-schema quirks -> backfill
 // list-item shapes -> drop now-unreferenced stub sections.
 function normalizeLoadedContent(rawContent) {
-  const migrated = migrateHeroImage(migrateBackgroundTypes(migrateSectionsToInstances(migrateBundledImages(rawContent))))
+  const migrated = migrateFooterEmbeds(migrateHeroImage(migrateBackgroundTypes(migrateSectionsToInstances(migrateBundledImages(rawContent)))))
   const merged = deepMerge(defaultContent, migrated)
+  Object.assign(merged, migrateLegacyTypography(merged))
   return pruneOrphanedSections(withArrayItemDefaults(withLegacyMigrations(merged)))
 }
 

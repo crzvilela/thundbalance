@@ -1,10 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { auth } from '../firebase/auth'
 import Navbar from '../components/Navbar'
 import { API_URL } from '../config'
 
 function TrainingRequest() {
-
+  const navigate = useNavigate()
+  const [submitting, setSubmitting] = useState(false)
+  const [plans, setPlans] = useState([])
   const [planId, setPlanId] = useState('1')
 
   const [sessionsPerWeek, setSessionsPerWeek] = useState('1')
@@ -12,6 +15,19 @@ function TrainingRequest() {
   const [preferredDays, setPreferredDays] = useState([])
 
   const [preferredTime, setPreferredTime] = useState('18:00')
+
+  useEffect(() => {
+    fetch(`${API_URL}/plans`)
+      .then(response => {
+        if (!response.ok) throw new Error('Could not load packages')
+        return response.json()
+      })
+      .then(data => {
+        setPlans(data)
+        if (data.length) setPlanId(String(data[0][0]))
+      })
+      .catch(() => setPlans([]))
+  }, [])
 
   const handleDayChange = (day) => {
 
@@ -36,15 +52,12 @@ function TrainingRequest() {
 
   const handleSubmit = async () => {
 
+    if (!auth.currentUser) { navigate('/login'); return }
+    if (!preferredDays.length) { alert('Choose at least one preferred day.'); return }
+    setSubmitting(true)
+
     try {
-
-      const email = auth.currentUser.email
-
-      const userResponse = await fetch(
-        `${API_URL}/users/email/${email}`
-      )
-
-      const userData = await userResponse.json()
+      const token = await auth.currentUser.getIdToken()
 
       const response = await fetch(
         `${API_URL}/client-requests`,
@@ -52,12 +65,11 @@ function TrainingRequest() {
           method: 'POST',
 
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
           },
 
           body: JSON.stringify({
-
-            user_id: userData.id,
 
             plan_id: parseInt(planId),
 
@@ -88,18 +100,18 @@ function TrainingRequest() {
 
       console.log(data)
 
-      alert(
-        'Training request submitted successfully!'
-      )
+      navigate('/dashboard')
 
     } catch (error) {
 
       console.log(error)
 
       alert(
-        'Error submitting request'
+        error.message || 'Error submitting request'
       )
 
+    } finally {
+      setSubmitting(false)
     }
 
   }
@@ -134,17 +146,7 @@ function TrainingRequest() {
               }
               className="w-full bg-black border border-white/20 p-4"
             >
-              <option value="1">
-                Monthly Plan
-              </option>
-
-              <option value="2">
-                Quarterly Plan
-              </option>
-
-              <option value="3">
-                Semiannual Plan
-              </option>
+              {plans.map(plan => <option key={plan[0]} value={plan[0]}>{plan[1]}</option>)}
 
             </select>
 
@@ -246,9 +248,10 @@ function TrainingRequest() {
 
           <button
             onClick={handleSubmit}
+            disabled={submitting || plans.length === 0}
             className="bg-white text-black px-8 py-4 uppercase tracking-[3px] hover:bg-gray-300 transition duration-300"
           >
-            Submit Request
+            {submitting ? 'Submitting…' : plans.length ? 'Submit Request' : 'Packages unavailable'}
           </button>
 
         </div>

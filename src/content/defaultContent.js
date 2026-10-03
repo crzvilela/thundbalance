@@ -3,23 +3,18 @@
 // the public site always has something sensible to render, even before the
 // backend responds (or if a field was added here but isn't in the DB yet,
 // deepMerge in LandingContentContext fills the gap).
+import { make360Layout } from '../utils/responsiveLayout'
 
-// Shared shape for every text element's companion "Style" object. All
-// defaults are '' (empty string) which means "don't override the Tailwind
-// value" — see buildInlineStyle() in Editable.jsx, which skips empty values.
-import { makeEmbedLayout } from '../utils/responsiveLayout'
-import { createDefaultFooterSettings } from '../utils/footerSettings'
+// Shared shape for legacy-compatible text layout objects. Typography is
+// stored centrally by exact content path in the top-level typography map.
 
 function textStyle(overrides = {}) {
   return {
-    fontSize: '',
-    color: '',
     marginTop: '',
     marginBottom: '',
     marginLeft: '',
     marginRight: '',
     padding: '',
-    textAlign: '',
     ...overrides
   }
 }
@@ -82,6 +77,7 @@ function ml(en, es, ca) {
 export const defaultContent = {
   heroImageVersion: 2,
   bundledImagesVersion: 2,
+  typography: {},
   theme: {
     colors: {
       primary: '#ffffff',
@@ -114,6 +110,14 @@ export const defaultContent = {
       visible: true,
       brand: 'THUNDBALANCE',
       brandStyle: textStyle(),
+      labels: {
+        about: ml('About', 'Sobre', 'Sobre'), services: ml('Services', 'Servicios', 'Serveis'),
+        pricing: ml('Pricing', 'Precios', 'Preus'), contact: ml('Contact', 'Contacto', 'Contacte'),
+        home: ml('Home', 'Inicio', 'Inici'), dashboard: ml('Dashboard', 'Panel', 'Tauler'),
+        profile: ml('Profile', 'Perfil', 'Perfil'), sessions: ml('Sessions', 'Sesiones', 'Sessions'),
+        login: ml('Login', 'Iniciar sesión', 'Iniciar sessió'),
+        register: ml('Register', 'Registrarse', 'Registrar-se')
+      },
       logoImage: '/site-images/logo.png',
       showBrandText: true,
       background: sectionBackground()
@@ -124,12 +128,7 @@ export const defaultContent = {
       eyebrow: ml('Private Fitness Studio', 'Estudio de Fitness Privado', 'Estudi de Fitness Privat'),
       eyebrowStyle: textStyle(),
       title: ml('Transform Your Body And Performance', 'Transforma Tu Cuerpo Y Rendimiento', 'Transforma El Teu Cos I Rendiment'),
-      titleStyle: textStyle({
-        fontWeight: '700',
-        letterSpacing: '',
-        lineHeight: '',
-        textAlign: 'center'
-      }),
+      titleStyle: textStyle(),
       subtitle: ml(
         'Personalized 1:1 training sessions focused on performance, health, rehabilitation and real results.',
         'Sesiones de entrenamiento personalizado 1 a 1 centradas en el rendimiento, la salud, la rehabilitación y resultados reales.',
@@ -174,6 +173,7 @@ export const defaultContent = {
       // 360° photo (not a generic geocoded guess) — see PropertiesPanel for
       // how to replace it if it doesn't show the right photo.
       embed360Url: 'https://www.google.com/maps?layer=c&cbll=41.404704,2.2027016&cbp=12,255.85,0,0,-38.06&output=svembed',
+      embed360Layout: make360Layout(),
       // Migrated from the old standalone /about-us page (now removed) —
       // same structure ImageCarousel already expects: [{ image, caption }].
       carousel: [],
@@ -337,15 +337,19 @@ export const defaultContent = {
         "Reserva la teva primera sessió i descobreix una experiència d'entrenament personalitzat centrada en resultats reals."
       ),
       bodyStyle: textStyle(),
+      formLabels: {
+        name: ml('Your Name', 'Tu nombre', 'El teu nom'),
+        email: ml('Your Email', 'Tu correo electrónico', 'El teu correu electrònic'),
+        message: ml('Your Message', 'Tu mensaje', 'El teu missatge')
+      },
+      buttonText: ml('Send Message', 'Enviar mensaje', 'Enviar missatge'),
       image: null,
       imageStyle: imageStyle(),
       background: sectionBackground()
     },
 
     footer: {
-      settings: { ...createDefaultFooterSettings(), layout: 'brand-contact-map', backgroundColor: '#050505', textColor: '#ffffff', accentColor: '#22c55e', dividerColor: 'rgba(255,255,255,0.12)', topPadding: 40, bottomPadding: 24, horizontalPadding: 24, containerWidth: 1280, roundedCorners: 0, mapWidth: 100, mapHeight: 150, mapRadius: 12, mapShadow: false, mapSpacing: 16, mapAlignment: 'left', contactWidth: 100, contactSpacing: 12, contactAlignment: 'left', socialSize: 18, socialGap: 12, socialAlignment: 'left', fontFamily: '', titleSize: 12, textSize: 14, fontWeight: 400, letterSpacing: 1 },
-      mapLayout: makeEmbedLayout(),
-      streetView360Layout: makeEmbedLayout(),
+      settings: { backgroundColor: '#050505', textColor: '#ffffff', iconSize: 18, iconSpacing: 18, alignment: 'center', fontFamily: '' },
       visible: true,
       brand: 'THUNDBALANCE',
       brandStyle: textStyle(),
@@ -355,8 +359,6 @@ export const defaultContent = {
         '© 2026 ThundBalance. Tots els drets reservats.'
       ),
       textStyle: textStyle(),
-      logoImage: '/site-images/logo.png',
-      showBrandText: true,
       background: sectionBackground(),
 
       // Address, map/360 embeds and contact links — all plain fields edited
@@ -373,13 +375,13 @@ export const defaultContent = {
       // Text-query embed — works with no API key, Google resolves the
       // address server-side. See PropertiesPanel for how the admin can
       // replace this with a "Share > Embed a map" iframe src instead.
-      mapEmbedUrl: 'https://www.google.com/maps?q=Carrer+de+Pallars+286+Barcelona&output=embed',
       // Empty by default on purpose — see README/Footer section for why an
       // automatic Street View embed wasn't used here (real risk of showing
       // the generic street view instead of the gym's own 360° photo). The
       // admin pastes the "Share or embed image" iframe src from Google
       // Maps once they've picked the right photo.
-      streetView360EmbedUrl: '',
+      privacyPolicyUrl: '',
+      termsUrl: '',
       contactUsUrl: 'https://www.thundbalance.com/contactus',
       joinUsEmail: 'mailto:info@thundbalance.com?subject=I%20am%20interested%20to%20join%20TB%20team',
       contactEmail: 'info@thundbalance.com',
@@ -422,6 +424,7 @@ export const SECTION_TYPE_DEFAULTS = {
     image: null,
     imageStyle: imageStyle(),
     embed360Url: '',
+    embed360Layout: make360Layout(),
     carousel: [],
     background: sectionBackground(),
     textColor: '#000000'

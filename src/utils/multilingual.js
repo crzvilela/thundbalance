@@ -10,8 +10,10 @@
 
 export function resolveText(raw, language = 'en') {
   if (raw === null || raw === undefined) return ''
-  if (typeof raw === 'object') return raw[language] ?? raw.en ?? ''
-  return raw
+  const value = typeof raw === 'object' ? raw[language] ?? raw.en ?? '' : raw
+  // Only strings and numbers are valid text children. Unknown/nested objects
+  // must never leak through to JSX when content has an unexpected shape.
+  return typeof value === 'string' || typeof value === 'number' ? value : ''
 }
 
 // Sets one language's value on a possibly-multilingual field, converting a

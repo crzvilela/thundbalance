@@ -54,8 +54,8 @@ function TestimonialMediaItem({ sectionId, index, item }) {
 
       {hasCaption && (
         <div className="p-4">
-          {clientName && <p className="text-sm font-semibold">{clientName}</p>}
-          {caption && <p className="text-xs text-gray-400 mt-1">{caption}</p>}
+          {clientName && <EditableText as="p" path={`${path}.clientName`} label={`Testimonial ${index + 1} Client Name`} className="text-sm font-semibold" />}
+          {caption && <EditableText as="p" path={`${path}.caption`} label={`Testimonial ${index + 1} Caption`} className="text-xs text-gray-400 mt-1" />}
         </div>
       )}
 

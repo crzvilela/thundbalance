@@ -17,14 +17,11 @@ def _text_style(**overrides):
     Defaults are '' (empty string), meaning 'don't override the Tailwind
     value' — see buildInlineStyle() in Editable.jsx on the frontend."""
     style = {
-        "fontSize": "",
-        "color": "",
         "marginTop": "",
         "marginBottom": "",
         "marginLeft": "",
         "marginRight": "",
-        "padding": "",
-        "textAlign": ""
+        "padding": ""
     }
     style.update(overrides)
     return style
@@ -131,6 +128,7 @@ def make_default_testimonial_media(media_type="image"):
 DEFAULT_LANDING_CONTENT = {
     "heroImageVersion": 1,
     "bundledImagesVersion": 2,
+    "typography": {},
     "theme": {
         "colors": {
             "primary": "#ffffff",
@@ -155,6 +153,18 @@ DEFAULT_LANDING_CONTENT = {
             "visible": True,
             "brand": "THUNDBALANCE",
             "brandStyle": _text_style(),
+            "labels": {
+                "about": _ml("About", "Sobre", "Sobre"),
+                "services": _ml("Services", "Servicios", "Serveis"),
+                "pricing": _ml("Pricing", "Precios", "Preus"),
+                "contact": _ml("Contact", "Contacto", "Contacte"),
+                "home": _ml("Home", "Inicio", "Inici"),
+                "dashboard": _ml("Dashboard", "Panel", "Tauler"),
+                "profile": _ml("Profile", "Perfil", "Perfil"),
+                "sessions": _ml("Sessions", "Sesiones", "Sessions"),
+                "login": _ml("Login", "Iniciar sesión", "Iniciar sessió"),
+                "register": _ml("Register", "Registrarse", "Registrar-se")
+            },
             "logoImage": "/site-images/logo.png",
             "showBrandText": True,
             "background": _section_background()
@@ -164,12 +174,7 @@ DEFAULT_LANDING_CONTENT = {
             "eyebrow": _ml("Private Fitness Studio", "Estudio de Fitness Privado", "Estudi de Fitness Privat"),
             "eyebrowStyle": _text_style(),
             "title": _ml("Transform Your Body And Performance", "Transforma Tu Cuerpo Y Rendimiento", "Transforma El Teu Cos I Rendiment"),
-            "titleStyle": _text_style(
-                fontWeight="700",
-                letterSpacing="",
-                lineHeight="",
-                textAlign="center"
-            ),
+            "titleStyle": _text_style(),
             "subtitle": _ml(
                 "Personalized 1:1 training sessions focused on performance, health, rehabilitation and real results.",
                 "Sesiones de entrenamiento personalizado 1 a 1 centradas en el rendimiento, la salud, la rehabilitaci\u00f3n y resultados reales.",
@@ -356,13 +361,17 @@ DEFAULT_LANDING_CONTENT = {
                 "Reserva la teva primera sessi\u00f3 i descobreix una experi\u00e8ncia d'entrenament personalitzat centrada en resultats reals."
             ),
             "bodyStyle": _text_style(),
+            "formLabels": {
+                "name": _ml("Your Name", "Tu nombre", "El teu nom"),
+                "email": _ml("Your Email", "Tu correo electrónico", "El teu correu electrònic"),
+                "message": _ml("Your Message", "Tu mensaje", "El teu missatge")
+            },
+            "buttonText": _ml("Send Message", "Enviar mensaje", "Enviar missatge"),
             "image": None,
             "imageStyle": _image_style(),
             "background": _section_background()
         },
         "footer": {
-            "mapLayout": _embed_layout(),
-            "streetView360Layout": _embed_layout(),
             "visible": True,
             "brand": "THUNDBALANCE",
             "brandStyle": _text_style(),
@@ -372,8 +381,6 @@ DEFAULT_LANDING_CONTENT = {
                 "\u00a9 2026 ThundBalance. Tots els drets reservats."
             ),
             "textStyle": _text_style(),
-            "logoImage": "/site-images/logo.png",
-            "showBrandText": True,
             "background": _section_background(),
             "address": {
                 "text": _ml(
@@ -383,8 +390,9 @@ DEFAULT_LANDING_CONTENT = {
                 ),
                 "mapsLink": "https://www.google.com/maps/place//data=!4m2!3m1!1s0x12a4a385af63a49b:0x841dd304c428a382?sa=X&ved=1t:8290&ictx=111"
             },
-            "mapEmbedUrl": "https://www.google.com/maps?q=Carrer+de+Pallars+286+Barcelona&output=embed",
-            "streetView360EmbedUrl": "",
+            "contactText": "CONTACT US",
+            "privacyPolicyUrl": "",
+            "termsUrl": "",
             "contactUsUrl": "https://www.thundbalance.com/contactus",
             "joinUsEmail": "mailto:info@thundbalance.com?subject=I%20am%20interested%20to%20join%20TB%20team",
             "contactEmail": "info@thundbalance.com",

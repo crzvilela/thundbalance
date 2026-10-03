@@ -358,8 +358,6 @@ DEFAULT_LANDING_CONTENT = {
                 "\u00a9 2026 ThundBalance. Tots els drets reservats."
             ),
             "textStyle": _text_style(),
-            "logoImage": None,
-            "showBrandText": True,
             "background": _section_background(),
             "address": {
                 "text": _ml(

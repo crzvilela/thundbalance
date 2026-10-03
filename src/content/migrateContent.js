@@ -109,6 +109,36 @@ export function migrateBackgroundTypes(content) {
   return next
 }
 
+// Remove saved map embed and drag-layout values from the retired footer UI.
+// Keep the Maps destination URL; it is now used by the compact location icon.
+export function migrateFooterEmbeds(content) {
+  const footer = content?.sections?.footer
+  if (!footer) return content
+  const obsolete = ['mapEmbedUrl', 'streetView360EmbedUrl', 'mapLayout', 'streetView360Layout', 'logoImage', 'showBrandText']
+  const supportedSettings = ['backgroundColor', 'textColor', 'iconSize', 'iconSpacing', 'alignment', 'fontFamily']
+  const hasObsolete = obsolete.some(key => Object.hasOwn(footer, key)) || footer.elements?.map || footer.settings?.map || footer.settings?.blocks?.maps || Object.keys(footer.settings || {}).some(key => !supportedSettings.includes(key))
+  if (!hasObsolete) return content
+  const next = deepClone(content)
+  const nextFooter = next.sections.footer
+  obsolete.forEach(key => delete nextFooter[key])
+  if (nextFooter.elements) {
+    delete nextFooter.elements.map
+    if (!Object.keys(nextFooter.elements).length) delete nextFooter.elements
+  }
+  if (nextFooter.settings) {
+    const old = nextFooter.settings
+    nextFooter.settings = {
+      backgroundColor: old.backgroundColor || '#050505',
+      textColor: old.textColor || '#ffffff',
+      iconSize: old.iconSize ?? old.socialSize ?? 18,
+      iconSpacing: old.iconSpacing ?? old.socialGap ?? 18,
+      alignment: old.alignment || old.socialAlignment || 'center',
+      fontFamily: old.fontFamily || ''
+    }
+  }
+  return next
+}
+
 // Seed old empty slots once. The marker is saved with the content so later
 // explicit admin removals and replacements survive reloads and publishing.
 export function migrateBundledImages(content) {
@@ -117,7 +147,7 @@ export function migrateBundledImages(content) {
   for (const [key, section] of Object.entries(next.sections)) {
     if (!section || content.bundledImagesVersion >= 1) continue
     const type = section.type || key
-    if (key === 'navbar' || key === 'footer') {
+    if (key === 'navbar') {
       if (!section.logoImage) section.logoImage = '/site-images/logo.png'
     }
     if (key === 'hero') {

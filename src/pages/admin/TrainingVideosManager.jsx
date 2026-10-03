@@ -17,6 +17,8 @@ import {
   reorderTrainingVideos
 } from '../../api/trainingVideos'
 import { uploadLandingVideo } from '../../api/landingPage'
+import { useI18n } from '../../i18n/I18nContext'
+import { resolveText } from '../../utils/multilingual'
 
 // Upload-only — YouTube/Vimeo/Instagram Reel embeds were removed per request
 // (kept things simpler for the admin, and avoided embed-related upload
@@ -28,6 +30,7 @@ import { uploadLandingVideo } from '../../api/landingPage'
 const EMPTY_FORM = { title: '', description: '', video_source: 'upload', video_url: '' }
 
 function TrainingVideosManager() {
+  const { language } = useI18n()
   const [videos, setVideos] = useState([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState(null) // null = closed, 'new' = creating, or a video id
@@ -58,8 +61,8 @@ function TrainingVideosManager() {
 
   const startEdit = (video) => {
     setForm({
-      title: video.title,
-      description: video.description || '',
+      title: resolveText(video.title, language),
+      description: resolveText(video.description, language),
       video_source: 'upload',
       video_url: video.video_source === 'upload' ? video.video_url : ''
     })
@@ -245,11 +248,11 @@ function TrainingVideosManager() {
                   </div>
 
                   <div className="flex-1 min-w-0 w-full">
-                    <p className="font-semibold truncate">{video.title}</p>
+                    <p className="font-semibold truncate">{resolveText(video.title, language)}</p>
                     <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">{video.video_source}</p>
-                    {video.description && (
+                    {resolveText(video.description, language) && (
                       <p className="text-sm text-gray-400 leading-6 w-full [overflow-wrap:anywhere]">
-                        {video.description}
+                        {resolveText(video.description, language)}
                       </p>
                     )}
                   </div>

@@ -2,6 +2,26 @@ export const LAYOUT_DEVICES = ['desktop', 'tablet', 'mobile']
 export const DEFAULT_EMBED_HEIGHT = 152
 export const MAX_EMBED_HEIGHT = 2000
 
+export const DEFAULT_360_LAYOUT = Object.freeze({
+  width: '100%', height: '500px', containerWidth: '100%', containerHeight: 'auto', containerMaxWidth: '1152px',
+  maxWidth: '100%', minWidth: '0px', maxHeight: '2000px', minHeight: '120px',
+  padding: '0px', marginTop: '0px', marginBottom: '0px', marginLeft: 'auto', marginRight: 'auto',
+  borderRadius: '12px', align: 'center', verticalAlign: 'top', offsetX: '0px', offsetY: '0px'
+})
+
+export function make360Layout() {
+  return Object.fromEntries(LAYOUT_DEVICES.map(device => [device, get360Layout({}, device)]))
+}
+
+export function get360Layout(layout, device) {
+  const saved = layout?.[device] || {}
+  const defaults = { ...DEFAULT_360_LAYOUT, marginTop: device === 'desktop' ? '80px' : '56px' }
+  return { ...defaults, ...saved,
+    align: ['left', 'center', 'right'].includes(saved.align) ? saved.align : DEFAULT_360_LAYOUT.align,
+    verticalAlign: ['top', 'middle', 'bottom'].includes(saved.verticalAlign) ? saved.verticalAlign : DEFAULT_360_LAYOUT.verticalAlign
+  }
+}
+
 export function makeEmbedLayout() {
   const all = value => Object.fromEntries(LAYOUT_DEVICES.map(device => [device, value]))
   return { width: all('100%'), height: all('152px'), align: all('left'), marginTop: all('0px'), marginBottom: all('0px') }

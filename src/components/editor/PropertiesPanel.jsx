@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { useLandingContent } from '../../content/LandingContentContext'
+import { get360Layout } from '../../utils/responsiveLayout'
 import { getPath } from '../../utils/objectPath'
 import { resolveText, setTextForLanguage } from '../../utils/multilingual'
 import { useI18n } from '../../i18n/I18nContext'
@@ -9,6 +10,8 @@ import { SECTION_LABELS, SECTION_TYPE_INFO, makeDefaultServiceItem, makeDefaultP
 import ConfirmDialog from './ConfirmDialog'
 import FooterElementPanel from './FooterElementPanel'
 import NavbarLogoFields from './NavbarLogoFields'
+import TypographyControls from './TypographyControls'
+import { FONT_OPTIONS as FONT_FAMILIES, loadFont } from '../../utils/fonts'
 import {
   FieldGroup,
   TextField,
@@ -21,22 +24,6 @@ import {
   ButtonRow,
   SmallButton
 } from './fields'
-
-const FONT_WEIGHT_OPTIONS = [
-  { value: '', label: 'Default' },
-  { value: '400', label: 'Regular' },
-  { value: '500', label: 'Medium' },
-  { value: '600', label: 'Semibold' },
-  { value: '700', label: 'Bold' },
-  { value: '800', label: 'Extra Bold' }
-]
-
-const TEXT_ALIGN_OPTIONS = [
-  { value: '', label: 'Default' },
-  { value: 'left', label: 'Left' },
-  { value: 'center', label: 'Center' },
-  { value: 'right', label: 'Right' }
-]
 
 const POSITION_OPTIONS = [
   { value: 'center', label: 'Center' },
@@ -62,12 +49,7 @@ const VIDEO_TEXT_POSITION_OPTIONS = [
   { value: 'below', label: 'Below Video' }
 ]
 
-const FONT_OPTIONS = [
-  { value: 'Bebas Neue', label: 'Bebas Neue' },
-  { value: 'Inter', label: 'Inter' },
-  { value: 'Roboto', label: 'Roboto' },
-  { value: 'Aldrich', label: 'Aldrich' }
-]
+const FONT_OPTIONS = FONT_FAMILIES.map(value => ({ value, label: value }))
 
 export default function PropertiesPanel() {
   const { content, selection, select } = useLandingContent()
@@ -127,6 +109,7 @@ function ThemePanel({ content }) {
   const { updateField } = useLandingContent()
   const colors = content.theme.colors
   const typography = content.theme.typography
+  const setFont = (path, value) => { updateField(path, value); loadFont(value) }
 
   return (
     <div>
@@ -147,19 +130,19 @@ function ThemePanel({ content }) {
         label="Heading Font"
         value={typography.headingFont}
         options={FONT_OPTIONS}
-        onChange={(v) => updateField('theme.typography.headingFont', v)}
+        onChange={(v) => setFont('theme.typography.headingFont', v)}
       />
       <SelectField
         label="Body Font"
         value={typography.bodyFont}
         options={FONT_OPTIONS}
-        onChange={(v) => updateField('theme.typography.bodyFont', v)}
+        onChange={(v) => setFont('theme.typography.bodyFont', v)}
       />
       <SelectField
         label="Accent Font (buttons, labels)"
         value={typography.accentFont}
         options={FONT_OPTIONS}
-        onChange={(v) => updateField('theme.typography.accentFont', v)}
+        onChange={(v) => setFont('theme.typography.accentFont', v)}
       />
       <TextField label="Button Font Size" value={typography.buttonSize} onChange={(v) => updateField('theme.typography.buttonSize', v)} />
 
@@ -464,6 +447,7 @@ function VideoFields({ path, video, updateField }) {
 
 function AboutTextFields({ sectionKey, section, updateField }) {
   const { language, setLanguage, supportedLanguages } = useI18n()
+  const { device } = useLandingContent()
   const carousel = section.carousel || []
 
   const [uploading, setUploading] = useState(false)
@@ -534,6 +518,8 @@ function AboutTextFields({ sectionKey, section, updateField }) {
         />
       </FieldGroup>
 
+      {section.embed360Url && <About360LayoutFields sectionKey={sectionKey} section={section} device={device} updateField={updateField} />}
+
       <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">Photo Carousel</p>
 
       <FieldGroup label="Editing Language" hint="Applies to the photo captions below.">
@@ -596,6 +582,36 @@ function AboutTextFields({ sectionKey, section, updateField }) {
       />
     </>
   )
+}
+
+function About360LayoutFields({ sectionKey, section, device, updateField }) {
+  const saved = section.embed360Layout || {}
+  const layout = get360Layout(saved, device)
+  const path = `sections.${sectionKey}.embed360Layout.${device}`
+  const set = (key, value) => updateField(`${path}.${key}`, value)
+  return <>
+    <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-5">360° layout · {device}</p>
+    <p className="text-[11px] text-gray-500 mb-3">These values apply to the selected preview size. Desktop, tablet, and mobile are saved independently.</p>
+    <TextField label="Viewer Width" value={layout.width} onChange={v => set('width', v)} placeholder="100% or 800px" />
+    <TextField label="Viewer Height" value={layout.height} onChange={v => set('height', v)} placeholder="500px" />
+    <TextField label="Minimum Width" value={layout.minWidth} onChange={v => set('minWidth', v)} />
+    <TextField label="Maximum Width" value={layout.maxWidth} onChange={v => set('maxWidth', v)} />
+    <TextField label="Minimum Height" value={layout.minHeight} onChange={v => set('minHeight', v)} />
+    <TextField label="Maximum Height" value={layout.maxHeight} onChange={v => set('maxHeight', v)} />
+    <TextField label="Container Width" value={layout.containerWidth} onChange={v => set('containerWidth', v)} />
+    <TextField label="Container Height" value={layout.containerHeight} onChange={v => set('containerHeight', v)} />
+    <TextField label="Container Maximum Width" value={layout.containerMaxWidth} onChange={v => set('containerMaxWidth', v)} />
+    <SelectField label="Horizontal Alignment" value={layout.align} options={[{ value: 'left', label: 'Left' }, { value: 'center', label: 'Center' }, { value: 'right', label: 'Right' }]} onChange={v => set('align', v)} />
+    <SelectField label="Vertical Alignment" value={layout.verticalAlign} options={[{ value: 'top', label: 'Top' }, { value: 'middle', label: 'Middle' }, { value: 'bottom', label: 'Bottom' }]} onChange={v => set('verticalAlign', v)} />
+    <NumberField label="Padding" value={layout.padding} onChange={v => set('padding', v)} />
+    <NumberField label="Margin Top" value={layout.marginTop} onChange={v => set('marginTop', v)} />
+    <NumberField label="Margin Bottom" value={layout.marginBottom} onChange={v => set('marginBottom', v)} />
+    <TextField label="Margin Left" value={layout.marginLeft} onChange={v => set('marginLeft', v)} />
+    <TextField label="Margin Right" value={layout.marginRight} onChange={v => set('marginRight', v)} />
+    <NumberField label="Offset X" value={layout.offsetX} onChange={v => set('offsetX', v)} />
+    <NumberField label="Offset Y" value={layout.offsetY} onChange={v => set('offsetY', v)} />
+    <NumberField label="Border Radius" value={layout.borderRadius} onChange={v => set('borderRadius', v)} />
+  </>
 }
 
 function ImageTextSectionFields({ sectionKey, section, updateField }) {
@@ -1090,105 +1106,15 @@ function TextPanel({ selection, onClose }) {
         onChange={(v) => updateField(selection.path, setTextForLanguage(raw, language, v))}
       />
 
-      {styleObj && Object.keys(styleObj).length > 0 && (
-        <>
-          <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">Style</p>
-
-          {'fontSize' in styleObj && (
-            <TextField
-              label="Font Size (e.g. 4rem, 48px)"
-              value={styleObj.fontSize}
-              onChange={(v) => updateField(`${selection.styleObj}.fontSize`, v)}
-            />
-          )}
-
-          {'color' in styleObj && (
-            <ColorField
-              label="Color"
-              value={styleObj.color || '#ffffff'}
-              onChange={(v) => updateField(`${selection.styleObj}.color`, v)}
-            />
-          )}
-
-          {'fontWeight' in styleObj && (
-            <SelectField
-              label="Font Weight"
-              value={styleObj.fontWeight}
-              options={FONT_WEIGHT_OPTIONS}
-              onChange={(v) => updateField(`${selection.styleObj}.fontWeight`, v)}
-            />
-          )}
-
-          {'letterSpacing' in styleObj && (
-            <TextField
-              label="Letter Spacing (e.g. 2px)"
-              value={styleObj.letterSpacing}
-              onChange={(v) => updateField(`${selection.styleObj}.letterSpacing`, v)}
-            />
-          )}
-
-          {'lineHeight' in styleObj && (
-            <TextField
-              label="Line Height (e.g. 1.2)"
-              value={styleObj.lineHeight}
-              onChange={(v) => updateField(`${selection.styleObj}.lineHeight`, v)}
-            />
-          )}
-
-          {'textAlign' in styleObj && (
-            <SelectField
-              label="Text Align"
-              value={styleObj.textAlign}
-              options={TEXT_ALIGN_OPTIONS}
-              onChange={(v) => updateField(`${selection.styleObj}.textAlign`, v)}
-            />
-          )}
-
-          {(('marginTop' in styleObj) || ('marginBottom' in styleObj) || ('marginLeft' in styleObj) || ('marginRight' in styleObj) || ('padding' in styleObj)) && (
-            <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">Position &amp; Spacing</p>
-          )}
-
-          {'marginTop' in styleObj && (
-            <NumberField
-              label="Margin Top"
-              value={styleObj.marginTop}
-              onChange={(v) => updateField(`${selection.styleObj}.marginTop`, v)}
-            />
-          )}
-
-          {'marginBottom' in styleObj && (
-            <NumberField
-              label="Margin Bottom"
-              value={styleObj.marginBottom}
-              onChange={(v) => updateField(`${selection.styleObj}.marginBottom`, v)}
-            />
-          )}
-
-          {'marginLeft' in styleObj && (
-            <NumberField
-              label="Margin Left"
-              value={styleObj.marginLeft}
-              onChange={(v) => updateField(`${selection.styleObj}.marginLeft`, v)}
-            />
-          )}
-
-          {'marginRight' in styleObj && (
-            <NumberField
-              label="Margin Right"
-              value={styleObj.marginRight}
-              onChange={(v) => updateField(`${selection.styleObj}.marginRight`, v)}
-            />
-          )}
-
-          {'padding' in styleObj && (
-            <NumberField
-              label="Padding"
-              value={styleObj.padding}
-              onChange={(v) => updateField(`${selection.styleObj}.padding`, v)}
-            />
-          )}
-        </>
-      )}
+      {styleObj && ['marginTop', 'marginBottom', 'marginLeft', 'marginRight', 'padding'].some(key => key in styleObj) && <>
+        <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">Position &amp; Spacing</p>
+        {'marginTop' in styleObj && <NumberField label="Margin Top" value={styleObj.marginTop} onChange={v => updateField(`${selection.styleObj}.marginTop`, v)} />}
+        {'marginBottom' in styleObj && <NumberField label="Margin Bottom" value={styleObj.marginBottom} onChange={v => updateField(`${selection.styleObj}.marginBottom`, v)} />}
+        {'marginLeft' in styleObj && <NumberField label="Margin Left" value={styleObj.marginLeft} onChange={v => updateField(`${selection.styleObj}.marginLeft`, v)} />}
+        {'marginRight' in styleObj && <NumberField label="Margin Right" value={styleObj.marginRight} onChange={v => updateField(`${selection.styleObj}.marginRight`, v)} />}
+        {'padding' in styleObj && <NumberField label="Padding" value={styleObj.padding} onChange={v => updateField(`${selection.styleObj}.padding`, v)} />}
+      </>}
+      <TypographyControls path={selection.path} />
     </div>
   )
 }
@@ -1439,6 +1365,7 @@ function ButtonPanel({ selection, onClose }) {
       <ColorField label="Text Color" value={btn.textColor || '#ffffff'} onChange={(v) => set('textColor', v)} />
       <ColorField label="Border Color" value={btn.borderColor || '#ffffff'} onChange={(v) => set('borderColor', v)} />
       <TextField label="Border Radius (e.g. 8px)" value={btn.radius} onChange={(v) => set('radius', v)} />
+      <TypographyControls path={`${selection.path}.text`} />
     </div>
   )
 }

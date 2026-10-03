@@ -1,0 +1,14 @@
+.editable-typography.has-responsive-size {
+  font-size: var(--editable-font-size-desktop, inherit);
+}
+.editable-form-field::placeholder {
+  font: inherit;
+  color: inherit;
+  opacity: 0.65;
+}
+@media (max-width: 1023px) {
+  .editable-typography.has-responsive-size { font-size: var(--editable-font-size-tablet, var(--editable-font-size-desktop, inherit)); }
+}
+@media (max-width: 639px) {
+  .editable-typography.has-responsive-size { font-size: var(--editable-font-size-mobile, var(--editable-font-size-tablet, var(--editable-font-size-desktop, inherit))); }
+}

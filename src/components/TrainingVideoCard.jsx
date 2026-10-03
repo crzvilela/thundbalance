@@ -1,4 +1,6 @@
 import TrainingVideoPlayer from './TrainingVideoPlayer'
+import { useI18n } from '../i18n/I18nContext'
+import { resolveText } from '../utils/multilingual'
 
 // One card in the public Training Tips grid. The description always shows
 // in full — the card simply grows taller to fit it. `items-start` on the
@@ -15,17 +17,20 @@ import TrainingVideoPlayer from './TrainingVideoPlayer'
 // exactly the no-spaces case that was overflowing. `overflow-hidden` on the
 // root is a belt-and-suspenders guard against any remaining overflow.
 function TrainingVideoCard({ video }) {
+  const { language } = useI18n()
+  const title = resolveText(video.title, language)
+  const description = resolveText(video.description, language)
   return (
     <div className="border border-white/10 p-6 flex flex-col gap-4 items-start w-full min-w-0 overflow-hidden hover:border-white transition duration-500">
       <TrainingVideoPlayer source={video.video_source} url={video.video_url} className="w-full" />
 
       <h3 className="text-2xl uppercase tracking-wide w-full [overflow-wrap:anywhere]">
-        {video.title}
+        {title}
       </h3>
 
-      {video.description && (
+      {description && (
         <p className="text-gray-400 leading-7 w-full whitespace-pre-line [overflow-wrap:anywhere]">
-          {video.description}
+          {description}
         </p>
       )}
     </div>

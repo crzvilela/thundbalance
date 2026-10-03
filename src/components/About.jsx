@@ -3,6 +3,7 @@ import { EditableText, EditableImage, useSectionSelection, SectionEditOverlay } 
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
 import { BLANK_IMAGE_PLACEHOLDER } from '../utils/placeholderImage'
 import ImageCarousel from './ImageCarousel'
+import Resizable360Viewer from './editor/Resizable360Viewer'
 
 function About({ sectionId }) {
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'About')
@@ -117,23 +118,7 @@ function About({ sectionId }) {
         </div>
       )}
 
-      {section.embed360Url && (
-        <div className="max-w-6xl mx-auto mt-14 md:mt-20">
-          <div className="rounded-xl overflow-hidden border border-white/10 shadow-lg">
-            <iframe
-              src={section.embed360Url}
-              width="100%"
-              height="400"
-              style={{ border: 0 }}
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-              allowFullScreen
-              title="360° view"
-              className="w-full h-[420px] sm:h-[500px] md:h-[600px]"
-            />
-          </div>
-        </div>
-      )}
+      {section.embed360Url && <Resizable360Viewer sectionId={sectionId} src={section.embed360Url} />}
 
     </motion.section>
   )

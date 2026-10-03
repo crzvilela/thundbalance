@@ -83,6 +83,22 @@ def require_admin(authorization: str | None = Header(default=None)):
     return claims
 
 
+def require_client(authorization: str | None = Header(default=None)):
+    """Verify a Firebase token for client-owned workflow endpoints."""
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.casefold() != "bearer" or not token:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        claims = id_token.verify_firebase_token(
+            token, firebase_token_request, audience=FIREBASE_PROJECT_ID
+        )
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired login")
+    if claims.get("iss") != f"https://securetoken.google.com/{FIREBASE_PROJECT_ID}":
+        raise HTTPException(status_code=401, detail="Invalid login issuer")
+    return claims
+
+
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -167,6 +183,29 @@ def ensure_training_videos_table():
         conn.close()
 
 
+@app.on_event("startup")
+def ensure_client_workflow_fields():
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS rejection_reason TEXT")
+        cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS trainer_id INTEGER REFERENCES trainers(id)")
+        cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS start_date DATE")
+        cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS sessions_per_week INTEGER")
+        cursor.execute("ALTER TABLE client_requests ALTER COLUMN status SET DEFAULT 'Pending'")
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE")
+        cursor.execute("ALTER TABLE plans ADD COLUMN IF NOT EXISTS duration_weeks INTEGER")
+        cursor.execute("""
+            UPDATE plans SET duration_weeks = CASE id
+                WHEN 1 THEN 4 WHEN 2 THEN 12 WHEN 3 THEN 24 ELSE 4 END
+            WHERE duration_weeks IS NULL
+        """)
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
 class LandingContentPayload(BaseModel):
     content: dict[str, Any]
 
@@ -225,7 +264,7 @@ class AssignPlan(BaseModel):
 
 
 class ClientRequestCreate(BaseModel):
-    user_id: int
+    user_id: int | None = None
     plan_id: int
     sessions_per_week: int
     preferred_days: str
@@ -236,6 +275,13 @@ class ApproveRequest(BaseModel):
     request_id: int
     trainer_id: int
     start_date: str
+    plan_id: int | None = None
+    sessions_per_week: int | None = None
+
+
+class RejectRequest(BaseModel):
+    request_id: int
+    reason: str | None = None
 
 
 class TrainingVideoCreate(BaseModel):
@@ -293,7 +339,10 @@ def generate_session_dates(
     selected_days = [
         DAY_MAP[day.strip()]
         for day in preferred_days.split(",")
+        if day.strip() in DAY_MAP
     ]
+    if not selected_days:
+        raise HTTPException(status_code=400, detail="Request must include at least one preferred day")
 
     current_date = datetime.strptime(
         start_date,
@@ -466,12 +515,8 @@ def create_session(session: SessionCreate):
         }
 
     except Exception as e:
-
         conn.rollback()
-
-        return {
-            "error": str(e)
-        }
+        return {"error": str(e)}
 
     finally:
 
@@ -1316,15 +1361,86 @@ def admin_assign_plan(
         conn.close()
 
 
-@app.post("/client-requests")
+@app.get("/client/workflow", dependencies=[Depends(require_client)])
+def client_workflow(authorization: str | None = Header(default=None)):
+    claims = require_client(authorization)
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM users WHERE firebase_uid = %s", (claims.get("sub"),))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="Client profile not found")
+        user_id = user[0]
+        cursor.execute("""
+            SELECT cr.id, cr.status, cr.rejection_reason, p.nome, cr.sessions_per_week,
+                   cr.preferred_days, cr.preferred_time, t.nome, cr.start_date
+            FROM client_requests cr
+            LEFT JOIN plans p ON p.id = cr.plan_id
+            LEFT JOIN trainers t ON t.id = cr.trainer_id
+            WHERE cr.user_id = %s ORDER BY cr.id DESC LIMIT 1
+        """, (user_id,))
+        request = cursor.fetchone()
+        cursor.execute("""
+            SELECT p.nome, t.nome, up.plan_id
+            FROM user_plans up
+            JOIN plans p ON p.id = up.plan_id
+            LEFT JOIN client_requests cr ON cr.user_id = up.user_id AND LOWER(cr.status) = 'approved'
+            LEFT JOIN trainers t ON t.id = cr.trainer_id
+            WHERE up.user_id = %s AND up.active = TRUE ORDER BY cr.id DESC NULLS LAST LIMIT 1
+        """, (user_id,))
+        plan = cursor.fetchone()
+        cursor.execute("""
+            SELECT s.id, s.session_date, s.session_time, t.nome, s.status, s.session_number
+            FROM sessions s LEFT JOIN trainers t ON t.id = s.trainer_id
+            WHERE s.user_id = %s ORDER BY s.session_date ASC, s.session_time ASC
+        """, (user_id,))
+        sessions = cursor.fetchall()
+        status = "active" if plan else (
+            str(request[1]).strip().lower() if request else "new"
+        )
+        return {
+            "user_id": user_id, "state": status,
+            "request": ({"id": request[0], "status": request[1], "reason": request[2],
+                         "package": request[3], "sessions_per_week": request[4],
+                         "preferred_days": request[5], "preferred_time": request[6],
+                         "trainer": request[7], "start_date": request[8]} if request else None),
+            "plan": ({"name": plan[0], "trainer": plan[1], "id": plan[2]} if plan else None),
+            "sessions": [{"id": s[0], "date": str(s[1]), "time": str(s[2]), "trainer": s[3],
+                          "status": s[4], "number": s[5]} for s in sessions],
+            "sessions_remaining": sum(1 for s in sessions if s[4] == "Booked"),
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.post("/client-requests", dependencies=[Depends(require_client)])
 def create_client_request(
-    request: ClientRequestCreate
+    request: ClientRequestCreate,
+    authorization: str | None = Header(default=None),
 ):
 
     conn = get_connection()
     cursor = conn.cursor()
 
     try:
+
+        claims = require_client(authorization)
+        cursor.execute("SELECT id FROM users WHERE firebase_uid = %s", (claims.get("sub"),))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="Client profile not found")
+        user_id = user[0]
+        cursor.execute("""
+            SELECT id FROM client_requests WHERE user_id = %s AND LOWER(status) = 'pending'
+            LIMIT 1
+        """, (user_id,))
+        if cursor.fetchone():
+            raise HTTPException(status_code=409, detail="You already have a pending request")
+        cursor.execute("SELECT 1 FROM user_plans WHERE user_id = %s AND active = TRUE LIMIT 1", (user_id,))
+        if cursor.fetchone():
+            raise HTTPException(status_code=409, detail="You already have an active plan")
 
         cursor.execute(
             """
@@ -1341,7 +1457,7 @@ def create_client_request(
             (%s,%s,%s,%s,%s)
             """,
             (
-                request.user_id,
+                user_id,
                 request.plan_id,
                 request.sessions_per_week,
                 request.preferred_days,
@@ -1355,13 +1471,12 @@ def create_client_request(
             "message": "Request submitted successfully"
         }
 
-    except Exception as e:
-
+    except HTTPException:
         conn.rollback()
-
-        return {
-            "error": str(e)
-        }
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail="Could not submit training request") from e
 
     finally:
 
@@ -1393,7 +1508,8 @@ def admin_client_requests():
 
                 cr.preferred_time,
 
-                cr.status
+                cr.status,
+                cr.rejection_reason
 
             FROM client_requests cr
 
@@ -1434,7 +1550,8 @@ def approve_request(
                 preferred_days,
                 preferred_time
             FROM client_requests
-            WHERE id = %s
+            WHERE id = %s AND LOWER(status) = 'pending'
+            FOR UPDATE
             """,
             (data.request_id,)
         )
@@ -1443,13 +1560,11 @@ def approve_request(
 
         if not request:
 
-            return {
-                "error": "Request not found"
-            }
+            raise HTTPException(status_code=404, detail="Pending request not found")
 
         user_id = request[0]
-        plan_id = request[1]
-        sessions_per_week = request[2]
+        plan_id = data.plan_id or request[1]
+        sessions_per_week = data.sessions_per_week or request[2]
         preferred_days = request[3]
         preferred_time = request[4]
 
@@ -1481,24 +1596,26 @@ def approve_request(
 
         trainer = cursor.fetchone()
 
+        if not trainer:
+            raise HTTPException(status_code=404, detail="Trainer not found")
         trainer_name = trainer[0]
 
-        if plan_id == 1:
+        if sessions_per_week < 1 or sessions_per_week > 7:
+            raise HTTPException(status_code=400, detail="Sessions per week must be between 1 and 7")
 
-            weeks = 4
-
-        elif plan_id == 2:
-
-            weeks = 12
-
-        else:
-
-            weeks = 24
+        cursor.execute("SELECT duration_weeks FROM plans WHERE id = %s", (plan_id,))
+        plan_duration = cursor.fetchone()
+        if not plan_duration:
+            raise HTTPException(status_code=404, detail="Plan not found")
+        weeks = plan_duration[0]
 
         total_sessions = (
             weeks *
             sessions_per_week
         )
+
+        cursor.execute("DELETE FROM user_plans WHERE user_id = %s", (user_id,))
+        cursor.execute("INSERT INTO user_plans (user_id, plan_id) VALUES (%s, %s)", (user_id, plan_id))
 
         session_dates = generate_session_dates(
             data.start_date,
@@ -1581,13 +1698,18 @@ def approve_request(
             SET
                 status = 'Approved',
                 trainer_id = %s,
-                start_date = %s
+                start_date = %s,
+                plan_id = %s,
+                sessions_per_week = %s,
+                rejection_reason = NULL
 
             WHERE id = %s
             """,
             (
                 data.trainer_id,
                 data.start_date,
+                plan_id,
+                sessions_per_week,
                 data.request_id
             )
         )
@@ -1601,18 +1723,40 @@ def approve_request(
             "total_sessions": total_sessions
         }
 
+    except HTTPException:
+        conn.rollback()
+        raise
     except Exception as e:
 
         conn.rollback()
 
         print(e)
-
-        return {
-            "error": str(e)
-        }
+        raise HTTPException(status_code=500, detail="Could not approve training request") from e
 
     finally:
 
+        cursor.close()
+        conn.close()
+
+
+@app.post("/admin/reject-request", dependencies=[Depends(require_admin)])
+def reject_request(data: RejectRequest):
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE client_requests SET status = 'Rejected', rejection_reason = %s
+            WHERE id = %s AND LOWER(status) = 'pending'
+            RETURNING id
+        """, ((data.reason or "").strip() or None, data.request_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Pending request not found")
+        conn.commit()
+        return {"message": "Request rejected"}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
         cursor.close()
         conn.close()
 

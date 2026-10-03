@@ -109,17 +109,17 @@ function Navbar() {
   )
 
   const guestLinks = [
-    { href: `#${aboutId}`, label: t('nav_about') },
-    { href: `#${servicesId}`, label: t('nav_services') },
-    { href: `#${pricingId}`, label: t('nav_pricing') },
-    { href: `#${contactId}`, label: t('nav_contact') }
+    { href: `#${aboutId}`, labelPath: 'about', label: t('nav_about') },
+    { href: `#${servicesId}`, labelPath: 'services', label: t('nav_services') },
+    { href: `#${pricingId}`, labelPath: 'pricing', label: t('nav_pricing') },
+    { href: `#${contactId}`, labelPath: 'contact', label: t('nav_contact') }
   ]
 
   const userLinks = [
-    { to: '/', label: t('nav_home') },
-    { to: '/dashboard', label: t('nav_dashboard') },
-    { to: '/profile', label: t('nav_profile') },
-    { to: '/my-sessions', label: t('nav_sessions') }
+    { to: '/', labelPath: 'home', label: t('nav_home') },
+    { to: '/dashboard', labelPath: 'dashboard', label: t('nav_dashboard') },
+    { to: '/profile', labelPath: 'profile', label: t('nav_profile') },
+    { to: '/my-sessions', labelPath: 'sessions', label: t('nav_sessions') }
   ]
 
   const activeLinks = !user ? guestLinks : userLinks
@@ -127,14 +127,17 @@ function Navbar() {
   // Links mix in-page anchors (href, scroll to a homepage section) and real
   // routes (to, e.g. the About Us page) in the same list, so render each
   // one with the right tag instead of assuming the whole list is one kind.
+  const navLabel = link => link.labelPath
+    ? <EditableText as="span" path={`sections.navbar.labels.${link.labelPath}`} label={`Navbar ${link.label}`} />
+    : link.label
   const renderNavLink = (link, onLinkClick, className = 'hover:text-gray-400 transition duration-300') => (
     link.href ? (
       <a href={link.href} onClick={onLinkClick} className={className}>
-        {link.label}
+        {navLabel(link)}
       </a>
     ) : (
       <Link to={link.to} onClick={onLinkClick} className={className}>
-        {link.label}
+        {navLabel(link)}
       </Link>
     )
   )
@@ -217,14 +220,14 @@ function Navbar() {
                 to="/training-tips"
                 className="inline-flex items-center hover:text-gray-400 transition duration-300 uppercase text-xs md:text-sm px-1"
               >
-                {t('nav_login')}
+                <EditableText as="span" path="sections.navbar.labels.login" label="Navbar Login" />
               </Link>
 
               <Link
                 to="/register"
                 className="inline-flex items-center border border-white/20 px-2.5 sm:px-3 md:px-4 py-2.5 rounded-lg hover:bg-white hover:text-black transition duration-300 uppercase text-xs md:text-sm whitespace-nowrap"
               >
-                {t('nav_register')}
+                <EditableText as="span" path="sections.navbar.labels.register" label="Navbar Register" />
               </Link>
 
             </div>
