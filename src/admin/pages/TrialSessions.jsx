@@ -5,6 +5,7 @@ import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { parseDateKey } from '../requests'
+import { canStart, hoursSummary, weekdayOf } from '../availability'
 import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon,
   PageHeader, SelectInput, Skeleton, TextArea, TextInput
@@ -13,11 +14,11 @@ import {
 const STATUS_TONE = { pending: 'amber', approved: 'emerald', rejected: 'red', cancelled: 'neutral' }
 
 export default function TrialSessions() {
-  const { t, language } = useAdminText()
+  const { t, language, dayFull } = useAdminText()
   const toast = useToast()
   const { trials, trialsResource } = useOutletContext()
-  const trainersResource = useAdminResource('/admin/trainers')
-  const trainers = trainersResource.data || []
+  const trainersResource = useAdminResource('/admin/trainer-availability')
+  const trainers = useMemo(() => (Array.isArray(trainersResource.data) ? trainersResource.data : []), [trainersResource.data])
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
 
   const [filter, setFilter] = useState('pending')
@@ -29,6 +30,14 @@ export default function TrialSessions() {
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState('')
+
+  // Only trainers who work on the requested weekday and hour can be chosen.
+  const trainerOptions = useMemo(() => {
+    if (!approving) return []
+    const day = weekdayOf(approving.date)
+    return trainers.map(trainer => ({ trainer, day, ok: canStart(trainer, day, approving.time), summary: hoursSummary(trainer, [day]) }))
+  }, [trainers, approving])
+  const nobodyFits = approving && trainerOptions.length > 0 && trainerOptions.every(option => !option.ok)
 
   const counts = useMemo(() => ({
     all: trials.length,
@@ -170,10 +179,19 @@ export default function TrialSessions() {
             {parseDateKey(approving.date).toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' })} · {approving.time}
           </div>
         )}
+        {approving && (
+          <p className={`mb-5 rounded-xl border px-4 py-3 text-sm ${nobodyFits ? 'border-red-400/25 bg-red-400/10 text-red-200' : 'border-sky-400/20 bg-sky-400/5 text-sky-100'}`}>
+            {nobodyFits ? t('av_none') : `${t('av_hint')} ${dayFull(weekdayOf(approving.date))} · ${approving.time}`}
+          </p>
+        )}
         <Field label={t('trainer')}>
           <SelectInput value={trainerId} onChange={event => setTrainerId(event.target.value)} disabled={busy}>
             <option value="">{t('select_trainer')}</option>
-            {trainers.map(trainer => <option key={trainer[0]} value={trainer[0]}>{trainer[1]}{trainer[2] ? ` · ${trainer[2]}` : ''}</option>)}
+            {trainerOptions.map(({ trainer, day, ok, summary }) => (
+              <option key={trainer.id} value={trainer.id} disabled={!ok}>
+                {trainer.name}{ok ? ` — ${summary}` : ` — ${t('av_unavailable')} ${dayFull(day)} ${approving.time}${summary ? ` (${t('av_works')} ${summary})` : ''}`}
+              </option>
+            ))}
           </SelectInput>
         </Field>
         {formError && <p role="alert" className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{formError}</p>}

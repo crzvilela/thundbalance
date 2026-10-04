@@ -12,6 +12,10 @@ from pydantic import BaseModel, Field
 from database import get_connection
 from datetime import datetime, timedelta
 
+from availability import (
+    WEEKDAYS, create_trainer, hhmm, save_hours, slot_problem,
+    trainer_usage, validate_hours,
+)
 from google_calendar import create_trial_session_event, delete_calendar_event, list_calendar_events
 
 
@@ -20,6 +24,21 @@ class PlanPayload(BaseModel):
     duracao_meses: int = Field(ge=1, le=60)
     duration_weeks: int = Field(ge=1, le=260)
     preco: float = Field(ge=0, le=100000)
+
+
+class HoursWindow(BaseModel):
+    start: str
+    end: str
+
+
+class TrainerHoursPayload(BaseModel):
+    hours: dict[str, HoursWindow | None]
+
+
+class NewTrainerPayload(BaseModel):
+    name: str
+    specialty: str | None = None
+    hours: dict[str, HoursWindow | None]
 
 
 class TrialApprovePayload(BaseModel):
@@ -321,6 +340,12 @@ def register_admin_routes(app, require_admin):
             if not trainer:
                 raise HTTPException(status_code=404, detail="Trainer not found")
 
+            problem = slot_problem(
+                cursor, data.trainer_id, str(trial[5]), str(trial[6])[:5], ignore_trial_id=trial_id
+            )
+            if problem:
+                raise HTTPException(status_code=409, detail=problem)
+
             # Nothing is written until the calendar event exists, so a Google
             # failure leaves the request Pending instead of half-approved.
             event_id = create_trial_session_event(
@@ -506,3 +531,144 @@ def register_admin_routes(app, require_admin):
                 )
             result.append(item)
         return result
+
+    @app.get("/admin/trainer-availability", dependencies=admin)
+    def admin_trainer_availability():
+        """Active trainers with their weekly hours:
+        [{id, name, specialty, hours: {Monday: {start, end} | null, ...}}]"""
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT id, nome, especialidade FROM trainers WHERE active ORDER BY id")
+            trainers = cursor.fetchall()
+            cursor.execute(
+                "SELECT trainer_id, day_of_week, start_time, end_time FROM trainer_availability"
+            )
+            hours = {}
+            for trainer_id, day, start, end in cursor.fetchall():
+                entry = hours.setdefault(trainer_id, {})
+                current = entry.get(day)
+                # More than one row on a day is unusual; show the widest span.
+                if current:
+                    start = min(hhmm(start), current["start"])
+                    end = max(hhmm(end), current["end"])
+                entry[day] = {"start": hhmm(start), "end": hhmm(end)}
+            return [
+                {
+                    "id": row[0], "name": row[1], "specialty": row[2],
+                    "hours": {day: hours.get(row[0], {}).get(day) for day in WEEKDAYS},
+                }
+                for row in trainers
+            ]
+        finally:
+            cursor.close()
+            conn.close()
+
+    @app.put("/admin/trainers/{trainer_id}/availability", dependencies=admin)
+    def admin_set_trainer_availability(trainer_id: int, data: TrainerHoursPayload):
+        """Replaces the trainer's weekly hours. A weekday set to null means
+        the trainer does not work that day."""
+        try:
+            validate_hours(data.hours)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error))
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT 1 FROM trainers WHERE id = %s AND active", (trainer_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Trainer not found")
+            save_hours(cursor, trainer_id, data.hours)
+            conn.commit()
+            return {"id": trainer_id}
+        except HTTPException:
+            conn.rollback()
+            raise
+        except Exception as error:
+            conn.rollback()
+            traceback.print_exc()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Could not save the hours: {type(error).__name__}: {str(error)[:200]}",
+            ) from error
+        finally:
+            cursor.close()
+            conn.close()
+
+    @app.post("/admin/trainers", dependencies=admin)
+    def admin_create_trainer(data: NewTrainerPayload):
+        """Adds a trainer together with their weekly hours."""
+        name = data.name.strip()
+        if len(name) < 2 or len(name) > 60:
+            raise HTTPException(status_code=422, detail="Enter the trainer's name (2 to 60 characters).")
+        try:
+            validate_hours(data.hours)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error))
+        if not any(window is not None for window in data.hours.values()):
+            raise HTTPException(status_code=422, detail="Choose at least one working day.")
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT 1 FROM trainers WHERE active AND LOWER(nome) = LOWER(%s)", (name,))
+            if cursor.fetchone():
+                raise HTTPException(status_code=409, detail=f"There is already a trainer named {name}.")
+            trainer_id = create_trainer(cursor, name, (data.specialty or "").strip()[:80] or None)
+            save_hours(cursor, trainer_id, data.hours)
+            conn.commit()
+            return {"id": trainer_id}
+        except HTTPException:
+            conn.rollback()
+            raise
+        except Exception as error:
+            conn.rollback()
+            traceback.print_exc()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Could not create the trainer: {type(error).__name__}: {str(error)[:200]}",
+            ) from error
+        finally:
+            cursor.close()
+            conn.close()
+
+    @app.delete("/admin/trainers/{trainer_id}", dependencies=admin)
+    def admin_remove_trainer(trainer_id: int):
+        """Removes a trainer from the site.
+
+        - With upcoming sessions or approved trials: refused (those clients
+          would be left without a trainer).
+        - With only past history: archived (hidden everywhere, history kept).
+        - With no history at all: deleted for good.
+        """
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT nome FROM trainers WHERE id = %s AND active", (trainer_id,))
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Trainer not found")
+
+            has_history, upcoming = trainer_usage(cursor, trainer_id)
+            if upcoming:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"{row[0]} still has {upcoming} upcoming session(s). Cancel or move them first.",
+                )
+
+            if has_history:
+                cursor.execute("UPDATE trainers SET active = FALSE WHERE id = %s", (trainer_id,))
+                outcome = "archived"
+            else:
+                cursor.execute("DELETE FROM trainer_availability WHERE trainer_id = %s", (trainer_id,))
+                cursor.execute("DELETE FROM trainers WHERE id = %s", (trainer_id,))
+                outcome = "deleted"
+            conn.commit()
+            return {"id": trainer_id, "outcome": outcome}
+        except HTTPException:
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
+            conn.close()

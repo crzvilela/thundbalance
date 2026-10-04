@@ -5,6 +5,7 @@ import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { dateKey } from '../requests'
+import { firstMismatch, hoursSummary } from '../availability'
 import {
   Badge, Button, Card, Drawer, EmptyState, ErrorState, Field, Icon, PageHeader,
   SelectInput, Skeleton, TextArea, TextInput
@@ -13,10 +14,10 @@ import {
 const STATUS_TONE = { pending: 'amber', approved: 'emerald', rejected: 'red' }
 
 export default function Requests() {
-  const { t, dayLabel } = useAdminText()
+  const { t, dayLabel, dayFull } = useAdminText()
   const toast = useToast()
   const { requests, requestsResource } = useOutletContext()
-  const trainersResource = useAdminResource('/admin/trainers')
+  const trainersResource = useAdminResource('/admin/trainer-availability')
   const plansResource = useAdminResource('/plans')
 
   const [filter, setFilter] = useState('pending')
@@ -28,7 +29,15 @@ export default function Requests() {
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState('')
 
-  const trainers = trainersResource.data || []
+  const trainers = useMemo(() => (Array.isArray(trainersResource.data) ? trainersResource.data : []), [trainersResource.data])
+
+  // A trainer can only be chosen when they work every requested day at the
+  // requested time (the server checks again and refuses anything else).
+  const trainerOptions = useMemo(() => (approving ? trainers.map(trainer => {
+    const badDay = firstMismatch(trainer, approving.days, approving.time)
+    return { trainer, badDay, summary: hoursSummary(trainer, approving.days) }
+  }) : []), [trainers, approving])
+  const nobodyFits = approving && trainerOptions.length > 0 && trainerOptions.every(option => option.badDay)
   const plans = useMemo(() => plansResource.data || [], [plansResource.data])
 
   const counts = useMemo(() => ({
@@ -190,7 +199,11 @@ export default function Requests() {
         <Field label={t('trainer')}>
           <SelectInput value={form.trainer} onChange={event => setForm({ ...form, trainer: event.target.value })} disabled={busy}>
             <option value="">{t('select_trainer')}</option>
-            {trainers.map(trainer => <option key={trainer[0]} value={trainer[0]}>{trainer[1]}{trainer[2] ? ` · ${trainer[2]}` : ''}</option>)}
+            {trainerOptions.map(({ trainer, badDay, summary }) => (
+              <option key={trainer.id} value={trainer.id} disabled={!!badDay}>
+                {trainer.name}{badDay ? ` — ${t('av_unavailable')} ${dayFull(badDay)} ${approving.time}${summary ? ` (${t('av_works')} ${summary})` : ''}` : ` — ${summary}`}
+              </option>
+            ))}
           </SelectInput>
         </Field>
         <Field label={t('start_date')}>
@@ -208,6 +221,11 @@ export default function Requests() {
           </SelectInput>
         </Field>
         </div>
+        {approving && (
+          <p className={`mb-4 rounded-xl border px-4 py-3 text-sm ${nobodyFits ? 'border-red-400/25 bg-red-400/10 text-red-200' : 'border-sky-400/20 bg-sky-400/5 text-sky-100'}`}>
+            {nobodyFits ? t('av_none') : `${t('av_hint')} ${approving.days.map(day => dayFull(day)).join(', ')} · ${approving.time}`}
+          </p>
+        )}
         {sessionEstimate && (
           <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-sm text-emerald-200">
             {t('will_create')} <strong className="text-base">{sessionEstimate}</strong> {t('sessions_label')}

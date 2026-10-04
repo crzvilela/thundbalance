@@ -16,6 +16,28 @@ function TrainingRequest() {
 
   const [preferredTime, setPreferredTime] = useState('18:00')
 
+  // Start times offered per weekday (only when at least one trainer works).
+  const [schedule, setSchedule] = useState(null)
+
+  useEffect(() => {
+    fetch(`${API_URL}/schedule`)
+      .then(response => (response.ok ? response.json() : null))
+      .then(data => setSchedule(data))
+      .catch(() => setSchedule(null))
+  }, [])
+
+  const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+  const offeredDays = schedule ? WEEKDAYS.filter(day => (schedule[day] || []).length > 0) : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+  const FALLBACK_TIMES = Array.from({ length: 14 }, (_, index) => `${String(index + 7).padStart(2, '0')}:00`)
+
+  // Times that work on EVERY chosen day (the same time is used each day).
+  // With no day chosen yet, every time offered on any day is listed.
+  const timeOptions = !schedule ? FALLBACK_TIMES
+    : preferredDays.length
+      ? FALLBACK_TIMES.filter(time => preferredDays.every(day => (schedule[day] || []).includes(time)))
+      : [...new Set(offeredDays.flatMap(day => schedule[day]))].sort()
+  const effectiveTime = timeOptions.includes(preferredTime) ? preferredTime : (timeOptions[0] || '')
+
   useEffect(() => {
     fetch(`${API_URL}/plans`)
       .then(response => {
@@ -54,6 +76,7 @@ function TrainingRequest() {
 
     if (!auth.currentUser) { navigate('/login'); return }
     if (!preferredDays.length) { alert('Choose at least one preferred day.'); return }
+    if (!effectiveTime) { alert('No time works on all the days you chose. Try fewer days or different days.'); return }
     setSubmitting(true)
 
     try {
@@ -77,7 +100,7 @@ function TrainingRequest() {
 
             preferred_days: preferredDays.join(','),
 
-            preferred_time: preferredTime
+            preferred_time: effectiveTime
 
           })
 
@@ -86,11 +109,9 @@ function TrainingRequest() {
 
       if (!response.ok) {
 
-        const error = await response.text()
+        const body = await response.json().catch(() => ({}))
 
-        console.log(error)
-
-        alert(error)
+        alert(typeof body.detail === 'string' ? body.detail : 'We could not send your request. Please try again.')
 
         return
 
@@ -184,13 +205,7 @@ function TrainingRequest() {
 
             <div className="flex flex-wrap gap-4">
 
-              {[
-                'Monday',
-                'Tuesday',
-                'Wednesday',
-                'Thursday',
-                'Friday'
-              ].map(day => (
+              {offeredDays.map(day => (
 
                 <button
                   key={day}
@@ -219,30 +234,23 @@ function TrainingRequest() {
             </label>
 
             <select
-              value={preferredTime}
+              value={effectiveTime}
               onChange={(e) =>
                 setPreferredTime(
                   e.target.value
                 )
               }
+              disabled={timeOptions.length === 0}
               className="w-full bg-black border border-white/20 p-4"
             >
-              <option>07:00</option>
-              <option>08:00</option>
-              <option>09:00</option>
-              <option>10:00</option>
-              <option>11:00</option>
-              <option>12:00</option>
-              <option>13:00</option>
-              <option>14:00</option>
-              <option>15:00</option>
-              <option>16:00</option>
-              <option>17:00</option>
-              <option>18:00</option>
-              <option>19:00</option>
-              <option>20:00</option>
-              
+              {timeOptions.map(time => <option key={time}>{time}</option>)}
             </select>
+
+            <p className="mt-2 text-sm text-gray-500">
+              {timeOptions.length === 0
+                ? 'No time works on all the days you chose. Try fewer days or different days.'
+                : 'Times depend on our trainers\' schedules, so the list changes with the days you choose.'}
+            </p>
 
           </div>
 

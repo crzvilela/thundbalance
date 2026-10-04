@@ -14,6 +14,7 @@ import Requests from '../admin/pages/Requests'
 import Clients from '../admin/pages/Clients'
 import TrialSessions from '../admin/pages/TrialSessions'
 import Calendar from '../admin/pages/Calendar'
+import Trainers from '../admin/pages/Trainers'
 import Plans from '../admin/pages/Plans'
 import Videos from '../admin/pages/Videos'
 import TrainingTips from '../pages/TrainingTips'
@@ -53,6 +54,7 @@ function AppRoutes() {
           <Route path="trials" element={<TrialSessions />} />
           <Route path="clients" element={<Clients />} />
           <Route path="calendar" element={<Calendar />} />
+          <Route path="trainers" element={<Trainers />} />
           <Route path="sessions" element={<Navigate to="/admin/calendar" replace />} />
           <Route path="plans" element={<Plans />} />
           <Route path="videos" element={<Videos />} />

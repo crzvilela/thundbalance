@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import DatePicker from 'react-datepicker'
@@ -7,9 +7,10 @@ import { API_URL } from '../config'
 
 const GOALS = ['Weight Loss', 'Muscle Gain', 'Performance', 'General Fitness']
 const LEVELS = ['Beginner', 'Intermediate', 'Advanced']
-const TIMES = Array.from({ length: 15 }, (_, index) => `${String(index + 7).padStart(2, '0')}:00`)
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+const dayKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
-const EMPTY = { fullName: '', email: '', phone: '', age: '', goal: '', experience: '', date: null, time: '09:00' }
+const EMPTY = { fullName: '', email: '', phone: '', age: '', goal: '', experience: '', date: null, time: '' }
 
 const control = 'w-full rounded-xl border bg-black/40 px-4 py-3.5 text-white outline-none transition focus:ring-2 focus:ring-emerald-400/20'
 
@@ -22,6 +23,7 @@ function validate(form) {
   if (!form.goal) errors.goal = 'Please select your goal.'
   if (!form.experience) errors.experience = 'Please select your experience.'
   if (!form.date) errors.date = 'Please choose a date.'
+  else if (!form.time) errors.time = 'There is no free time on that day. Please choose another date.'
   return errors
 }
 
@@ -43,6 +45,38 @@ function TrialSession() {
   const [submitting, setSubmitting] = useState(false)
   const [serverError, setServerError] = useState('')
   const [done, setDone] = useState(false)
+  const [schedule, setSchedule] = useState(null) // times offered per weekday
+  const [times, setTimes] = useState([]) // free start times on the chosen date
+  const [loadingTimes, setLoadingTimes] = useState(false)
+
+  useEffect(() => {
+    fetch(`${API_URL}/schedule`)
+      .then(response => (response.ok ? response.json() : null))
+      .then(data => setSchedule(data))
+      .catch(() => setSchedule(null))
+  }, [])
+
+  // Only days on which at least one trainer works can be picked.
+  const isBookableDay = (date) => !schedule || (schedule[WEEKDAYS[(date.getDay() + 6) % 7]] || []).length > 0
+
+  // The times depend on the date: they are the hours when a trainer is free.
+  const chooseDate = async (selected) => {
+    setForm(current => ({ ...current, date: selected, time: '' }))
+    setErrors(current => ({ ...current, date: undefined, time: undefined }))
+    setTimes([])
+    if (!selected) return
+    setLoadingTimes(true)
+    try {
+      const response = await fetch(`${API_URL}/schedule/${dayKey(selected)}`)
+      const list = response.ok ? await response.json() : []
+      setTimes(list)
+      setForm(current => ({ ...current, time: list.includes('09:00') ? '09:00' : (list[0] || '') }))
+    } catch {
+      setTimes([])
+    } finally {
+      setLoadingTimes(false)
+    }
+  }
 
   const set = (key) => (event) => {
     setForm({ ...form, [key]: event.target.value })
@@ -142,17 +176,22 @@ function TrialSession() {
               <Field label="Preferred date" error={errors.date}>
                 <DatePicker
                   selected={form.date}
-                  onChange={(selected) => { setForm({ ...form, date: selected }); if (errors.date) setErrors({ ...errors, date: undefined }) }}
+                  onChange={chooseDate}
                   minDate={new Date()}
+                  filterDate={isBookableDay}
                   dateFormat="dd/MM/yyyy"
                   placeholderText="dd/mm/yyyy"
                   wrapperClassName="w-full"
                   className={`${control} ${border('date')}`}
                 />
               </Field>
-              <Field label="Preferred time">
-                <select value={form.time} onChange={set('time')} className={`${control} border-white/15 focus:border-emerald-400/70`}>
-                  {TIMES.map(time => <option key={time}>{time}</option>)}
+              <Field label="Preferred time" error={errors.time}>
+                <select value={form.time} onChange={set('time')} disabled={!form.date || loadingTimes || times.length === 0}
+                  className={`${control} ${border('time')}`}>
+                  {!form.date && <option value="">Choose a date first</option>}
+                  {form.date && loadingTimes && <option value="">Loading…</option>}
+                  {form.date && !loadingTimes && times.length === 0 && <option value="">No free times</option>}
+                  {times.map(time => <option key={time}>{time}</option>)}
                 </select>
               </Field>
             </div>

@@ -15,6 +15,7 @@ const NAV = [
   { to: '/admin/trials', icon: 'whistle', label: 'nav_trials', badge: 'trials' },
   { to: '/admin/clients', icon: 'clients', label: 'nav_clients' },
   { to: '/admin/calendar', icon: 'calendar', label: 'nav_sessions' },
+  { to: '/admin/trainers', icon: 'clock', label: 'nav_trainers' },
   { to: '/admin/plans', icon: 'bolt', label: 'nav_plans' },
   { to: '/admin/videos', icon: 'video', label: 'nav_videos' }
 ]

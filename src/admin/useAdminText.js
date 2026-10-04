@@ -40,5 +40,9 @@ export function useAdminText() {
   }, [])
 
   const t = (key) => adminText[language]?.[key] ?? adminText.en[key] ?? key
-  return { t, language, setLanguage, dayLabel: (day) => adminText[language].days[day] || day }
+  return {
+    t, language, setLanguage,
+    dayLabel: (day) => adminText[language].days[day] || day,
+    dayFull: (day) => adminText[language].days_full[day] || day
+  }
 }

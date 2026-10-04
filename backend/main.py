@@ -21,6 +21,17 @@ from google_calendar import (
 )
 from landing_page_default import DEFAULT_LANDING_CONTENT
 from admin_api import register_admin_routes
+from availability import (
+    WEEKDAYS,
+    ensure_trainers_and_availability,
+    purge_unused_inactive_trainers,
+    free_start_times,
+    slot_problem,
+    trainers_for_slot,
+    weekday_name,
+    weekly_start_times,
+    within_hours,
+)
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2 import id_token
 
@@ -186,6 +197,16 @@ def ensure_training_videos_table():
     finally:
 
         cursor.close()
+        conn.close()
+
+
+@app.on_event("startup")
+def ensure_team():
+    conn = get_connection()
+    try:
+        ensure_trainers_and_availability(conn)
+        purge_unused_inactive_trainers(conn)
+    finally:
         conn.close()
 
 
@@ -434,8 +455,10 @@ def get_trainers():
 
         cursor.execute(
             """
-            SELECT *
+            SELECT id, nome, especialidade
             FROM trainers
+            WHERE active
+            ORDER BY id
             """
         )
 
@@ -455,15 +478,17 @@ def create_session(session: SessionCreate):
 
     try:
 
-        if not trainer_is_available(
+        problem = slot_problem(
             cursor,
             session.trainer_id,
             session.session_date,
             session.session_time
-        ):
+        )
+
+        if problem:
 
             return {
-                "error": "Trainer already booked at this time"
+                "error": problem
             }
 
         cursor.execute(
@@ -953,6 +978,20 @@ def update_session(
                 "error": "Trainer already booked at this time"
             }
 
+        problem = slot_problem(
+            cursor,
+            trainer_id,
+            session.session_date,
+            session.session_time,
+            ignore_session_id=session_id
+        )
+
+        if problem:
+
+            return {
+                "error": problem
+            }
+
         cursor.execute(
             """
             UPDATE sessions
@@ -1081,6 +1120,7 @@ def admin_trainers():
             """
             SELECT id, nome, especialidade
             FROM trainers
+            WHERE active
             ORDER BY id
             """
         )
@@ -1270,31 +1310,23 @@ def assign_plan(data: UserPlanCreate):
 
 @app.get("/available-trainers/{day}/{time}")
 def available_trainers(day: str, time: str):
+    """Active trainers working at that weekday and time (by working hours)."""
+
+    if day not in WEEKDAYS:
+        raise HTTPException(status_code=422, detail="Unknown weekday")
 
     conn = get_connection()
     cursor = conn.cursor()
 
     try:
 
-        cursor.execute(
-            """
-            SELECT
-                t.id,
-                t.nome
+        cursor.execute("SELECT id, nome FROM trainers WHERE active ORDER BY id")
 
-            FROM trainers t
-
-            JOIN trainer_availability ta
-                ON t.id = ta.trainer_id
-
-            WHERE
-                ta.day_of_week = %s
-                AND %s BETWEEN ta.start_time AND ta.end_time
-            """,
-            (day, time)
-        )
-
-        return cursor.fetchall()
+        return [
+            [trainer_id, name]
+            for trainer_id, name in cursor.fetchall()
+            if within_hours(cursor, trainer_id, day, time)
+        ]
 
     finally:
 
@@ -1302,7 +1334,50 @@ def available_trainers(day: str, time: str):
         conn.close()
 
 
-TRIAL_TIMES = {f"{hour:02d}:00" for hour in range(7, 22)}
+@app.get("/schedule")
+def get_schedule():
+    """Start times offered on each weekday (at least one trainer works)."""
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+
+        return weekly_start_times(cursor)
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
+
+@app.get("/schedule/{session_date}")
+def get_schedule_for_date(session_date: str):
+    """Start times on a date with at least one trainer free."""
+
+    try:
+        day = datetime.strptime(session_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Use a date as YYYY-MM-DD")
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+
+        cursor.execute("SELECT id FROM trainers WHERE active")
+        times = set()
+        for (trainer_id,) in cursor.fetchall():
+            times.update(free_start_times(cursor, trainer_id, day))
+        return sorted(times)
+
+    finally:
+
+        cursor.close()
+        conn.close()
+
+
+TRIAL_TIMES = {f"{hour:02d}:00" for hour in range(7, 21)}
 
 
 @app.post("/trial-sessions")
@@ -1325,7 +1400,7 @@ def create_trial_session(
     if trial.age is not None and not 10 <= trial.age <= 100:
         raise HTTPException(status_code=422, detail="Please enter a valid age.")
     if trial.session_time not in TRIAL_TIMES:
-        raise HTTPException(status_code=422, detail="Please choose a time between 07:00 and 21:00.")
+        raise HTTPException(status_code=422, detail="Please choose a time between 07:00 and 20:00.")
 
     try:
         session_date = datetime.strptime(trial.session_date, "%Y-%m-%d").date()
@@ -1339,6 +1414,12 @@ def create_trial_session(
     cursor = conn.cursor()
 
     try:
+
+        if not trainers_for_slot(cursor, session_date, trial.session_time):
+            raise HTTPException(
+                status_code=422,
+                detail="No trainer is available at that day and time. Please choose another."
+            )
 
         cursor.execute(
             """
@@ -1537,6 +1618,18 @@ def create_client_request(
         if not user:
             raise HTTPException(status_code=404, detail="Client profile not found")
         user_id = user[0]
+
+        offered = weekly_start_times(cursor)
+        chosen_days = [day.strip() for day in request.preferred_days.split(",") if day.strip()]
+        if not chosen_days or any(day not in offered for day in chosen_days):
+            raise HTTPException(status_code=422, detail="Please choose valid training days.")
+        unavailable = [day for day in chosen_days if request.preferred_time not in offered[day]]
+        if unavailable:
+            raise HTTPException(
+                status_code=422,
+                detail=f"No trainer works at {request.preferred_time} on {', '.join(unavailable)}. Please choose another time."
+            )
+
         cursor.execute("""
             SELECT id FROM client_requests WHERE user_id = %s AND LOWER(status) = 'pending'
             LIMIT 1
@@ -1719,14 +1812,29 @@ def approve_request(
             sessions_per_week
         )
 
-        cursor.execute("DELETE FROM user_plans WHERE user_id = %s", (user_id,))
-        cursor.execute("INSERT INTO user_plans (user_id, plan_id) VALUES (%s, %s)", (user_id, plan_id))
-
         session_dates = generate_session_dates(
             data.start_date,
             preferred_days,
             total_sessions
         )
+
+        # Every generated session must fit the trainer's working hours and
+        # not collide with another session, before anything is written.
+        problems = []
+        for session_date in session_dates:
+            problem = slot_problem(cursor, data.trainer_id, session_date, preferred_time)
+            if problem:
+                problems.append(f"{session_date}: {problem}")
+        if problems:
+            shown = "; ".join(problems[:3])
+            extra = f" (+{len(problems) - 3} more)" if len(problems) > 3 else ""
+            raise HTTPException(
+                status_code=409,
+                detail=f"{trainer_name} cannot take this schedule. {shown}{extra}",
+            )
+
+        cursor.execute("DELETE FROM user_plans WHERE user_id = %s", (user_id,))
+        cursor.execute("INSERT INTO user_plans (user_id, plan_id) VALUES (%s, %s)", (user_id, plan_id))
 
         # Rows go into the database first and the Google Calendar events are
         # created afterwards, so a database error can no longer leave events
@@ -2013,60 +2121,24 @@ def get_available_times(
     trainer_id: int,
     session_date: str
 ):
+    """Start times this trainer can still take on that date: inside their
+    working hours and not already booked."""
 
-    AVAILABLE_TIMES = [
-        "07:00",
-        "08:00",
-        "09:00",
-        "10:00",
-        "11:00",
-        "12:00",
-        "13:00",
-        "14:00",
-        "15:00",
-        "16:00",
-        "17:00",
-        "18:00",
-        "19:00",
-        "20:00"
-    ]
+    try:
+        datetime.strptime(session_date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Use a date as YYYY-MM-DD")
 
     conn = get_connection()
     cursor = conn.cursor()
 
     try:
 
-        cursor.execute(
-            """
-            SELECT session_time
+        cursor.execute("SELECT 1 FROM trainers WHERE id = %s AND active", (trainer_id,))
+        if not cursor.fetchone():
+            return []
 
-            FROM sessions
-
-            WHERE trainer_id = %s
-
-            AND session_date = %s
-
-            AND status = 'Booked'
-            """,
-            (
-                trainer_id,
-                session_date
-            )
-        )
-
-        # session_time comes back as a datetime.time, so compare as "HH:MM"
-        # text; comparing it with the strings in AVAILABLE_TIMES never matched
-        # and booked slots were offered as free.
-        booked_times = {
-            str(row[0])[:5]
-            for row in cursor.fetchall()
-        }
-
-        return [
-            time
-            for time in AVAILABLE_TIMES
-            if time not in booked_times
-        ]
+        return free_start_times(cursor, trainer_id, session_date)
 
     finally:
 
