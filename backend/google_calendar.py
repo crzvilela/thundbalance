@@ -21,6 +21,17 @@ CALENDAR_ID = os.getenv(
 )
 
 
+def _read_env(name):
+    """Value of an environment variable, tolerating stray spaces or a
+    different capitalisation in the NAME (easy to get wrong in a dashboard)."""
+
+    for key, value in os.environ.items():
+        if key.strip().upper() == name:
+            return value
+
+    return ""
+
+
 def load_credentials():
     """Service-account credentials for the calendar.
 
@@ -29,15 +40,29 @@ def load_credentials():
     or the same JSON encoded as base64). Locally, credentials.json is used.
     """
 
-    raw = os.getenv("GOOGLE_CREDENTIALS_JSON", "").strip()
+    raw = _read_env("GOOGLE_CREDENTIALS_JSON").strip().strip('"').strip("'").strip()
 
     if raw:
         if not raw.startswith("{"):
             raw = base64.b64decode(raw).decode("utf-8")
 
+        # strict=False tolerates real line breaks inside the private key.
         return service_account.Credentials.from_service_account_info(
-            json.loads(raw),
+            json.loads(raw, strict=False),
             scopes=SCOPES
+        )
+
+    if not os.path.exists(SERVICE_ACCOUNT_FILE):
+        # Names only, never values: helps spot a mistyped variable name.
+        similar = sorted(
+            key for key in os.environ
+            if "GOOGLE" in key.upper() or "CRED" in key.upper()
+        )
+        raise RuntimeError(
+            "Google Calendar is not configured on this server: the "
+            "GOOGLE_CREDENTIALS_JSON environment variable is empty or missing "
+            f"(similar variable names seen: {similar or 'none'}). Set it to the "
+            "full contents of credentials.json and redeploy."
         )
 
     return service_account.Credentials.from_service_account_file(
