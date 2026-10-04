@@ -1,3 +1,7 @@
+import base64
+import json
+import os
+
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from datetime import datetime, timedelta
@@ -6,17 +10,45 @@ SCOPES = [
     "https://www.googleapis.com/auth/calendar"
 ]
 
-SERVICE_ACCOUNT_FILE = "credentials.json"
+# Next to this file, so it works no matter which folder the server starts in.
+SERVICE_ACCOUNT_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "credentials.json"
+)
 
-CALENDAR_ID = "5b958f681e0f3a7ab9316d1955367098481d33c5682578df1fca743a260d0490@group.calendar.google.com"
+CALENDAR_ID = os.getenv(
+    "GOOGLE_CALENDAR_ID",
+    "5b958f681e0f3a7ab9316d1955367098481d33c5682578df1fca743a260d0490@group.calendar.google.com"
+)
+
+
+def load_credentials():
+    """Service-account credentials for the calendar.
+
+    On a server (Render) the key is NOT stored as a file in the code: put the
+    full JSON in the GOOGLE_CREDENTIALS_JSON environment variable (plain JSON,
+    or the same JSON encoded as base64). Locally, credentials.json is used.
+    """
+
+    raw = os.getenv("GOOGLE_CREDENTIALS_JSON", "").strip()
+
+    if raw:
+        if not raw.startswith("{"):
+            raw = base64.b64decode(raw).decode("utf-8")
+
+        return service_account.Credentials.from_service_account_info(
+            json.loads(raw),
+            scopes=SCOPES
+        )
+
+    return service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE,
+        scopes=SCOPES
+    )
 
 
 def get_calendar_service():
 
-    credentials = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE,
-        scopes=SCOPES
-    )
+    credentials = load_credentials()
 
     return build(
         "calendar",
