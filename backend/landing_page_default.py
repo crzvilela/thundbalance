@@ -173,7 +173,7 @@ DEFAULT_LANDING_CONTENT = {
             "visible": True,
             "eyebrow": _ml("Private Fitness Studio", "Estudio de Fitness Privado", "Estudi de Fitness Privat"),
             "eyebrowStyle": _text_style(),
-            "title": _ml("Transform Your Body And Performance", "Transforma Tu Cuerpo Y Rendimiento", "Transforma El Teu Cos I Rendiment"),
+            "title": _ml("THUNDBALANCE", "THUNDBALANCE", "THUNDBALANCE"),
             "titleStyle": _text_style(),
             "subtitle": _ml(
                 "Personalized 1:1 training sessions focused on performance, health, rehabilitation and real results.",

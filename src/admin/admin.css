@@ -1,0 +1,23 @@
+/* Admin panel: backdrop glow, drawer / toast motion. Colors come from Tailwind
+   classes in the components; only things Tailwind can't express live here. */
+.admin-shell {
+  background:
+    radial-gradient(900px 500px at 85% -10%, rgba(52, 211, 153, 0.07), transparent 60%),
+    radial-gradient(700px 400px at -10% 110%, rgba(56, 189, 248, 0.04), transparent 60%),
+    #07090a;
+}
+
+/* Dark native controls: scrollbars, date picker and select menus. */
+.admin-shell, .admin-drawer { color-scheme: dark; }
+
+.admin-drawer { animation: admin-slide-in 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
+.admin-toast { animation: admin-toast-in 0.25s cubic-bezier(0.22, 1, 0.36, 1); }
+.admin-fade { animation: admin-fade 0.3s ease both; }
+
+@keyframes admin-slide-in { from { transform: translateX(32px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes admin-toast-in { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes admin-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-drawer, .admin-toast, .admin-fade { animation: none; }
+}

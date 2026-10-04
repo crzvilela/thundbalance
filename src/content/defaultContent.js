@@ -127,7 +127,7 @@ export const defaultContent = {
       visible: true,
       eyebrow: ml('Private Fitness Studio', 'Estudio de Fitness Privado', 'Estudi de Fitness Privat'),
       eyebrowStyle: textStyle(),
-      title: ml('Transform Your Body And Performance', 'Transforma Tu Cuerpo Y Rendimiento', 'Transforma El Teu Cos I Rendiment'),
+      title: ml('THUNDBALANCE', 'THUNDBALANCE', 'THUNDBALANCE'),
       titleStyle: textStyle(),
       subtitle: ml(
         'Personalized 1:1 training sessions focused on performance, health, rehabilitation and real results.',

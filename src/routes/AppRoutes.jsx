@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 
 import Home from '../pages/Home'
 import Login from '../pages/Login'
@@ -7,9 +7,15 @@ import Dashboard from '../pages/Dashboard'
 import BookSession from '../pages/BookSession'
 import MySessions from '../pages/MySessions'
 import Profile from '../pages/Profile'
-import Admin from '../pages/Admin'
 import LandingPageEditor from '../pages/admin/LandingPageEditor'
-import TrainingVideosManager from '../pages/admin/TrainingVideosManager'
+import AdminLayout from '../admin/AdminLayout'
+import Overview from '../admin/pages/Overview'
+import Requests from '../admin/pages/Requests'
+import Clients from '../admin/pages/Clients'
+import TrialSessions from '../admin/pages/TrialSessions'
+import Calendar from '../admin/pages/Calendar'
+import Plans from '../admin/pages/Plans'
+import Videos from '../admin/pages/Videos'
 import TrainingTips from '../pages/TrainingTips'
 import ChoosePlan from '../pages/ChoosePlan'
 import TrialSession from '../pages/Trialsession'
@@ -41,12 +47,21 @@ function AppRoutes() {
       
         <Route path="/admin/login" element={<AdminLogin />} />
 
-        <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
+        <Route path="/admin" element={<RequireAdmin><AdminLayout /></RequireAdmin>}>
+          <Route index element={<Overview />} />
+          <Route path="requests" element={<Requests />} />
+          <Route path="trials" element={<TrialSessions />} />
+          <Route path="clients" element={<Clients />} />
+          <Route path="calendar" element={<Calendar />} />
+          <Route path="sessions" element={<Navigate to="/admin/calendar" replace />} />
+          <Route path="plans" element={<Plans />} />
+          <Route path="videos" element={<Videos />} />
+        </Route>
 
 
         <Route path="/admin/landing-editor" element={<RequireAdmin><LandingPageEditor /></RequireAdmin>} />
 
-        <Route path="/admin/training-videos" element={<RequireAdmin><TrainingVideosManager /></RequireAdmin>} />
+        <Route path="/admin/training-videos" element={<Navigate to="/admin/videos" replace />} />
 
         <Route path="/training-tips" element={<TrainingTips />} />
       

@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 export function FieldGroup({ label, children, hint }) {
   return (
     <div className="mb-5">
@@ -25,6 +27,45 @@ export function TextField({ value, onChange, placeholder, label, onBlur, onKeyDo
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
         className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-emerald-500 transition"
+      />
+    </FieldGroup>
+  )
+}
+
+// A CSS size such as "800px" or "50%". A bare number ("800") becomes px, and
+// "auto" is accepted when allowAuto is set. Anything else is rejected instead
+// of being saved, because an invalid value is silently ignored by the browser
+// and the block would appear not to react.
+function normalizeSize(raw, allowAuto) {
+  const text = raw.trim().toLowerCase()
+  if (allowAuto && text === 'auto') return 'auto'
+  if (/^\d+(\.\d+)?$/.test(text)) return `${text}px`
+  if (/^\d+(\.\d+)?(px|%)$/.test(text)) return text
+  return null
+}
+
+export function SizeField({ value, onChange, label, placeholder, allowAuto = false, hint }) {
+  const [draft, setDraft] = useState(null)
+  const shown = draft ?? value ?? ''
+  const invalid = draft !== null && normalizeSize(draft, allowAuto) === null
+
+  const handleChange = (raw) => {
+    setDraft(raw)
+    const normalized = normalizeSize(raw, allowAuto)
+    if (normalized !== null && parseFloat(normalized) !== 0) onChange(normalized)
+  }
+
+  return (
+    <FieldGroup label={label} hint={invalid ? `Use a number, px or %${allowAuto ? ', or auto' : ''} (e.g. 800px or 50%).` : hint}>
+      <input
+        type="text"
+        aria-label={label}
+        aria-invalid={invalid || undefined}
+        value={shown}
+        placeholder={placeholder}
+        onChange={(e) => handleChange(e.target.value)}
+        onBlur={() => setDraft(null)}
+        className={`w-full bg-[#111] border rounded-lg px-3 py-2 text-sm text-white outline-none transition ${invalid ? 'border-red-500' : 'border-white/10 focus:border-emerald-500'}`}
       />
     </FieldGroup>
   )

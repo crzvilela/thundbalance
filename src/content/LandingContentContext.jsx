@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useReducer
 import { defaultContent, SECTION_TYPE_DEFAULTS } from './defaultContent'
 import { deepMerge, deepClone, setPath } from '../utils/objectPath'
 import { migrateLegacyTypography } from '../utils/typography'
+import { actualFontFamily, loadFont } from '../utils/fonts'
 import { migrateSectionsToInstances, migrateBackgroundTypes, migrateBundledImages, migrateHeroImage, migrateFooterEmbeds } from './migrateContent'
 import {
   fetchLandingContent,
@@ -143,14 +144,71 @@ function contentHistoryReducer(state, action) {
   return { content: next, history, historyIndex: history.length - 1 }
 }
 
+// The last content loaded for the public site is cached in localStorage so a
+// reload paints the real fonts/texts immediately instead of flashing the code
+// defaults until the API answers. The API response still wins once it arrives.
+const CACHE_PREFIX = 'thundbalance:landing-content:'
+
+function readCachedContent(version) {
+  try {
+    const raw = window.localStorage.getItem(CACHE_PREFIX + version)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function writeCachedContent(version, content) {
+  try {
+    window.localStorage.setItem(CACHE_PREFIX + version, JSON.stringify(content))
+  } catch {
+    // storage full or unavailable: the site just loads without the cache
+  }
+}
+
+// Every font the content uses: the global theme fonts plus any per-text
+// `fontFamily` override.
+function collectFonts(node, found = new Set()) {
+  if (!node || typeof node !== 'object') return found
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'fontFamily' && typeof value === 'string') found.add(value)
+    else if (key === 'headingFont' || key === 'bodyFont' || key === 'accentFont') {
+      if (typeof value === 'string') found.add(value)
+    } else collectFonts(value, found)
+  }
+  return found
+}
+
+// Downloads the fonts before the page is shown, so text doesn't paint in a
+// fallback font and then jump to the real one. Capped so a slow font CDN
+// can never keep the page blank.
+const FONT_WAIT_MS = 2500
+
+async function preloadFonts(content) {
+  const fonts = [...collectFonts(content)].filter(font => font && font !== 'inherit')
+  const loads = fonts.map(async font => {
+    await loadFont(font)
+    await document.fonts?.load(`16px "${actualFontFamily(font)}"`)
+  })
+  await Promise.race([
+    Promise.allSettled(loads),
+    new Promise(resolve => setTimeout(resolve, FONT_WAIT_MS))
+  ])
+}
+
 // mode: 'view' (public site, read-only) | 'edit' (admin page builder)
 // version: only used in 'view' mode -> 'published' (default) or 'draft' (preview)
 export function LandingContentProvider({ mode = 'view', version = 'published', children }) {
   const isEditMode = mode === 'edit'
 
-  const [{ content, history, historyIndex }, dispatch] = useReducer(contentHistoryReducer, {
-    content: defaultContent, history: [], historyIndex: -1
-  })
+  const [{ content, history, historyIndex }, dispatch] = useReducer(contentHistoryReducer, null, () => ({
+    content: (isEditMode ? null : readCachedContent(version)) || defaultContent,
+    history: [],
+    historyIndex: -1
+  }))
+  // Public pages stay blank until the real content (cached or fetched) and
+  // its fonts are ready.
+  const [fontsReady, setFontsReady] = useState(false)
   const [loading, setLoading] = useState(true)
   const [selection, setSelection] = useState(null)
   const [device, setDevice] = useState('desktop')
@@ -166,17 +224,29 @@ export function LandingContentProvider({ mode = 'view', version = 'published', c
     async function load() {
       setLoading(true)
 
+      // Cached content (public view only) can be shown as soon as its fonts
+      // are ready, without waiting for the API.
+      const cached = isEditMode ? null : readCachedContent(version)
+      if (cached) preloadFonts(cached).finally(() => { if (!cancelled) setFontsReady(true) })
+
       try {
         const fetchVersion = isEditMode ? 'draft' : version
         const data = await fetchLandingContent(fetchVersion)
         if (cancelled) return
 
         const merged = normalizeLoadedContent(data.content)
+        // Edit mode shows its own "Loading" state, so it can wait for fonts too.
+        if (!cached || isEditMode) await preloadFonts(merged)
+        if (cancelled) return
         dispatch({ type: 'load', content: merged })
+        if (!isEditMode) writeCachedContent(version, merged)
       } catch (err) {
         console.error('Failed to load landing page content, using defaults:', err)
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+          setFontsReady(true)
+        }
       }
     }
 
@@ -212,6 +282,7 @@ export function LandingContentProvider({ mode = 'view', version = 'published', c
     setSaving(true)
     try {
       await saveDraftContent(content)
+      writeCachedContent('draft', content)
       setDirty(false)
       setLastSavedAt(new Date())
     } finally {
@@ -224,6 +295,10 @@ export function LandingContentProvider({ mode = 'view', version = 'published', c
     try {
       await saveDraftContent(content)
       await publishContentApi(content)
+      // Refresh the public-site cache so the next visit/reload shows what was
+      // just published immediately, not the previous version.
+      writeCachedContent('published', content)
+      writeCachedContent('draft', content)
       setDirty(false)
       setLastSavedAt(new Date())
     } finally {
@@ -262,9 +337,13 @@ export function LandingContentProvider({ mode = 'view', version = 'published', c
     lastSavedAt
   }
 
+  // Hold the public page back until real content and fonts are ready,
+  // rather than flashing the code defaults or a fallback font.
+  const waitingForFirstLoad = !isEditMode && !fontsReady
+
   return (
     <LandingContentContext.Provider value={value}>
-      {children}
+      {waitingForFirstLoad ? <div className="bg-black min-h-screen" /> : children}
     </LandingContentContext.Provider>
   )
 }

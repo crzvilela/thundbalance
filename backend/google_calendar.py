@@ -188,7 +188,8 @@ def create_trial_session_event(
     goal,
     experience,
     session_date,
-    session_time
+    session_time,
+    trainer_name=None
 ):
 
     service = get_calendar_service()
@@ -215,7 +216,7 @@ Phone: {phone}
 Goal: {goal}
 
 Experience: {experience}
-""",
+{f"{chr(10)}Trainer: {trainer_name}{chr(10)}" if trainer_name else ""}""",
 
         "colorId": "5",
 
@@ -267,3 +268,33 @@ def clear_calendar():
             pass
 
     print("GOOGLE CALENDAR CLEARED")
+
+
+def list_calendar_events(time_min, time_max):
+    """Events between two RFC3339 instants, in Europe/Madrid time.
+
+    Recurring events are expanded and results are paginated until Google has
+    no more pages, so a busy month is returned completely.
+    """
+
+    service = get_calendar_service()
+    events = []
+    page_token = None
+
+    while True:
+        response = service.events().list(
+            calendarId=CALENDAR_ID,
+            timeMin=time_min,
+            timeMax=time_max,
+            singleEvents=True,
+            orderBy="startTime",
+            timeZone="Europe/Madrid",
+            maxResults=250,
+            pageToken=page_token
+        ).execute()
+
+        events.extend(response.get("items", []))
+        page_token = response.get("nextPageToken")
+
+        if not page_token:
+            return events

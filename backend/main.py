@@ -1,7 +1,9 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header
 
 import os
+import re
 import json
+import traceback
 import uuid
 from datetime import datetime, timedelta
 from typing import Any
@@ -18,6 +20,7 @@ from google_calendar import (
     clear_calendar
 )
 from landing_page_default import DEFAULT_LANDING_CONTENT
+from admin_api import register_admin_routes
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2 import id_token
 
@@ -97,6 +100,9 @@ def require_client(authorization: str | None = Header(default=None)):
     if claims.get("iss") != f"https://securetoken.google.com/{FIREBASE_PROJECT_ID}":
         raise HTTPException(status_code=401, detail="Invalid login issuer")
     return claims
+
+
+register_admin_routes(app, require_admin)
 
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
@@ -184,6 +190,22 @@ def ensure_training_videos_table():
 
 
 @app.on_event("startup")
+def ensure_trial_session_fields():
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'Pending'")
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS trainer_id INTEGER REFERENCES trainers(id)")
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS google_event_id TEXT")
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS rejection_reason TEXT")
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW()")
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.on_event("startup")
 def ensure_client_workflow_fields():
     conn = get_connection()
     cursor = conn.cursor()
@@ -194,6 +216,14 @@ def ensure_client_workflow_fields():
         cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS sessions_per_week INTEGER")
         cursor.execute("ALTER TABLE client_requests ALTER COLUMN status SET DEFAULT 'Pending'")
         cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE")
+        # Approvals store session numbers as text such as "1/12".
+        cursor.execute("""
+            SELECT data_type FROM information_schema.columns
+            WHERE table_name = 'sessions' AND column_name = 'session_number'
+        """)
+        column = cursor.fetchone()
+        if column and column[0] != "text":
+            cursor.execute("ALTER TABLE sessions ALTER COLUMN session_number TYPE TEXT USING session_number::text")
         cursor.execute("ALTER TABLE plans ADD COLUMN IF NOT EXISTS duration_weeks INTEGER")
         cursor.execute("""
             UPDATE plans SET duration_weeks = CASE id
@@ -251,7 +281,7 @@ class TrialSessionCreate(BaseModel):
     full_name: str
     email: str
     phone: str
-    age: int
+    age: int | None = None
     goal: str
     experience: str
     session_date: str
@@ -1272,15 +1302,58 @@ def available_trainers(day: str, time: str):
         conn.close()
 
 
+TRIAL_TIMES = {f"{hour:02d}:00" for hour in range(7, 22)}
+
+
 @app.post("/trial-sessions")
 def create_trial_session(
     trial: TrialSessionCreate
 ):
+    """Public form. Stores a Pending request; the calendar event is created
+    only when the admin approves it and picks a trainer."""
+
+    full_name = trial.full_name.strip()
+    email = trial.email.strip().lower()
+    phone = trial.phone.strip()
+
+    if len(full_name) < 2 or len(full_name) > 100:
+        raise HTTPException(status_code=422, detail="Please enter your full name.")
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email) or len(email) > 150:
+        raise HTTPException(status_code=422, detail="Please enter a valid email address.")
+    if len(re.sub(r"\D", "", phone)) < 6 or len(phone) > 30:
+        raise HTTPException(status_code=422, detail="Please enter a valid phone number.")
+    if trial.age is not None and not 10 <= trial.age <= 100:
+        raise HTTPException(status_code=422, detail="Please enter a valid age.")
+    if trial.session_time not in TRIAL_TIMES:
+        raise HTTPException(status_code=422, detail="Please choose a time between 07:00 and 21:00.")
+
+    try:
+        session_date = datetime.strptime(trial.session_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Please choose a valid date.")
+    today = datetime.now().date()
+    if session_date < today or session_date > today + timedelta(days=180):
+        raise HTTPException(status_code=422, detail="Please choose a date within the next 6 months.")
 
     conn = get_connection()
     cursor = conn.cursor()
 
     try:
+
+        cursor.execute(
+            """
+            SELECT 1 FROM trial_sessions
+            WHERE LOWER(email) = %s AND LOWER(status) IN ('pending', 'approved')
+              AND session_date >= CURRENT_DATE
+            LIMIT 1
+            """,
+            (email,)
+        )
+        if cursor.fetchone():
+            raise HTTPException(
+                status_code=409,
+                detail="You already have a trial session request. We will contact you soon."
+            )
 
         cursor.execute(
             """
@@ -1293,53 +1366,45 @@ def create_trial_session(
                 goal,
                 experience,
                 session_date,
-                session_time
+                session_time,
+                status
             )
 
             VALUES
-            (%s,%s,%s,%s,%s,%s,%s,%s)
+            (%s,%s,%s,%s,%s,%s,%s,%s,'Pending')
 
             RETURNING id
             """,
             (
-                trial.full_name,
-                trial.email,
-                trial.phone,
+                full_name,
+                email,
+                phone,
                 trial.age,
-                trial.goal,
-                trial.experience,
-                trial.session_date,
+                trial.goal.strip()[:60],
+                trial.experience.strip()[:60],
+                session_date,
                 trial.session_time
             )
         )
 
         trial_id = cursor.fetchone()[0]
-
-        google_event_id = create_trial_session_event(
-            trial.full_name,
-            trial.email,
-            trial.phone,
-            trial.goal,
-            trial.experience,
-            trial.session_date,
-            trial.session_time
-        )
-
         conn.commit()
 
         return {
-            "message": "Trial session created successfully",
-            "trial_id": trial_id,
-            "google_event_id": google_event_id
+            "message": "Trial session requested",
+            "trial_id": trial_id
         }
 
-    except Exception as e:
-
+    except HTTPException:
         conn.rollback()
-
-        return {
-            "error": str(e)
-        }
+        raise
+    except Exception as error:
+        conn.rollback()
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail="We could not save your request. Please try again in a moment."
+        ) from error
 
     finally:
 
@@ -1663,6 +1728,12 @@ def approve_request(
             total_sessions
         )
 
+        # Rows go into the database first and the Google Calendar events are
+        # created afterwards, so a database error can no longer leave events
+        # behind in the calendar. If a calendar call fails midway, the events
+        # created so far are deleted before the error is raised.
+        pending_sessions = []
+
         for index, session_date in enumerate(
             session_dates,
             start=1
@@ -1670,25 +1741,6 @@ def approve_request(
 
             session_number = (
                 f"{index}/{total_sessions}"
-            )
-
-            print(
-                "CREATING EVENT:",
-                session_number
-            )
-
-            google_event_id = create_calendar_event(
-                trainer_name,
-                client_name,
-                client_email,
-                session_date,
-                preferred_time,
-                session_number
-            )
-
-            print(
-                "GOOGLE EVENT:",
-                google_event_id
             )
 
             cursor.execute(
@@ -1701,19 +1753,11 @@ def approve_request(
                     session_time,
                     request_id,
                     session_number,
-                    google_event_id
+                    status
                 )
 
-                VALUES
-                (
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-                    %s
-                )
+                VALUES (%s, %s, %s, %s, %s, %s, 'Booked')
+                RETURNING id
                 """,
                 (
                     user_id,
@@ -1721,15 +1765,45 @@ def approve_request(
                     session_date,
                     preferred_time,
                     data.request_id,
-                    session_number,
-                    google_event_id
+                    session_number
                 )
             )
 
-            print(
-                "SESSION INSERTED:",
-                session_number
+            pending_sessions.append(
+                (cursor.fetchone()[0], session_date, session_number)
             )
+
+        created_event_ids = []
+
+        try:
+
+            for session_id, session_date, session_number in pending_sessions:
+
+                google_event_id = create_calendar_event(
+                    trainer_name,
+                    client_name,
+                    client_email,
+                    session_date,
+                    preferred_time,
+                    session_number
+                )
+
+                created_event_ids.append(google_event_id)
+
+                cursor.execute(
+                    "UPDATE sessions SET google_event_id = %s WHERE id = %s",
+                    (google_event_id, session_id)
+                )
+
+        except Exception:
+
+            for event_id in created_event_ids:
+                try:
+                    delete_calendar_event(event_id)
+                except Exception:
+                    traceback.print_exc()
+
+            raise
 
         cursor.execute(
             """
@@ -1770,8 +1844,13 @@ def approve_request(
 
         conn.rollback()
 
-        print(e)
-        raise HTTPException(status_code=500, detail="Could not approve training request") from e
+        traceback.print_exc()
+        # Admin-only endpoint: surface the real cause so it can be fixed
+        # instead of hiding it behind a generic message.
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not approve training request: {type(e).__name__}: {str(e)[:300]}"
+        ) from e
 
     finally:
 
@@ -1975,10 +2054,13 @@ def get_available_times(
             )
         )
 
-        booked_times = [
-            row[0]
+        # session_time comes back as a datetime.time, so compare as "HH:MM"
+        # text; comparing it with the strings in AVAILABLE_TIMES never matched
+        # and booked slots were offered as free.
+        booked_times = {
+            str(row[0])[:5]
             for row in cursor.fetchall()
-        ]
+        }
 
         return [
             time

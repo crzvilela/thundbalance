@@ -22,6 +22,13 @@ export function actualFontFamily(label) {
   return FONT_ALIASES[label] || label
 }
 
+// Menu text. The stored value stays the original name (existing content uses
+// it), but the menu says which font is really rendered so nobody picks
+// "Helvetica Neue" expecting the licensed typeface.
+export function fontLabel(font) {
+  return FONT_ALIASES[font] ? `${font} (renders as ${FONT_ALIASES[font]})` : font
+}
+
 export function loadFont(label) {
   if (!label || typeof document === 'undefined') return Promise.resolve()
   const family = actualFontFamily(label)

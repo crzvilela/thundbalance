@@ -11,12 +11,13 @@ import ConfirmDialog from './ConfirmDialog'
 import FooterElementPanel from './FooterElementPanel'
 import NavbarLogoFields from './NavbarLogoFields'
 import TypographyControls from './TypographyControls'
-import { FONT_OPTIONS as FONT_FAMILIES, loadFont } from '../../utils/fonts'
+import { FONT_OPTIONS as FONT_FAMILIES, fontLabel, loadFont } from '../../utils/fonts'
 import {
   FieldGroup,
   TextField,
   TextAreaField,
   NumberField,
+  SizeField,
   ColorField,
   SelectField,
   SliderField,
@@ -49,7 +50,7 @@ const VIDEO_TEXT_POSITION_OPTIONS = [
   { value: 'below', label: 'Below Video' }
 ]
 
-const FONT_OPTIONS = FONT_FAMILIES.map(value => ({ value, label: value }))
+const FONT_OPTIONS = FONT_FAMILIES.map(value => ({ value, label: fontLabel(value) }))
 
 export default function PropertiesPanel() {
   const { content, selection, select } = useLandingContent()
@@ -592,22 +593,22 @@ function About360LayoutFields({ sectionKey, section, device, updateField }) {
   return <>
     <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-5">360° layout · {device}</p>
     <p className="text-[11px] text-gray-500 mb-3">These values apply to the selected preview size. Desktop, tablet, and mobile are saved independently.</p>
-    <TextField label="Viewer Width" value={layout.width} onChange={v => set('width', v)} placeholder="100% or 800px" />
-    <TextField label="Viewer Height" value={layout.height} onChange={v => set('height', v)} placeholder="500px" />
-    <TextField label="Minimum Width" value={layout.minWidth} onChange={v => set('minWidth', v)} />
-    <TextField label="Maximum Width" value={layout.maxWidth} onChange={v => set('maxWidth', v)} />
-    <TextField label="Minimum Height" value={layout.minHeight} onChange={v => set('minHeight', v)} />
-    <TextField label="Maximum Height" value={layout.maxHeight} onChange={v => set('maxHeight', v)} />
-    <TextField label="Container Width" value={layout.containerWidth} onChange={v => set('containerWidth', v)} />
-    <TextField label="Container Height" value={layout.containerHeight} onChange={v => set('containerHeight', v)} />
-    <TextField label="Container Maximum Width" value={layout.containerMaxWidth} onChange={v => set('containerMaxWidth', v)} />
+    <SizeField label="Viewer Width" value={layout.width} onChange={v => set('width', v)} placeholder="100% or 800px" />
+    <SizeField label="Viewer Height" value={layout.height} onChange={v => set('height', v)} placeholder="500px" />
+    <SizeField label="Minimum Width" value={layout.minWidth} onChange={v => set('minWidth', v)} />
+    <SizeField label="Maximum Width" value={layout.maxWidth} onChange={v => set('maxWidth', v)} />
+    <SizeField label="Minimum Height" value={layout.minHeight} onChange={v => set('minHeight', v)} />
+    <SizeField label="Maximum Height" value={layout.maxHeight} onChange={v => set('maxHeight', v)} />
+    <SizeField label="Container Width" value={layout.containerWidth} onChange={v => set('containerWidth', v)} />
+    <SizeField label="Container Height" value={layout.containerHeight} onChange={v => set('containerHeight', v)} allowAuto />
+    <SizeField label="Container Maximum Width" value={layout.containerMaxWidth} onChange={v => set('containerMaxWidth', v)} />
     <SelectField label="Horizontal Alignment" value={layout.align} options={[{ value: 'left', label: 'Left' }, { value: 'center', label: 'Center' }, { value: 'right', label: 'Right' }]} onChange={v => set('align', v)} />
     <SelectField label="Vertical Alignment" value={layout.verticalAlign} options={[{ value: 'top', label: 'Top' }, { value: 'middle', label: 'Middle' }, { value: 'bottom', label: 'Bottom' }]} onChange={v => set('verticalAlign', v)} />
     <NumberField label="Padding" value={layout.padding} onChange={v => set('padding', v)} />
     <NumberField label="Margin Top" value={layout.marginTop} onChange={v => set('marginTop', v)} />
     <NumberField label="Margin Bottom" value={layout.marginBottom} onChange={v => set('marginBottom', v)} />
-    <TextField label="Margin Left" value={layout.marginLeft} onChange={v => set('marginLeft', v)} />
-    <TextField label="Margin Right" value={layout.marginRight} onChange={v => set('marginRight', v)} />
+    <SizeField label="Margin Left" value={layout.marginLeft} onChange={v => set('marginLeft', v)} allowAuto />
+    <SizeField label="Margin Right" value={layout.marginRight} onChange={v => set('marginRight', v)} allowAuto />
     <NumberField label="Offset X" value={layout.offsetX} onChange={v => set('offsetX', v)} />
     <NumberField label="Offset Y" value={layout.offsetY} onChange={v => set('offsetY', v)} />
     <NumberField label="Border Radius" value={layout.borderRadius} onChange={v => set('borderRadius', v)} />

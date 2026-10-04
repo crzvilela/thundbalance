@@ -3,9 +3,12 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth } from '../../firebase/auth'
 import { ADMIN_EMAIL } from '../../config'
+import { useAdminText } from '../../admin/useAdminText'
+import '../../admin/admin.css'
 
 export default function RequireAdmin({ children }) {
   const location = useLocation()
+  const { t } = useAdminText()
   const [status, setStatus] = useState('checking')
 
   useEffect(() => onAuthStateChanged(auth, (user) => {
@@ -18,7 +21,12 @@ export default function RequireAdmin({ children }) {
   }), [])
 
   if (status === 'checking') {
-    return <div className="min-h-screen bg-black text-white flex items-center justify-center">Verificando acesso…</div>
+    return (
+      <div className="admin-shell flex min-h-screen items-center justify-center gap-3 text-gray-300">
+        <span aria-hidden="true" className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-emerald-400" />
+        {t('lg_checking')}
+      </div>
+    )
   }
 
   if (status !== 'admin') {
