@@ -186,6 +186,7 @@ export default function Requests() {
         </>}
       >
         <p className="mb-6 text-sm text-gray-400">{t('approve_sub')}</p>
+        <div className="grid gap-x-8 md:grid-cols-2">
         <Field label={t('trainer')}>
           <SelectInput value={form.trainer} onChange={event => setForm({ ...form, trainer: event.target.value })} disabled={busy}>
             <option value="">{t('select_trainer')}</option>
@@ -206,6 +207,7 @@ export default function Requests() {
             {[1, 2, 3, 4, 5, 6, 7].map(value => <option key={value} value={value}>{value}</option>)}
           </SelectInput>
         </Field>
+        </div>
         {sessionEstimate && (
           <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-sm text-emerald-200">
             {t('will_create')} <strong className="text-base">{sessionEstimate}</strong> {t('sessions_label')}

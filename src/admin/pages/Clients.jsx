@@ -86,11 +86,12 @@ function ClientDrawer({ clientId, plans, onClose, onChanged }) {
         ) : !client ? (
           <div className="space-y-4"><Skeleton className="h-20" /><Skeleton className="h-32" /><Skeleton className="h-40" /></div>
         ) : (
-          <div className="space-y-8">
+          <div className="grid gap-10 lg:grid-cols-2">
+            <div className="space-y-8">
             <div className="flex items-center gap-4">
               <Avatar client={client} size="h-16 w-16 text-xl" />
               <div className="min-w-0">
-                <p className="truncate text-lg font-semibold">{client.name}</p>
+                <p className="truncate text-2xl font-semibold">{client.name}</p>
                 <div className="mt-1.5">
                   {client.plan ? <Badge tone="emerald">{client.plan.name}</Badge> : <Badge>{t('cl_no_plan')}</Badge>}
                 </div>
@@ -98,27 +99,27 @@ function ClientDrawer({ clientId, plans, onClose, onChanged }) {
             </div>
 
             <section>
-              <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-gray-400">{t('cl_contact')}</h3>
-              <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                <div><dt className="text-xs text-gray-500">{t('cl_phone')}</dt><dd>{client.phone ? `${client.country_code || ''} ${client.phone}` : '—'}</dd></div>
-                <div><dt className="text-xs text-gray-500">{t('cl_city')}</dt><dd>{client.city || '—'}</dd></div>
-                <div className="col-span-2"><dt className="text-xs text-gray-500">{t('cl_address')}</dt><dd>{[client.address, client.postal_code].filter(Boolean).join(', ') || '—'}</dd></div>
+              <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">{t('cl_contact')}</h3>
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-base">
+                <div><dt className="text-sm text-gray-500">{t('cl_phone')}</dt><dd>{client.phone ? `${client.country_code || ''} ${client.phone}` : '—'}</dd></div>
+                <div><dt className="text-sm text-gray-500">{t('cl_city')}</dt><dd>{client.city || '—'}</dd></div>
+                <div className="col-span-2"><dt className="text-sm text-gray-500">{t('cl_address')}</dt><dd>{[client.address, client.postal_code].filter(Boolean).join(', ') || '—'}</dd></div>
               </dl>
             </section>
 
             <section>
-              <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-gray-400">{t('cl_progress')}</h3>
+              <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">{t('cl_progress')}</h3>
               <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
                 <div className="mb-3 flex items-end justify-between">
-                  <p className="text-3xl font-semibold tabular-nums">{done}<span className="text-lg text-gray-500">/{active.length}</span></p>
-                  <p className="text-xs text-gray-500">{done} {t('cl_completed')} · {active.length - done} {t('cl_upcoming')}</p>
+                  <p className="text-5xl font-semibold tabular-nums">{done}<span className="text-2xl text-gray-500">/{active.length}</span></p>
+                  <p className="text-sm text-gray-500">{done} {t('cl_completed')} · {active.length - done} {t('cl_upcoming')}</p>
                 </div>
                 <ProgressBar done={done} total={active.length} />
               </div>
             </section>
 
             <section>
-              <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-gray-400">{t('cl_assign')}</h3>
+              <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">{t('cl_assign')}</h3>
               <div className="flex gap-3">
                 <SelectInput value={planChoice} onChange={event => setPlanChoice(event.target.value)} disabled={saving} aria-label={t('cl_assign')}>
                   <option value="">{t('cl_assign_ph')}</option>
@@ -128,8 +129,10 @@ function ClientDrawer({ clientId, plans, onClose, onChanged }) {
               </div>
             </section>
 
+            </div>
+
             <section>
-              <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-gray-400">{t('cl_sessions_title')} ({sessions.length})</h3>
+              <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">{t('cl_sessions_title')} ({sessions.length})</h3>
               {sessions.length === 0 ? (
                 <EmptyState icon="calendar" title={t('cl_no_sessions')} />
               ) : (
@@ -138,15 +141,15 @@ function ClientDrawer({ clientId, plans, onClose, onChanged }) {
                     const cancelled = session.status === 'Cancelled'
                     const past = session.date < today
                     return (
-                      <li key={session.id} className={`flex items-center gap-3 px-4 py-3 ${cancelled || past ? 'opacity-60' : ''}`}>
-                        <span className="w-10 text-xs tabular-nums text-gray-500">{session.number || ''}</span>
+                      <li key={session.id} className={`flex items-center gap-4 px-5 py-4 ${cancelled || past ? 'opacity-60' : ''}`}>
+                        <span className="w-14 text-sm tabular-nums text-gray-500">{session.number || ''}</span>
                         <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-medium">{parseDateKey(session.date).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                          <span className="block text-xs text-gray-500">{session.time} · {session.trainer || '—'}</span>
+                          <span className="block text-base font-medium">{parseDateKey(session.date).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                          <span className="block text-sm text-gray-500">{session.time} · {session.trainer || '—'}</span>
                         </span>
                         <Badge tone={cancelled ? 'red' : past ? 'neutral' : 'emerald'}>{cancelled ? t('st_cancelled') : t('st_booked')}</Badge>
                         {!cancelled && !past && (
-                          <button type="button" onClick={() => setCancelTarget(session)} className="rounded-lg px-2 py-1 text-xs text-red-300 transition hover:bg-red-500/15">{t('cl_cancel_session')}</button>
+                          <button type="button" onClick={() => setCancelTarget(session)} className="rounded-lg px-3 py-1.5 text-sm text-red-300 transition hover:bg-red-500/15">{t('cl_cancel_session')}</button>
                         )}
                       </li>
                     )

@@ -113,10 +113,12 @@ export default function Plans() {
           <Button variant="primary" className="flex-[2]" onClick={save} loading={busy}>{busy ? t('pl_saving') : t('pl_save')}</Button>
         </>}
       >
-        <Field label={t('pl_name')}><TextInput value={form.name} onChange={set('name')} maxLength={80} disabled={busy} /></Field>
-        <Field label={t('pl_months')}><TextInput type="number" min="1" value={form.months} onChange={set('months')} disabled={busy} /></Field>
-        <Field label={t('pl_weeks')} hint={t('pl_weeks_hint')}><TextInput type="number" min="1" value={form.weeks} onChange={set('weeks')} disabled={busy} /></Field>
-        <Field label={t('pl_price')}><TextInput type="number" min="0" step="0.01" value={form.price} onChange={set('price')} disabled={busy} /></Field>
+        <div className="grid gap-x-8 md:grid-cols-2">
+          <div className="md:col-span-2"><Field label={t('pl_name')}><TextInput value={form.name} onChange={set('name')} maxLength={80} disabled={busy} /></Field></div>
+          <Field label={t('pl_months')}><TextInput type="number" min="1" value={form.months} onChange={set('months')} disabled={busy} /></Field>
+          <Field label={t('pl_weeks')} hint={t('pl_weeks_hint')}><TextInput type="number" min="1" value={form.weeks} onChange={set('weeks')} disabled={busy} /></Field>
+          <Field label={t('pl_price')}><TextInput type="number" min="0" step="0.01" value={form.price} onChange={set('price')} disabled={busy} /></Field>
+        </div>
         {formError && <p role="alert" className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{formError}</p>}
       </Drawer>
 

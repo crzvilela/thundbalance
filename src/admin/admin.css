@@ -8,16 +8,22 @@
 }
 
 /* Dark native controls: scrollbars, date picker and select menus. */
-.admin-shell, .admin-drawer { color-scheme: dark; }
+.admin-shell, .admin-drawer, .admin-modal { color-scheme: dark; }
 
 .admin-drawer { animation: admin-slide-in 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
+.admin-modal { animation: admin-pop 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
 .admin-toast { animation: admin-toast-in 0.25s cubic-bezier(0.22, 1, 0.36, 1); }
-.admin-fade { animation: admin-fade 0.3s ease both; }
+/* "backwards" (not "both"): keeping the final keyframe would leave a
+   transform on the page wrapper, which traps position:fixed windows inside
+   it. After the animation the wrapper must have no transform at all. */
+.admin-fade { animation: admin-fade 0.3s ease backwards; }
 
+@keyframes admin-pop { from { transform: translateY(14px) scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes admin-slide-in { from { transform: translateX(32px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes admin-toast-in { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
-@keyframes admin-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+/* Opacity only: any transform on the page wrapper would trap fixed windows. */
+@keyframes admin-fade { from { opacity: 0; } to { opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .admin-drawer, .admin-toast, .admin-fade { animation: none; }
+  .admin-drawer, .admin-modal, .admin-toast, .admin-fade { animation: none; }
 }
