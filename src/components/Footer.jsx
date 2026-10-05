@@ -3,6 +3,7 @@ import { useLandingContent } from '../content/LandingContentContext'
 import { useI18n } from '../i18n/I18nContext'
 import { resolveText } from '../utils/multilingual'
 import { safeLink } from '../utils/footerContent'
+import { useLayoutItem } from './editor/useLayoutItem'
 import './Footer.css'
 
 const ICONS = {
@@ -32,6 +33,28 @@ const DEFAULT_ICONS = [
 function Icon({ name }) {
   if (!ICONS[name]) return null
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICONS[name]}</svg>
+}
+
+// One icon of the footer. Besides opening its link, it can be dragged to a new
+// position in the editor, like any other element.
+function FooterIconLink({ path, href, newTab, label, selected, editProps, children }) {
+  const { select } = useLandingContent()
+  const item = useLayoutItem({ path, kind: 'icon', tag: 'a', onSelect: () => select({ type: 'footerElement', path, label }) })
+  return (
+    <a
+      {...editProps}
+      {...item.attrs}
+      href={href}
+      target={newTab === false ? undefined : '_blank'}
+      rel={newTab === false ? undefined : 'noopener noreferrer'}
+      aria-label={label}
+      title={label}
+      className={`footer-icon-link ${selected ? 'is-selected' : ''} ${editProps.className || ''} ${item.className}`}
+      style={item.style}
+    >
+      {children}
+    </a>
+  )
 }
 
 function Footer() {
@@ -86,7 +109,7 @@ function Footer() {
           const label = resolveText(icon.label, language)
           const key = icon.id || `${icon.icon}-${label}`
           const props = edit(`icon:${key}`)
-          return href && <a {...props} key={key} href={href} target={icon.newTab === false ? undefined : '_blank'} rel={icon.newTab === false ? undefined : 'noopener noreferrer'} aria-label={label} title={label} className={`footer-icon-link ${isEditMode && selection?.path === `icon:${key}` ? 'is-selected' : ''}`}><Icon name={icon.icon} /></a>
+          return href && <FooterIconLink key={key} path={`icon:${key}`} href={href} newTab={icon.newTab} label={label} selected={isEditMode && selection?.path === `icon:${key}`} editProps={props}><Icon name={icon.icon} /></FooterIconLink>
         })}
       </nav>
     </div>

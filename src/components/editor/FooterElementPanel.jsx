@@ -2,6 +2,7 @@ import { useLandingContent } from '../../content/LandingContentContext'
 import { resolveText, setTextForLanguage } from '../../utils/multilingual'
 import { useI18n } from '../../i18n/I18nContext'
 import { ColorField, SelectField, TextField, ToggleField } from './fields'
+import PositionFields from './PositionFields'
 
 const ICON_OPTIONS = [
   ['location', 'Location'], ['email', 'Email'], ['gmail', 'Gmail'], ['phone', 'Phone'], ['instagram', 'Instagram'],
@@ -65,6 +66,7 @@ export default function FooterElementPanel({ elementKey, onClose }) {
     {selectedIcon ? <>
       <button onClick={() => select({ type: 'section', path: 'footer', label: 'Footer' })} className="mb-5 text-xs text-emerald-400">← Footer settings</button>
       <p className="mb-4 text-xs uppercase tracking-wider text-emerald-400">{resolveText(selectedIcon.label, language) || 'Footer icon'}</p>
+      <PositionFields path={elementKey} kind="icon" />
       <VisualIconPicker value={selectedIcon.icon} onChange={value => setIcon('icon', value)} />
       <TextField label="Label" value={resolveText(selectedIcon.label, language)} onChange={value => setIcon('label', setTextForLanguage(selectedIcon.label, language, value))} />
       <TextField label="URL" value={resolveText(selectedIcon.url, language)} onChange={value => setIcon('url', value)} />

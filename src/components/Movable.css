@@ -1,0 +1,61 @@
+/* Position and size of draggable elements. Same breakpoints as Navbar.css:
+   mobile first, tablet from 640px, desktop from 1024px. The unsuffixed
+   --mx / --my / --mw / --mh variables win when present (the editor sets them
+   to preview a specific device).
+
+   `translate` moves an element without touching the page flow or its
+   `position`, so it works on any element and never pushes neighbours. */
+.movable {
+  translate: var(--mx, var(--mx-mobile, 0px)) var(--my, var(--my-mobile, 0px));
+}
+.movable.movable-inline { display: inline-block; }
+/* Pictures, videos and boxes may grow past their column; text stays inside it. */
+.movable.movable-w.movable-free { max-width: none; }
+.movable.movable-w {
+  width: var(--mw, var(--mw-mobile, auto));
+  max-width: 100%;
+}
+.movable.movable-h { height: var(--mh, var(--mh-mobile, auto)); }
+/* A resized image box: the picture fills it and is cropped, never stretched. */
+.movable.movable-h > img { height: 100%; }
+.movable.movable-w > img { width: 100%; }
+
+@media (min-width: 640px) {
+  .movable { translate: var(--mx, var(--mx-tablet, 0px)) var(--my, var(--my-tablet, 0px)); }
+  .movable.movable-w { width: var(--mw, var(--mw-tablet, auto)); }
+  .movable.movable-h { height: var(--mh, var(--mh-tablet, auto)); }
+}
+@media (min-width: 1024px) {
+  .movable { translate: var(--mx, var(--mx-desktop, 0px)) var(--my, var(--my-desktop, 0px)); }
+  .movable.movable-w { width: var(--mw, var(--mw-desktop, auto)); }
+  .movable.movable-h { height: var(--mh, var(--mh-desktop, auto)); }
+}
+
+/* Editor only */
+[data-movable-path] { cursor: move; }
+.layout-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 45; }
+.layout-box {
+  position: absolute; border: 2px solid #10b981; box-sizing: border-box; pointer-events: auto; cursor: move;
+  touch-action: none;
+}
+.layout-chip {
+  position: absolute; left: -2px; top: -26px; white-space: nowrap; pointer-events: none;
+  background: #10b981; color: #04120c; font: 600 11px/1 system-ui, sans-serif; letter-spacing: .03em;
+  padding: 5px 9px; border-radius: 6px 6px 6px 0;
+}
+.layout-handle {
+  position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; padding: 0; box-sizing: border-box;
+  background: #fff; border: 2px solid #10b981; border-radius: 3px; pointer-events: auto; touch-action: none;
+}
+.layout-handle[data-handle="n"], .layout-handle[data-handle="s"] { cursor: ns-resize; }
+.layout-handle[data-handle="e"], .layout-handle[data-handle="w"] { cursor: ew-resize; }
+.layout-handle[data-handle="nw"], .layout-handle[data-handle="se"] { cursor: nwse-resize; }
+.layout-handle[data-handle="ne"], .layout-handle[data-handle="sw"] { cursor: nesw-resize; }
+.layout-guide { position: absolute; background: #f43f5e; pointer-events: none; }
+.layout-guide.is-v { width: 1px; top: 0; bottom: 0; }
+.layout-guide.is-h { height: 1px; left: 0; right: 0; }
+.layout-readout {
+  position: absolute; right: -2px; bottom: -26px; white-space: nowrap; pointer-events: none;
+  background: #111; color: #e5e7eb; font: 500 11px/1 system-ui, sans-serif; padding: 5px 8px; border-radius: 6px;
+  border: 1px solid rgba(255,255,255,.15);
+}

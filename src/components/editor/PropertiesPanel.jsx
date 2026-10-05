@@ -10,7 +10,10 @@ import { SECTION_LABELS, SECTION_TYPE_INFO, makeDefaultServiceItem, makeDefaultP
 import ConfirmDialog from './ConfirmDialog'
 import FooterElementPanel from './FooterElementPanel'
 import NavbarLogoFields from './NavbarLogoFields'
-import HeroTitleFields from './HeroTitleFields'
+import PositionFields from './PositionFields'
+import PanelTabs from './PanelTabs'
+import { useAdminText } from '../../admin/useAdminText'
+import './EditorChrome.css'
 import TypographyControls from './TypographyControls'
 import { FONT_OPTIONS as FONT_FAMILIES, fontLabel, loadFont } from '../../utils/fonts'
 import {
@@ -56,10 +59,13 @@ const FONT_OPTIONS = FONT_FAMILIES.map(value => ({ value, label: fontLabel(value
 export default function PropertiesPanel() {
   const { content, selection, select } = useLandingContent()
 
+  // Nothing selected: no panel, the page gets all the room.
+  if (!selection) return null
+
   return (
-    <aside className="w-[340px] shrink-0 bg-[#0b0b0b] border-l border-white/10 overflow-y-auto">
+    <aside className="editor-panel" aria-label="Properties">
       <div className="p-5">
-        {!selection && <ThemePanel content={content} />}
+        {selection.type === 'theme' && <ThemePanel content={content} onClose={() => select(null)} />}
         {selection?.type === 'footerElement' && (
           <FooterElementPanel elementKey={selection.path} onClose={() => select(null)} />
         )}
@@ -81,8 +87,22 @@ export default function PropertiesPanel() {
         {selection?.type === 'button' && (
           <ButtonPanel key={selection.path} selection={selection} onClose={() => select(null)} />
         )}
+        {selection?.type === 'box' && (
+          <BoxPanel key={selection.path} selection={selection} onClose={() => select(null)} />
+        )}
       </div>
     </aside>
+  )
+}
+
+// A movable block (card, carousel, reviews...): it has no content of its own to
+// edit here, only where it sits and how big it is.
+function BoxPanel({ selection, onClose }) {
+  return (
+    <div>
+      <PanelHeader title={selection.label || 'Block'} subtitle="Block" onClose={onClose} />
+      <PositionFields path={selection.path} kind="box" />
+    </div>
   )
 }
 
@@ -107,7 +127,7 @@ function PanelHeader({ title, onClose, subtitle }) {
 
 // --- Global theme -----------------------------------------------------------
 
-function ThemePanel({ content }) {
+function ThemePanel({ content, onClose }) {
   const { updateField } = useLandingContent()
   const colors = content.theme.colors
   const typography = content.theme.typography
@@ -115,7 +135,7 @@ function ThemePanel({ content }) {
 
   return (
     <div>
-      <PanelHeader title="Global Styles" subtitle="Click any element in the preview to edit it directly." />
+      <PanelHeader title="Site style" subtitle="Colors and fonts for the whole page." onClose={onClose} />
 
       <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4">Colors</p>
       <ColorField label="Primary" value={colors.primary} onChange={(v) => updateField('theme.colors.primary', v)} />
@@ -1084,6 +1104,7 @@ function TestimonialsMediaFields({ sectionKey, content, updateField }) {
 function TextPanel({ selection, onClose }) {
   const { content, updateField } = useLandingContent()
   const { language, setLanguage, supportedLanguages } = useI18n()
+  const { t } = useAdminText()
   const raw = getPath(content, selection.path, '')
   const value = resolveText(raw, language)
   const styleObj = selection.styleObj ? getPath(content, selection.styleObj, {}) : null
@@ -1092,6 +1113,8 @@ function TextPanel({ selection, onClose }) {
     <div>
       <PanelHeader title={selection.label || 'Text'} subtitle="Text content" onClose={onClose} />
 
+      <PanelTabs tabs={[
+        { key: 'content', label: t('ed_tab_content'), node: <>
       <FieldGroup label="Editing Language" hint="This also switches the preview — you're editing exactly what visitors see in that language.">
         <ButtonRow>
           {supportedLanguages.map((lang) => (
@@ -1108,6 +1131,13 @@ function TextPanel({ selection, onClose }) {
         onChange={(v) => updateField(selection.path, setTextForLanguage(raw, language, v))}
       />
 
+        </> },
+        { key: 'style', label: t('ed_tab_style'), node: <>
+      <TypographyControls path={selection.path} />
+        </> },
+        { key: 'position', label: t('ed_tab_position'), node: <>
+      <PositionFields path={selection.path} kind="text" />
+
       {styleObj && ['marginTop', 'marginBottom', 'marginLeft', 'marginRight', 'padding'].some(key => key in styleObj) && <>
         <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">Position &amp; Spacing</p>
         {'marginTop' in styleObj && <NumberField label="Margin Top" value={styleObj.marginTop} onChange={v => updateField(`${selection.styleObj}.marginTop`, v)} />}
@@ -1116,9 +1146,8 @@ function TextPanel({ selection, onClose }) {
         {'marginRight' in styleObj && <NumberField label="Margin Right" value={styleObj.marginRight} onChange={v => updateField(`${selection.styleObj}.marginRight`, v)} />}
         {'padding' in styleObj && <NumberField label="Padding" value={styleObj.padding} onChange={v => updateField(`${selection.styleObj}.padding`, v)} />}
       </>}
-      {selection.path === 'sections.hero.title' && <HeroTitleFields />}
-
-      <TypographyControls path={selection.path} />
+        </> }
+      ]} />
     </div>
   )
 }
@@ -1127,6 +1156,7 @@ function TextPanel({ selection, onClose }) {
 
 function ImagePanel({ selection, onClose }) {
   const { content, updateField } = useLandingContent()
+  const { t } = useAdminText()
   const stored = getPath(content, selection.path, null)
   const currentUrl = resolveImageUrl(stored)
   const styleObj = selection.styleObj ? getPath(content, selection.styleObj, {}) : null
@@ -1153,6 +1183,8 @@ function ImagePanel({ selection, onClose }) {
     <div>
       <PanelHeader title={selection.label || 'Image'} subtitle="Image" onClose={onClose} />
 
+      <PanelTabs tabs={[
+        { key: 'content', label: t('ed_tab_content'), node: <>
       {selection.path === 'sections.navbar.logoImage' && <NavbarLogoFields />}
 
       {currentUrl && (
@@ -1174,6 +1206,10 @@ function ImagePanel({ selection, onClose }) {
       <p className="text-[11px] text-gray-500 mt-2">
         Removing an image restores the original default image for this element.
       </p>
+
+        </> },
+        { key: 'position', label: t('ed_tab_position'), node: <>
+      {selection.path !== 'sections.navbar.logoImage' && <PositionFields path={selection.path} kind="image" />}
 
       {styleObj && Object.keys(styleObj).length > 0 && (
         <>
@@ -1204,6 +1240,8 @@ function ImagePanel({ selection, onClose }) {
           )}
         </>
       )}
+        </> }
+      ]} />
     </div>
   )
 }
@@ -1212,12 +1250,17 @@ function ImagePanel({ selection, onClose }) {
 
 function VideoPanel({ selection, onClose }) {
   const { content, updateField } = useLandingContent()
+  const { t } = useAdminText()
   const video = getPath(content, selection.path, {})
 
   return (
     <div>
       <PanelHeader title={selection.label || 'Video'} subtitle="Video" onClose={onClose} />
-      <VideoFields path={selection.path} video={video} updateField={updateField} />
+
+      <PanelTabs tabs={[
+        { key: 'content', label: t('ed_tab_content'), node: <VideoFields path={selection.path} video={video} updateField={updateField} /> },
+        { key: 'position', label: t('ed_tab_position'), node: <PositionFields path={selection.path} kind="video" /> }
+      ]} />
     </div>
   )
 }
@@ -1253,6 +1296,8 @@ function TestimonialMediaPanel({ selection, onClose }) {
   return (
     <div>
       <PanelHeader title={selection.label || 'Testimonial Media'} subtitle="Client photo or video" onClose={onClose} />
+
+      <PositionFields path={selection.path} kind="box" />
 
       <FieldGroup label="Media Type">
         <ButtonRow>
@@ -1340,6 +1385,7 @@ function TestimonialMediaPanel({ selection, onClose }) {
 function ButtonPanel({ selection, onClose }) {
   const { content, updateField } = useLandingContent()
   const { language, setLanguage, supportedLanguages } = useI18n()
+  const { t } = useAdminText()
   const btn = getPath(content, selection.path, {})
   const buttonText = resolveText(btn.text, language)
 
@@ -1349,6 +1395,8 @@ function ButtonPanel({ selection, onClose }) {
     <div>
       <PanelHeader title={selection.label || 'Button'} subtitle="Call-to-action button" onClose={onClose} />
 
+      <PanelTabs tabs={[
+        { key: 'content', label: t('ed_tab_content'), node: <>
       <FieldGroup label="Editing Language" hint="This also switches the preview — you're editing exactly what visitors see in that language.">
         <ButtonRow>
           {supportedLanguages.map((lang) => (
@@ -1365,11 +1413,19 @@ function ButtonPanel({ selection, onClose }) {
         onChange={(v) => set('text', setTextForLanguage(btn.text, language, v))}
       />
       <TextField label="Link / URL" value={btn.link} onChange={(v) => set('link', v)} />
+        </> },
+        { key: 'style', label: t('ed_tab_style'), node: <>
       <ColorField label="Background Color" value={btn.bgColor || 'transparent'} onChange={(v) => set('bgColor', v)} />
       <ColorField label="Text Color" value={btn.textColor || '#ffffff'} onChange={(v) => set('textColor', v)} />
       <ColorField label="Border Color" value={btn.borderColor || '#ffffff'} onChange={(v) => set('borderColor', v)} />
       <TextField label="Border Radius (e.g. 8px)" value={btn.radius} onChange={(v) => set('radius', v)} />
       <TypographyControls path={`${selection.path}.text`} />
+        </> },
+        { key: 'position', label: t('ed_tab_position'), node: <>
+      <PositionFields path={selection.path} kind="button" />
+
+        </> }
+      ]} />
     </div>
   )
 }

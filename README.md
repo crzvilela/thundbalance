@@ -47,6 +47,14 @@ linked from the Admin Dashboard).
 
 - Click any text, image, button or section directly in the live preview to
   select and edit it (content, colors, fonts, spacing, alignment, links, etc).
+- **Everything is draggable.** Select any text, button, image, video, card,
+  carousel, reviews block or footer icon and drag it to move it; the handles
+  resize it (Shift keeps the proportions on corners), the arrow keys nudge it
+  (Shift = 10px), and a red guide snaps it to the center of its section (hold
+  Alt to turn snapping off). Positions are saved per device (desktop / tablet /
+  mobile) under `content.layout`, see `src/utils/layout.js`; elements nobody
+  moved render exactly as before. Double-click a text to type into it directly,
+  and drag the sections in the left menu to reorder the page.
 - Global **Theme** panel for site-wide colors and typography.
 - Toggle any section's visibility, and reorder the middle sections
   (Hero, About, Services, Pricing, Testimonials, Contact).

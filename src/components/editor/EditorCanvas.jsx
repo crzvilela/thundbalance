@@ -1,7 +1,9 @@
+import { useRef } from 'react'
 import Navbar from '../Navbar'
 import Footer from '../Footer'
 import LandingSections from '../LandingSections'
 import { useLandingContent } from '../../content/LandingContentContext'
+import LayoutEditor from './LayoutEditor'
 
 const DEVICE_WIDTHS = {
   desktop: '100%',
@@ -11,6 +13,7 @@ const DEVICE_WIDTHS = {
 
 export default function EditorCanvas() {
   const { device, select, loading } = useLandingContent()
+  const frameRef = useRef(null)
 
   return (
     <div
@@ -23,15 +26,18 @@ export default function EditorCanvas() {
         </div>
       ) : (
         <div
+          ref={frameRef}
           className="mx-auto bg-black shadow-2xl shadow-black/50 relative transition-[width] duration-300"
           style={{ width: DEVICE_WIDTHS[device], minHeight: '100%' }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="relative">
-            <Navbar />
-            <LandingSections />
-            <Footer />
-          </div>
+          <LayoutEditor rootRef={frameRef}>
+            <div className="relative">
+              <Navbar />
+              <LandingSections />
+              <Footer />
+            </div>
+          </LayoutEditor>
         </div>
       )}
     </div>

@@ -6,23 +6,12 @@ import {
   SectionEditOverlay
 } from './editor/Editable'
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
-import HeroTitleFrame from './editor/HeroTitleFrame'
-import { heroTitleStyle } from '../utils/heroTitle'
-import './HeroTitle.css'
-
-// Visitors get the saved position/width through CSS variables; the editor
-// uses HeroTitleFrame, which adds dragging on top of the same values.
-function PublicHeroTitleFrame({ section, children }) {
-  return <div data-hero-title className="hero-title-frame" style={heroTitleStyle(section.titleLayout)}>{children}</div>
-}
 
 function Hero() {
   const navigate = useNavigate()
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection('hero')
 
   if (!visible && !isEditMode) return null
-
-  const TitleFrame = isEditMode ? HeroTitleFrame : PublicHeroTitleFrame
 
   return (
     <section
@@ -50,16 +39,14 @@ function Hero() {
           className="uppercase tracking-[6px] text-sm text-gray-400 mb-6"
         />
 
-        <TitleFrame section={section}>
-          <EditableText
-            as="h1"
-            path="sections.hero.title"
-            styleObj="sections.hero.titleStyle"
-            label="Hero Title"
-            style={{ fontFamily: theme.typography.headingFont }}
-            className="text-5xl sm:text-6xl md:text-8xl font-bold uppercase leading-tight max-w-5xl mx-auto"
-          />
-        </TitleFrame>
+        <EditableText
+          as="h1"
+          path="sections.hero.title"
+          styleObj="sections.hero.titleStyle"
+          label="Hero Title"
+          style={{ fontFamily: theme.typography.headingFont }}
+          className="text-5xl sm:text-6xl md:text-8xl font-bold uppercase leading-tight max-w-5xl mx-auto"
+        />
 
         <EditableText
           as="p"

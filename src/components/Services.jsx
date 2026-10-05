@@ -1,6 +1,7 @@
 import { BLANK_IMAGE_PLACEHOLDER } from '../utils/placeholderImage'
 import { EditableText, EditableImage, useSectionSelection, SectionEditOverlay } from './editor/Editable'
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
+import MovableBox from './editor/MovableBox'
 
 
 function Services({ sectionId }) {
@@ -45,10 +46,8 @@ function Services({ sectionId }) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
 
           {items.map((item, index) => (
-            <div
-              key={index}
-              className="border border-white/10 overflow-hidden hover:border-white hover:-translate-y-2 hover:bg-white/5 transition duration-500"
-            >
+            <MovableBox key={index} path={`sections.${sectionId}.items.${index}.card`} label={`Service ${index + 1} Card`} className="h-full">
+            <div className="h-full border border-white/10 overflow-hidden hover:border-white hover:-translate-y-2 hover:bg-white/5 transition duration-500">
               <EditableImage
                 path={`sections.${sectionId}.items.${index}.image`}
                 styleObj={`sections.${sectionId}.items.${index}.imageStyle`}
@@ -79,6 +78,7 @@ function Services({ sectionId }) {
                 />
               </div>
             </div>
+            </MovableBox>
           ))}
 
         </div>

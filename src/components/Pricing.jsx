@@ -1,5 +1,6 @@
 import { EditableText, useSectionSelection, SectionEditOverlay } from './editor/Editable'
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
+import MovableBox from './editor/MovableBox'
 
 function Pricing({ sectionId }) {
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'Pricing')
@@ -46,9 +47,9 @@ function Pricing({ sectionId }) {
             const highlighted = !!plan.highlighted
 
             return (
+              <MovableBox key={index} path={`sections.${sectionId}.plans.${index}.card`} label={`Plan ${index + 1} Card`} className="h-full">
               <div
-                key={index}
-                className={`p-10 hover:-translate-y-2 transition duration-500 ${
+                className={`h-full p-10 hover:-translate-y-2 transition duration-500 ${
                   highlighted
                     ? 'border border-black bg-black text-white'
                     : 'border border-black/10'
@@ -115,6 +116,7 @@ function Pricing({ sectionId }) {
                   }`}
                 />
               </div>
+              </MovableBox>
             )
           })}
 

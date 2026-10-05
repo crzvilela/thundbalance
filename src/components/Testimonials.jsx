@@ -3,6 +3,8 @@ import { VideoMedia } from './editor/EditableVideo'
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
 import { useLandingContent } from '../content/LandingContentContext'
 import GoogleReviews from './GoogleReviews'
+import MovableBox from './editor/MovableBox'
+import { useLayoutItem } from './editor/useLayoutItem'
 import { useI18n } from '../i18n/I18nContext'
 import { resolveText } from '../utils/multilingual'
 import { resolveImageUrl } from '../api/landingPage'
@@ -27,12 +29,18 @@ function TestimonialMediaItem({ sectionId, index, item }) {
   }
 
   const hasCaption = !!(clientName || caption)
+  const layoutItem = useLayoutItem({
+    path, kind: 'box',
+    onSelect: () => select({ type: 'testimonialMedia', path, label: clientName || `Testimonial ${index + 1}` })
+  })
 
   return (
     <div
+      {...layoutItem.attrs}
       onClick={handleClick}
-      className={`relative group/tm border border-white/10 rounded-lg overflow-hidden transition ${
-        isEditMode ? `cursor-pointer ${isSelected ? 'ring-2 ring-emerald-400 ring-inset' : 'hover:ring-2 hover:ring-emerald-400/50 hover:ring-inset'}` : ''
+      style={layoutItem.style}
+      className={`relative group/tm border border-white/10 rounded-lg overflow-hidden transition ${layoutItem.className} ${
+        isEditMode && !isSelected ? 'hover:ring-2 hover:ring-emerald-400/50 hover:ring-inset' : ''
       }`}
     >
       <div className="aspect-[4/5] bg-[#111]">
@@ -109,7 +117,9 @@ function Testimonials({ sectionId }) {
           />
         </div>
 
-        <GoogleReviews />
+        <MovableBox path={`sections.${sectionId}.reviewsBox`} label="Google Reviews">
+          <GoogleReviews />
+        </MovableBox>
 
         {media.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mt-16">

@@ -1,16 +1,22 @@
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useState } from 'react'
 import { useLandingContent } from '../../content/LandingContentContext'
+import { useAdminText } from '../../admin/useAdminText'
 import ConfirmDialog from './ConfirmDialog'
+import { EdIcon } from './editorIcons'
+import './EditorChrome.css'
 
 const DEVICES = [
-  { key: 'desktop', icon: '🖥️', label: 'Desktop' },
-  { key: 'tablet', icon: '📱', label: 'Tablet' },
-  { key: 'mobile', icon: '📲', label: 'Mobile' }
+  { key: 'desktop', icon: 'desktop', label: 'ed_desktop' },
+  { key: 'tablet', icon: 'tablet', label: 'ed_tablet' },
+  { key: 'mobile', icon: 'mobile', label: 'ed_mobile' }
 ]
 
-export default function EditorTopbar({ sidebarsHidden, onToggleSidebars }) {
+const iconButton = 'flex h-9 w-9 items-center justify-center rounded-lg text-gray-300 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:text-gray-700 disabled:hover:bg-transparent'
+
+export default function EditorTopbar({ sidebarHidden, onToggleSidebar }) {
   const navigate = useNavigate()
+  const { t, language, setLanguage } = useAdminText()
   const {
     device, setDevice,
     undo, redo, canUndo, canRedo,
@@ -18,128 +24,93 @@ export default function EditorTopbar({ sidebarsHidden, onToggleSidebars }) {
     saving, publishing, dirty, lastSavedAt
   } = useLandingContent()
 
-  const [resetModalOpen, setResetModalOpen] = useState(false)
+  const [resetOpen, setResetOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef(null)
+
+  useEffect(() => {
+    if (!menuOpen) return undefined
+    const close = (event) => { if (!menuRef.current?.contains(event.target)) setMenuOpen(false) }
+    const onKey = (event) => { if (event.key === 'Escape') setMenuOpen(false) }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', onKey) }
+  }, [menuOpen])
 
   const handlePublish = async () => {
     await publish()
     window.open('/', '_blank')
   }
 
-  const handlePreview = () => {
-    window.open('/?preview=true', '_blank')
-  }
-
-  const handleConfirmReset = async () => {
-    await reset()
-    setResetModalOpen(false)
-  }
+  const status = saving ? t('ed_saving') : dirty ? t('ed_unsaved') : lastSavedAt ? t('ed_saved') : ''
 
   return (
-    <header className="h-16 shrink-0 bg-[#0b0b0b] border-b border-white/10 flex items-center justify-between px-5">
-      <div className="flex items-center gap-4">
-        <button
-          onClick={() => navigate('/admin')}
-          className="text-gray-400 hover:text-white text-sm"
-        >
-          ← Admin
+    <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-white/10 bg-[#0b0b0b] px-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <button type="button" onClick={() => navigate('/admin')} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-gray-400 transition hover:bg-white/10 hover:text-white">
+          <EdIcon name="back" className="h-4 w-4" />{t('ed_back')}
         </button>
-        <div className="h-6 w-px bg-white/10" />
-        <h1 className="text-sm font-semibold uppercase tracking-wider text-white">Landing Page Editor</h1>
+        <span className="hidden h-5 w-px bg-white/10 sm:block" />
+        <h1 className="hidden truncate text-sm font-semibold text-white sm:block">{t('ed_title')}</h1>
       </div>
 
-      <div className="flex items-center gap-1 bg-[#151515] rounded-lg p-1">
-        {DEVICES.map((d) => (
+      <div className="flex items-center gap-1 rounded-xl bg-white/[0.06] p-1" role="group" aria-label="Device">
+        {DEVICES.map((item) => (
           <button
-            key={d.key}
-            onClick={() => setDevice(d.key)}
-            title={d.label}
-            className={`px-3 py-1.5 rounded-md text-sm transition ${
-              device === d.key ? 'bg-emerald-500 text-black' : 'text-gray-400 hover:text-white'
-            }`}
+            key={item.key} type="button" onClick={() => setDevice(item.key)} title={t(item.label)} aria-pressed={device === item.key}
+            className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition ${device === item.key ? 'bg-emerald-400 font-semibold text-black' : 'text-gray-400 hover:text-white'}`}
           >
-            {d.icon} <span className="hidden lg:inline">{d.label}</span>
+            <EdIcon name={item.icon} />
+            <span className="hidden xl:inline">{t(item.label)}</span>
           </button>
         ))}
       </div>
 
-      <button
-        type="button"
-        onClick={onToggleSidebars}
-        aria-pressed={sidebarsHidden}
-        title={sidebarsHidden ? 'Show sidebars' : 'Hide sidebars'}
-        className="text-xs uppercase tracking-wider px-3 py-2 rounded-lg border border-white/15 text-gray-300 hover:text-white hover:bg-white/10 transition"
-      >
-        {sidebarsHidden ? 'Show sidebars' : 'Hide sidebars'}
-      </button>
+      <div className="flex items-center gap-1.5">
+        <button type="button" onClick={undo} disabled={!canUndo} title={t('ed_undo')} aria-label={t('ed_undo')} className={iconButton}><EdIcon name="undo" /></button>
+        <button type="button" onClick={redo} disabled={!canRedo} title={t('ed_redo')} aria-label={t('ed_redo')} className={iconButton}><EdIcon name="redo" /></button>
 
-      <div className="flex items-center gap-3">
-        <button
-          onClick={undo}
-          disabled={!canUndo}
-          title="Undo"
-          className={`w-9 h-9 rounded-lg border border-white/10 flex items-center justify-center ${
-            canUndo ? 'hover:bg-white/10 text-white' : 'text-gray-600 cursor-not-allowed'
-          }`}
-        >
-          ↶
-        </button>
-        <button
-          onClick={redo}
-          disabled={!canRedo}
-          title="Redo"
-          className={`w-9 h-9 rounded-lg border border-white/10 flex items-center justify-center ${
-            canRedo ? 'hover:bg-white/10 text-white' : 'text-gray-600 cursor-not-allowed'
-          }`}
-        >
-          ↷
-        </button>
-
-        <div className="h-6 w-px bg-white/10" />
-
-        <button
-          onClick={() => setResetModalOpen(true)}
-          className="text-xs uppercase tracking-wider px-3 py-2 rounded-lg border border-white/10 text-gray-400 hover:text-white transition"
-        >
-          Restore Default Base
-        </button>
-
-        <span className="text-[11px] text-gray-500 w-28 text-right">
-          {saving ? 'Saving…' : dirty ? 'Unsaved changes' : lastSavedAt ? `Saved` : ''}
+        <span className="mx-1 hidden min-w-24 text-right text-xs text-gray-500 lg:block" role="status">
+          {dirty && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-400 align-middle" />}{status}
         </span>
 
-        <button
-          onClick={handlePreview}
-          className="text-xs uppercase tracking-wider px-4 py-2 rounded-lg border border-white/15 text-white hover:bg-white/10 transition"
-        >
-          Preview
-        </button>
+        <button type="button" onClick={() => window.open('/?preview=true', '_blank')} className="rounded-lg px-3 py-2 text-sm text-gray-200 transition hover:bg-white/10">{t('ed_preview')}</button>
+        <button type="button" onClick={save} disabled={saving} className="rounded-lg border border-white/15 px-3.5 py-2 text-sm text-white transition hover:bg-white/10 disabled:opacity-50">{saving ? t('ed_saving') : t('ed_save')}</button>
+        <button type="button" onClick={handlePublish} disabled={publishing} className="rounded-lg bg-emerald-400 px-4 py-2 text-sm font-semibold text-black transition hover:bg-emerald-300 active:scale-[0.97] disabled:opacity-50">{publishing ? t('ed_publishing') : t('ed_publish')}</button>
 
-        <button
-          onClick={save}
-          disabled={saving}
-          className="text-xs uppercase tracking-wider px-4 py-2 rounded-lg border border-white/15 text-white hover:bg-white/10 transition disabled:opacity-50"
-        >
-          {saving ? 'Saving…' : 'Save Changes'}
-        </button>
-
-        <button
-          onClick={handlePublish}
-          disabled={publishing}
-          className="text-xs uppercase tracking-wider px-5 py-2 rounded-lg bg-emerald-500 text-black hover:bg-emerald-400 transition disabled:opacity-50"
-        >
-          {publishing ? 'Publishing…' : 'Publish'}
-        </button>
+        <div className="relative" ref={menuRef}>
+          <button type="button" onClick={() => setMenuOpen((open) => !open)} aria-haspopup="menu" aria-expanded={menuOpen} title={t('ed_more')} aria-label={t('ed_more')} className={iconButton}><EdIcon name="more" /></button>
+          {menuOpen && (
+            <div role="menu" className="editor-menu absolute right-0 top-11 z-[80] w-64 rounded-xl border border-white/10 bg-[#111] p-1.5 shadow-2xl">
+              <button type="button" role="menuitem" onClick={() => { onToggleSidebar(); setMenuOpen(false) }} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-gray-200 hover:bg-white/10">
+                <EdIcon name="sidebar" />{sidebarHidden ? t('ed_show_sidebar') : t('ed_hide_sidebar')}
+              </button>
+              <div className="flex items-center justify-between px-3 py-2.5 text-sm text-gray-200">
+                <span className="flex items-center gap-3"><EdIcon name="palette" className="h-[18px] w-[18px] opacity-0" />{language === 'es' ? 'Idioma' : 'Language'}</span>
+                <div className="flex rounded-lg border border-white/10 p-0.5">
+                  {['en', 'es'].map((code) => (
+                    <button key={code} type="button" onClick={() => setLanguage(code)} aria-pressed={language === code} className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase ${language === code ? 'bg-emerald-400 text-black' : 'text-gray-400 hover:text-white'}`}>{code}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="my-1 h-px bg-white/10" />
+              <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); setResetOpen(true) }} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-red-300 hover:bg-red-500/10">
+                <EdIcon name="undo" />{t('ed_restore')}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <ConfirmDialog
-        open={resetModalOpen}
-        title="Restore Default Base?"
-        description="This will discard your current draft and replace it with the original default version of the landing page. This cannot be undone with the undo button. Your published (live) site will not change until you click Publish again."
-        confirmLabel="Restore"
-        cancelLabel="Cancel"
+        open={resetOpen}
+        title={t('ed_restore_title')}
+        description={t('ed_restore_text')}
+        confirmLabel={t('ed_restore_do')}
+        cancelLabel={t('ed_cancel')}
         variant="danger"
-        onConfirm={handleConfirmReset}
-        onCancel={() => setResetModalOpen(false)}
+        onConfirm={async () => { await reset(); setResetOpen(false) }}
+        onCancel={() => setResetOpen(false)}
       />
     </header>
   )

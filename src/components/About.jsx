@@ -4,6 +4,7 @@ import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/Section
 import { BLANK_IMAGE_PLACEHOLDER } from '../utils/placeholderImage'
 import ImageCarousel from './ImageCarousel'
 import Resizable360Viewer from './editor/Resizable360Viewer'
+import MovableBox from './editor/MovableBox'
 
 function About({ sectionId }) {
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'About')
@@ -113,9 +114,9 @@ function About({ sectionId }) {
       )}
 
       {carousel.length > 0 && (
-        <div className="max-w-4xl mx-auto mt-14 md:mt-20">
+        <MovableBox path={`sections.${sectionId}.carouselBox`} label="Carousel" className="max-w-4xl mx-auto mt-14 md:mt-20">
           <ImageCarousel items={carousel} />
-        </div>
+        </MovableBox>
       )}
 
       {section.embed360Url && <Resizable360Viewer sectionId={sectionId} src={section.embed360Url} />}

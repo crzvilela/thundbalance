@@ -2,6 +2,7 @@ import { useLandingContent } from '../../content/LandingContentContext'
 import { getPath } from '../../utils/objectPath'
 import { resolveImageUrl } from '../../api/landingPage'
 import { getEmbedUrl } from '../../utils/videoEmbed'
+import { useLayoutItem } from './useLayoutItem'
 
 // Renders the actual <video> or embed <iframe> for a stored video object
 // { sourceType: 'upload'|'embed', url, autoplay, loop, muted }. Shared by
@@ -46,10 +47,14 @@ export function EditableVideo({ path, containerClassName = '', videoClassName = 
   const { content, isEditMode, select, selection } = useLandingContent()
   const video = getPath(content, path, {})
   const isSelected = isEditMode && selection?.type === 'video' && selection.path === path
+  const item = useLayoutItem({
+    path, kind: 'video',
+    onSelect: () => select({ type: 'video', path, label: label || path })
+  })
 
   if (!isEditMode) {
     return (
-      <div className={containerClassName}>
+      <div className={`${containerClassName} ${item.className}`} style={item.style}>
         <VideoMedia video={video} className={videoClassName} />
       </div>
     )
@@ -57,7 +62,9 @@ export function EditableVideo({ path, containerClassName = '', videoClassName = 
 
   return (
     <div
-      className={`relative group/vid cursor-pointer ${containerClassName}`}
+      {...item.attrs}
+      className={`relative group/vid ${containerClassName} ${item.className}`}
+      style={item.style}
       onClick={(e) => {
         e.stopPropagation()
         select({ type: 'video', path, label: label || path })

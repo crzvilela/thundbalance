@@ -126,6 +126,7 @@ function NavbarInner() {
         containerClassName="h-full w-full overflow-hidden"
         imageClassName={isVectorLogo ? 'h-full w-full object-contain' : 'h-full w-full object-cover object-[45%_50%] scale-[1.6] invert mix-blend-screen'}
         label="Navbar Logo"
+        movable={false}
       />
       </LogoFrame>
       {section.showBrandText !== false && (

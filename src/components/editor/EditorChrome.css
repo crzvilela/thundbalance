@@ -1,0 +1,18 @@
+/* Editor chrome: floating properties panel and small motion. */
+.editor-panel {
+  position: absolute; top: 12px; right: 12px; bottom: 12px; width: 340px; z-index: 60;
+  background: #0d0f0e; border: 1px solid rgba(255, 255, 255, .1); border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .55); overflow-y: auto; color-scheme: dark;
+  animation: editor-panel-in .22s cubic-bezier(.22, 1, .36, 1);
+}
+@keyframes editor-panel-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+
+.editor-menu { animation: editor-menu-in .16s ease; }
+@keyframes editor-menu-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+.section-row.is-dragging { opacity: .35; }
+.section-drop-line { height: 2px; margin: 2px 8px; background: #10b981; border-radius: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .editor-panel, .editor-menu { animation: none; }
+}
