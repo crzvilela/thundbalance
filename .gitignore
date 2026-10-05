@@ -38,3 +38,11 @@ backend/credentials.json
 # Python cache
 .pytest_cache/
 
+
+# Project extras
+thundbalance-repo/
+backend/credentials.json
+backend/uploads/
+src.zip
+.env
+.env.local

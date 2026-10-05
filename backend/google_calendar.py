@@ -1,3 +1,7 @@
+import base64
+import json
+import os
+
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from datetime import datetime, timedelta
@@ -6,17 +10,70 @@ SCOPES = [
     "https://www.googleapis.com/auth/calendar"
 ]
 
-SERVICE_ACCOUNT_FILE = "credentials.json"
+# Next to this file, so it works no matter which folder the server starts in.
+SERVICE_ACCOUNT_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "credentials.json"
+)
 
-CALENDAR_ID = "5b958f681e0f3a7ab9316d1955367098481d33c5682578df1fca743a260d0490@group.calendar.google.com"
+CALENDAR_ID = os.getenv(
+    "GOOGLE_CALENDAR_ID",
+    "5b958f681e0f3a7ab9316d1955367098481d33c5682578df1fca743a260d0490@group.calendar.google.com"
+)
+
+
+def _read_env(name):
+    """Value of an environment variable, tolerating stray spaces or a
+    different capitalisation in the NAME (easy to get wrong in a dashboard)."""
+
+    for key, value in os.environ.items():
+        if key.strip().upper() == name:
+            return value
+
+    return ""
+
+
+def load_credentials():
+    """Service-account credentials for the calendar.
+
+    On a server (Render) the key is NOT stored as a file in the code: put the
+    full JSON in the GOOGLE_CREDENTIALS_JSON environment variable (plain JSON,
+    or the same JSON encoded as base64). Locally, credentials.json is used.
+    """
+
+    raw = _read_env("GOOGLE_CREDENTIALS_JSON").strip().strip('"').strip("'").strip()
+
+    if raw:
+        if not raw.startswith("{"):
+            raw = base64.b64decode(raw).decode("utf-8")
+
+        # strict=False tolerates real line breaks inside the private key.
+        return service_account.Credentials.from_service_account_info(
+            json.loads(raw, strict=False),
+            scopes=SCOPES
+        )
+
+    if not os.path.exists(SERVICE_ACCOUNT_FILE):
+        # Names only, never values: helps spot a mistyped variable name.
+        similar = sorted(
+            key for key in os.environ
+            if "GOOGLE" in key.upper() or "CRED" in key.upper()
+        )
+        raise RuntimeError(
+            "Google Calendar is not configured on this server: the "
+            "GOOGLE_CREDENTIALS_JSON environment variable is empty or missing "
+            f"(similar variable names seen: {similar or 'none'}). Set it to the "
+            "full contents of credentials.json and redeploy."
+        )
+
+    return service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE,
+        scopes=SCOPES
+    )
 
 
 def get_calendar_service():
 
-    credentials = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE,
-        scopes=SCOPES
-    )
+    credentials = load_credentials()
 
     return build(
         "calendar",
@@ -188,7 +245,8 @@ def create_trial_session_event(
     goal,
     experience,
     session_date,
-    session_time
+    session_time,
+    trainer_name=None
 ):
 
     service = get_calendar_service()
@@ -215,7 +273,7 @@ Phone: {phone}
 Goal: {goal}
 
 Experience: {experience}
-""",
+{f"{chr(10)}Trainer: {trainer_name}{chr(10)}" if trainer_name else ""}""",
 
         "colorId": "5",
 
@@ -267,3 +325,33 @@ def clear_calendar():
             pass
 
     print("GOOGLE CALENDAR CLEARED")
+
+
+def list_calendar_events(time_min, time_max):
+    """Events between two RFC3339 instants, in Europe/Madrid time.
+
+    Recurring events are expanded and results are paginated until Google has
+    no more pages, so a busy month is returned completely.
+    """
+
+    service = get_calendar_service()
+    events = []
+    page_token = None
+
+    while True:
+        response = service.events().list(
+            calendarId=CALENDAR_ID,
+            timeMin=time_min,
+            timeMax=time_max,
+            singleEvents=True,
+            orderBy="startTime",
+            timeZone="Europe/Madrid",
+            maxResults=250,
+            pageToken=page_token
+        ).execute()
+
+        events.extend(response.get("items", []))
+        page_token = response.get("nextPageToken")
+
+        if not page_token:
+            return events

@@ -1,10 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { auth } from '../firebase/auth'
 import Navbar from '../components/Navbar'
 import { API_URL } from '../config'
 
 function TrainingRequest() {
-
+  const navigate = useNavigate()
+  const [submitting, setSubmitting] = useState(false)
+  const [plans, setPlans] = useState([])
   const [planId, setPlanId] = useState('1')
 
   const [sessionsPerWeek, setSessionsPerWeek] = useState('1')
@@ -12,6 +15,41 @@ function TrainingRequest() {
   const [preferredDays, setPreferredDays] = useState([])
 
   const [preferredTime, setPreferredTime] = useState('18:00')
+
+  // Start times offered per weekday (only when at least one trainer works).
+  const [schedule, setSchedule] = useState(null)
+
+  useEffect(() => {
+    fetch(`${API_URL}/schedule`)
+      .then(response => (response.ok ? response.json() : null))
+      .then(data => setSchedule(data))
+      .catch(() => setSchedule(null))
+  }, [])
+
+  const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+  const offeredDays = schedule ? WEEKDAYS.filter(day => (schedule[day] || []).length > 0) : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+  const FALLBACK_TIMES = Array.from({ length: 14 }, (_, index) => `${String(index + 7).padStart(2, '0')}:00`)
+
+  // Times that work on EVERY chosen day (the same time is used each day).
+  // With no day chosen yet, every time offered on any day is listed.
+  const timeOptions = !schedule ? FALLBACK_TIMES
+    : preferredDays.length
+      ? FALLBACK_TIMES.filter(time => preferredDays.every(day => (schedule[day] || []).includes(time)))
+      : [...new Set(offeredDays.flatMap(day => schedule[day]))].sort()
+  const effectiveTime = timeOptions.includes(preferredTime) ? preferredTime : (timeOptions[0] || '')
+
+  useEffect(() => {
+    fetch(`${API_URL}/plans`)
+      .then(response => {
+        if (!response.ok) throw new Error('Could not load packages')
+        return response.json()
+      })
+      .then(data => {
+        setPlans(data)
+        if (data.length) setPlanId(String(data[0][0]))
+      })
+      .catch(() => setPlans([]))
+  }, [])
 
   const handleDayChange = (day) => {
 
@@ -36,15 +74,13 @@ function TrainingRequest() {
 
   const handleSubmit = async () => {
 
+    if (!auth.currentUser) { navigate('/login'); return }
+    if (!preferredDays.length) { alert('Choose at least one preferred day.'); return }
+    if (!effectiveTime) { alert('No time works on all the days you chose. Try fewer days or different days.'); return }
+    setSubmitting(true)
+
     try {
-
-      const email = auth.currentUser.email
-
-      const userResponse = await fetch(
-        `${API_URL}/users/email/${email}`
-      )
-
-      const userData = await userResponse.json()
+      const token = await auth.currentUser.getIdToken()
 
       const response = await fetch(
         `${API_URL}/client-requests`,
@@ -52,12 +88,11 @@ function TrainingRequest() {
           method: 'POST',
 
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
           },
 
           body: JSON.stringify({
-
-            user_id: userData.id,
 
             plan_id: parseInt(planId),
 
@@ -65,7 +100,7 @@ function TrainingRequest() {
 
             preferred_days: preferredDays.join(','),
 
-            preferred_time: preferredTime
+            preferred_time: effectiveTime
 
           })
 
@@ -74,11 +109,9 @@ function TrainingRequest() {
 
       if (!response.ok) {
 
-        const error = await response.text()
+        const body = await response.json().catch(() => ({}))
 
-        console.log(error)
-
-        alert(error)
+        alert(typeof body.detail === 'string' ? body.detail : 'We could not send your request. Please try again.')
 
         return
 
@@ -88,18 +121,18 @@ function TrainingRequest() {
 
       console.log(data)
 
-      alert(
-        'Training request submitted successfully!'
-      )
+      navigate('/dashboard')
 
     } catch (error) {
 
       console.log(error)
 
       alert(
-        'Error submitting request'
+        error.message || 'Error submitting request'
       )
 
+    } finally {
+      setSubmitting(false)
     }
 
   }
@@ -134,17 +167,7 @@ function TrainingRequest() {
               }
               className="w-full bg-black border border-white/20 p-4"
             >
-              <option value="1">
-                Monthly Plan
-              </option>
-
-              <option value="2">
-                Quarterly Plan
-              </option>
-
-              <option value="3">
-                Semiannual Plan
-              </option>
+              {plans.map(plan => <option key={plan[0]} value={plan[0]}>{plan[1]}</option>)}
 
             </select>
 
@@ -182,13 +205,7 @@ function TrainingRequest() {
 
             <div className="flex flex-wrap gap-4">
 
-              {[
-                'Monday',
-                'Tuesday',
-                'Wednesday',
-                'Thursday',
-                'Friday'
-              ].map(day => (
+              {offeredDays.map(day => (
 
                 <button
                   key={day}
@@ -217,38 +234,32 @@ function TrainingRequest() {
             </label>
 
             <select
-              value={preferredTime}
+              value={effectiveTime}
               onChange={(e) =>
                 setPreferredTime(
                   e.target.value
                 )
               }
+              disabled={timeOptions.length === 0}
               className="w-full bg-black border border-white/20 p-4"
             >
-              <option>07:00</option>
-              <option>08:00</option>
-              <option>09:00</option>
-              <option>10:00</option>
-              <option>11:00</option>
-              <option>12:00</option>
-              <option>13:00</option>
-              <option>14:00</option>
-              <option>15:00</option>
-              <option>16:00</option>
-              <option>17:00</option>
-              <option>18:00</option>
-              <option>19:00</option>
-              <option>20:00</option>
-              
+              {timeOptions.map(time => <option key={time}>{time}</option>)}
             </select>
+
+            <p className="mt-2 text-sm text-gray-500">
+              {timeOptions.length === 0
+                ? 'No time works on all the days you chose. Try fewer days or different days.'
+                : 'Times depend on our trainers\' schedules, so the list changes with the days you choose.'}
+            </p>
 
           </div>
 
           <button
             onClick={handleSubmit}
+            disabled={submitting || plans.length === 0}
             className="bg-white text-black px-8 py-4 uppercase tracking-[3px] hover:bg-gray-300 transition duration-300"
           >
-            Submit Request
+            {submitting ? 'Submitting…' : plans.length ? 'Submit Request' : 'Packages unavailable'}
           </button>
 
         </div>

@@ -1,0 +1,56 @@
+{
+  "map": {
+    "align": {
+      "mobile": "right",
+      "tablet": "right",
+      "desktop": "right"
+    },
+    "width": {
+      "mobile": "80%",
+      "tablet": "65%",
+      "desktop": "70%"
+    },
+    "height": {
+      "mobile": "190px",
+      "tablet": "230px",
+      "desktop": "270px"
+    },
+    "marginTop": {
+      "mobile": "12px",
+      "tablet": "12px",
+      "desktop": "12px"
+    },
+    "marginBottom": {
+      "mobile": "16px",
+      "tablet": "16px",
+      "desktop": "16px"
+    }
+  },
+  "streetView360": {
+    "align": {
+      "mobile": "right",
+      "tablet": "right",
+      "desktop": "right"
+    },
+    "width": {
+      "mobile": "80%",
+      "tablet": "65%",
+      "desktop": "70%"
+    },
+    "height": {
+      "mobile": "210px",
+      "tablet": "250px",
+      "desktop": "310px"
+    },
+    "marginTop": {
+      "mobile": "12px",
+      "tablet": "12px",
+      "desktop": "12px"
+    },
+    "marginBottom": {
+      "mobile": "16px",
+      "tablet": "16px",
+      "desktop": "16px"
+    }
+  }
+}

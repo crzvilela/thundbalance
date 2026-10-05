@@ -1,0 +1,23 @@
+﻿.navbar-logo {
+  position: relative;
+  width: var(--logo-width, var(--logo-width-mobile, 30px));
+  height: var(--logo-height, var(--logo-height-mobile, 20px));
+  left: var(--logo-x, var(--logo-x-mobile, 0px));
+  top: var(--logo-y, var(--logo-y-mobile, 0px));
+}
+@media (min-width: 640px) {
+  .navbar-logo {
+    width: var(--logo-width, var(--logo-width-tablet, 38px));
+    height: var(--logo-height, var(--logo-height-tablet, 24px));
+    left: var(--logo-x, var(--logo-x-tablet, 0px));
+    top: var(--logo-y, var(--logo-y-tablet, 0px));
+  }
+}
+@media (min-width: 1024px) {
+  .navbar-logo {
+    width: var(--logo-width, var(--logo-width-desktop, 38px));
+    height: var(--logo-height, var(--logo-height-desktop, 24px));
+    left: var(--logo-x, var(--logo-x-desktop, 0px));
+    top: var(--logo-y, var(--logo-y-desktop, 0px));
+  }
+}

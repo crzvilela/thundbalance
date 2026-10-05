@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Mejoras ThundBalance</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* Same black and green as the site; one look on purpose. */
+    :root {
+      color-scheme: dark;
+      --bg: #080a09;
+      --line: #24302a;
+      --fg: #eef3f0;
+      --muted: #93a39a;
+      --accent: #34d399;
+      --accent-ink: #04120c;
+      --display: 'Bebas Neue', Impact, 'Arial Narrow', sans-serif;
+      --body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--body);
+      font-size: 16px;
+      line-height: 1.6;
+      padding-inline: 22px;
+      padding-block: 28px 56px;
+    }
+    main { max-width: 640px; margin-inline: auto; display: flex; flex-direction: column; gap: 48px; }
+    h1, h2 { font-family: var(--display); font-weight: 400; letter-spacing: .02em; margin: 0; text-wrap: balance; }
+    h1 { font-size: clamp(48px, 11vw, 80px); line-height: .94; }
+    h2 { font-size: 28px; line-height: 1; color: var(--accent); }
+    p { margin: 0; }
+    .brand { font-family: var(--display); font-size: 22px; letter-spacing: .22em; display: flex; align-items: center; gap: 10px; }
+    .brand::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px rgba(52, 211, 153, .8); }
+    header { display: flex; flex-direction: column; gap: 14px; padding-top: 24px; }
+    .lead { color: var(--muted); }
+
+    section { display: flex; flex-direction: column; gap: 14px; }
+    ul { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+    li { padding: 14px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+    li b { font-weight: 600; }
+    li span { color: var(--muted); font-size: 15px; }
+
+    .try { display: flex; flex-direction: column; gap: 16px; align-items: flex-start; }
+    .try p { color: var(--muted); max-width: 48ch; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 10px;
+      background: var(--accent); color: var(--accent-ink);
+      font-weight: 600; text-decoration: none;
+      padding: 14px 24px; border-radius: 12px;
+    }
+    .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    @media (max-width: 480px) { .btn { align-self: stretch; justify-content: center; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="brand">THUNDBALANCE</p>
+      <h1>Mejoras realizadas</h1>
+      <p class="lead">Un resumen de lo que se ha mejorado en la web y en el panel de administración.</p>
+    </header>
+
+    <section>
+      <h2>Panel de administración</h2>
+      <ul>
+        <li><b>Menú lateral y resumen</b><span>Todo el negocio en una pantalla, en inglés y español, y también en el móvil.</span></li>
+        <li><b>Solicitudes de entrenamiento</b><span>Aprobar o rechazar desde una ventana grande y clara.</span></li>
+        <li><b>Sesiones de prueba</b><span>Ahora aparecen en el panel y se aprueban eligiendo entrenador.</span></li>
+        <li><b>Clientes</b><span>Búsqueda, ficha con progreso, cambio de plan y cancelación de sesiones.</span></li>
+        <li><b>Calendario de Google</b><span>La agenda real del estudio, por semana y por mes, con cliente y entrenador.</span></li>
+        <li><b>Entrenadores</b><span>Añadir, quitar y editar el horario de cada uno.</span></li>
+        <li><b>Planes y vídeos</b><span>Crear, editar y borrar paquetes y vídeos desde el panel.</span></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Horarios de los entrenadores</h2>
+      <ul>
+        <li><b>Cada entrenador con su horario</b><span>Carles y David de 7:00 a 14:00. Guille y Matilda de 7:00 a 21:00.</span></li>
+        <li><b>Solo se ofrecen horas posibles</b><span>Al reservar, aprobar o reagendar solo aparecen horas en las que hay un entrenador libre.</span></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Web pública</h2>
+      <ul>
+        <li><b>Carga instantánea</b><span>La página aparece con su aspecto final, sin saltos de tipografía ni de texto.</span></li>
+        <li><b>Reserva de sesión de prueba</b><span>Formulario nuevo, con mensajes claros y confirmación al enviar.</span></li>
+        <li><b>Mis sesiones</b><span>Progreso, calendario, reagendar y cancelar, con el estilo de la web.</span></li>
+        <li><b>Logo, tipografías y vista 360°</b><span>Logo con tamaño editable, menú de fuentes más claro y campos de la vista 360° corregidos.</span></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Errores corregidos</h2>
+      <ul>
+        <li><b>Aprobación de solicitudes</b><span>Ya no falla y no deja eventos sueltos en el calendario.</span></li>
+        <li><b>Horas ocupadas</b><span>Ya no aparecen como libres al reagendar.</span></li>
+        <li><b>Mensajes de error</b><span>La web avisa del motivo real en lugar de decir "enviado" cuando algo falla.</span></li>
+      </ul>
+    </section>
+
+    <section class="try">
+      <h2>Pruébala</h2>
+      <p>Crea un usuario nuevo, recorre la web como un cliente y cuéntame qué piensas: qué mejorarías y qué no te ha gustado.</p>
+      <a class="btn" href="https://thundbalance.vercel.app/register" target="_blank" rel="noopener noreferrer">Crear mi usuario de prueba <span aria-hidden="true">→</span></a>
+    </section>
+  </main>
+</body>
+</html>
