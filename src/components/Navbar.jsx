@@ -11,7 +11,16 @@ import LanguageSwitcher from './LanguageSwitcher'
 import logo from '../assets/images/nuevo logo (1).png'
 import { navbarLogoStyle } from '../utils/navbarLogo'
 import { ADMIN_EMAIL } from '../config'
+import NavbarLogoFrame from './editor/NavbarLogoFrame'
 import './Navbar.css'
+
+function PublicLogoFrame({ section, children }) {
+  return (
+    <div data-navbar-logo className="navbar-logo shrink-0 mix-blend-screen" style={navbarLogoStyle(section.logoLayout)}>
+      {children}
+    </div>
+  )
+}
 
 function NavbarInner() {
 
@@ -39,7 +48,7 @@ function NavbarInner() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const navRef = useRef(null)
 
-  const { content, device } = useLandingContent()
+  const { content } = useLandingContent()
   const { t } = useI18n()
 
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection('navbar')
@@ -105,9 +114,11 @@ function NavbarInner() {
   // size; uploaded bitmaps keep the old invert/crop treatment.
   const isVectorLogo = /\.svg(\?|$)/i.test(section.logoImage || '')
 
+  const LogoFrame = isEditMode ? NavbarLogoFrame : PublicLogoFrame
+
   const brandBlock = (
     <div className="flex items-center gap-2 sm:gap-3">
-      <div data-navbar-logo className="navbar-logo shrink-0 mix-blend-screen" style={navbarLogoStyle(section.logoLayout, isEditMode ? device : undefined)}>
+      <LogoFrame section={section}>
       <EditableImage
         path="sections.navbar.logoImage"
         defaultSrc={logo}
@@ -116,7 +127,7 @@ function NavbarInner() {
         imageClassName={isVectorLogo ? 'h-full w-full object-contain' : 'h-full w-full object-cover object-[45%_50%] scale-[1.6] invert mix-blend-screen'}
         label="Navbar Logo"
       />
-      </div>
+      </LogoFrame>
       {section.showBrandText !== false && (
         <EditableText
           as="span"
