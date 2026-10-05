@@ -118,7 +118,7 @@ export const defaultContent = {
         login: ml('Login', 'Iniciar sesión', 'Iniciar sessió'),
         register: ml('Register', 'Registrarse', 'Registrar-se')
       },
-      logoImage: '/site-images/logo.png',
+      logoImage: '/site-images/logo.svg',
       showBrandText: true,
       background: sectionBackground()
     },
@@ -172,7 +172,7 @@ export const defaultContent = {
       // tilt in the admin's own Google Maps share link for this specific
       // 360° photo (not a generic geocoded guess) — see PropertiesPanel for
       // how to replace it if it doesn't show the right photo.
-      embed360Url: 'https://www.google.com/maps?layer=c&cbll=41.404704,2.2027016&cbp=12,255.85,0,0,-38.06&output=svembed',
+      embed360Url: 'https://www.google.com/maps?layer=c&cbll=41.404704,2.2027016&cbp=12,179.86,0,0,-8.81&output=svembed',
       embed360Layout: make360Layout(),
       // Migrated from the old standalone /about-us page (now removed) —
       // same structure ImageCarousel already expects: [{ image, caption }].

@@ -12,6 +12,7 @@ export default function NavbarLogoFields() {
     <NumberField label="Altura da logo" value={layout.height} onChange={value => set('height', value)} />
     <NumberField label="Posição horizontal da logo (X)" value={layout.x} onChange={value => set('x', value)} />
     <NumberField label="Posição vertical da logo (Y)" value={layout.y} onChange={value => set('y', value)} />
+    <p className="mb-2 text-xs text-gray-400">Com a logo selecionada, arraste-a no menu para mover e use as bolinhas dos cantos para redimensionar (mantém a proporção).</p>
     <p className="mb-4 text-xs text-gray-500">X move para a direita; Y move para baixo. Use valores negativos para mover no sentido contrário. Os ajustes são separados por dispositivo.</p>
     <SmallButton onClick={() => updateField(`sections.navbar.logoLayout.${device}`, {})}>Repor tamanho e posição</SmallButton>
   </div>

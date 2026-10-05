@@ -10,6 +10,7 @@ import { SECTION_LABELS, SECTION_TYPE_INFO, makeDefaultServiceItem, makeDefaultP
 import ConfirmDialog from './ConfirmDialog'
 import FooterElementPanel from './FooterElementPanel'
 import NavbarLogoFields from './NavbarLogoFields'
+import HeroTitleFields from './HeroTitleFields'
 import TypographyControls from './TypographyControls'
 import { FONT_OPTIONS as FONT_FAMILIES, fontLabel, loadFont } from '../../utils/fonts'
 import {
@@ -1115,6 +1116,8 @@ function TextPanel({ selection, onClose }) {
         {'marginRight' in styleObj && <NumberField label="Margin Right" value={styleObj.marginRight} onChange={v => updateField(`${selection.styleObj}.marginRight`, v)} />}
         {'padding' in styleObj && <NumberField label="Padding" value={styleObj.padding} onChange={v => updateField(`${selection.styleObj}.padding`, v)} />}
       </>}
+      {selection.path === 'sections.hero.title' && <HeroTitleFields />}
+
       <TypographyControls path={selection.path} />
     </div>
   )

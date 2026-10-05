@@ -1,0 +1,40 @@
+/* Hero title position/width. Mirrors Navbar.css: mobile first, tablet from
+   640px, desktop from 1024px. The unsuffixed --title-* variables win when set
+   (the editor sets them to preview a specific device). */
+.hero-title-frame {
+  position: relative;
+  display: block;
+  width: var(--title-width, var(--title-width-mobile, fit-content));
+  max-width: 100%;
+  margin-inline: auto;
+  left: var(--title-x, var(--title-x-mobile, 0px));
+  top: var(--title-y, var(--title-y-mobile, 0px));
+}
+@media (min-width: 640px) {
+  .hero-title-frame {
+    width: var(--title-width, var(--title-width-tablet, fit-content));
+    left: var(--title-x, var(--title-x-tablet, 0px));
+    top: var(--title-y, var(--title-y-tablet, 0px));
+  }
+}
+@media (min-width: 1024px) {
+  .hero-title-frame {
+    width: var(--title-width, var(--title-width-desktop, fit-content));
+    left: var(--title-x, var(--title-x-desktop, 0px));
+    top: var(--title-y, var(--title-y-desktop, 0px));
+  }
+}
+
+/* Editor only */
+.hero-title-frame.is-selected { cursor: move; touch-action: none; }
+.hero-title-handle {
+  position: absolute; top: 50%; z-index: 35; width: 14px; height: 34px; margin-top: -17px; padding: 0;
+  border: 2px solid white; border-radius: 8px; background: #10b981; cursor: ew-resize; touch-action: none;
+}
+.hero-title-handle-w { left: -17px; }
+.hero-title-handle-e { right: -17px; }
+.hero-title-hint {
+  position: absolute; left: 50%; top: -34px; transform: translateX(-50%); z-index: 35; white-space: nowrap;
+  padding: 3px 10px; border-radius: 999px; background: #10b981; color: #04120c;
+  font: 600 11px/1.4 system-ui, sans-serif; letter-spacing: .04em; pointer-events: none;
+}

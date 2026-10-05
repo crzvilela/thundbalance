@@ -5,15 +5,24 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { EditableText, EditableImage, useSectionSelection, SectionEditOverlay } from './editor/Editable'
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
-import { useLandingContent } from '../content/LandingContentContext'
+import { useLandingContent, LandingContentProvider } from '../content/LandingContentContext'
 import { useI18n } from '../i18n/I18nContext'
 import LanguageSwitcher from './LanguageSwitcher'
 import logo from '../assets/images/nuevo logo (1).png'
 import { navbarLogoStyle } from '../utils/navbarLogo'
 import { ADMIN_EMAIL } from '../config'
+import NavbarLogoFrame from './editor/NavbarLogoFrame'
 import './Navbar.css'
 
-function Navbar() {
+function PublicLogoFrame({ section, children }) {
+  return (
+    <div data-navbar-logo className="navbar-logo shrink-0 mix-blend-screen" style={navbarLogoStyle(section.logoLayout)}>
+      {children}
+    </div>
+  )
+}
+
+function NavbarInner() {
 
   const navigate = useNavigate()
 
@@ -39,7 +48,7 @@ function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const navRef = useRef(null)
 
-  const { content, device } = useLandingContent()
+  const { content } = useLandingContent()
   const { t } = useI18n()
 
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection('navbar')
@@ -101,18 +110,24 @@ function Navbar() {
 
   if (!visible && !isEditMode) return null
 
+  // The bundled SVG logo is already white and keeps its proportions at any
+  // size; uploaded bitmaps keep the old invert/crop treatment.
+  const isVectorLogo = /\.svg(\?|$)/i.test(section.logoImage || '')
+
+  const LogoFrame = isEditMode ? NavbarLogoFrame : PublicLogoFrame
+
   const brandBlock = (
     <div className="flex items-center gap-2 sm:gap-3">
-      <div data-navbar-logo className="navbar-logo shrink-0 mix-blend-screen" style={navbarLogoStyle(section.logoLayout, isEditMode ? device : undefined)}>
+      <LogoFrame section={section}>
       <EditableImage
         path="sections.navbar.logoImage"
         defaultSrc={logo}
         alt="ThundBalance"
         containerClassName="h-full w-full overflow-hidden"
-        imageClassName="h-full w-full object-cover object-[45%_50%] scale-[1.6] invert mix-blend-screen"
+        imageClassName={isVectorLogo ? 'h-full w-full object-contain' : 'h-full w-full object-cover object-[45%_50%] scale-[1.6] invert mix-blend-screen'}
         label="Navbar Logo"
       />
-      </div>
+      </LogoFrame>
       {section.showBrandText !== false && (
         <EditableText
           as="span"
@@ -378,6 +393,19 @@ function Navbar() {
       )}
 
     </nav>
+  )
+}
+
+// The navbar is shared by every page and its settings are saved once for the
+// whole site. Pages that don't wrap themselves in a content provider (login,
+// dashboard, profile...) get one here so they show the same published navbar.
+function Navbar() {
+  const { hasProvider } = useLandingContent()
+  if (hasProvider) return <NavbarInner />
+  return (
+    <LandingContentProvider mode="view" version="published">
+      <NavbarInner />
+    </LandingContentProvider>
   )
 }
 
