@@ -165,7 +165,7 @@ DEFAULT_LANDING_CONTENT = {
                 "login": _ml("Login", "Iniciar sesión", "Iniciar sessió"),
                 "register": _ml("Register", "Registrarse", "Registrar-se")
             },
-            "logoImage": "/site-images/logo.png",
+            "logoImage": "/site-images/logo.svg",
             "showBrandText": True,
             "background": _section_background()
         },

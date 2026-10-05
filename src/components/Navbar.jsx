@@ -101,6 +101,10 @@ function NavbarInner() {
 
   if (!visible && !isEditMode) return null
 
+  // The bundled SVG logo is already white and keeps its proportions at any
+  // size; uploaded bitmaps keep the old invert/crop treatment.
+  const isVectorLogo = /\.svg(\?|$)/i.test(section.logoImage || '')
+
   const brandBlock = (
     <div className="flex items-center gap-2 sm:gap-3">
       <div data-navbar-logo className="navbar-logo shrink-0 mix-blend-screen" style={navbarLogoStyle(section.logoLayout, isEditMode ? device : undefined)}>
@@ -109,7 +113,7 @@ function NavbarInner() {
         defaultSrc={logo}
         alt="ThundBalance"
         containerClassName="h-full w-full overflow-hidden"
-        imageClassName="h-full w-full object-cover object-[45%_50%] scale-[1.6] invert mix-blend-screen"
+        imageClassName={isVectorLogo ? 'h-full w-full object-contain' : 'h-full w-full object-cover object-[45%_50%] scale-[1.6] invert mix-blend-screen'}
         label="Navbar Logo"
       />
       </div>

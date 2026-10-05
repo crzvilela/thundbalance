@@ -118,7 +118,7 @@ export const defaultContent = {
         login: ml('Login', 'Iniciar sesión', 'Iniciar sessió'),
         register: ml('Register', 'Registrarse', 'Registrar-se')
       },
-      logoImage: '/site-images/logo.png',
+      logoImage: '/site-images/logo.svg',
       showBrandText: true,
       background: sectionBackground()
     },

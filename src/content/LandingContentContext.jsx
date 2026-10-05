@@ -93,6 +93,9 @@ function normalizeLoadedContent(rawContent) {
   const migrated = migrateFooterEmbeds(migrateHeroImage(migrateBackgroundTypes(migrateSectionsToInstances(migrateBundledImages(rawContent)))))
   const merged = deepMerge(defaultContent, migrated)
   Object.assign(merged, migrateLegacyTypography(merged))
+  // The bundled logo is now a white vector (logo.svg) instead of the black
+  // bitmap that had to be inverted and cropped; move the old default over.
+  if (merged.sections?.navbar?.logoImage === '/site-images/logo.png') merged.sections.navbar.logoImage = '/site-images/logo.svg'
   return pruneOrphanedSections(withArrayItemDefaults(withLegacyMigrations(merged)))
 }
 
