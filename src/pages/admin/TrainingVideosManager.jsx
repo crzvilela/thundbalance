@@ -244,7 +244,7 @@ function TrainingVideosManager() {
                 >
 
                   <div className="w-24 shrink-0">
-                    <TrainingVideoPlayer source={video.video_source} url={video.video_url} />
+                    <TrainingVideoPlayer source={video.video_source} url={video.video_url} compact />
                   </div>
 
                   <div className="flex-1 min-w-0 w-full">

@@ -128,7 +128,7 @@ export default function Videos() {
             <li key={video.id}>
               <Card className="flex flex-col gap-4 p-4 transition hover:border-white/20 sm:flex-row sm:items-center">
                 <div className="w-full shrink-0 overflow-hidden rounded-xl sm:w-40">
-                  <TrainingVideoPlayer source={video.video_source} url={video.video_url} />
+                  <TrainingVideoPlayer source={video.video_source} url={video.video_url} compact />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold">{resolveText(video.title, language)}</p>
