@@ -21,6 +21,7 @@ from availability import (
     WEEKDAYS, create_trainer, hhmm, save_hours, slot_problem,
     trainer_usage, validate_hours,
 )
+import mailer
 from google_calendar import create_trial_session_event, delete_calendar_event, list_calendar_events
 
 
@@ -430,6 +431,7 @@ def register_admin_routes(app, require_admin):
                 except Exception:
                     traceback.print_exc()
                 raise
+            mailer.send_trial_approved(trial[1], trial[0], str(trial[5]), str(trial[6])[:5], trainer[0])
             return {"message": "Trial session approved"}
         except HTTPException:
             conn.rollback()
@@ -453,13 +455,15 @@ def register_admin_routes(app, require_admin):
             cursor.execute(
                 """
                 UPDATE trial_sessions SET status = 'Rejected', rejection_reason = %s
-                WHERE id = %s AND LOWER(status) = 'pending' RETURNING id
+                WHERE id = %s AND LOWER(status) = 'pending' RETURNING id, email, full_name
                 """,
                 ((data.reason or "").strip() or None, trial_id),
             )
-            if not cursor.fetchone():
+            rejected = cursor.fetchone()
+            if not rejected:
                 raise HTTPException(status_code=404, detail="Pending trial request not found")
             conn.commit()
+            mailer.send_trial_rejected(rejected[1], rejected[2], (data.reason or "").strip())
             return {"message": "Trial session declined"}
         except HTTPException:
             conn.rollback()
@@ -474,7 +478,7 @@ def register_admin_routes(app, require_admin):
         cursor = conn.cursor()
         try:
             cursor.execute(
-                "SELECT google_event_id, status FROM trial_sessions WHERE id = %s", (trial_id,)
+                "SELECT google_event_id, status, email, full_name, session_date, session_time FROM trial_sessions WHERE id = %s", (trial_id,)
             )
             row = cursor.fetchone()
             if not row:
@@ -490,6 +494,7 @@ def register_admin_routes(app, require_admin):
                 "UPDATE trial_sessions SET status = 'Cancelled' WHERE id = %s", (trial_id,)
             )
             conn.commit()
+            mailer.send_trial_cancelled(row[2], row[3], str(row[4]), str(row[5])[:5])
             return {"message": "Trial session cancelled"}
         except HTTPException:
             conn.rollback()
