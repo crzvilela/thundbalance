@@ -58,6 +58,23 @@ def _iso(value):
     return value.isoformat() if value is not None else None
 
 
+EXPIRING_DAYS = 7
+
+
+def _pack_status(plan_id, end_date, today=None):
+    """none | active | expiring (ends within a week) | expired."""
+    if plan_id is None:
+        return "none"
+    if end_date is None:
+        return "active"
+    today = today or datetime.now().date()
+    if end_date < today:
+        return "expired"
+    if (end_date - today).days <= EXPIRING_DAYS:
+        return "expiring"
+    return "active"
+
+
 def register_admin_routes(app, require_admin):
     admin = [Depends(require_admin)]
 
@@ -73,13 +90,14 @@ def register_admin_routes(app, require_admin):
                     pl.id, pl.nome,
                     COALESCE(s.total, 0), COALESCE(s.done, 0),
                     COALESCE(s.upcoming, 0), s.next_date,
+                    COALESCE(pl.end_date, s.last_date),
                     EXISTS (
                         SELECT 1 FROM client_requests cr
                         WHERE cr.user_id = u.id AND LOWER(cr.status) = 'pending'
                     )
                 FROM users u
                 LEFT JOIN LATERAL (
-                    SELECT p.id, p.nome
+                    SELECT p.id, p.nome, up.end_date
                     FROM user_plans up JOIN plans p ON p.id = up.plan_id
                     WHERE up.user_id = u.id AND up.active
                     ORDER BY up.id DESC LIMIT 1
@@ -89,7 +107,8 @@ def register_admin_routes(app, require_admin):
                         COUNT(*) FILTER (WHERE status <> 'Cancelled') AS total,
                         COUNT(*) FILTER (WHERE status <> 'Cancelled' AND session_date < CURRENT_DATE) AS done,
                         COUNT(*) FILTER (WHERE status <> 'Cancelled' AND session_date >= CURRENT_DATE) AS upcoming,
-                        MIN(session_date) FILTER (WHERE status <> 'Cancelled' AND session_date >= CURRENT_DATE) AS next_date
+                        MIN(session_date) FILTER (WHERE status <> 'Cancelled' AND session_date >= CURRENT_DATE) AS next_date,
+                        MAX(session_date) FILTER (WHERE status <> 'Cancelled') AS last_date
                     FROM sessions WHERE user_id = u.id
                 ) s ON TRUE
                 ORDER BY LOWER(u.nome)
@@ -101,7 +120,9 @@ def register_admin_routes(app, require_admin):
                     "city": r[4], "photo": r[5],
                     "plan_id": r[6], "plan": r[7],
                     "total": r[8], "completed": r[9], "upcoming": r[10],
-                    "next_session": _iso(r[11]), "has_pending_request": r[12],
+                    "next_session": _iso(r[11]), "pack_end": _iso(r[12]),
+                    "pack_status": _pack_status(r[6], r[12]),
+                    "has_pending_request": r[13],
                 }
                 for r in cursor.fetchall()
             ]
@@ -127,8 +148,11 @@ def register_admin_routes(app, require_admin):
 
             cursor.execute(
                 """
-                SELECT p.id, p.nome FROM user_plans up
+                SELECT p.id, p.nome, up.start_date, up.end_date, up.sessions_per_week,
+                       up.preferred_days, up.preferred_time, up.trainer_id, t.nome
+                FROM user_plans up
                 JOIN plans p ON p.id = up.plan_id
+                LEFT JOIN trainers t ON t.id = up.trainer_id
                 WHERE up.user_id = %s AND up.active
                 ORDER BY up.id DESC LIMIT 1
                 """,
@@ -155,11 +179,38 @@ def register_admin_routes(app, require_admin):
                 for r in cursor.fetchall()
             ]
 
+            pack = None
+            if plan:
+                # Packs saved before periods were tracked fall back to the span
+                # of the client's sessions.
+                booked = [s["date"] for s in sessions if s["status"] != "Cancelled"]
+                start = plan[2] or (datetime.strptime(min(booked), "%Y-%m-%d").date() if booked else None)
+                end = plan[3] or (datetime.strptime(max(booked), "%Y-%m-%d").date() if booked else None)
+                in_period = [
+                    s for s in sessions
+                    if s["status"] != "Cancelled"
+                    and (not start or s["date"] >= start.isoformat())
+                    and (not end or s["date"] <= end.isoformat())
+                ]
+                today_iso = datetime.now().date().isoformat()
+                pack = {
+                    "plan_id": plan[0], "name": plan[1],
+                    "start_date": _iso(start), "end_date": _iso(end),
+                    "sessions_per_week": plan[4],
+                    "preferred_days": plan[5], "preferred_time": plan[6],
+                    "trainer_id": plan[7], "trainer": plan[8],
+                    "status": _pack_status(plan[0], end),
+                    "total": len(in_period),
+                    "done": sum(1 for s in in_period if s["date"] < today_iso),
+                    "remaining": sum(1 for s in in_period if s["date"] >= today_iso),
+                }
+
             return {
                 "id": user[0], "name": user[1], "email": user[2], "phone": user[3],
                 "country_code": user[4], "city": user[5], "address": user[6],
                 "postal_code": user[7], "photo": user[8],
                 "plan": {"id": plan[0], "name": plan[1]} if plan else None,
+                "pack": pack,
                 "sessions": sessions,
             }
         finally:

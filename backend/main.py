@@ -241,6 +241,13 @@ def ensure_client_workflow_fields():
         cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS sessions_per_week INTEGER")
         cursor.execute("ALTER TABLE client_requests ALTER COLUMN status SET DEFAULT 'Pending'")
         cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE")
+        # Pack period and schedule, recorded when a pack is approved or renewed.
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS start_date DATE")
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS end_date DATE")
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS sessions_per_week INTEGER")
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS preferred_days TEXT")
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS preferred_time TEXT")
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS trainer_id INTEGER REFERENCES trainers(id)")
         # Approvals store session numbers as text such as "1/12".
         cursor.execute("""
             SELECT data_type FROM information_schema.columns
@@ -334,6 +341,15 @@ class ApproveRequest(BaseModel):
     start_date: str
     plan_id: int | None = None
     sessions_per_week: int | None = None
+
+
+class RenewPack(BaseModel):
+    plan_id: int
+    sessions_per_week: int
+    preferred_days: str
+    preferred_time: str
+    trainer_id: int
+    start_date: str
 
 
 class RejectRequest(BaseModel):
@@ -1300,6 +1316,11 @@ def assign_plan(data: UserPlanCreate):
             "message": "Plan assigned successfully"
         }
 
+    except HTTPException:
+
+        conn.rollback()
+        raise
+
     except Exception as e:
 
         conn.rollback()
@@ -1550,29 +1571,28 @@ def admin_assign_plan(
 
     try:
 
+        cursor.execute("SELECT 1 FROM plans WHERE id = %s", (data.plan_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Plan not found")
+
+        # Changing the pack type keeps the current period and schedule; a client
+        # without an active pack simply gets one.
         cursor.execute(
             """
-            DELETE FROM user_plans
-            WHERE user_id = %s
-            """,
-            (data.user_id,)
-        )
-
-        cursor.execute(
-            """
-            INSERT INTO user_plans
-            (
-                user_id,
-                plan_id
+            UPDATE user_plans SET plan_id = %s
+            WHERE id = (
+                SELECT id FROM user_plans
+                WHERE user_id = %s AND active
+                ORDER BY id DESC LIMIT 1
             )
-
-            VALUES (%s, %s)
             """,
-            (
-                data.user_id,
-                data.plan_id
-            )
+            (data.plan_id, data.user_id)
         )
+        if cursor.rowcount == 0:
+            cursor.execute(
+                "INSERT INTO user_plans (user_id, plan_id) VALUES (%s, %s)",
+                (data.user_id, data.plan_id)
+            )
 
         conn.commit()
 
@@ -1881,7 +1901,15 @@ def approve_request(
             )
 
         cursor.execute("DELETE FROM user_plans WHERE user_id = %s", (user_id,))
-        cursor.execute("INSERT INTO user_plans (user_id, plan_id) VALUES (%s, %s)", (user_id, plan_id))
+        cursor.execute(
+            """
+            INSERT INTO user_plans
+            (user_id, plan_id, start_date, end_date, sessions_per_week, preferred_days, preferred_time, trainer_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (user_id, plan_id, session_dates[0], session_dates[-1], sessions_per_week,
+             preferred_days, preferred_time, data.trainer_id)
+        )
 
         # Rows go into the database first and the Google Calendar events are
         # created afterwards, so a database error can no longer leave events
@@ -2009,6 +2037,148 @@ def approve_request(
 
     finally:
 
+        cursor.close()
+        conn.close()
+
+
+@app.post("/admin/clients/{client_id}/renew-pack", dependencies=[Depends(require_admin)])
+def admin_renew_pack(client_id: int, data: RenewPack):
+    """Starts a new pack for a client: records the new period and creates its
+    sessions (database rows first, then Google Calendar events, rolled back
+    together on failure), exactly like approving a request."""
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    created_event_ids = []
+
+    try:
+        cursor.execute("SELECT nome, email FROM users WHERE id = %s", (client_id,))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="Client not found")
+        client_name, client_email = user
+
+        cursor.execute("SELECT nome FROM trainers WHERE id = %s", (data.trainer_id,))
+        trainer = cursor.fetchone()
+        if not trainer:
+            raise HTTPException(status_code=404, detail="Trainer not found")
+        trainer_name = trainer[0]
+
+        if not 1 <= data.sessions_per_week <= 7:
+            raise HTTPException(status_code=400, detail="Sessions per week must be between 1 and 7")
+
+        days = [day.strip() for day in data.preferred_days.split(",") if day.strip()]
+        if not days or any(day not in DAY_MAP for day in days):
+            raise HTTPException(status_code=422, detail="Please choose valid training days.")
+
+        try:
+            start = datetime.strptime(data.start_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Please choose a valid start date.")
+        if start < datetime.now().date():
+            raise HTTPException(status_code=422, detail="The start date cannot be in the past.")
+
+        # A renewal starts after the current pack ends, never inside it.
+        cursor.execute(
+            """
+            SELECT COALESCE(up.end_date, (
+                SELECT MAX(session_date) FROM sessions
+                WHERE user_id = up.user_id AND status <> 'Cancelled'
+            ))
+            FROM user_plans up
+            WHERE up.user_id = %s AND up.active
+            ORDER BY up.id DESC LIMIT 1
+            """,
+            (client_id,)
+        )
+        current = cursor.fetchone()
+        current_end = current[0] if current else None
+        if current_end and start <= current_end:
+            raise HTTPException(
+                status_code=409,
+                detail=f"The current pack runs until {current_end.isoformat()}. Choose a start date after it."
+            )
+
+        cursor.execute("SELECT duration_weeks FROM plans WHERE id = %s", (data.plan_id,))
+        plan = cursor.fetchone()
+        if not plan or not plan[0]:
+            raise HTTPException(status_code=404, detail="Plan not found")
+
+        total_sessions = plan[0] * data.sessions_per_week
+        session_dates = generate_session_dates(data.start_date, ",".join(days), total_sessions)
+
+        problems = []
+        for session_date in session_dates:
+            problem = slot_problem(cursor, data.trainer_id, session_date, data.preferred_time)
+            if problem:
+                problems.append(f"{session_date}: {problem}")
+        if problems:
+            shown = "; ".join(problems[:3])
+            extra = f" (+{len(problems) - 3} more)" if len(problems) > 3 else ""
+            raise HTTPException(
+                status_code=409,
+                detail=f"{trainer_name} cannot take this schedule. {shown}{extra}",
+            )
+
+        cursor.execute("UPDATE user_plans SET active = FALSE WHERE user_id = %s", (client_id,))
+        cursor.execute(
+            """
+            INSERT INTO user_plans
+            (user_id, plan_id, active, start_date, end_date, sessions_per_week,
+             preferred_days, preferred_time, trainer_id)
+            VALUES (%s, %s, TRUE, %s, %s, %s, %s, %s, %s)
+            """,
+            (client_id, data.plan_id, session_dates[0], session_dates[-1],
+             data.sessions_per_week, ",".join(days), data.preferred_time, data.trainer_id)
+        )
+
+        pending = []
+        for index, session_date in enumerate(session_dates, start=1):
+            session_number = f"{index}/{total_sessions}"
+            cursor.execute(
+                """
+                INSERT INTO sessions
+                (user_id, trainer_id, session_date, session_time, session_number, status)
+                VALUES (%s, %s, %s, %s, %s, 'Booked')
+                RETURNING id
+                """,
+                (client_id, data.trainer_id, session_date, data.preferred_time, session_number)
+            )
+            pending.append((cursor.fetchone()[0], session_date, session_number))
+
+        for session_id, session_date, session_number in pending:
+            event_id = create_calendar_event(
+                trainer_name, client_name, client_email,
+                session_date, data.preferred_time, session_number
+            )
+            created_event_ids.append(event_id)
+            cursor.execute("UPDATE sessions SET google_event_id = %s WHERE id = %s", (event_id, session_id))
+
+        conn.commit()
+        return {
+            "message": "Pack renewed successfully",
+            "total_sessions": total_sessions,
+            "start_date": session_dates[0],
+            "end_date": session_dates[-1],
+        }
+
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as error:
+        conn.rollback()
+        for event_id in created_event_ids:
+            try:
+                delete_calendar_event(event_id)
+            except Exception:
+                traceback.print_exc()
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not renew the pack: {type(error).__name__}: {str(error)[:300]}"
+        ) from error
+
+    finally:
         cursor.close()
         conn.close()
 
