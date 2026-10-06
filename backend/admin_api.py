@@ -12,6 +12,11 @@ from pydantic import BaseModel, Field
 from database import get_connection
 from datetime import datetime, timedelta
 
+
+def age_from_birth_date(birth_date, today=None):
+    today = today or datetime.now().date()
+    return today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+
 from availability import (
     WEEKDAYS, create_trainer, hhmm, save_hours, slot_problem,
     trainer_usage, validate_hours,
@@ -297,7 +302,8 @@ def register_admin_routes(app, require_admin):
                 """
                 SELECT ts.id, ts.full_name, ts.email, ts.phone, ts.age, ts.goal,
                        ts.experience, ts.session_date, ts.session_time, ts.status,
-                       ts.trainer_id, t.nome, ts.rejection_reason, ts.created_at
+                       ts.trainer_id, t.nome, ts.rejection_reason, ts.created_at,
+                       ts.birth_date
                 FROM trial_sessions ts
                 LEFT JOIN trainers t ON t.id = ts.trainer_id
                 ORDER BY ts.id DESC
@@ -305,7 +311,10 @@ def register_admin_routes(app, require_admin):
             )
             return [
                 {
-                    "id": r[0], "name": r[1], "email": r[2], "phone": r[3], "age": r[4],
+                    "id": r[0], "name": r[1], "email": r[2], "phone": r[3],
+                    # Age follows the birth date so it stays current after the request.
+                    "age": age_from_birth_date(r[14]) if r[14] else r[4],
+                    "birth_date": _iso(r[14]) if r[14] else None,
                     "goal": r[5], "experience": r[6], "date": _iso(r[7]),
                     "time": str(r[8])[:5] if r[8] else "", "status": str(r[9] or "Pending"),
                     "trainer_id": r[10], "trainer": r[11], "reason": r[12],

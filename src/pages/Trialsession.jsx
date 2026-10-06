@@ -5,12 +5,22 @@ import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { API_URL } from '../config'
 
-const GOALS = ['Weight Loss', 'Muscle Gain', 'Performance', 'General Fitness']
+const GOALS = [
+  'Body recomposition', 'Lose weight', 'Build muscle', 'Increase strength', 'Rehabilitation/injury recovery',
+  'Conditioning', 'Endurance', 'Tone/define', 'Improve mobility & flexibility', 'Increase energy'
+]
 const LEVELS = ['Beginner', 'Intermediate', 'Advanced']
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const dayKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
-const EMPTY = { fullName: '', email: '', phone: '', age: '', goal: '', experience: '', date: null, time: '' }
+function ageFrom(birthDate, today = new Date()) {
+  if (!birthDate) return null
+  let age = today.getFullYear() - birthDate.getFullYear()
+  if (today.getMonth() < birthDate.getMonth() || (today.getMonth() === birthDate.getMonth() && today.getDate() < birthDate.getDate())) age -= 1
+  return age
+}
+
+const EMPTY = { fullName: '', email: '', phone: '', birthDate: null, goals: [], experience: '', date: null, time: '' }
 
 const control = 'w-full rounded-xl border bg-black/40 px-4 py-3.5 text-white outline-none transition focus:ring-2 focus:ring-emerald-400/20'
 
@@ -19,8 +29,9 @@ function validate(form) {
   if (form.fullName.trim().length < 2) errors.fullName = 'Please enter your full name.'
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) errors.email = 'Please enter a valid email address.'
   if (form.phone.replace(/\D/g, '').length < 6) errors.phone = 'Please enter a valid phone number.'
-  if (form.age !== '' && (Number(form.age) < 10 || Number(form.age) > 100)) errors.age = 'Please enter a valid age.'
-  if (!form.goal) errors.goal = 'Please select your goal.'
+  const age = ageFrom(form.birthDate)
+  if (form.birthDate && (age < 10 || age > 100)) errors.birthDate = 'Please enter a valid date of birth.'
+  if (form.goals.length === 0) errors.goals = 'Please select at least one goal.'
   if (!form.experience) errors.experience = 'Please select your experience.'
   if (!form.date) errors.date = 'Please choose a date.'
   else if (!form.time) errors.time = 'There is no free time on that day. Please choose another date.'
@@ -103,8 +114,8 @@ function TrialSession() {
           full_name: form.fullName.trim(),
           email: form.email.trim(),
           phone: form.phone.trim(),
-          age: form.age === '' ? null : Number(form.age),
-          goal: form.goal,
+          birth_date: form.birthDate ? dayKey(form.birthDate) : null,
+          goals: form.goals,
           experience: form.experience,
           session_date: sessionDate,
           session_time: form.time
@@ -158,14 +169,22 @@ function TrialSession() {
               <Field label="Phone number" error={errors.phone}>
                 <input type="tel" autoComplete="tel" value={form.phone} onChange={set('phone')} className={`${control} ${border('phone')}`} />
               </Field>
-              <Field label="Age" error={errors.age} optional>
-                <input type="number" min="10" max="100" value={form.age} onChange={set('age')} className={`${control} ${border('age')}`} />
-              </Field>
-              <Field label="Training goal" error={errors.goal}>
-                <select value={form.goal} onChange={set('goal')} className={`${control} ${border('goal')}`}>
-                  <option value="">Select goal</option>
-                  {GOALS.map(goal => <option key={goal}>{goal}</option>)}
-                </select>
+              <Field label="Date of birth" error={errors.birthDate} optional>
+                <DatePicker
+                  selected={form.birthDate}
+                  onChange={date => setForm(current => ({ ...current, birthDate: date }))}
+                  maxDate={new Date()}
+                  showYearDropdown
+                  showMonthDropdown
+                  dropdownMode="select"
+                  yearDropdownItemNumber={90}
+                  scrollableYearDropdown
+                  dateFormat="dd/MM/yyyy"
+                  placeholderText="dd/mm/yyyy"
+                  wrapperClassName="w-full"
+                  className={`${control} ${border('birthDate')}`}
+                />
+                {form.birthDate && <span className="mt-1.5 block text-sm text-gray-400">Age: {ageFrom(form.birthDate)}</span>}
               </Field>
               <Field label="Training experience" error={errors.experience}>
                 <select value={form.experience} onChange={set('experience')} className={`${control} ${border('experience')}`}>
@@ -173,6 +192,31 @@ function TrialSession() {
                   {LEVELS.map(level => <option key={level}>{level}</option>)}
                 </select>
               </Field>
+              <fieldset className="md:col-span-2">
+                <legend className="mb-2 block text-xs font-medium uppercase tracking-wider text-gray-400">
+                  Training goal<span className="ml-1 normal-case tracking-normal text-gray-600">(select one or more)</span>
+                </legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {GOALS.map(goal => {
+                    const checked = form.goals.includes(goal)
+                    return (
+                      <label key={goal} className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm transition ${checked ? 'border-emerald-400/60 bg-emerald-400/10 text-white' : 'border-white/10 bg-black/40 text-gray-300 hover:border-white/25'}`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => setForm(current => ({
+                            ...current,
+                            goals: current.goals.includes(goal) ? current.goals.filter(item => item !== goal) : [...current.goals, goal]
+                          }))}
+                          className="h-4 w-4 accent-emerald-400"
+                        />
+                        {goal}
+                      </label>
+                    )
+                  })}
+                </div>
+                {errors.goals && <span role="alert" className="mt-1.5 block text-sm text-red-300">{errors.goals}</span>}
+              </fieldset>
               <Field label="Preferred date" error={errors.date}>
                 <DatePicker
                   selected={form.date}

@@ -220,6 +220,9 @@ def ensure_trial_session_fields():
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS google_event_id TEXT")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS rejection_reason TEXT")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW()")
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS birth_date DATE")
+        # Several training goals can now be chosen, stored as a comma-separated list.
+        cursor.execute("ALTER TABLE trial_sessions ALTER COLUMN goal TYPE TEXT")
         conn.commit()
     finally:
         cursor.close()
@@ -303,7 +306,9 @@ class TrialSessionCreate(BaseModel):
     email: str
     phone: str
     age: int | None = None
-    goal: str
+    birth_date: str | None = None
+    goal: str = ""
+    goals: list[str] | None = None
     experience: str
     session_date: str
     session_time: str
@@ -1377,6 +1382,18 @@ def get_schedule_for_date(session_date: str):
         conn.close()
 
 
+TRIAL_GOALS = [
+    "Body recomposition", "Lose weight", "Build muscle", "Increase strength",
+    "Rehabilitation/injury recovery", "Conditioning", "Endurance", "Tone/define",
+    "Improve mobility & flexibility", "Increase energy",
+]
+
+
+def age_from_birth_date(birth_date, today=None):
+    today = today or datetime.now().date()
+    return today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+
+
 TRIAL_TIMES = {f"{hour:02d}:00" for hour in range(7, 21)}
 
 
@@ -1397,8 +1414,22 @@ def create_trial_session(
         raise HTTPException(status_code=422, detail="Please enter a valid email address.")
     if len(re.sub(r"\D", "", phone)) < 6 or len(phone) > 30:
         raise HTTPException(status_code=422, detail="Please enter a valid phone number.")
-    if trial.age is not None and not 10 <= trial.age <= 100:
-        raise HTTPException(status_code=422, detail="Please enter a valid age.")
+    age = trial.age
+    birth_date = None
+    if trial.birth_date:
+        try:
+            birth_date = datetime.strptime(trial.birth_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Please enter a valid date of birth.")
+        age = age_from_birth_date(birth_date)
+    if age is not None and not 10 <= age <= 100:
+        raise HTTPException(status_code=422, detail="Please enter a valid date of birth.")
+
+    chosen = trial.goals if trial.goals is not None else [g.strip() for g in trial.goal.split(",") if g.strip()]
+    goals = [g for g in TRIAL_GOALS if g in chosen]
+    if not goals:
+        raise HTTPException(status_code=422, detail="Please select at least one training goal.")
+    goal_text = ", ".join(goals)
     if trial.session_time not in TRIAL_TIMES:
         raise HTTPException(status_code=422, detail="Please choose a time between 07:00 and 20:00.")
 
@@ -1444,6 +1475,7 @@ def create_trial_session(
                 email,
                 phone,
                 age,
+                birth_date,
                 goal,
                 experience,
                 session_date,
@@ -1452,7 +1484,7 @@ def create_trial_session(
             )
 
             VALUES
-            (%s,%s,%s,%s,%s,%s,%s,%s,'Pending')
+            (%s,%s,%s,%s,%s,%s,%s,%s,%s,'Pending')
 
             RETURNING id
             """,
@@ -1460,8 +1492,9 @@ def create_trial_session(
                 full_name,
                 email,
                 phone,
-                trial.age,
-                trial.goal.strip()[:60],
+                age,
+                birth_date,
+                goal_text,
                 trial.experience.strip()[:60],
                 session_date,
                 trial.session_time
