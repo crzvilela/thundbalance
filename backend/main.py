@@ -21,6 +21,7 @@ from google_calendar import (
 )
 from landing_page_default import DEFAULT_LANDING_CONTENT
 from admin_api import register_admin_routes
+from trial_notifications import notify_trial_requested
 from availability import (
     WEEKDAYS,
     ensure_trainers_and_availability,
@@ -1503,6 +1504,19 @@ def create_trial_session(
 
         trial_id = cursor.fetchone()[0]
         conn.commit()
+
+        notify_trial_requested({
+            "id": trial_id,
+            "full_name": full_name,
+            "email": email,
+            "phone": phone,
+            "age": age,
+            "birth_date": birth_date.isoformat() if birth_date else None,
+            "goal": goal_text,
+            "experience": trial.experience.strip()[:60],
+            "session_date": session_date.isoformat(),
+            "session_time": trial.session_time,
+        })
 
         return {
             "message": "Trial session requested",
