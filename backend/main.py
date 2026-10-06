@@ -27,6 +27,7 @@ from availability import (
     ensure_trainers_and_availability,
     purge_unused_inactive_trainers,
     free_start_times,
+    free_start_times_any_trainer,
     slot_problem,
     trainers_for_slot,
     weekday_name,
@@ -1296,11 +1297,7 @@ def get_schedule_for_date(session_date: str):
 
     try:
 
-        cursor.execute("SELECT id FROM trainers WHERE active")
-        times = set()
-        for (trainer_id,) in cursor.fetchall():
-            times.update(free_start_times(cursor, trainer_id, day))
-        return sorted(times)
+        return free_start_times_any_trainer(cursor, day)
 
     finally:
 
