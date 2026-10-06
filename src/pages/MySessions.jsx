@@ -4,6 +4,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { auth } from '../firebase/auth'
 import Navbar from '../components/Navbar'
 import { API_URL } from '../config'
+import { authFetch } from '../api/authFetch'
 
 // Sessions come as rows: [id, 'YYYY-MM-DD', 'HH:MM:SS', trainerName, status, rescheduled, number]
 const toSession = (row) => ({
@@ -52,14 +53,14 @@ function MySessions() {
   const load = useCallback(async (email) => {
     try {
       const [userResponse, trainersResponse] = await Promise.all([
-        fetch(`${API_URL}/users/email/${encodeURIComponent(email)}`),
+        authFetch(`${API_URL}/users/email/${encodeURIComponent(email)}`),
         fetch(`${API_URL}/trainers`)
       ])
       if (!userResponse.ok) throw new Error('Could not load your account.')
       const user = await userResponse.json()
       if (!user.id) throw new Error('Your client profile is not available yet.')
 
-      const sessionsResponse = await fetch(`${API_URL}/sessions/user/${user.id}`)
+      const sessionsResponse = await authFetch(`${API_URL}/sessions/user/${user.id}`)
       if (!sessionsResponse.ok) throw new Error('Could not load your sessions.')
       const rows = await sessionsResponse.json()
       setSessions(Array.isArray(rows) ? rows.map(toSession) : [])
@@ -152,7 +153,7 @@ function MySessions() {
   const send = async (method, body, success) => {
     setWorking(true); setModalError('')
     try {
-      const response = await fetch(`${API_URL}/sessions/${open.id}`, {
+      const response = await authFetch(`${API_URL}/sessions/${open.id}`, {
         method,
         ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {})
       })

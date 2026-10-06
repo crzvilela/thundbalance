@@ -1,10 +1,11 @@
+import { useState } from 'react'
 import { resolveImageUrl } from '../api/landingPage'
 import { getEmbedUrl, getInstagramEmbedUrl } from '../utils/videoEmbed'
 
 // Renders one training video, regardless of source — shared by the public
 // "Dicas de Treino" grid and the admin manager's inline previews, so the
 // embed logic only lives in one place.
-function TrainingVideoPlayer({ source, url, className = '' }) {
+function TrainingVideoPlayer({ source, url, className = '', compact = false }) {
   if (!url) return null
 
   if (source === 'instagram') {
@@ -35,13 +36,34 @@ function TrainingVideoPlayer({ source, url, className = '' }) {
     )
   }
 
-  // 'upload'
+  // 'upload': uploaded files can be horizontal (16:9) or vertical (9:16, phone
+  // recordings). The frame takes the file's real proportions, read once its
+  // metadata loads, so vertical clips are not cropped to a landscape box.
+  return <UploadedVideo url={url} className={className} compact={compact} />
+}
+
+function UploadedVideo({ url, className, compact }) {
+  const [ratio, setRatio] = useState(16 / 9)
+  const vertical = ratio < 1
+  const style = { aspectRatio: String(ratio), margin: '0 auto' }
+  if (vertical) {
+    // Keep tall videos from taking over the page: capped width on the public
+    // card, a fixed height in the admin's small thumbnails.
+    if (compact) Object.assign(style, { height: '11rem', width: 'auto' })
+    else Object.assign(style, { maxWidth: '340px', width: '100%' })
+  }
   return (
-    <div className={`w-full aspect-video ${className}`}>
+    <div className={`${vertical && compact ? '' : 'w-full'} ${className}`} style={style}>
       <video
         src={resolveImageUrl(url)}
         controls
-        className="w-full h-full rounded-lg object-cover bg-black"
+        playsInline
+        preload="metadata"
+        onLoadedMetadata={(event) => {
+          const { videoWidth, videoHeight } = event.currentTarget
+          if (videoWidth && videoHeight) setRatio(videoWidth / videoHeight)
+        }}
+        className="w-full h-full rounded-lg object-contain bg-black"
       />
     </div>
   )

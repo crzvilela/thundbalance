@@ -5,6 +5,7 @@ import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { dateKey, parseDateKey } from '../requests'
+import { PackStatusBadge, PackSummary, RenewDrawer, TrainingCalendar } from '../PackPanel'
 import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Icon,
   PageHeader, SelectInput, Skeleton, TextInput
@@ -32,7 +33,7 @@ function ProgressBar({ done, total }) {
   )
 }
 
-function ClientDrawer({ clientId, plans, onClose, onChanged }) {
+function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
   const { t, language } = useAdminText()
   const toast = useToast()
   const detail = useAdminResource(`/admin/clients/${clientId}`)
@@ -40,6 +41,7 @@ function ClientDrawer({ clientId, plans, onClose, onChanged }) {
   const [saving, setSaving] = useState(false)
   const [cancelTarget, setCancelTarget] = useState(null)
   const [cancelling, setCancelling] = useState(false)
+  const [renewing, setRenewing] = useState(false)
 
   const client = detail.data
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
@@ -98,6 +100,8 @@ function ClientDrawer({ clientId, plans, onClose, onChanged }) {
               </div>
             </div>
 
+            <PackSummary pack={client.pack} onRenew={() => setRenewing(true)} />
+
             <section>
               <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">{t('cl_contact')}</h3>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-base">
@@ -131,6 +135,9 @@ function ClientDrawer({ clientId, plans, onClose, onChanged }) {
 
             </div>
 
+            <div className="space-y-8">
+            <TrainingCalendar sessions={sessions} />
+
             <section>
               <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">{t('cl_sessions_title')} ({sessions.length})</h3>
               {sessions.length === 0 ? (
@@ -157,9 +164,17 @@ function ClientDrawer({ clientId, plans, onClose, onChanged }) {
                 </ul>
               )}
             </section>
+            </div>
           </div>
         )}
       </Drawer>
+      {renewing && client && (
+        <RenewDrawer
+          client={client} pack={client.pack} plans={plans} trainers={trainers}
+          onClose={() => setRenewing(false)}
+          onDone={() => { setRenewing(false); detail.reload(); onChanged() }}
+        />
+      )}
       <ConfirmDialog
         open={!!cancelTarget} busy={cancelling}
         title={t('cl_cancel_title')} text={t('cl_cancel_text')}
@@ -174,12 +189,14 @@ export default function Clients() {
   const { t, language } = useAdminText()
   const clientsResource = useAdminResource('/admin/clients')
   const plansResource = useAdminResource('/plans')
+  const trainersResource = useAdminResource('/admin/trainer-availability')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
   const [selectedId, setSelectedId] = useState(null)
 
   const clients = useMemo(() => clientsResource.data || [], [clientsResource.data])
   const plans = useMemo(() => plansResource.data || [], [plansResource.data])
+  const trainers = useMemo(() => (Array.isArray(trainersResource.data) ? trainersResource.data : []), [trainersResource.data])
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
 
   const counts = useMemo(() => ({
@@ -244,6 +261,7 @@ export default function Clients() {
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="truncate font-semibold">{client.name}</p>
                         {client.has_pending_request && <Badge tone="amber">{t('cl_pending')}</Badge>}
+                        {(client.pack_status === 'expired' || client.pack_status === 'expiring') && <PackStatusBadge status={client.pack_status} />}
                       </div>
                       <p className="truncate text-sm text-gray-500">{client.email}</p>
                     </div>
@@ -265,7 +283,7 @@ export default function Clients() {
 
       {selectedId && (
         <ClientDrawer
-          key={selectedId} clientId={selectedId} plans={plans}
+          key={selectedId} clientId={selectedId} plans={plans} trainers={trainers}
           onClose={() => setSelectedId(null)} onChanged={clientsResource.reload}
         />
       )}

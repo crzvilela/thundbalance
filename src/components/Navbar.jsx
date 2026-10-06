@@ -320,13 +320,6 @@ function NavbarInner() {
                   </Link>
 
                   <Link
-                    to="/book-session"
-                    className="block px-4 py-3 hover:bg-white/10 transition duration-300"
-                  >
-                    {t('nav_book_session')}
-                  </Link>
-
-                  <Link
                     to="/training-tips"
                     onClick={() => setOpenMenu(false)}
                     className="block px-4 py-3 hover:bg-white/10 transition duration-300"

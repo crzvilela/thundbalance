@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, Request
 
 import os
 import re
@@ -21,6 +21,7 @@ from google_calendar import (
 )
 from landing_page_default import DEFAULT_LANDING_CONTENT
 from admin_api import register_admin_routes
+from trial_notifications import notify_trial_requested
 from availability import (
     WEEKDAYS,
     ensure_trainers_and_availability,
@@ -114,6 +115,55 @@ def require_client(authorization: str | None = Header(default=None)):
 
 
 register_admin_routes(app, require_admin)
+
+
+def _is_admin(claims):
+    return str(claims.get("email", "")).strip().casefold() == ADMIN_EMAIL
+
+
+def _own_user_id(claims):
+    """users.id of the signed-in account (matched by login id, then by email)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM users WHERE firebase_uid = %s", (claims.get("sub"),))
+        row = cursor.fetchone()
+        if row:
+            return row[0]
+        email = str(claims.get("email", "")).strip().casefold()
+        if email:
+            cursor.execute("SELECT id FROM users WHERE LOWER(email) = %s", (email,))
+            row = cursor.fetchone()
+            if row:
+                return row[0]
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def assert_owner(claims, user_id):
+    """403 unless the signed-in account is user `user_id` (the admin always may).
+    Call it at the very top of a route: several routes turn any exception into
+    a 200 answer, which would hide this error."""
+    if _is_admin(claims):
+        return
+    if _own_user_id(claims) != user_id:
+        raise HTTPException(status_code=403, detail="This belongs to another account")
+
+
+def assert_session_owner(claims, session_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT user_id FROM sessions WHERE id = %s", (session_id,))
+        row = cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Session not found")
+    assert_owner(claims, row[0])
 
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
@@ -220,6 +270,9 @@ def ensure_trial_session_fields():
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS google_event_id TEXT")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS rejection_reason TEXT")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW()")
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS birth_date DATE")
+        # Several training goals can now be chosen, stored as a comma-separated list.
+        cursor.execute("ALTER TABLE trial_sessions ALTER COLUMN goal TYPE TEXT")
         conn.commit()
     finally:
         cursor.close()
@@ -237,6 +290,13 @@ def ensure_client_workflow_fields():
         cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS sessions_per_week INTEGER")
         cursor.execute("ALTER TABLE client_requests ALTER COLUMN status SET DEFAULT 'Pending'")
         cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE")
+        # Pack period and schedule, recorded when a pack is approved or renewed.
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS start_date DATE")
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS end_date DATE")
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS sessions_per_week INTEGER")
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS preferred_days TEXT")
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS preferred_time TEXT")
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS trainer_id INTEGER REFERENCES trainers(id)")
         # Approvals store session numbers as text such as "1/12".
         cursor.execute("""
             SELECT data_type FROM information_schema.columns
@@ -259,13 +319,6 @@ def ensure_client_workflow_fields():
 
 class LandingContentPayload(BaseModel):
     content: dict[str, Any]
-
-
-class SessionCreate(BaseModel):
-    user_id: int
-    trainer_id: int
-    session_date: str
-    session_time: str
 
 
 class UserCreate(BaseModel):
@@ -293,17 +346,16 @@ class UpdateProfile(BaseModel):
     cep: str
 
 
-class UserPlanCreate(BaseModel):
-    user_id: int
-    plan_id: int
-
-
 class TrialSessionCreate(BaseModel):
+    # Hidden field real visitors never fill; bots usually do.
+    website: str | None = None
     full_name: str
     email: str
     phone: str
     age: int | None = None
-    goal: str
+    birth_date: str | None = None
+    goal: str = ""
+    goals: list[str] | None = None
     experience: str
     session_date: str
     session_time: str
@@ -328,6 +380,15 @@ class ApproveRequest(BaseModel):
     start_date: str
     plan_id: int | None = None
     sessions_per_week: int | None = None
+
+
+class RenewPack(BaseModel):
+    plan_id: int
+    sessions_per_week: int
+    preferred_days: str
+    preferred_time: str
+    trainer_id: int
+    start_date: str
 
 
 class RejectRequest(BaseModel):
@@ -470,116 +531,7 @@ def get_trainers():
         conn.close()
 
 
-@app.post("/sessions")
-def create_session(session: SessionCreate):
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    try:
-
-        problem = slot_problem(
-            cursor,
-            session.trainer_id,
-            session.session_date,
-            session.session_time
-        )
-
-        if problem:
-
-            return {
-                "error": problem
-            }
-
-        cursor.execute(
-            """
-            SELECT nome
-            FROM trainers
-            WHERE id = %s
-            """,
-            (session.trainer_id,)
-        )
-
-        trainer = cursor.fetchone()
-
-        trainer_name = trainer[0]
-
-        cursor.execute(
-            """
-            SELECT nome, email
-            FROM users
-            WHERE id = %s
-            """,
-            (session.user_id,)
-        )
-
-        user = cursor.fetchone()
-
-        client_name = user[0]
-        client_email = user[1]
-
-        cursor.execute(
-            """
-            INSERT INTO sessions
-            (
-                user_id,
-                trainer_id,
-                session_date,
-                session_time
-            )
-
-            VALUES (%s, %s, %s, %s)
-
-            RETURNING id
-            """,
-            (
-                session.user_id,
-                session.trainer_id,
-                session.session_date,
-                session.session_time
-            )
-        )
-
-        session_id = cursor.fetchone()[0]
-
-        google_event_id = create_calendar_event(
-            trainer_name,
-            client_name,
-            client_email,
-            session.session_date,
-            session.session_time
-        )
-
-        cursor.execute(
-            """
-            UPDATE sessions
-            SET google_event_id = %s
-            WHERE id = %s
-            """,
-            (
-                google_event_id,
-                session_id
-            )
-        )
-
-        conn.commit()
-
-        return {
-            "message": "Session created successfully",
-            "google_event_id": google_event_id
-        }
-
-    except Exception as e:
-        conn.rollback()
-        return {"error": str(e)}
-
-    finally:
-
-        cursor.close()
-        conn.close()
-
-
-@app.get("/sessions")
+@app.get("/sessions", dependencies=[Depends(require_admin)])
 def get_sessions():
 
     conn = get_connection()
@@ -603,7 +555,11 @@ def get_sessions():
 
 
 @app.post("/users")
-def create_user(user: UserCreate):
+def create_user(user: UserCreate, claims=Depends(require_client)):
+
+    # Who the account is comes from the login, never from the request body.
+    user.firebase_uid = claims.get("sub")
+    user.email = str(claims.get("email") or user.email).strip()
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -614,7 +570,7 @@ def create_user(user: UserCreate):
             """
             SELECT id
             FROM users
-            WHERE email = %s
+            WHERE LOWER(email) = LOWER(%s)
             """,
             (user.email,)
         )
@@ -622,6 +578,12 @@ def create_user(user: UserCreate):
         existing_user = cursor.fetchone()
 
         if existing_user:
+
+            cursor.execute(
+                "UPDATE users SET firebase_uid = COALESCE(firebase_uid, %s) WHERE id = %s",
+                (user.firebase_uid, existing_user[0])
+            )
+            conn.commit()
 
             return {
                 "message": "User already exists"
@@ -681,7 +643,7 @@ def create_user(user: UserCreate):
         conn.close()
 
 
-@app.get("/users")
+@app.get("/users", dependencies=[Depends(require_admin)])
 def get_users():
 
     conn = get_connection()
@@ -705,7 +667,10 @@ def get_users():
 
 
 @app.get("/users/email/{email}")
-def get_user_by_email(email: str):
+def get_user_by_email(email: str, claims=Depends(require_client)):
+
+    if not _is_admin(claims) and email.strip().casefold() != str(claims.get("email", "")).strip().casefold():
+        raise HTTPException(status_code=403, detail="This belongs to another account")
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -728,7 +693,7 @@ def get_user_by_email(email: str):
             LEFT JOIN plans p
                 ON up.plan_id = p.id
 
-            WHERE u.email = %s
+            WHERE LOWER(u.email) = LOWER(%s)
             """,
             (email,)
         )
@@ -755,7 +720,9 @@ def get_user_by_email(email: str):
 
 
 @app.get("/sessions/user/{user_id}")
-def get_user_sessions(user_id: int):
+def get_user_sessions(user_id: int, claims=Depends(require_client)):
+
+    assert_owner(claims, user_id)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -794,7 +761,9 @@ def get_user_sessions(user_id: int):
 
 
 @app.delete("/sessions/{session_id}")
-def cancel_session(session_id: int):
+def cancel_session(session_id: int, claims=Depends(require_client)):
+
+    assert_session_owner(claims, session_id)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -856,7 +825,9 @@ def cancel_session(session_id: int):
 
 
 @app.get("/profile/{user_id}")
-def get_profile(user_id: int):
+def get_profile(user_id: int, claims=Depends(require_client)):
+
+    assert_owner(claims, user_id)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -892,6 +863,9 @@ def get_profile(user_id: int):
 
         profile = cursor.fetchone()
 
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+
         return {
             "id": profile[0],
             "nome": profile[1],
@@ -914,8 +888,11 @@ def get_profile(user_id: int):
 @app.put("/sessions/{session_id}")
 def update_session(
     session_id: int,
-    session: UpdateSession
+    session: UpdateSession,
+    claims=Depends(require_client)
 ):
+
+    assert_session_owner(claims, session_id)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -1210,8 +1187,11 @@ async def upload_profile_photo(user_id: int, file: UploadFile = File(...), claim
 @app.put("/profile/{user_id}")
 def update_profile(
     user_id: int,
-    profile: UpdateProfile
+    profile: UpdateProfile,
+    claims=Depends(require_client)
 ):
+
+    assert_owner(claims, user_id)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -1243,55 +1223,6 @@ def update_profile(
 
         return {
             "message": "Profile updated successfully"
-        }
-
-    except Exception as e:
-
-        conn.rollback()
-
-        return {
-            "error": str(e)
-        }
-
-    finally:
-
-        cursor.close()
-        conn.close()
-
-
-@app.post("/user-plan")
-def assign_plan(data: UserPlanCreate):
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    try:
-
-        cursor.execute(
-            """
-            DELETE FROM user_plans
-            WHERE user_id = %s
-            """,
-            (data.user_id,)
-        )
-
-        cursor.execute(
-            """
-            INSERT INTO user_plans
-            (user_id, plan_id)
-
-            VALUES (%s, %s)
-            """,
-            (
-                data.user_id,
-                data.plan_id
-            )
-        )
-
-        conn.commit()
-
-        return {
-            "message": "Plan assigned successfully"
         }
 
     except Exception as e:
@@ -1377,15 +1308,60 @@ def get_schedule_for_date(session_date: str):
         conn.close()
 
 
+TRIAL_GOALS = [
+    "Body recomposition", "Lose weight", "Build muscle", "Increase strength",
+    "Rehabilitation/injury recovery", "Conditioning", "Endurance", "Tone/define",
+    "Improve mobility & flexibility", "Increase energy",
+]
+
+
+def age_from_birth_date(birth_date, today=None):
+    today = today or datetime.now().date()
+    return today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+
+
 TRIAL_TIMES = {f"{hour:02d}:00" for hour in range(7, 21)}
+
+# At most this many requests per address per hour (kept in memory, so it
+# resets when the server restarts; it only needs to stop floods).
+TRIAL_LIMIT = 5
+TRIAL_WINDOW_SECONDS = 3600
+_trial_hits = {}
+
+
+def _client_ip(request):
+    forwarded = request.headers.get("x-forwarded-for", "")
+    return (forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "")) or "unknown"
+
+
+def _too_many_trial_requests(ip):
+    now = datetime.now().timestamp()
+    hits = [moment for moment in _trial_hits.get(ip, []) if now - moment < TRIAL_WINDOW_SECONDS]
+    if len(hits) >= TRIAL_LIMIT:
+        _trial_hits[ip] = hits
+        return True
+    hits.append(now)
+    _trial_hits[ip] = hits
+    return False
 
 
 @app.post("/trial-sessions")
 def create_trial_session(
-    trial: TrialSessionCreate
+    trial: TrialSessionCreate,
+    request: Request
 ):
     """Public form. Stores a Pending request; the calendar event is created
     only when the admin approves it and picks a trainer."""
+
+    if trial.website:
+        # A bot filled the hidden field: pretend it worked, store nothing.
+        return {"message": "Trial session requested", "trial_id": 0}
+
+    if _too_many_trial_requests(_client_ip(request)):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests from this connection. Please try again later."
+        )
 
     full_name = trial.full_name.strip()
     email = trial.email.strip().lower()
@@ -1397,8 +1373,22 @@ def create_trial_session(
         raise HTTPException(status_code=422, detail="Please enter a valid email address.")
     if len(re.sub(r"\D", "", phone)) < 6 or len(phone) > 30:
         raise HTTPException(status_code=422, detail="Please enter a valid phone number.")
-    if trial.age is not None and not 10 <= trial.age <= 100:
-        raise HTTPException(status_code=422, detail="Please enter a valid age.")
+    age = trial.age
+    birth_date = None
+    if trial.birth_date:
+        try:
+            birth_date = datetime.strptime(trial.birth_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Please enter a valid date of birth.")
+        age = age_from_birth_date(birth_date)
+    if age is not None and not 10 <= age <= 100:
+        raise HTTPException(status_code=422, detail="Please enter a valid date of birth.")
+
+    chosen = trial.goals if trial.goals is not None else [g.strip() for g in trial.goal.split(",") if g.strip()]
+    goals = [g for g in TRIAL_GOALS if g in chosen]
+    if not goals:
+        raise HTTPException(status_code=422, detail="Please select at least one training goal.")
+    goal_text = ", ".join(goals)
     if trial.session_time not in TRIAL_TIMES:
         raise HTTPException(status_code=422, detail="Please choose a time between 07:00 and 20:00.")
 
@@ -1444,6 +1434,7 @@ def create_trial_session(
                 email,
                 phone,
                 age,
+                birth_date,
                 goal,
                 experience,
                 session_date,
@@ -1452,7 +1443,7 @@ def create_trial_session(
             )
 
             VALUES
-            (%s,%s,%s,%s,%s,%s,%s,%s,'Pending')
+            (%s,%s,%s,%s,%s,%s,%s,%s,%s,'Pending')
 
             RETURNING id
             """,
@@ -1460,8 +1451,9 @@ def create_trial_session(
                 full_name,
                 email,
                 phone,
-                trial.age,
-                trial.goal.strip()[:60],
+                age,
+                birth_date,
+                goal_text,
                 trial.experience.strip()[:60],
                 session_date,
                 trial.session_time
@@ -1470,6 +1462,19 @@ def create_trial_session(
 
         trial_id = cursor.fetchone()[0]
         conn.commit()
+
+        notify_trial_requested({
+            "id": trial_id,
+            "full_name": full_name,
+            "email": email,
+            "phone": phone,
+            "age": age,
+            "birth_date": birth_date.isoformat() if birth_date else None,
+            "goal": goal_text,
+            "experience": trial.experience.strip()[:60],
+            "session_date": session_date.isoformat(),
+            "session_time": trial.session_time,
+        })
 
         return {
             "message": "Trial session requested",
@@ -1503,29 +1508,28 @@ def admin_assign_plan(
 
     try:
 
+        cursor.execute("SELECT 1 FROM plans WHERE id = %s", (data.plan_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Plan not found")
+
+        # Changing the pack type keeps the current period and schedule; a client
+        # without an active pack simply gets one.
         cursor.execute(
             """
-            DELETE FROM user_plans
-            WHERE user_id = %s
-            """,
-            (data.user_id,)
-        )
-
-        cursor.execute(
-            """
-            INSERT INTO user_plans
-            (
-                user_id,
-                plan_id
+            UPDATE user_plans SET plan_id = %s
+            WHERE id = (
+                SELECT id FROM user_plans
+                WHERE user_id = %s AND active
+                ORDER BY id DESC LIMIT 1
             )
-
-            VALUES (%s, %s)
             """,
-            (
-                data.user_id,
-                data.plan_id
-            )
+            (data.plan_id, data.user_id)
         )
+        if cursor.rowcount == 0:
+            cursor.execute(
+                "INSERT INTO user_plans (user_id, plan_id) VALUES (%s, %s)",
+                (data.user_id, data.plan_id)
+            )
 
         conn.commit()
 
@@ -1834,7 +1838,15 @@ def approve_request(
             )
 
         cursor.execute("DELETE FROM user_plans WHERE user_id = %s", (user_id,))
-        cursor.execute("INSERT INTO user_plans (user_id, plan_id) VALUES (%s, %s)", (user_id, plan_id))
+        cursor.execute(
+            """
+            INSERT INTO user_plans
+            (user_id, plan_id, start_date, end_date, sessions_per_week, preferred_days, preferred_time, trainer_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (user_id, plan_id, session_dates[0], session_dates[-1], sessions_per_week,
+             preferred_days, preferred_time, data.trainer_id)
+        )
 
         # Rows go into the database first and the Google Calendar events are
         # created afterwards, so a database error can no longer leave events
@@ -1962,6 +1974,148 @@ def approve_request(
 
     finally:
 
+        cursor.close()
+        conn.close()
+
+
+@app.post("/admin/clients/{client_id}/renew-pack", dependencies=[Depends(require_admin)])
+def admin_renew_pack(client_id: int, data: RenewPack):
+    """Starts a new pack for a client: records the new period and creates its
+    sessions (database rows first, then Google Calendar events, rolled back
+    together on failure), exactly like approving a request."""
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    created_event_ids = []
+
+    try:
+        cursor.execute("SELECT nome, email FROM users WHERE id = %s", (client_id,))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="Client not found")
+        client_name, client_email = user
+
+        cursor.execute("SELECT nome FROM trainers WHERE id = %s", (data.trainer_id,))
+        trainer = cursor.fetchone()
+        if not trainer:
+            raise HTTPException(status_code=404, detail="Trainer not found")
+        trainer_name = trainer[0]
+
+        if not 1 <= data.sessions_per_week <= 7:
+            raise HTTPException(status_code=400, detail="Sessions per week must be between 1 and 7")
+
+        days = [day.strip() for day in data.preferred_days.split(",") if day.strip()]
+        if not days or any(day not in DAY_MAP for day in days):
+            raise HTTPException(status_code=422, detail="Please choose valid training days.")
+
+        try:
+            start = datetime.strptime(data.start_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Please choose a valid start date.")
+        if start < datetime.now().date():
+            raise HTTPException(status_code=422, detail="The start date cannot be in the past.")
+
+        # A renewal starts after the current pack ends, never inside it.
+        cursor.execute(
+            """
+            SELECT COALESCE(up.end_date, (
+                SELECT MAX(session_date) FROM sessions
+                WHERE user_id = up.user_id AND status <> 'Cancelled'
+            ))
+            FROM user_plans up
+            WHERE up.user_id = %s AND up.active
+            ORDER BY up.id DESC LIMIT 1
+            """,
+            (client_id,)
+        )
+        current = cursor.fetchone()
+        current_end = current[0] if current else None
+        if current_end and start <= current_end:
+            raise HTTPException(
+                status_code=409,
+                detail=f"The current pack runs until {current_end.isoformat()}. Choose a start date after it."
+            )
+
+        cursor.execute("SELECT duration_weeks FROM plans WHERE id = %s", (data.plan_id,))
+        plan = cursor.fetchone()
+        if not plan or not plan[0]:
+            raise HTTPException(status_code=404, detail="Plan not found")
+
+        total_sessions = plan[0] * data.sessions_per_week
+        session_dates = generate_session_dates(data.start_date, ",".join(days), total_sessions)
+
+        problems = []
+        for session_date in session_dates:
+            problem = slot_problem(cursor, data.trainer_id, session_date, data.preferred_time)
+            if problem:
+                problems.append(f"{session_date}: {problem}")
+        if problems:
+            shown = "; ".join(problems[:3])
+            extra = f" (+{len(problems) - 3} more)" if len(problems) > 3 else ""
+            raise HTTPException(
+                status_code=409,
+                detail=f"{trainer_name} cannot take this schedule. {shown}{extra}",
+            )
+
+        cursor.execute("UPDATE user_plans SET active = FALSE WHERE user_id = %s", (client_id,))
+        cursor.execute(
+            """
+            INSERT INTO user_plans
+            (user_id, plan_id, active, start_date, end_date, sessions_per_week,
+             preferred_days, preferred_time, trainer_id)
+            VALUES (%s, %s, TRUE, %s, %s, %s, %s, %s, %s)
+            """,
+            (client_id, data.plan_id, session_dates[0], session_dates[-1],
+             data.sessions_per_week, ",".join(days), data.preferred_time, data.trainer_id)
+        )
+
+        pending = []
+        for index, session_date in enumerate(session_dates, start=1):
+            session_number = f"{index}/{total_sessions}"
+            cursor.execute(
+                """
+                INSERT INTO sessions
+                (user_id, trainer_id, session_date, session_time, session_number, status)
+                VALUES (%s, %s, %s, %s, %s, 'Booked')
+                RETURNING id
+                """,
+                (client_id, data.trainer_id, session_date, data.preferred_time, session_number)
+            )
+            pending.append((cursor.fetchone()[0], session_date, session_number))
+
+        for session_id, session_date, session_number in pending:
+            event_id = create_calendar_event(
+                trainer_name, client_name, client_email,
+                session_date, data.preferred_time, session_number
+            )
+            created_event_ids.append(event_id)
+            cursor.execute("UPDATE sessions SET google_event_id = %s WHERE id = %s", (event_id, session_id))
+
+        conn.commit()
+        return {
+            "message": "Pack renewed successfully",
+            "total_sessions": total_sessions,
+            "start_date": session_dates[0],
+            "end_date": session_dates[-1],
+        }
+
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as error:
+        conn.rollback()
+        for event_id in created_event_ids:
+            try:
+                delete_calendar_event(event_id)
+            except Exception:
+                traceback.print_exc()
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not renew the pack: {type(error).__name__}: {str(error)[:300]}"
+        ) from error
+
+    finally:
         cursor.close()
         conn.close()
 

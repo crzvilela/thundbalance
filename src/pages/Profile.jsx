@@ -5,6 +5,7 @@ import { auth } from '../firebase/auth'
 import Navbar from '../components/Navbar'
 import { LandingContentProvider } from '../content/LandingContentContext'
 import { API_URL, ADMIN_EMAIL } from '../config'
+import { authFetch } from '../api/authFetch'
 import { resolveImageUrl } from '../api/landingPage'
 import { uploadProfilePhoto } from '../api/profilePhoto'
 
@@ -37,10 +38,10 @@ function Profile() {
       if (!currentUser) { navigate('/login', { replace: true }); return }
       setUser(currentUser)
       try {
-        const response = await fetch(`${API_URL}/users/email/${encodeURIComponent(currentUser.email)}`)
+        const response = await authFetch(`${API_URL}/users/email/${encodeURIComponent(currentUser.email)}`)
         if (!response.ok) throw new Error('Could not load your account.')
         const account = await response.json()
-        const result = await fetch(`${API_URL}/profile/${account.id}`)
+        const result = await authFetch(`${API_URL}/profile/${account.id}`)
         if (!result.ok) throw new Error('Could not load your profile. Please try again.')
         const data = await result.json()
         if (!data.id) throw new Error('Your profile is not available yet.')
