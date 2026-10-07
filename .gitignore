@@ -51,3 +51,5 @@ src.zip
 *firebase-adminsdk*.json
 firebase-service-account*.json
 secrets/
+
+backend/email_previews/

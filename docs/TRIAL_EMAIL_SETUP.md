@@ -15,3 +15,12 @@ El envío usa un Google Apps Script (funciona en Render gratis y no necesita acc
 6. Guarda y redeploya. Pide al jefe que marque el remitente como seguro para que no vaya a spam.
 
 Si las variables no están definidas, no se envía nada y las reservas funcionan igual.
+
+## Actualizar el script (emails nuevos con logo, HTML y adjuntos)
+
+El script `docs/trial-email.gs` ahora entiende dos formatos: el nuevo (asunto, HTML, adjuntos; lo usan todos los emails del backend) y el antiguo (aviso en texto plano). **Hazlo ANTES de desplegar el backend nuevo**, o los emails a clientes saldrían con el formato antiguo:
+
+1. script.google.com → abre el proyecto existente → sustituye el código por el de `docs/trial-email.gs` (conserva tu `SECRET`).
+2. **Implementar → Gestionar implementaciones → editar (lápiz) → Versión: Nueva versión → Implementar.** La URL `/exec` no cambia.
+3. No hay variables nuevas en Render. Opcional: `SITE_URL` (p. ej. `https://thundbalance.vercel.app`) para los enlaces y el logo de los emails.
+4. Prueba: `python send_test_email.py tu@correo.com` desde la carpeta `backend` con `TRIAL_EMAIL_WEBHOOK_URL` y `TRIAL_EMAIL_WEBHOOK_SECRET` definidas en tu terminal.
