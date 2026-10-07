@@ -144,11 +144,16 @@ function TrialSession() {
       <Navbar />
 
       <main className="mx-auto max-w-3xl px-5 pb-24 pt-36">
-        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-400">{t('ts_eyebrow')}</p>
-        <h1 style={{ fontFamily: 'Bebas Neue' }} className="mb-3 text-5xl md:text-6xl">{t('ts_title')}</h1>
-        <p className="mb-10 max-w-xl text-gray-400">
-          {t('ts_intro')}
-        </p>
+        {/* The intro header is hidden once the request was sent, so only the confirmation card remains. */}
+        {!done && (
+          <>
+            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-400">{t('ts_eyebrow')}</p>
+            <h1 style={{ fontFamily: 'Bebas Neue' }} className="mb-3 text-5xl md:text-6xl">{t('ts_title')}</h1>
+            <p className="mb-10 max-w-xl text-gray-400">
+              {t('ts_intro')}
+            </p>
+          </>
+        )}
 
         {done ? (
           <div role="status" className="rounded-3xl border border-emerald-400/25 bg-emerald-400/5 p-10 text-center">

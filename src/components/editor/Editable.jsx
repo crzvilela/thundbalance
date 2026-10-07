@@ -99,13 +99,15 @@ export function EditableText({
   styleObj,
   label,
   onClick,
+  fallback = '',
   ...rest
 }) {
   const { content, isEditMode, select, selection, updateField } = useLandingContent()
   const { language } = useI18n()
   const editor = useLayoutEditor()
   const raw = getPath(content, path, '')
-  const value = resolveText(raw, language)
+  // `fallback` covers saved content that left the field empty.
+  const value = resolveText(raw, language) || fallback
   const isSelected = isEditMode && selection?.type === 'text' && selection.path === path
   const elementRef = useRef(null)
   const [editing, setEditing] = useState(false)
@@ -225,11 +227,12 @@ export function EditableImage({
   imageClassName = '',
   styleObj,
   label,
-  movable = true
+  movable = true,
+  srcOverride
 }) {
   const { content, isEditMode, select, selection } = useLandingContent()
   const stored = getPath(content, path, null)
-  const src = resolveImageUrl(stored) || defaultSrc
+  const src = srcOverride || resolveImageUrl(stored) || defaultSrc
   const handleImageError = (event) => {
     // Keep the bundled image visible if an old uploaded file is unavailable.
     const img = event.currentTarget

@@ -9,7 +9,11 @@ function Home() {
   const isPreview = searchParams.get('preview') === 'true'
 
   return (
-    <LandingContentProvider mode="view" version={isPreview ? 'draft' : 'published'}>
+    <LandingContentProvider
+      mode="view"
+      version={isPreview ? 'draft' : 'published'}
+      placeholder={<div className="bg-black min-h-screen"><Navbar /></div>}
+    >
       <div className="bg-black min-h-screen text-white overflow-x-hidden">
 
         <Navbar />

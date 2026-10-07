@@ -202,7 +202,7 @@ async function preloadFonts(content) {
 
 // mode: 'view' (public site, read-only) | 'edit' (admin page builder)
 // version: only used in 'view' mode -> 'published' (default) or 'draft' (preview)
-export function LandingContentProvider({ mode = 'view', version = 'published', children }) {
+export function LandingContentProvider({ mode = 'view', version = 'published', placeholder = <div className="bg-black min-h-screen" />, children }) {
   const isEditMode = mode === 'edit'
 
   const [{ content, history, historyIndex }, dispatch] = useReducer(contentHistoryReducer, null, () => ({
@@ -348,7 +348,7 @@ export function LandingContentProvider({ mode = 'view', version = 'published', c
 
   return (
     <LandingContentContext.Provider value={value}>
-      {waitingForFirstLoad ? <div className="bg-black min-h-screen" /> : children}
+      {waitingForFirstLoad ? placeholder : children}
     </LandingContentContext.Provider>
   )
 }
