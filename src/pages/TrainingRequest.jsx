@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { auth } from '../firebase/auth'
 import Navbar from '../components/Navbar'
 import { API_URL } from '../config'
+import { useI18n } from '../i18n/I18nContext'
 
 function TrainingRequest() {
   const navigate = useNavigate()
+  const { t } = useI18n()
   const [submitting, setSubmitting] = useState(false)
   const [plans, setPlans] = useState([])
   const [planId, setPlanId] = useState('1')
@@ -75,8 +77,8 @@ function TrainingRequest() {
   const handleSubmit = async () => {
 
     if (!auth.currentUser) { navigate('/login'); return }
-    if (!preferredDays.length) { alert('Choose at least one preferred day.'); return }
-    if (!effectiveTime) { alert('No time works on all the days you chose. Try fewer days or different days.'); return }
+    if (!preferredDays.length) { alert(t('tr_choose_day')); return }
+    if (!effectiveTime) { alert(t('tr_no_time')); return }
     setSubmitting(true)
 
     try {
@@ -111,7 +113,7 @@ function TrainingRequest() {
 
         const body = await response.json().catch(() => ({}))
 
-        alert(typeof body.detail === 'string' ? body.detail : 'We could not send your request. Please try again.')
+        alert(typeof body.detail === 'string' ? body.detail : t('tr_err_send'))
 
         return
 
@@ -128,7 +130,7 @@ function TrainingRequest() {
       console.log(error)
 
       alert(
-        error.message || 'Error submitting request'
+        error.message || t('tr_err_generic')
       )
 
     } finally {
@@ -149,7 +151,7 @@ function TrainingRequest() {
           style={{ fontFamily: 'Bebas Neue' }}
           className="text-6xl mb-12"
         >
-          Training Request
+          {t('tr_title')}
         </h1>
 
         <div className="border border-white/10 p-10 rounded-2xl">
@@ -157,7 +159,7 @@ function TrainingRequest() {
           <div className="mb-8">
 
             <label className="block mb-2 text-gray-400">
-              Select Package
+              {t('tr_package')}
             </label>
 
             <select
@@ -176,7 +178,7 @@ function TrainingRequest() {
           <div className="mb-8">
 
             <label className="block mb-2 text-gray-400">
-              Sessions Per Week
+              {t('tr_sessions_week')}
             </label>
 
             <select
@@ -200,7 +202,7 @@ function TrainingRequest() {
           <div className="mb-8">
 
             <label className="block mb-4 text-gray-400">
-              Preferred Days
+              {t('tr_days')}
             </label>
 
             <div className="flex flex-wrap gap-4">
@@ -218,7 +220,7 @@ function TrainingRequest() {
                       : 'border-white/20'
                   }`}
                 >
-                  {day}
+                  {t(`wd_${day}`)}
                 </button>
 
               ))}
@@ -230,7 +232,7 @@ function TrainingRequest() {
           <div className="mb-8">
 
             <label className="block mb-2 text-gray-400">
-              Preferred Time
+              {t('tr_time')}
             </label>
 
             <select
@@ -248,8 +250,8 @@ function TrainingRequest() {
 
             <p className="mt-2 text-sm text-gray-500">
               {timeOptions.length === 0
-                ? 'No time works on all the days you chose. Try fewer days or different days.'
-                : 'Times depend on our trainers\' schedules, so the list changes with the days you choose.'}
+                ? t('tr_no_time')
+                : t('tr_time_hint')}
             </p>
 
           </div>
@@ -259,7 +261,7 @@ function TrainingRequest() {
             disabled={submitting || plans.length === 0}
             className="bg-white text-black px-8 py-4 uppercase tracking-[3px] hover:bg-gray-300 transition duration-300"
           >
-            {submitting ? 'Submitting…' : plans.length ? 'Submit Request' : 'Packages unavailable'}
+            {submitting ? t('tr_submitting') : plans.length ? t('tr_submit') : t('tr_unavailable')}
           </button>
 
         </div>

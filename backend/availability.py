@@ -116,19 +116,70 @@ def slot_problem(cursor, trainer_id, day, time, ignore_session_id=None, ignore_t
     return None
 
 
-def free_start_times(cursor, trainer_id, day, ignore_session_id=None):
-    """Start times ("HH:00") the trainer can still take on a given date."""
-    weekday = weekday_name(day)
+def _busy_times(cursor, day, trainer_ids=None, ignore_session_id=None):
+    """{trainer_id: {"HH:MM", ...}} already taken on `day`, in two queries."""
+    key = str(day)[:10]
+    busy = {}
+    cursor.execute(
+        """
+        SELECT trainer_id, session_time FROM sessions
+        WHERE session_date = %s AND status = 'Booked'
+          AND (%s::int IS NULL OR id <> %s::int)
+        """,
+        (key, ignore_session_id, ignore_session_id),
+    )
+    rows = cursor.fetchall()
+    cursor.execute(
+        """
+        SELECT trainer_id, session_time FROM trial_sessions
+        WHERE session_date = %s AND LOWER(status) = 'approved'
+        """,
+        (key,),
+    )
+    rows += cursor.fetchall()
+    for trainer_id, time in rows:
+        if trainer_id is not None and time is not None and (trainer_ids is None or trainer_id in trainer_ids):
+            busy.setdefault(trainer_id, set()).add(hhmm(time))
+    return busy
+
+
+def _start_times(windows):
     times = set()
-    for low, high in _windows(cursor, trainer_id, weekday):
+    for low, high in windows:
         hour = (low + 59) // 60
         while (hour + SESSION_HOURS) * 60 <= high:
             times.add(f"{hour:02d}:00")
             hour += 1
-    return [
-        time for time in sorted(times)
-        if not has_conflict(cursor, trainer_id, day, time, ignore_session_id)
-    ]
+    return times
+
+
+def free_start_times(cursor, trainer_id, day, ignore_session_id=None):
+    """Start times ("HH:00") the trainer can still take on a given date."""
+    times = _start_times(_windows(cursor, trainer_id, weekday_name(day)))
+    taken = _busy_times(cursor, day, {trainer_id}, ignore_session_id).get(trainer_id, set())
+    return sorted(times - taken)
+
+
+def free_start_times_any_trainer(cursor, day):
+    """Start times on `day` when at least one active trainer is free
+    (a fixed number of queries, however many trainers there are)."""
+    weekday = weekday_name(day)
+    cursor.execute(
+        """
+        SELECT ta.trainer_id, ta.start_time, ta.end_time
+        FROM trainer_availability ta JOIN trainers t ON t.id = ta.trainer_id
+        WHERE t.active AND ta.day_of_week = %s
+        """,
+        (weekday,),
+    )
+    windows = {}
+    for trainer_id, start, end in cursor.fetchall():
+        windows.setdefault(trainer_id, []).append((to_minutes(start), to_minutes(end)))
+    busy = _busy_times(cursor, day)
+    free = set()
+    for trainer_id, trainer_windows in windows.items():
+        free |= _start_times(trainer_windows) - busy.get(trainer_id, set())
+    return sorted(free)
 
 
 def trainers_for_slot(cursor, day, time):

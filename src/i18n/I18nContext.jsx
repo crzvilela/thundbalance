@@ -5,6 +5,8 @@ const STORAGE_KEY = 'tb_language'
 const DEFAULT_LANGUAGE = 'en'
 const SUPPORTED_LANGUAGES = ['en', 'es', 'ca']
 
+const LOCALES = { en: 'en-GB', es: 'es-ES', ca: 'ca-ES' }
+
 const I18nContext = createContext(null)
 
 export function I18nProvider({ children }) {
@@ -38,12 +40,16 @@ export function I18nProvider({ children }) {
   // content (content.sections.*, content.aboutUsPage, Training Tips video
   // titles/descriptions) — those are rendered directly from the content
   // object elsewhere, in English, regardless of `language`.
-  const t = (key) => {
-    return translations[language]?.[key] ?? translations[DEFAULT_LANGUAGE]?.[key] ?? key
+  // Optional {name}-style placeholders are filled from `vars`. An unknown key
+  // comes back unchanged, so server-written messages can be passed through.
+  const t = (key, vars) => {
+    const text = translations[language]?.[key] ?? translations[DEFAULT_LANGUAGE]?.[key] ?? key
+    return vars ? text.replace(/\{(\w+)\}/g, (match, name) => (name in vars ? String(vars[name]) : match)) : text
   }
+  const locale = LOCALES[language]
 
   return (
-    <I18nContext.Provider value={{ language, setLanguage, t, supportedLanguages: SUPPORTED_LANGUAGES }}>
+    <I18nContext.Provider value={{ language, locale, setLanguage, t, supportedLanguages: SUPPORTED_LANGUAGES }}>
       {children}
     </I18nContext.Provider>
   )
@@ -57,6 +63,7 @@ export function useI18n() {
     // pattern already used by useLandingContent()'s defaultContextValue.
     return {
       language: DEFAULT_LANGUAGE,
+      locale: LOCALES[DEFAULT_LANGUAGE],
       setLanguage: () => {},
       t: (key) => translations[DEFAULT_LANGUAGE]?.[key] ?? key,
       supportedLanguages: SUPPORTED_LANGUAGES

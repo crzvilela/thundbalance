@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, Request
 
 import os
 import re
@@ -27,6 +27,7 @@ from availability import (
     ensure_trainers_and_availability,
     purge_unused_inactive_trainers,
     free_start_times,
+    free_start_times_any_trainer,
     slot_problem,
     trainers_for_slot,
     weekday_name,
@@ -115,6 +116,55 @@ def require_client(authorization: str | None = Header(default=None)):
 
 
 register_admin_routes(app, require_admin)
+
+
+def _is_admin(claims):
+    return str(claims.get("email", "")).strip().casefold() == ADMIN_EMAIL
+
+
+def _own_user_id(claims):
+    """users.id of the signed-in account (matched by login id, then by email)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM users WHERE firebase_uid = %s", (claims.get("sub"),))
+        row = cursor.fetchone()
+        if row:
+            return row[0]
+        email = str(claims.get("email", "")).strip().casefold()
+        if email:
+            cursor.execute("SELECT id FROM users WHERE LOWER(email) = %s", (email,))
+            row = cursor.fetchone()
+            if row:
+                return row[0]
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def assert_owner(claims, user_id):
+    """403 unless the signed-in account is user `user_id` (the admin always may).
+    Call it at the very top of a route: several routes turn any exception into
+    a 200 answer, which would hide this error."""
+    if _is_admin(claims):
+        return
+    if _own_user_id(claims) != user_id:
+        raise HTTPException(status_code=403, detail="This belongs to another account")
+
+
+def assert_session_owner(claims, session_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT user_id FROM sessions WHERE id = %s", (session_id,))
+        row = cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Session not found")
+    assert_owner(claims, row[0])
 
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
@@ -272,13 +322,6 @@ class LandingContentPayload(BaseModel):
     content: dict[str, Any]
 
 
-class SessionCreate(BaseModel):
-    user_id: int
-    trainer_id: int
-    session_date: str
-    session_time: str
-
-
 class UserCreate(BaseModel):
     firebase_uid: str
     nome: str
@@ -304,12 +347,9 @@ class UpdateProfile(BaseModel):
     cep: str
 
 
-class UserPlanCreate(BaseModel):
-    user_id: int
-    plan_id: int
-
-
 class TrialSessionCreate(BaseModel):
+    # Hidden field real visitors never fill; bots usually do.
+    website: str | None = None
     full_name: str
     email: str
     phone: str
@@ -492,116 +532,7 @@ def get_trainers():
         conn.close()
 
 
-@app.post("/sessions")
-def create_session(session: SessionCreate):
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    try:
-
-        problem = slot_problem(
-            cursor,
-            session.trainer_id,
-            session.session_date,
-            session.session_time
-        )
-
-        if problem:
-
-            return {
-                "error": problem
-            }
-
-        cursor.execute(
-            """
-            SELECT nome
-            FROM trainers
-            WHERE id = %s
-            """,
-            (session.trainer_id,)
-        )
-
-        trainer = cursor.fetchone()
-
-        trainer_name = trainer[0]
-
-        cursor.execute(
-            """
-            SELECT nome, email
-            FROM users
-            WHERE id = %s
-            """,
-            (session.user_id,)
-        )
-
-        user = cursor.fetchone()
-
-        client_name = user[0]
-        client_email = user[1]
-
-        cursor.execute(
-            """
-            INSERT INTO sessions
-            (
-                user_id,
-                trainer_id,
-                session_date,
-                session_time
-            )
-
-            VALUES (%s, %s, %s, %s)
-
-            RETURNING id
-            """,
-            (
-                session.user_id,
-                session.trainer_id,
-                session.session_date,
-                session.session_time
-            )
-        )
-
-        session_id = cursor.fetchone()[0]
-
-        google_event_id = create_calendar_event(
-            trainer_name,
-            client_name,
-            client_email,
-            session.session_date,
-            session.session_time
-        )
-
-        cursor.execute(
-            """
-            UPDATE sessions
-            SET google_event_id = %s
-            WHERE id = %s
-            """,
-            (
-                google_event_id,
-                session_id
-            )
-        )
-
-        conn.commit()
-
-        return {
-            "message": "Session created successfully",
-            "google_event_id": google_event_id
-        }
-
-    except Exception as e:
-        conn.rollback()
-        return {"error": str(e)}
-
-    finally:
-
-        cursor.close()
-        conn.close()
-
-
-@app.get("/sessions")
+@app.get("/sessions", dependencies=[Depends(require_admin)])
 def get_sessions():
 
     conn = get_connection()
@@ -625,7 +556,11 @@ def get_sessions():
 
 
 @app.post("/users")
-def create_user(user: UserCreate):
+def create_user(user: UserCreate, claims=Depends(require_client)):
+
+    # Who the account is comes from the login, never from the request body.
+    user.firebase_uid = claims.get("sub")
+    user.email = str(claims.get("email") or user.email).strip()
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -636,7 +571,7 @@ def create_user(user: UserCreate):
             """
             SELECT id
             FROM users
-            WHERE email = %s
+            WHERE LOWER(email) = LOWER(%s)
             """,
             (user.email,)
         )
@@ -644,6 +579,12 @@ def create_user(user: UserCreate):
         existing_user = cursor.fetchone()
 
         if existing_user:
+
+            cursor.execute(
+                "UPDATE users SET firebase_uid = COALESCE(firebase_uid, %s) WHERE id = %s",
+                (user.firebase_uid, existing_user[0])
+            )
+            conn.commit()
 
             return {
                 "message": "User already exists"
@@ -703,7 +644,7 @@ def create_user(user: UserCreate):
         conn.close()
 
 
-@app.get("/users")
+@app.get("/users", dependencies=[Depends(require_admin)])
 def get_users():
 
     conn = get_connection()
@@ -727,7 +668,10 @@ def get_users():
 
 
 @app.get("/users/email/{email}")
-def get_user_by_email(email: str):
+def get_user_by_email(email: str, claims=Depends(require_client)):
+
+    if not _is_admin(claims) and email.strip().casefold() != str(claims.get("email", "")).strip().casefold():
+        raise HTTPException(status_code=403, detail="This belongs to another account")
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -750,7 +694,7 @@ def get_user_by_email(email: str):
             LEFT JOIN plans p
                 ON up.plan_id = p.id
 
-            WHERE u.email = %s
+            WHERE LOWER(u.email) = LOWER(%s)
             """,
             (email,)
         )
@@ -777,7 +721,9 @@ def get_user_by_email(email: str):
 
 
 @app.get("/sessions/user/{user_id}")
-def get_user_sessions(user_id: int):
+def get_user_sessions(user_id: int, claims=Depends(require_client)):
+
+    assert_owner(claims, user_id)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -816,7 +762,9 @@ def get_user_sessions(user_id: int):
 
 
 @app.delete("/sessions/{session_id}")
-def cancel_session(session_id: int):
+def cancel_session(session_id: int, claims=Depends(require_client)):
+
+    assert_session_owner(claims, session_id)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -878,7 +826,9 @@ def cancel_session(session_id: int):
 
 
 @app.get("/profile/{user_id}")
-def get_profile(user_id: int):
+def get_profile(user_id: int, claims=Depends(require_client)):
+
+    assert_owner(claims, user_id)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -914,6 +864,9 @@ def get_profile(user_id: int):
 
         profile = cursor.fetchone()
 
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+
         return {
             "id": profile[0],
             "nome": profile[1],
@@ -936,8 +889,11 @@ def get_profile(user_id: int):
 @app.put("/sessions/{session_id}")
 def update_session(
     session_id: int,
-    session: UpdateSession
+    session: UpdateSession,
+    claims=Depends(require_client)
 ):
+
+    assert_session_owner(claims, session_id)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -1232,8 +1188,11 @@ async def upload_profile_photo(user_id: int, file: UploadFile = File(...), claim
 @app.put("/profile/{user_id}")
 def update_profile(
     user_id: int,
-    profile: UpdateProfile
+    profile: UpdateProfile,
+    claims=Depends(require_client)
 ):
+
+    assert_owner(claims, user_id)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -1266,60 +1225,6 @@ def update_profile(
         return {
             "message": "Profile updated successfully"
         }
-
-    except Exception as e:
-
-        conn.rollback()
-
-        return {
-            "error": str(e)
-        }
-
-    finally:
-
-        cursor.close()
-        conn.close()
-
-
-@app.post("/user-plan")
-def assign_plan(data: UserPlanCreate):
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    try:
-
-        cursor.execute(
-            """
-            DELETE FROM user_plans
-            WHERE user_id = %s
-            """,
-            (data.user_id,)
-        )
-
-        cursor.execute(
-            """
-            INSERT INTO user_plans
-            (user_id, plan_id)
-
-            VALUES (%s, %s)
-            """,
-            (
-                data.user_id,
-                data.plan_id
-            )
-        )
-
-        conn.commit()
-
-        return {
-            "message": "Plan assigned successfully"
-        }
-
-    except HTTPException:
-
-        conn.rollback()
-        raise
 
     except Exception as e:
 
@@ -1392,11 +1297,7 @@ def get_schedule_for_date(session_date: str):
 
     try:
 
-        cursor.execute("SELECT id FROM trainers WHERE active")
-        times = set()
-        for (trainer_id,) in cursor.fetchall():
-            times.update(free_start_times(cursor, trainer_id, day))
-        return sorted(times)
+        return free_start_times_any_trainer(cursor, day)
 
     finally:
 
@@ -1418,13 +1319,46 @@ def age_from_birth_date(birth_date, today=None):
 
 TRIAL_TIMES = {f"{hour:02d}:00" for hour in range(7, 21)}
 
+# At most this many requests per address per hour (kept in memory, so it
+# resets when the server restarts; it only needs to stop floods).
+TRIAL_LIMIT = 5
+TRIAL_WINDOW_SECONDS = 3600
+_trial_hits = {}
+
+
+def _client_ip(request):
+    forwarded = request.headers.get("x-forwarded-for", "")
+    return (forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "")) or "unknown"
+
+
+def _too_many_trial_requests(ip):
+    now = datetime.now().timestamp()
+    hits = [moment for moment in _trial_hits.get(ip, []) if now - moment < TRIAL_WINDOW_SECONDS]
+    if len(hits) >= TRIAL_LIMIT:
+        _trial_hits[ip] = hits
+        return True
+    hits.append(now)
+    _trial_hits[ip] = hits
+    return False
+
 
 @app.post("/trial-sessions")
 def create_trial_session(
-    trial: TrialSessionCreate
+    trial: TrialSessionCreate,
+    request: Request
 ):
     """Public form. Stores a Pending request; the calendar event is created
     only when the admin approves it and picks a trainer."""
+
+    if trial.website:
+        # A bot filled the hidden field: pretend it worked, store nothing.
+        return {"message": "Trial session requested", "trial_id": 0}
+
+    if _too_many_trial_requests(_client_ip(request)):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests from this connection. Please try again later."
+        )
 
     full_name = trial.full_name.strip()
     email = trial.email.strip().lower()

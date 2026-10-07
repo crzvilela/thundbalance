@@ -34,7 +34,7 @@ function TrainingTips() {
     // Navbar/Footer read brand/logo/background from here — same provider
     // Home.jsx uses, so this page stays visually in sync with whatever the
     // admin has configured in the Landing Page Editor.
-    <LandingContentProvider mode="view" version="published">
+    <LandingContentProvider mode="view" version="published" placeholder={<div className="bg-black min-h-screen"><Navbar /></div>}>
       <div className="bg-black min-h-screen text-white overflow-x-hidden">
 
         <Navbar />

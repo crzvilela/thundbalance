@@ -13,5 +13,5 @@ def get_connection():
         host="localhost",
         database="thundbalance",
         user="postgres",
-        password="123456"
+        password=os.getenv("DB_PASSWORD", "123456")  # local development only
     )

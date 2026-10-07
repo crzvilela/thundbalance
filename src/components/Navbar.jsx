@@ -8,11 +8,32 @@ import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/Section
 import { useLandingContent, LandingContentProvider } from '../content/LandingContentContext'
 import { useI18n } from '../i18n/I18nContext'
 import LanguageSwitcher from './LanguageSwitcher'
-import logo from '../assets/images/nuevo logo (1).png'
+// Bundled white vector logo, inlined into the JS so it is there on the very
+// first render: no network request, no wait for the API.
+import logo from '../assets/images/thundbalance-logo.svg?inline'
+import { resolveImageUrl } from '../api/landingPage'
 import { navbarLogoStyle } from '../utils/navbarLogo'
 import { ADMIN_EMAIL } from '../config'
 import NavbarLogoFrame from './editor/NavbarLogoFrame'
 import './Navbar.css'
+
+const BUNDLED_LOGOS = ['/site-images/logo.png', '/site-images/logo.svg']
+
+// True once `url` has finished loading, so an uploaded logo only replaces the
+// bundled one when it is really available (the API can be asleep or the file
+// gone) instead of leaving an empty gap.
+function useImageReady(url) {
+  const [loadedUrl, setLoadedUrl] = useState(null)
+  useEffect(() => {
+    if (!url) return undefined
+    let cancelled = false
+    const image = new Image()
+    image.onload = () => { if (!cancelled) setLoadedUrl(url) }
+    image.src = url
+    return () => { cancelled = true; image.onload = null }
+  }, [url])
+  return Boolean(url) && loadedUrl === url
+}
 
 function PublicLogoFrame({ section, children }) {
   return (
@@ -52,6 +73,10 @@ function NavbarInner() {
   const { t } = useI18n()
 
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection('navbar')
+
+  const storedLogo = section.logoImage || ''
+  const uploadedLogo = storedLogo && !BUNDLED_LOGOS.includes(storedLogo) ? resolveImageUrl(storedLogo) : null
+  const showUploadedLogo = useImageReady(uploadedLogo)
 
   // Sections are now dynamic IDs, not fixed names, so the in-page anchor
   // links below need to look up whichever section instance currently has
@@ -111,8 +136,8 @@ function NavbarInner() {
   if (!visible && !isEditMode) return null
 
   // The bundled SVG logo is already white and keeps its proportions at any
-  // size; uploaded bitmaps keep the old invert/crop treatment.
-  const isVectorLogo = /\.svg(\?|$)/i.test(section.logoImage || '')
+  // size; an uploaded bitmap keeps the old invert/crop treatment.
+  const isVectorLogo = !showUploadedLogo || /\.svg(\?|$)/i.test(storedLogo)
 
   const LogoFrame = isEditMode ? NavbarLogoFrame : PublicLogoFrame
 
@@ -122,6 +147,7 @@ function NavbarInner() {
       <EditableImage
         path="sections.navbar.logoImage"
         defaultSrc={logo}
+        srcOverride={showUploadedLogo ? undefined : logo}
         alt="ThundBalance"
         containerClassName="h-full w-full overflow-hidden"
         imageClassName={isVectorLogo ? 'h-full w-full object-contain' : 'h-full w-full object-cover object-[45%_50%] scale-[1.6] invert mix-blend-screen'}
@@ -135,6 +161,7 @@ function NavbarInner() {
           path="sections.navbar.brand"
           styleObj="sections.navbar.brandStyle"
           label="Navbar Brand"
+          fallback="THUNDBALANCE"
           className="text-lg sm:text-2xl tracking-[2px] sm:tracking-[4px] font-bold"
         />
       )}
@@ -320,13 +347,6 @@ function NavbarInner() {
                   </Link>
 
                   <Link
-                    to="/book-session"
-                    className="block px-4 py-3 hover:bg-white/10 transition duration-300"
-                  >
-                    {t('nav_book_session')}
-                  </Link>
-
-                  <Link
                     to="/training-tips"
                     onClick={() => setOpenMenu(false)}
                     className="block px-4 py-3 hover:bg-white/10 transition duration-300"
@@ -404,7 +424,7 @@ function Navbar() {
   const { hasProvider } = useLandingContent()
   if (hasProvider) return <NavbarInner />
   return (
-    <LandingContentProvider mode="view" version="published">
+    <LandingContentProvider mode="view" version="published" placeholder={<NavbarInner />}>
       <NavbarInner />
     </LandingContentProvider>
   )

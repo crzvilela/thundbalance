@@ -4,7 +4,6 @@ import Home from '../pages/Home'
 import Login from '../pages/Login'
 import Register from '../pages/Register'
 import Dashboard from '../pages/Dashboard'
-import BookSession from '../pages/BookSession'
 import MySessions from '../pages/MySessions'
 import Profile from '../pages/Profile'
 import LandingPageEditor from '../pages/admin/LandingPageEditor'
@@ -18,7 +17,6 @@ import Trainers from '../admin/pages/Trainers'
 import Plans from '../admin/pages/Plans'
 import Videos from '../admin/pages/Videos'
 import TrainingTips from '../pages/TrainingTips'
-import ChoosePlan from '../pages/ChoosePlan'
 import TrialSession from '../pages/Trialsession'
 import TrainingRequest from '../pages/TrainingRequest'
 import AdminLogin from '../pages/admin/AdminLogin'
@@ -38,7 +36,6 @@ function AppRoutes() {
 
         <Route path="/dashboard" element={<Dashboard />} />
 
-        <Route path="/book-session" element={<BookSession />} />
         
         
         <Route path="/my-sessions" element={<MySessions />} />
@@ -67,7 +64,6 @@ function AppRoutes() {
 
         <Route path="/training-tips" element={<TrainingTips />} />
       
-        <Route path="/choose-plan" element={<ChoosePlan />} />
 
         <Route path="/trial-session" element={<TrialSession />}/>
 

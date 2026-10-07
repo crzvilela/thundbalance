@@ -5,7 +5,9 @@
 // descriptions) is NEVER looked up here — it always stays in English,
 // regardless of the selected language. See I18nContext.jsx for the t()
 // lookup function and its fallback chain.
-export const translations = {
+import { pageText } from './pageText'
+
+const base = {
   en: {
     contact_eyebrow_form: "YOUR NEXT CHAPTER",
     contact_baseline: "Your goals. Our energy.",
@@ -167,4 +169,10 @@ export const translations = {
 
     language_switcher_aria: 'Canviar idioma'
   }
+}
+
+export const translations = {
+  en: { ...base.en, ...pageText.en },
+  es: { ...base.es, ...pageText.es },
+  ca: { ...base.ca, ...pageText.ca }
 }
