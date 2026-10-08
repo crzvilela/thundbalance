@@ -32,9 +32,9 @@ function ToastHost({ toasts }) {
     <div className="pointer-events-none fixed bottom-5 right-5 z-[60] flex flex-col gap-2">
       {toasts.map(toast => (
         <div key={toast.id} role="status" className={`admin-toast pointer-events-auto flex items-center gap-2.5 rounded-xl border px-4 py-3 text-sm shadow-xl backdrop-blur ${
-          toast.tone === 'error' ? 'border-red-400/30 bg-red-950/80 text-red-100' : 'border-emerald-400/30 bg-emerald-950/80 text-emerald-100'
+          toast.tone === 'error' ? 'border-red-400/30 bg-red-950/80 text-red-100' : toast.tone === 'warning' ? 'border-amber-400/40 bg-amber-950/90 text-amber-100' : 'border-emerald-400/30 bg-emerald-950/80 text-emerald-100'
         }`}>
-          <Icon name={toast.tone === 'error' ? 'alert' : 'check'} className="h-4 w-4 shrink-0" />
+          <Icon name={toast.tone === 'error' || toast.tone === 'warning' ? 'alert' : 'check'} className="h-4 w-4 shrink-0" />
           {toast.message}
         </div>
       ))}
@@ -63,7 +63,8 @@ export default function AdminLayout() {
   const push = useCallback((message, tone = 'success') => {
     const id = ++nextToastId.current
     setToasts(current => [...current, { id, message, tone }])
-    window.setTimeout(() => setToasts(current => current.filter(toast => toast.id !== id)), 4500)
+    // A warning stays longer: it asks the admin to do something.
+    window.setTimeout(() => setToasts(current => current.filter(toast => toast.id !== id)), tone === 'warning' ? 12000 : 4500)
   }, [])
   const toastValue = useMemo(() => ({ push }), [push])
 

@@ -11,7 +11,7 @@ import {
   PageHeader, SelectInput, Skeleton, TextArea, TextInput
 } from '../ui'
 
-const STATUS_TONE = { pending: 'amber', approved: 'emerald', rejected: 'red', cancelled: 'neutral' }
+const STATUS_TONE = { pending: 'amber', approved: 'sky', confirmed: 'emerald', declined: 'red', rejected: 'red', cancelled: 'neutral' }
 
 export default function TrialSessions() {
   const { t, language, dayFull } = useAdminText()
@@ -43,6 +43,8 @@ export default function TrialSessions() {
     all: trials.length,
     pending: trials.filter(trial => trial.status === 'pending').length,
     approved: trials.filter(trial => trial.status === 'approved').length,
+    confirmed: trials.filter(trial => trial.status === 'confirmed').length,
+    declined: trials.filter(trial => trial.status === 'declined').length,
     rejected: trials.filter(trial => trial.status === 'rejected').length,
     cancelled: trials.filter(trial => trial.status === 'cancelled').length
   }), [trials])
@@ -84,8 +86,8 @@ export default function TrialSessions() {
     'tr_cancelled_ok', () => setCancelling(null))
 
   const filters = [
-    ['pending', t('tr_pending')], ['approved', t('tr_approved')], ['rejected', t('tr_rejected')],
-    ['cancelled', t('tr_cancelled')], ['all', t('tr_all')]
+    ['pending', t('tr_pending')], ['approved', t('tr_approved')], ['confirmed', t('tr_confirmed')], ['declined', t('tr_declined')],
+    ['rejected', t('tr_rejected')], ['cancelled', t('tr_cancelled')], ['all', t('tr_all')]
   ]
 
   return (
@@ -131,7 +133,7 @@ export default function TrialSessions() {
                   <div className="min-w-0 flex-1 basis-64">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="truncate text-base font-semibold">{trial.name}</p>
-                      <Badge tone={STATUS_TONE[trial.status] || 'neutral'}>{t(`tr_${trial.status}`)}</Badge>
+                      <Badge tone={STATUS_TONE[trial.status] || 'neutral'}>{t(`trs_${trial.status}`)}</Badge>
                     </div>
                     <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-400">
                       <a href={`mailto:${trial.email}`} className="hover:text-emerald-300">{trial.email}</a>
@@ -147,6 +149,7 @@ export default function TrialSessions() {
                       {trial.age && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{trial.age}</span>}
                       {trial.trainer && <span className="rounded-md border border-sky-400/20 bg-sky-400/10 px-2 py-0.5 text-xs text-sky-200">{t('tr_trainer')}: {trial.trainer}</span>}
                     </div>
+                    {trial.calendar_failed && <p role="alert" className="mt-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-200">{t('tr_calendar_failed')}</p>}
                     {trial.reason && <p className="mt-2 text-sm text-red-300/90">{t('req_reason')}: {trial.reason}</p>}
                   </div>
                   <div className="flex gap-2">
@@ -154,7 +157,7 @@ export default function TrialSessions() {
                       <Button variant="primary" onClick={() => { setTrainerId(''); setFormError(''); setApproving(trial) }}><Icon name="check" className="h-4 w-4" />{t('req_approve')}</Button>
                       <Button variant="danger" onClick={() => { setReason(''); setFormError(''); setDeclining(trial) }}>{t('req_reject')}</Button>
                     </>}
-                    {trial.status === 'approved' && (
+                    {(trial.status === 'approved' || trial.status === 'confirmed') && (
                       <Button variant="danger" onClick={() => { setFormError(''); setCancelling(trial) }}>{t('cl_cancel_session')}</Button>
                     )}
                   </div>

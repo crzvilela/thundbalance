@@ -80,7 +80,7 @@ def has_conflict(cursor, trainer_id, day, time, ignore_session_id=None, ignore_t
         """
         SELECT 1 FROM trial_sessions
         WHERE trainer_id = %s AND session_date = %s AND session_time = %s
-          AND LOWER(status) = 'approved' AND (%s::int IS NULL OR id <> %s::int)
+          AND LOWER(status) IN ('approved', 'confirmed') AND (%s::int IS NULL OR id <> %s::int)
         LIMIT 1
         """,
         (trainer_id, str(day)[:10], hhmm(time), ignore_trial_id, ignore_trial_id),
@@ -132,7 +132,7 @@ def _busy_times(cursor, day, trainer_ids=None, ignore_session_id=None):
     cursor.execute(
         """
         SELECT trainer_id, session_time FROM trial_sessions
-        WHERE session_date = %s AND LOWER(status) = 'approved'
+        WHERE session_date = %s AND LOWER(status) IN ('approved', 'confirmed')
         """,
         (key,),
     )
@@ -334,7 +334,7 @@ def trainer_usage(cursor, trainer_id):
             (SELECT COUNT(*) FROM sessions
                WHERE trainer_id = %(id)s AND status = 'Booked' AND session_date >= CURRENT_DATE)
           + (SELECT COUNT(*) FROM trial_sessions
-               WHERE trainer_id = %(id)s AND LOWER(status) = 'approved' AND session_date >= CURRENT_DATE)
+               WHERE trainer_id = %(id)s AND LOWER(status) IN ('approved', 'confirmed') AND session_date >= CURRENT_DATE)
         """,
         {"id": trainer_id},
     )

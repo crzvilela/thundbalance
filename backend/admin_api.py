@@ -22,7 +22,8 @@ from availability import (
     trainer_usage, validate_hours,
 )
 import mailer
-from google_calendar import create_trial_session_event, delete_calendar_event, list_calendar_events
+from google_calendar import delete_calendar_event, list_calendar_events
+from trial_confirmation import new_token, panel_status
 
 
 class PlanPayload(BaseModel):
@@ -94,7 +95,7 @@ def register_admin_routes(app, require_admin):
                     COALESCE(pl.end_date, s.last_date),
                     EXISTS (
                         SELECT 1 FROM client_requests cr
-                        WHERE cr.user_id = u.id AND LOWER(cr.status) = 'pending'
+                        WHERE cr.user_id = u.id AND LOWER(cr.status) = 'pending' AND cr.archived_at IS NULL
                     )
                 FROM users u
                 LEFT JOIN LATERAL (
@@ -138,7 +139,7 @@ def register_admin_routes(app, require_admin):
         try:
             cursor.execute(
                 """
-                SELECT id, nome, email, telefone, codigo_pais, cidade, morada, cep, foto
+                SELECT id, nome, email, telefone, codigo_pais, cidade, morada, cep, foto, must_change_password
                 FROM users WHERE id = %s
                 """,
                 (client_id,),
@@ -210,6 +211,7 @@ def register_admin_routes(app, require_admin):
                 "id": user[0], "name": user[1], "email": user[2], "phone": user[3],
                 "country_code": user[4], "city": user[5], "address": user[6],
                 "postal_code": user[7], "photo": user[8],
+                "must_change_password": bool(user[9]),
                 "plan": {"id": plan[0], "name": plan[1]} if plan else None,
                 "pack": pack,
                 "sessions": sessions,
@@ -355,31 +357,43 @@ def register_admin_routes(app, require_admin):
                 SELECT ts.id, ts.full_name, ts.email, ts.phone, ts.age, ts.goal,
                        ts.experience, ts.session_date, ts.session_time, ts.status,
                        ts.trainer_id, t.nome, ts.rejection_reason, ts.created_at,
-                       ts.birth_date
+                       ts.birth_date, ts.confirmation_token, ts.google_event_id, ts.calendar_error,
+                       ts.approved_at, ts.confirmed_at, ts.declined_at
                 FROM trial_sessions ts
                 LEFT JOIN trainers t ON t.id = ts.trainer_id
                 ORDER BY ts.id DESC
                 """
             )
-            return [
-                {
+            result = []
+            for r in cursor.fetchall():
+                status = panel_status(r[9], r[15])
+                result.append({
                     "id": r[0], "name": r[1], "email": r[2], "phone": r[3],
                     # Age follows the birth date so it stays current after the request.
                     "age": age_from_birth_date(r[14]) if r[14] else r[4],
                     "birth_date": _iso(r[14]) if r[14] else None,
                     "goal": r[5], "experience": r[6], "date": _iso(r[7]),
-                    "time": str(r[8])[:5] if r[8] else "", "status": str(r[9] or "Pending"),
+                    "time": str(r[8])[:5] if r[8] else "",
+                    # pending | approved (waiting for the client) | confirmed | declined | rejected | cancelled
+                    "status": status,
                     "trainer_id": r[10], "trainer": r[11], "reason": r[12],
                     "created_at": _iso(r[13]),
-                }
-                for r in cursor.fetchall()
-            ]
+                    "approved_at": _iso(r[18]) if r[18] else None,
+                    "confirmed_at": _iso(r[19]) if r[19] else None,
+                    "declined_at": _iso(r[20]) if r[20] else None,
+                    # Confirmed but the Google event is missing: the admin must add it by hand.
+                    "calendar_failed": status == "confirmed" and not r[16] and bool(r[17]),
+                })
+            return result
         finally:
             cursor.close()
             conn.close()
 
     @app.post("/admin/trial-sessions/{trial_id}/approve", dependencies=admin)
     def admin_approve_trial(trial_id: int, data: TrialApprovePayload):
+        """Approves the request and emails the client a link to confirm. The
+        calendar event is created later, when the client confirms; until then
+        the trainer's slot is simply held."""
         conn = get_connection()
         cursor = conn.cursor()
         try:
@@ -407,31 +421,19 @@ def register_admin_routes(app, require_admin):
             if problem:
                 raise HTTPException(status_code=409, detail=problem)
 
-            # Nothing is written until the calendar event exists, so a Google
-            # failure leaves the request Pending instead of half-approved.
-            event_id = create_trial_session_event(
-                trial[0], trial[1], trial[2], trial[3], trial[4],
-                str(trial[5]), str(trial[6])[:5], trainer[0],
+            token = new_token()
+            cursor.execute(
+                """
+                UPDATE trial_sessions
+                SET status = 'Approved', trainer_id = %s, confirmation_token = %s,
+                    approved_at = NOW(), rejection_reason = NULL
+                WHERE id = %s
+                """,
+                (data.trainer_id, token, trial_id),
             )
-            try:
-                cursor.execute(
-                    """
-                    UPDATE trial_sessions
-                    SET status = 'Approved', trainer_id = %s, google_event_id = %s,
-                        rejection_reason = NULL
-                    WHERE id = %s
-                    """,
-                    (data.trainer_id, event_id, trial_id),
-                )
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                try:
-                    delete_calendar_event(event_id)
-                except Exception:
-                    traceback.print_exc()
-                raise
-            mailer.send_trial_approved(trial[1], trial[0], str(trial[5]), str(trial[6])[:5], trainer[0])
+            conn.commit()
+            first_name = (str(trial[0]).split() or [""])[0]
+            mailer.send_trial_approved(trial[1], first_name, str(trial[5]), str(trial[6])[:5], trainer[0], token)
             return {"message": "Trial session approved"}
         except HTTPException:
             conn.rollback()
@@ -449,21 +451,20 @@ def register_admin_routes(app, require_admin):
 
     @app.post("/admin/trial-sessions/{trial_id}/reject", dependencies=admin)
     def admin_reject_trial(trial_id: int, data: TrialRejectPayload):
+        # No email is sent on rejection (out of scope for the confirmation flow).
         conn = get_connection()
         cursor = conn.cursor()
         try:
             cursor.execute(
                 """
                 UPDATE trial_sessions SET status = 'Rejected', rejection_reason = %s
-                WHERE id = %s AND LOWER(status) = 'pending' RETURNING id, email, full_name
+                WHERE id = %s AND LOWER(status) = 'pending' RETURNING id
                 """,
                 ((data.reason or "").strip() or None, trial_id),
             )
-            rejected = cursor.fetchone()
-            if not rejected:
+            if not cursor.fetchone():
                 raise HTTPException(status_code=404, detail="Pending trial request not found")
             conn.commit()
-            mailer.send_trial_rejected(rejected[1], rejected[2], (data.reason or "").strip())
             return {"message": "Trial session declined"}
         except HTTPException:
             conn.rollback()
@@ -483,18 +484,19 @@ def register_admin_routes(app, require_admin):
             row = cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Trial session not found")
-            if str(row[1]).lower() != "approved":
-                raise HTTPException(status_code=409, detail="Only approved trial sessions can be cancelled")
+            if str(row[1]).lower() not in ("approved", "confirmed"):
+                raise HTTPException(status_code=409, detail="Only approved or confirmed trial sessions can be cancelled")
             if row[0]:
                 try:
                     delete_calendar_event(row[0])
                 except Exception:
                     traceback.print_exc()
             cursor.execute(
-                "UPDATE trial_sessions SET status = 'Cancelled' WHERE id = %s", (trial_id,)
+                "UPDATE trial_sessions SET status = 'Cancelled', google_event_id = NULL WHERE id = %s", (trial_id,)
             )
             conn.commit()
-            mailer.send_trial_cancelled(row[2], row[3], str(row[4]), str(row[5])[:5])
+            first_name = (str(row[3]).split() or [""])[0]
+            mailer.send_trial_cancelled(row[2], first_name, str(row[4]), str(row[5])[:5])
             return {"message": "Trial session cancelled"}
         except HTTPException:
             conn.rollback()

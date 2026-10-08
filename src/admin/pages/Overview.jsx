@@ -39,6 +39,18 @@ export default function Overview() {
   const sessions = useMemo(() => normalizeSessions(sessionsResource.data), [sessionsResource.data])
   const pending = requests.filter(request => request.status === 'pending')
   const pendingTrials = trials.filter(trial => trial.status === 'pending')
+  const awaitingTrials = trials.filter(trial => trial.status === 'approved')
+  // One square for everything that waits for the admin's approval: training
+  // requests (/admin/client-requests) plus trial-session requests
+  // (/admin/trial-sessions). They are different data, so they are summed
+  // instead of one being dropped. The square opens the queue with more items
+  // waiting (ties go to requests); both queues keep their sidebar badges.
+  const totalPending = pending.length + pendingTrials.length
+  const pendingTarget = pendingTrials.length > pending.length ? '/admin/trials' : '/admin/requests'
+  const pendingLoading = (requestsResource.loading && !requestsResource.data) || (trialsResource.loading && !trialsResource.data)
+  const pendingHint = totalPending
+    ? `${t('stat_requests_short')}: ${pending.length} · ${t('stat_trials_short')}: ${pendingTrials.length}`
+    : awaitingTrials.length ? `${awaitingTrials.length} ${t('tr_awaiting_hint')}` : t('pending_hint_none')
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
 
   const { week, upcoming } = useMemo(() => {
@@ -76,17 +88,15 @@ export default function Overview() {
         </Button>}
       />
 
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <section className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         <StatCard label={t('stat_clients')} value={stats.data?.users ?? '—'} icon="clients" loading={stats.loading && !stats.data} to="/admin/clients" />
-        <StatCard
-          label={t('stat_trials')} value={pendingTrials.length} icon="whistle" tone="sky" to="/admin/trials"
-          hint={pendingTrials.length ? t('pending_hint_some') : t('pending_hint_none')} loading={trialsResource.loading && !trialsResource.data}
-        />
         <StatCard label={t('stat_sessions')} value={stats.data?.sessions ?? '—'} icon="calendar" loading={stats.loading && !stats.data} to="/admin/clients" />
-        <StatCard
-          label={t('stat_pending')} value={pending.length} icon="requests" tone="amber" to="/admin/requests"
-          hint={pending.length ? t('pending_hint_some') : t('pending_hint_none')} loading={requestsResource.loading && !requestsResource.data}
-        />
+        <div className="col-span-2 sm:col-span-1">
+          <StatCard
+            label={t('stat_pending_total')} value={totalPending} icon="requests" tone="amber" to={pendingTarget}
+            hint={pendingHint} loading={pendingLoading}
+          />
+        </div>
       </section>
 
       <section className="mt-6 grid gap-6 lg:grid-cols-5">

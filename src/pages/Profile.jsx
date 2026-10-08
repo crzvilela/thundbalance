@@ -3,6 +3,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { onAuthStateChanged, updateProfile } from 'firebase/auth'
 import { auth } from '../firebase/auth'
 import Navbar from '../components/Navbar'
+import ChangePassword from '../components/ChangePassword'
+import TempPasswordNotice from '../components/TempPasswordNotice'
+import { markPasswordChanged } from '../api/account'
 import { LandingContentProvider } from '../content/LandingContentContext'
 import { API_URL, ADMIN_EMAIL } from '../config'
 import { authFetch } from '../api/authFetch'
@@ -111,6 +114,7 @@ function Profile() {
       <Navbar />
       <main className="relative mx-auto max-w-6xl px-5 pb-20 pt-36 md:pt-44">
         <div className="pointer-events-none absolute left-0 top-20 h-64 w-64 rounded-full bg-emerald-500/5 blur-3xl" />
+        <TempPasswordNotice showLink={false} />
         <header className="relative mb-9">
           <p className="mb-3 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-400">{t('pf_eyebrow')}</p>
           <h1 className="text-5xl md:text-6xl" style={{ fontFamily: 'Bebas Neue' }}>{t('pf_title')}</h1>
@@ -140,7 +144,8 @@ function Profile() {
               {isAdmin && <Link to="/admin" className={`${button} mt-6 block bg-emerald-400 text-black hover:bg-emerald-300`}>{t('pf_admin_link')}</Link>}
             </div>
           </aside>
-          <form onSubmit={save} className="self-start rounded-3xl border border-white/10 bg-white/[0.025] p-6 md:p-9">
+          <div className="min-w-0 space-y-6 self-start">
+          <form onSubmit={save} className="rounded-3xl border border-white/10 bg-white/[0.025] p-6 md:p-9">
             <div className="mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-6">
               <div><h2 className="text-xl font-semibold">{t('pf_details')}</h2><p className="mt-2 text-sm text-gray-500">{t('pf_details_text')}</p></div>
               {!editing && <button type="button" onClick={() => { setDraft(profile); setEditing(true); setNotice('') }} className={`${button} border border-white/15 hover:bg-white/10`}>{t('pf_edit')}</button>}
@@ -156,6 +161,8 @@ function Profile() {
               <button type="submit" disabled={saving || uploading} className={`${button} bg-emerald-400 text-black hover:bg-emerald-300`}>{saving ? t('pf_saving') : t('pf_save')}</button>
             </div>}
           </form>
+          <ChangePassword user={user} onChanged={markPasswordChanged} />
+          </div>
         </div>}
       </main>
     </div>

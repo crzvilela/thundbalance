@@ -6,6 +6,7 @@ import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { dateKey, parseDateKey } from '../requests'
 import { PackStatusBadge, PackSummary, RenewDrawer, TrainingCalendar } from '../PackPanel'
+import AddClientDrawer from '../AddClientDrawer'
 import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Icon,
   PageHeader, SelectInput, Skeleton, TextInput
@@ -42,6 +43,7 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
   const [cancelTarget, setCancelTarget] = useState(null)
   const [cancelling, setCancelling] = useState(false)
   const [renewing, setRenewing] = useState(false)
+  const [resending, setResending] = useState(false)
 
   const client = detail.data
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
@@ -62,6 +64,19 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
       toast.push(error.message, 'error')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const resend = async () => {
+    setResending(true)
+    try {
+      const result = await adminRequest('POST', `/admin/clients/${clientId}/resend-credentials`)
+      if (result.email?.sent) toast.push(`${t('cc_resent')} ${client.email}`)
+      else toast.push(t('cc_email_failed'), 'warning')
+    } catch (error) {
+      toast.push(error.message, 'error')
+    } finally {
+      setResending(false)
     }
   }
 
@@ -101,6 +116,14 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
             </div>
 
             <PackSummary pack={client.pack} onRenew={() => setRenewing(true)} />
+
+            {client.must_change_password && (
+              <section className="rounded-xl border border-amber-400/25 bg-amber-400/5 p-4">
+                <h3 className="mb-1 text-sm font-medium uppercase tracking-wider text-amber-200">{t('cc_temp_title')}</h3>
+                <p className="mb-3 text-sm text-gray-300">{t('cc_temp_text')}</p>
+                <Button variant="secondary" onClick={resend} loading={resending}>{resending ? t('cc_resending') : t('cc_resend')}</Button>
+              </section>
+            )}
 
             <section>
               <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">{t('cl_contact')}</h3>
@@ -193,6 +216,7 @@ export default function Clients() {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
   const [selectedId, setSelectedId] = useState(null)
+  const [adding, setAdding] = useState(false)
 
   const clients = useMemo(() => clientsResource.data || [], [clientsResource.data])
   const plans = useMemo(() => plansResource.data || [], [plansResource.data])
@@ -222,7 +246,10 @@ export default function Clients() {
     <div className="admin-fade">
       <PageHeader
         title={t('clients_title')} subtitle={t('clients_sub')}
-        actions={<Button variant="secondary" onClick={clientsResource.reload}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>}
+        actions={<>
+          <Button variant="secondary" onClick={clientsResource.reload}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>
+          <Button variant="primary" onClick={() => setAdding(true)}><Icon name="plus" className="h-4 w-4" />{t('cc_add')}</Button>
+        </>}
       />
 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -279,6 +306,13 @@ export default function Clients() {
             </li>
           ))}
         </ul>
+      )}
+
+      {adding && (
+        <AddClientDrawer
+          plans={plans} trainers={trainers}
+          onClose={() => setAdding(false)} onCreated={() => clientsResource.reload()}
+        />
       )}
 
       {selectedId && (

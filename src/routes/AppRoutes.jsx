@@ -18,6 +18,7 @@ import Plans from '../admin/pages/Plans'
 import Videos from '../admin/pages/Videos'
 import TrainingTips from '../pages/TrainingTips'
 import TrialSession from '../pages/Trialsession'
+import TrialConfirm from '../pages/TrialConfirm'
 import TrainingRequest from '../pages/TrainingRequest'
 import AdminLogin from '../pages/admin/AdminLogin'
 import RequireAdmin from '../components/admin/RequireAdmin'
@@ -66,6 +67,8 @@ function AppRoutes() {
       
 
         <Route path="/trial-session" element={<TrialSession />}/>
+
+        <Route path="/trial-session/confirm/:token" element={<TrialConfirm />}/>
 
         <Route path="/training-request" element={<TrainingRequest />}/>
       

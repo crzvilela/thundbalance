@@ -22,6 +22,11 @@ from google_calendar import (
 from landing_page_default import DEFAULT_LANDING_CONTENT
 from admin_api import register_admin_routes
 from trial_notifications import notify_trial_requested
+import mailer
+from packs import DAY_MAP, clean_pack_recipients, create_pack, delete_created_events, email_pack, validate_pack_request
+from emails import team_emails
+from trial_confirmation import ensure_confirmation_fields, register_trial_confirmation_routes
+from client_accounts import ensure_account_fields, register_client_account_routes
 from availability import (
     WEEKDAYS,
     ensure_trainers_and_availability,
@@ -38,15 +43,6 @@ from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2 import id_token
 
 
-DAY_MAP = {
-    "Monday": 0,
-    "Tuesday": 1,
-    "Wednesday": 2,
-    "Thursday": 3,
-    "Friday": 4,
-    "Saturday": 5,
-    "Sunday": 6
-}
 
 
 app = FastAPI()
@@ -116,6 +112,8 @@ def require_client(authorization: str | None = Header(default=None)):
 
 
 register_admin_routes(app, require_admin)
+register_trial_confirmation_routes(app)
+register_client_account_routes(app, require_admin, require_client)
 
 
 def _is_admin(claims):
@@ -278,6 +276,14 @@ def ensure_trial_session_fields():
     finally:
         cursor.close()
         conn.close()
+    # Token, approval / confirmation dates and calendar warning (trial_confirmation.py).
+    ensure_confirmation_fields()
+
+
+@app.on_event("startup")
+def ensure_user_account_fields():
+    # must_change_password (client_accounts.py)
+    ensure_account_fields()
 
 
 @app.on_event("startup")
@@ -289,6 +295,8 @@ def ensure_client_workflow_fields():
         cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS trainer_id INTEGER REFERENCES trainers(id)")
         cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS start_date DATE")
         cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS sessions_per_week INTEGER")
+        # Archiving hides a request from the admin lists without deleting anything.
+        cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP")
         cursor.execute("ALTER TABLE client_requests ALTER COLUMN status SET DEFAULT 'Pending'")
         cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE")
         # Pack period and schedule, recorded when a pack is approved or renewed.
@@ -349,7 +357,7 @@ class UpdateProfile(BaseModel):
 
 class TrialSessionCreate(BaseModel):
     # Hidden field real visitors never fill; bots usually do.
-    website: str | None = None
+    tb_hp: str | None = None
     full_name: str
     email: str
     phone: str
@@ -381,6 +389,10 @@ class ApproveRequest(BaseModel):
     start_date: str
     plan_id: int | None = None
     sessions_per_week: int | None = None
+    # Pack summary email: to the client (on/off) and to extra addresses
+    # (None = the team's default addresses).
+    email_client: bool = True
+    email_extra: list[str] | None = None
 
 
 class RenewPack(BaseModel):
@@ -390,11 +402,17 @@ class RenewPack(BaseModel):
     preferred_time: str
     trainer_id: int
     start_date: str
+    email_client: bool = True
+    email_extra: list[str] | None = None
 
 
 class RejectRequest(BaseModel):
     request_id: int
     reason: str | None = None
+
+
+class ArchiveRequest(BaseModel):
+    request_id: int
 
 
 class TrainingVideoCreate(BaseModel):
@@ -441,40 +459,6 @@ def trainer_is_available(
     existing_session = cursor.fetchone()
 
     return existing_session is None
-
-
-def generate_session_dates(
-    start_date,
-    preferred_days,
-    total_sessions
-):
-
-    selected_days = [
-        DAY_MAP[day.strip()]
-        for day in preferred_days.split(",")
-        if day.strip() in DAY_MAP
-    ]
-    if not selected_days:
-        raise HTTPException(status_code=400, detail="Request must include at least one preferred day")
-
-    current_date = datetime.strptime(
-        start_date,
-        "%Y-%m-%d"
-    )
-
-    dates = []
-
-    while len(dates) < total_sessions:
-
-        if current_date.weekday() in selected_days:
-
-            dates.append(
-                current_date.strftime("%Y-%m-%d")
-            )
-
-        current_date += timedelta(days=1)
-
-    return dates
 
 
 @app.get("/")
@@ -684,7 +668,8 @@ def get_user_by_email(email: str, claims=Depends(require_client)):
                 u.id,
                 u.nome,
                 u.email,
-                p.nome
+                p.nome,
+                u.must_change_password
 
             FROM users u
 
@@ -711,7 +696,8 @@ def get_user_by_email(email: str, claims=Depends(require_client)):
             "id": user[0],
             "nome": user[1],
             "email": user[2],
-            "plano": user[3]
+            "plano": user[3],
+            "must_change_password": bool(user[4])
         }
 
     finally:
@@ -1350,7 +1336,8 @@ def create_trial_session(
     """Public form. Stores a Pending request; the calendar event is created
     only when the admin approves it and picks a trainer."""
 
-    if trial.website:
+    if trial.tb_hp:
+        print("Trial form ignored: hidden field was filled (bot or autofill)")
         # A bot filled the hidden field: pretend it worked, store nothing.
         return {"message": "Trial session requested", "trial_id": 0}
 
@@ -1411,7 +1398,7 @@ def create_trial_session(
         cursor.execute(
             """
             SELECT 1 FROM trial_sessions
-            WHERE LOWER(email) = %s AND LOWER(status) IN ('pending', 'approved')
+            WHERE LOWER(email) = %s AND LOWER(status) IN ('pending', 'approved', 'confirmed')
               AND session_date >= CURRENT_DATE
             LIMIT 1
             """,
@@ -1472,6 +1459,8 @@ def create_trial_session(
             "session_date": session_date.isoformat(),
             "session_time": trial.session_time,
         })
+        mailer.send_trial_received(email, full_name.split()[0] if full_name.split() else full_name,
+                                   session_date.isoformat(), trial.session_time)
 
         return {
             "message": "Trial session requested",
@@ -1684,7 +1673,12 @@ def create_client_request(
 
 
 @app.get("/admin/client-requests", dependencies=[Depends(require_admin)])
-def admin_client_requests():
+def admin_client_requests(archived: str = "exclude"):
+    """Training requests as rows [id, client, plan, per week, days, time, status,
+    reason, archived_at]. archived=exclude (default) hides archived ones,
+    only returns just the archived ones, include returns everything."""
+    if archived not in ("exclude", "only", "include"):
+        raise HTTPException(status_code=422, detail="archived must be exclude, only or include")
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -1708,7 +1702,8 @@ def admin_client_requests():
                 cr.preferred_time,
 
                 cr.status,
-                cr.rejection_reason
+                cr.rejection_reason,
+                cr.archived_at
 
             FROM client_requests cr
 
@@ -1718,16 +1713,30 @@ def admin_client_requests():
             JOIN plans p
                 ON cr.plan_id = p.id
 
+            WHERE (%s = 'include'
+                   OR (%s = 'only' AND cr.archived_at IS NOT NULL)
+                   OR (%s = 'exclude' AND cr.archived_at IS NULL))
+
             ORDER BY cr.id DESC
-            """
+            """,
+            (archived, archived, archived)
         )
 
-        return cursor.fetchall()
+        return [
+            [*row[:8], row[8].isoformat() if row[8] else None]
+            for row in cursor.fetchall()
+        ]
 
     finally:
 
         cursor.close()
         conn.close()
+
+
+@app.get("/admin/email-defaults", dependencies=[Depends(require_admin)])
+def admin_email_defaults():
+    """Addresses pre-filled in "Enviar confirmación a" (TEAM_EMAILS or the defaults)."""
+    return {"team_emails": team_emails()}
 
 
 @app.post("/admin/approve-request", dependencies=[Depends(require_admin)])
@@ -1737,6 +1746,7 @@ def approve_request(
 
     conn = get_connection()
     cursor = conn.cursor()
+    created_event_ids = []
 
     try:
 
@@ -1767,34 +1777,11 @@ def approve_request(
         preferred_days = request[3]
         preferred_time = request[4]
 
-        cursor.execute(
-            """
-            SELECT
-                nome,
-                email
-            FROM users
-            WHERE id = %s
-            """,
-            (user_id,)
-        )
+        cursor.execute("SELECT nome, email FROM users WHERE id = %s", (user_id,))
+        client_name, client_email = cursor.fetchone()
 
-        user = cursor.fetchone()
-
-        client_name = user[0]
-        client_email = user[1]
-
-        cursor.execute(
-            """
-            SELECT
-                nome
-            FROM trainers
-            WHERE id = %s
-            """,
-            (data.trainer_id,)
-        )
-
+        cursor.execute("SELECT nome FROM trainers WHERE id = %s", (data.trainer_id,))
         trainer = cursor.fetchone()
-
         if not trainer:
             raise HTTPException(status_code=404, detail="Trainer not found")
         trainer_name = trainer[0]
@@ -1802,125 +1789,16 @@ def approve_request(
         if sessions_per_week < 1 or sessions_per_week > 7:
             raise HTTPException(status_code=400, detail="Sessions per week must be between 1 and 7")
 
-        cursor.execute("SELECT duration_weeks FROM plans WHERE id = %s", (plan_id,))
-        plan_duration = cursor.fetchone()
-        if not plan_duration:
-            raise HTTPException(status_code=404, detail="Plan not found")
-        weeks = plan_duration[0]
+        extra = clean_pack_recipients(data.email_extra, client_email)
 
-        total_sessions = (
-            weeks *
-            sessions_per_week
+        created = create_pack(
+            cursor, created_event_ids,
+            user_id=user_id, client_name=client_name, client_email=client_email,
+            plan_id=plan_id, trainer_id=data.trainer_id, trainer_name=trainer_name,
+            sessions_per_week=sessions_per_week, preferred_days=preferred_days,
+            preferred_time=preferred_time, start_date=data.start_date,
+            request_id=data.request_id, replace_plans="delete",
         )
-
-        session_dates = generate_session_dates(
-            data.start_date,
-            preferred_days,
-            total_sessions
-        )
-
-        # Every generated session must fit the trainer's working hours and
-        # not collide with another session, before anything is written.
-        problems = []
-        for session_date in session_dates:
-            problem = slot_problem(cursor, data.trainer_id, session_date, preferred_time)
-            if problem:
-                problems.append(f"{session_date}: {problem}")
-        if problems:
-            shown = "; ".join(problems[:3])
-            extra = f" (+{len(problems) - 3} more)" if len(problems) > 3 else ""
-            raise HTTPException(
-                status_code=409,
-                detail=f"{trainer_name} cannot take this schedule. {shown}{extra}",
-            )
-
-        cursor.execute("DELETE FROM user_plans WHERE user_id = %s", (user_id,))
-        cursor.execute(
-            """
-            INSERT INTO user_plans
-            (user_id, plan_id, start_date, end_date, sessions_per_week, preferred_days, preferred_time, trainer_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (user_id, plan_id, session_dates[0], session_dates[-1], sessions_per_week,
-             preferred_days, preferred_time, data.trainer_id)
-        )
-
-        # Rows go into the database first and the Google Calendar events are
-        # created afterwards, so a database error can no longer leave events
-        # behind in the calendar. If a calendar call fails midway, the events
-        # created so far are deleted before the error is raised.
-        pending_sessions = []
-
-        for index, session_date in enumerate(
-            session_dates,
-            start=1
-        ):
-
-            session_number = (
-                f"{index}/{total_sessions}"
-            )
-
-            cursor.execute(
-                """
-                INSERT INTO sessions
-                (
-                    user_id,
-                    trainer_id,
-                    session_date,
-                    session_time,
-                    request_id,
-                    session_number,
-                    status
-                )
-
-                VALUES (%s, %s, %s, %s, %s, %s, 'Booked')
-                RETURNING id
-                """,
-                (
-                    user_id,
-                    data.trainer_id,
-                    session_date,
-                    preferred_time,
-                    data.request_id,
-                    session_number
-                )
-            )
-
-            pending_sessions.append(
-                (cursor.fetchone()[0], session_date, session_number)
-            )
-
-        created_event_ids = []
-
-        try:
-
-            for session_id, session_date, session_number in pending_sessions:
-
-                google_event_id = create_calendar_event(
-                    trainer_name,
-                    client_name,
-                    client_email,
-                    session_date,
-                    preferred_time,
-                    session_number
-                )
-
-                created_event_ids.append(google_event_id)
-
-                cursor.execute(
-                    "UPDATE sessions SET google_event_id = %s WHERE id = %s",
-                    (google_event_id, session_id)
-                )
-
-        except Exception:
-
-            for event_id in created_event_ids:
-                try:
-                    delete_calendar_event(event_id)
-                except Exception:
-                    traceback.print_exc()
-
-            raise
 
         cursor.execute(
             """
@@ -1945,21 +1823,29 @@ def approve_request(
             )
         )
 
-        print("FINISHED LOOP")
-
         conn.commit()
+
+        email = email_pack(
+            created, client_name=client_name, client_email=client_email,
+            days=[day.strip() for day in str(preferred_days).split(",") if day.strip()],
+            sessions_per_week=sessions_per_week, trainer_name=trainer_name,
+            to_client=data.email_client, extra=extra,
+        )
 
         return {
             "message": "Request approved successfully",
-            "total_sessions": total_sessions
+            "total_sessions": created["total_sessions"],
+            "email": email,
         }
 
     except HTTPException:
         conn.rollback()
+        delete_created_events(created_event_ids)
         raise
     except Exception as e:
 
         conn.rollback()
+        delete_created_events(created_event_ids)
 
         traceback.print_exc()
         # Admin-only endpoint: surface the real cause so it can be fixed
@@ -1979,7 +1865,8 @@ def approve_request(
 def admin_renew_pack(client_id: int, data: RenewPack):
     """Starts a new pack for a client: records the new period and creates its
     sessions (database rows first, then Google Calendar events, rolled back
-    together on failure), exactly like approving a request."""
+    together on failure), exactly like approving a request, then emails the
+    client and the extra recipients a summary with a .ics."""
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -1992,25 +1879,11 @@ def admin_renew_pack(client_id: int, data: RenewPack):
             raise HTTPException(status_code=404, detail="Client not found")
         client_name, client_email = user
 
-        cursor.execute("SELECT nome FROM trainers WHERE id = %s", (data.trainer_id,))
-        trainer = cursor.fetchone()
-        if not trainer:
-            raise HTTPException(status_code=404, detail="Trainer not found")
-        trainer_name = trainer[0]
-
-        if not 1 <= data.sessions_per_week <= 7:
-            raise HTTPException(status_code=400, detail="Sessions per week must be between 1 and 7")
-
-        days = [day.strip() for day in data.preferred_days.split(",") if day.strip()]
-        if not days or any(day not in DAY_MAP for day in days):
-            raise HTTPException(status_code=422, detail="Please choose valid training days.")
-
-        try:
-            start = datetime.strptime(data.start_date, "%Y-%m-%d").date()
-        except ValueError:
-            raise HTTPException(status_code=422, detail="Please choose a valid start date.")
-        if start < datetime.now().date():
-            raise HTTPException(status_code=422, detail="The start date cannot be in the past.")
+        trainer_name, days = validate_pack_request(
+            cursor, trainer_id=data.trainer_id, sessions_per_week=data.sessions_per_week,
+            preferred_days=data.preferred_days, start_date=data.start_date,
+        )
+        start = datetime.strptime(data.start_date, "%Y-%m-%d").date()
 
         # A renewal starts after the current pack ends, never inside it.
         cursor.execute(
@@ -2033,79 +1906,40 @@ def admin_renew_pack(client_id: int, data: RenewPack):
                 detail=f"The current pack runs until {current_end.isoformat()}. Choose a start date after it."
             )
 
-        cursor.execute("SELECT duration_weeks FROM plans WHERE id = %s", (data.plan_id,))
-        plan = cursor.fetchone()
-        if not plan or not plan[0]:
-            raise HTTPException(status_code=404, detail="Plan not found")
+        extra = clean_pack_recipients(data.email_extra, client_email)
 
-        total_sessions = plan[0] * data.sessions_per_week
-        session_dates = generate_session_dates(data.start_date, ",".join(days), total_sessions)
-
-        problems = []
-        for session_date in session_dates:
-            problem = slot_problem(cursor, data.trainer_id, session_date, data.preferred_time)
-            if problem:
-                problems.append(f"{session_date}: {problem}")
-        if problems:
-            shown = "; ".join(problems[:3])
-            extra = f" (+{len(problems) - 3} more)" if len(problems) > 3 else ""
-            raise HTTPException(
-                status_code=409,
-                detail=f"{trainer_name} cannot take this schedule. {shown}{extra}",
-            )
-
-        cursor.execute("UPDATE user_plans SET active = FALSE WHERE user_id = %s", (client_id,))
-        cursor.execute(
-            """
-            INSERT INTO user_plans
-            (user_id, plan_id, active, start_date, end_date, sessions_per_week,
-             preferred_days, preferred_time, trainer_id)
-            VALUES (%s, %s, TRUE, %s, %s, %s, %s, %s, %s)
-            """,
-            (client_id, data.plan_id, session_dates[0], session_dates[-1],
-             data.sessions_per_week, ",".join(days), data.preferred_time, data.trainer_id)
+        created = create_pack(
+            cursor, created_event_ids,
+            user_id=client_id, client_name=client_name, client_email=client_email,
+            plan_id=data.plan_id, trainer_id=data.trainer_id, trainer_name=trainer_name,
+            sessions_per_week=data.sessions_per_week, preferred_days=",".join(days),
+            preferred_time=data.preferred_time, start_date=data.start_date,
+            replace_plans="deactivate",
         )
 
-        pending = []
-        for index, session_date in enumerate(session_dates, start=1):
-            session_number = f"{index}/{total_sessions}"
-            cursor.execute(
-                """
-                INSERT INTO sessions
-                (user_id, trainer_id, session_date, session_time, session_number, status)
-                VALUES (%s, %s, %s, %s, %s, 'Booked')
-                RETURNING id
-                """,
-                (client_id, data.trainer_id, session_date, data.preferred_time, session_number)
-            )
-            pending.append((cursor.fetchone()[0], session_date, session_number))
-
-        for session_id, session_date, session_number in pending:
-            event_id = create_calendar_event(
-                trainer_name, client_name, client_email,
-                session_date, data.preferred_time, session_number
-            )
-            created_event_ids.append(event_id)
-            cursor.execute("UPDATE sessions SET google_event_id = %s WHERE id = %s", (event_id, session_id))
-
         conn.commit()
+
+        email = email_pack(
+            created, client_name=client_name, client_email=client_email, days=days,
+            sessions_per_week=data.sessions_per_week, trainer_name=trainer_name,
+            to_client=data.email_client, extra=extra,
+        )
+
         return {
             "message": "Pack renewed successfully",
-            "total_sessions": total_sessions,
-            "start_date": session_dates[0],
-            "end_date": session_dates[-1],
+            "total_sessions": created["total_sessions"],
+            "start_date": created["session_dates"][0],
+            "end_date": created["session_dates"][-1],
+            "email": email,
         }
 
     except HTTPException:
         conn.rollback()
+        delete_created_events(created_event_ids)
         raise
     except Exception as error:
         conn.rollback()
-        for event_id in created_event_ids:
-            try:
-                delete_calendar_event(event_id)
-            except Exception:
-                traceback.print_exc()
+        delete_created_events(created_event_ids)
         traceback.print_exc()
         raise HTTPException(
             status_code=500,
@@ -2137,6 +1971,42 @@ def reject_request(data: RejectRequest):
     finally:
         cursor.close()
         conn.close()
+
+
+def set_request_archived(request_id, archived):
+    """Archives or restores a request. Only the archived_at mark changes: the
+    status, sessions, plans and calendar events the request created stay as they are.
+    Repeating the action is harmless (an archived request keeps its original date)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        if archived:
+            cursor.execute(
+                "UPDATE client_requests SET archived_at = COALESCE(archived_at, NOW()) WHERE id = %s RETURNING id",
+                (request_id,)
+            )
+        else:
+            cursor.execute("UPDATE client_requests SET archived_at = NULL WHERE id = %s RETURNING id", (request_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Request not found")
+        conn.commit()
+        return {"message": "Request archived" if archived else "Request restored"}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.post("/admin/archive-request", dependencies=[Depends(require_admin)])
+def archive_request(data: ArchiveRequest):
+    return set_request_archived(data.request_id, True)
+
+
+@app.post("/admin/unarchive-request", dependencies=[Depends(require_admin)])
+def unarchive_request(data: ArchiveRequest):
+    return set_request_archived(data.request_id, False)
 
 
 @app.get("/admin/sessions/email/{email}", dependencies=[Depends(require_admin)])

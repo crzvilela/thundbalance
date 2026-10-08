@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { auth } from '../firebase/auth'
 import Navbar from '../components/Navbar'
+import TempPasswordNotice from '../components/TempPasswordNotice'
 import { API_URL } from '../config'
 import { useI18n } from '../i18n/I18nContext'
 
@@ -146,6 +147,8 @@ function TrainingRequest() {
       <Navbar />
 
       <div className="max-w-4xl mx-auto pt-36 px-6">
+
+        <TempPasswordNotice />
 
         <h1
           style={{ fontFamily: 'Bebas Neue' }}

@@ -3,10 +3,13 @@ import { adminRequest } from './api'
 import { useAdminText } from './useAdminText'
 import { useToast } from './toastContext'
 import { dateKey, parseDateKey } from './requests'
-import { WEEKDAYS, firstMismatch, hoursSummary } from './availability'
-import { Badge, Button, Drawer, Field, SelectInput, TextInput } from './ui'
+import { WEEKDAYS } from './availability'
+import { Badge, Button, Drawer } from './ui'
+import PackFields from './PackFields'
+import { packIsComplete, packPayload, usePackForm } from './packForm'
+import EmailRecipients from './EmailRecipients'
+import { recipientsPayload, reportEmailResult, useEmailRecipients } from './recipientsState'
 
-const TIMES = Array.from({ length: 14 }, (_, index) => `${String(index + 7).padStart(2, '0')}:00`)
 const STATUS_TONE = { active: 'emerald', expiring: 'amber', expired: 'red', none: 'neutral' }
 
 export function PackStatusBadge({ status }) {
@@ -118,58 +121,25 @@ export function TrainingCalendar({ sessions }) {
   )
 }
 
-function addDays(key, amount) {
-  const date = parseDateKey(key)
-  date.setDate(date.getDate() + amount)
-  return dateKey(date)
-}
-
-// Renewal form: pack type, sessions per week, days, time, trainer and start
-// date. The server creates the sessions and calendar events.
 export function RenewDrawer({ client, pack, plans, trainers, onClose, onDone }) {
-  const { t, language, dayFull, dayLabel } = useAdminText()
+  const { t } = useAdminText()
   const toast = useToast()
-  const today = dateKey(new Date())
-  const minStart = pack?.end_date && pack.end_date >= today ? addDays(pack.end_date, 1) : today
-  const [form, setForm] = useState({
-    plan: pack?.plan_id ? String(pack.plan_id) : '',
-    perWeek: String(pack?.sessions_per_week || 1),
-    days: pack?.preferred_days ? pack.preferred_days.split(',').map(day => day.trim()).filter(Boolean) : [],
-    time: pack?.preferred_time ? String(pack.preferred_time).slice(0, 5) : '',
-    trainer: pack?.trainer_id ? String(pack.trainer_id) : '',
-    start: minStart
-  })
+  const [form, set] = usePackForm(pack)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const locale = language === 'es' ? 'es-ES' : 'en-GB'
-
-  const set = (patch) => setForm(current => ({ ...current, ...patch }))
-  const toggleDay = (day) => set({ days: form.days.includes(day) ? form.days.filter(item => item !== day) : [...form.days, day] })
-
-  const chosenPlan = plans.find(plan => String(plan[0]) === form.plan)
-  const estimate = chosenPlan?.[4] && form.perWeek ? chosenPlan[4] * Number(form.perWeek) : null
-  const ready = form.days.length > 0 && !!form.time
-
-  const trainerOptions = useMemo(() => trainers.map(trainer => ({
-    trainer,
-    badDay: ready ? firstMismatch(trainer, form.days, form.time) : null,
-    summary: hoursSummary(trainer, form.days.length ? form.days : WEEKDAYS)
-  })), [trainers, form.days, form.time, ready])
+  const [recipients, setRecipients] = useEmailRecipients()
 
   const submit = async () => {
-    if (!form.plan || !form.trainer || !form.start || !ready) { setError(t('pk_fill')); return }
+    if (!packIsComplete(form)) { setError(t('pk_fill')); return }
     setBusy(true)
     setError('')
     try {
-      await adminRequest('POST', `/admin/clients/${client.id}/renew-pack`, {
-        plan_id: Number(form.plan),
-        sessions_per_week: Number(form.perWeek),
-        preferred_days: form.days.join(','),
-        preferred_time: form.time,
-        trainer_id: Number(form.trainer),
-        start_date: form.start
+      const result = await adminRequest('POST', `/admin/clients/${client.id}/renew-pack`, {
+        ...recipientsPayload(recipients),
+        ...packPayload(form)
       })
       toast.push(t('pk_renewed'))
+      reportEmailResult(toast, t, result.email)
       onDone()
     } catch (err) {
       setError(err.message)
@@ -188,62 +158,8 @@ export function RenewDrawer({ client, pack, plans, trainers, onClose, onDone }) 
       </>}
     >
       <p className="mb-6 text-sm text-gray-400">{t('pk_renew_sub')}</p>
-      <div className="grid gap-x-8 md:grid-cols-2">
-        <Field label={t('pk_type')}>
-          <SelectInput value={form.plan} onChange={event => set({ plan: event.target.value })} disabled={busy}>
-            <option value="">{t('cl_assign_ph')}</option>
-            {plans.map(plan => <option key={plan[0]} value={plan[0]}>{plan[1]}</option>)}
-          </SelectInput>
-        </Field>
-        <Field label={t('pk_per_week')}>
-          <SelectInput value={form.perWeek} onChange={event => set({ perWeek: event.target.value })} disabled={busy}>
-            {[1, 2, 3, 4, 5, 6, 7].map(value => <option key={value} value={value}>{value}</option>)}
-          </SelectInput>
-        </Field>
-      </div>
-
-      <Field label={t('pk_days')}>
-        <div className="flex flex-wrap gap-2">
-          {WEEKDAYS.map(day => {
-            const on = form.days.includes(day)
-            return (
-              <button key={day} type="button" aria-pressed={on} onClick={() => toggleDay(day)} disabled={busy}
-                className={`rounded-full border px-4 py-2 text-sm transition ${on ? 'border-emerald-400/50 bg-emerald-400/15 text-emerald-200' : 'border-white/10 text-gray-400 hover:border-white/25 hover:text-white'}`}>
-                {dayLabel(day)}
-              </button>
-            )
-          })}
-        </div>
-      </Field>
-
-      <div className="grid gap-x-8 md:grid-cols-2">
-        <Field label={t('pk_time')}>
-          <SelectInput value={form.time} onChange={event => set({ time: event.target.value })} disabled={busy}>
-            <option value="">—</option>
-            {TIMES.map(time => <option key={time} value={time}>{time}</option>)}
-          </SelectInput>
-        </Field>
-        <Field label={t('pk_start')} hint={pack?.end_date && pack.end_date >= today ? `${t('pk_start_hint')} ${parseDateKey(pack.end_date).toLocaleDateString(locale)}` : undefined}>
-          <TextInput type="date" min={minStart} value={form.start} onChange={event => set({ start: event.target.value })} disabled={busy} />
-        </Field>
-      </div>
-
-      <Field label={t('pk_trainer_f')} hint={ready ? undefined : t('pk_pick_days')}>
-        <SelectInput value={form.trainer} onChange={event => set({ trainer: event.target.value })} disabled={busy}>
-          <option value="">{t('select_trainer')}</option>
-          {trainerOptions.map(({ trainer, badDay, summary }) => (
-            <option key={trainer.id} value={trainer.id} disabled={!!badDay}>
-              {trainer.name}{badDay ? ` — ${t('av_unavailable')} ${dayFull(badDay)} ${form.time}` : summary ? ` — ${summary}` : ''}
-            </option>
-          ))}
-        </SelectInput>
-      </Field>
-
-      {estimate && (
-        <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-sm text-emerald-200">
-          {t('will_create')} <strong className="text-base">{estimate}</strong> {t('sessions_label')}
-        </div>
-      )}
+      <PackFields form={form} set={set} plans={plans} trainers={trainers} pack={pack} busy={busy} />
+      <EmailRecipients value={recipients} onChange={setRecipients} disabled={busy} />
       {busy && <p className="mt-4 text-sm text-amber-300">{t('approving_hint')}</p>}
       {error && <p role="alert" className="mt-4 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</p>}
     </Drawer>

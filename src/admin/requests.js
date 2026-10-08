@@ -1,5 +1,5 @@
 // /admin/client-requests returns rows as arrays:
-// [id, clientName, packageName, sessionsPerWeek, preferredDays, preferredTime, status, rejectionReason]
+// [id, clientName, packageName, sessionsPerWeek, preferredDays, preferredTime, status, rejectionReason, archivedAt]
 export function normalizeRequests(rows) {
   if (!Array.isArray(rows)) return []
   return rows.map(row => ({
@@ -10,7 +10,8 @@ export function normalizeRequests(rows) {
     days: String(row[4] || '').split(',').map(day => day.trim()).filter(Boolean),
     time: row[5] || '',
     status: String(row[6] || '').toLowerCase(),
-    reason: row[7] || ''
+    reason: row[7] || '',
+    archived: !!row[8]
   }))
 }
 

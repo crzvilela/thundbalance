@@ -46,3 +46,10 @@ backend/uploads/
 src.zip
 .env
 .env.local
+
+# Firebase / secrets
+*firebase-adminsdk*.json
+firebase-service-account*.json
+secrets/
+
+backend/email_previews/

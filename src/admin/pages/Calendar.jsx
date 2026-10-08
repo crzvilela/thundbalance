@@ -150,7 +150,7 @@ export default function Calendar() {
     }
   }
 
-  const canCancel = selected && ((selected.kind === 'session' && String(selected.status).toLowerCase() !== 'cancelled') || (selected.kind === 'trial' && String(selected.status).toLowerCase() === 'approved'))
+  const canCancel = selected && ((selected.kind === 'session' && String(selected.status).toLowerCase() !== 'cancelled') || (selected.kind === 'trial' && ['approved', 'confirmed'].includes(String(selected.status).toLowerCase())))
   const dayEvents = byDay.get(selectedDay) || []
   const weekdayLabels = days.slice(0, 7).map(day => day.date.toLocaleDateString(locale, { weekday: 'short' }))
 
