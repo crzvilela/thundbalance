@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { adminRequest } from '../api'
 import { resolveImageUrl } from '../../api/landingPage'
 import { useAdminText } from '../useAdminText'
@@ -214,8 +215,9 @@ export default function Clients() {
   const plansResource = useAdminResource('/plans')
   const trainersResource = useAdminResource('/admin/trainer-availability')
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState('all')
-  const [selectedId, setSelectedId] = useState(null)
+  const [searchParams] = useSearchParams()
+  const [filter, setFilter] = useState(() => (['with_plan', 'no_plan', 'pending', 'renew'].includes(searchParams.get('filter')) ? searchParams.get('filter') : 'all'))
+  const [selectedId, setSelectedId] = useState(() => Number(searchParams.get('client')) || null)
   const [adding, setAdding] = useState(false)
 
   const clients = useMemo(() => clientsResource.data || [], [clientsResource.data])
@@ -227,7 +229,8 @@ export default function Clients() {
     all: clients.length,
     with_plan: clients.filter(client => client.plan).length,
     no_plan: clients.filter(client => !client.plan).length,
-    pending: clients.filter(client => client.has_pending_request).length
+    pending: clients.filter(client => client.has_pending_request).length,
+    renew: clients.filter(client => client.pack_status === 'expired' || client.pack_status === 'expiring').length
   }), [clients])
 
   const visible = useMemo(() => {
@@ -236,11 +239,12 @@ export default function Clients() {
       if (filter === 'with_plan' && !client.plan) return false
       if (filter === 'no_plan' && client.plan) return false
       if (filter === 'pending' && !client.has_pending_request) return false
+      if (filter === 'renew' && client.pack_status !== 'expired' && client.pack_status !== 'expiring') return false
       return !needle || `${client.name} ${client.email}`.toLowerCase().includes(needle)
     })
   }, [clients, filter, query])
 
-  const filters = [['all', t('cl_all')], ['with_plan', t('cl_with_plan')], ['no_plan', t('cl_no_plan_filter')], ['pending', t('cl_pending')]]
+  const filters = [['all', t('cl_all')], ['with_plan', t('cl_with_plan')], ['no_plan', t('cl_no_plan_filter')], ['pending', t('cl_pending')], ['renew', t('biz_to_renew')]]
 
   return (
     <div className="admin-fade">

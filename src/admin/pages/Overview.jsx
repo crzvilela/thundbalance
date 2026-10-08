@@ -3,6 +3,7 @@ import { Link, useOutletContext } from 'react-router-dom'
 import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { dateKey, normalizeSessions, parseDateKey } from '../requests'
+import BusinessPanel from '../BusinessPanel'
 import { Badge, Button, Card, EmptyState, ErrorState, Icon, PageHeader, Skeleton, StatCard } from '../ui'
 
 const INACTIVE = new Set(['cancelled', 'canceled', 'completed', 'rejected'])
@@ -149,6 +150,8 @@ export default function Overview() {
                 </ul>}
         </Card>
       </section>
+
+      <BusinessPanel sessions={sessions} trials={trials} />
 
       <section className="mt-6 grid gap-6 lg:grid-cols-5">
         <Card className="p-6 lg:col-span-3">
