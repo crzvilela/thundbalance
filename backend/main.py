@@ -21,6 +21,7 @@ from google_calendar import (
 )
 from landing_page_default import DEFAULT_LANDING_CONTENT
 from admin_api import register_admin_routes
+from contact_messages import register_contact_routes
 from trial_notifications import notify_trial_requested
 import mailer
 from packs import DAY_MAP, clean_pack_recipients, create_pack, delete_created_events, email_pack, validate_pack_request
@@ -112,6 +113,7 @@ def require_client(authorization: str | None = Header(default=None)):
 
 
 register_admin_routes(app, require_admin)
+register_contact_routes(app, require_admin)
 register_trial_confirmation_routes(app)
 register_client_account_routes(app, require_admin, require_client)
 

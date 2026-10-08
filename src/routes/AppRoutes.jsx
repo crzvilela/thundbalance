@@ -16,6 +16,7 @@ import Calendar from '../admin/pages/Calendar'
 import Trainers from '../admin/pages/Trainers'
 import Plans from '../admin/pages/Plans'
 import Videos from '../admin/pages/Videos'
+import Messages from '../admin/pages/Messages'
 import TrainingTips from '../pages/TrainingTips'
 import TrialSession from '../pages/Trialsession'
 import TrialConfirm from '../pages/TrialConfirm'
@@ -56,6 +57,7 @@ function AppRoutes() {
           <Route path="sessions" element={<Navigate to="/admin/calendar" replace />} />
           <Route path="plans" element={<Plans />} />
           <Route path="videos" element={<Videos />} />
+          <Route path="messages" element={<Messages />} />
         </Route>
 
 
