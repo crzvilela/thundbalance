@@ -1558,7 +1558,7 @@ def client_workflow(authorization: str | None = Header(default=None)):
         """, (user_id,))
         request = cursor.fetchone()
         cursor.execute("""
-            SELECT p.nome, t.nome, up.plan_id
+            SELECT p.nome, t.nome, up.plan_id, up.end_date
             FROM user_plans up
             JOIN plans p ON p.id = up.plan_id
             LEFT JOIN client_requests cr ON cr.user_id = up.user_id AND LOWER(cr.status) = 'approved'
@@ -1581,10 +1581,11 @@ def client_workflow(authorization: str | None = Header(default=None)):
                          "package": request[3], "sessions_per_week": request[4],
                          "preferred_days": request[5], "preferred_time": request[6],
                          "trainer": request[7], "start_date": request[8]} if request else None),
-            "plan": ({"name": plan[0], "trainer": plan[1], "id": plan[2]} if plan else None),
+            "plan": ({"name": plan[0], "trainer": plan[1], "id": plan[2],
+                      "end_date": str(plan[3]) if plan[3] else None} if plan else None),
             "sessions": [{"id": s[0], "date": str(s[1]), "time": str(s[2]), "trainer": s[3],
                           "status": s[4], "number": s[5]} for s in sessions],
-            "sessions_remaining": sum(1 for s in sessions if s[4] == "Booked"),
+            "sessions_remaining": sum(1 for s in sessions if s[4] == "Booked" and s[1] >= datetime.now().date()),
         }
     finally:
         cursor.close()

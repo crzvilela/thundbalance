@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { signOut } from 'firebase/auth'
 import { useNavigate } from 'react-router-dom'
 import Navbar from '../components/Navbar'
+import ClientNotices from '../components/ClientNotices'
 import TempPasswordNotice from '../components/TempPasswordNotice'
 import { auth } from '../firebase/auth'
 import { API_URL } from '../config'
@@ -41,7 +42,13 @@ function Dashboard() {
   }, [loadWorkflow])
 
   const logout = async () => { await signOut(auth); navigate('/login') }
-  const upcoming = workflow?.sessions?.filter(session => session.status === 'Booked') || []
+  const nowStamp = (() => {
+    const now = new Date()
+    const pad = (number) => String(number).padStart(2, '0')
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`
+  })()
+  // Only sessions that have not started yet count as upcoming.
+  const upcoming = workflow?.sessions?.filter(session => session.status === 'Booked' && `${session.date} ${String(session.time).slice(0, 5)}` >= nowStamp) || []
   const nextSession = upcoming[0]
   const state = workflow?.state
 
@@ -79,6 +86,7 @@ function Dashboard() {
       </section>}
 
       {workflow && (state === 'active' || state === 'approved') && <>
+        <ClientNotices workflow={workflow} />
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <article className={card}><p className="text-gray-400 mb-2">{t('dash_trainer')}</p><h2 className="text-2xl">{workflow.plan?.trainer || workflow.request?.trainer || t('dash_being_assigned')}</h2></article>
           <article className={card}><p className="text-gray-400 mb-2">{t('dash_next_session')}</p><h2 className="text-xl">{nextSession ? new Date(`${nextSession.date}T00:00:00`).toLocaleDateString(locale) : t('dash_to_schedule')}</h2><p className="text-gray-400">{nextSession?.time || ''}</p></article>
