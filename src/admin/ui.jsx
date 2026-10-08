@@ -22,6 +22,8 @@ const ICONS = {
   refresh: <><path d="M20 11a8 8 0 0 0-14.3-4.5L4 8" /><path d="M4 4v4h4M4 13a8 8 0 0 0 14.3 4.5L20 16" /><path d="M20 20v-4h-4" /></>,
   inbox: <><path d="M3 13l2.5-8h13L21 13" /><path d="M3 13v6a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-6h-5a3 3 0 0 1-6 0z" /></>,
   check: <path d="m5 12 5 5 9-10" />,
+  plus: <path d="M12 5v14M5 12h14" />,
+  archive: <><rect x="3" y="4" width="18" height="4.5" rx="1.2" /><path d="M5 8.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5M10 12.5h4" /></>,
   alert: <><path d="M12 3 2 20h20z" /><path d="M12 10v5M12 18v.01" /></>
 }
 
@@ -188,7 +190,8 @@ export function Drawer({ open, onClose, title, subtitle, children, footer, busy 
 }
 
 // Small centered confirmation for destructive actions.
-export function ConfirmDialog({ open, title, text, confirmLabel, cancelLabel, onConfirm, onCancel, busy = false }) {
+// tone "danger" (default) for destructive actions; "neutral" for harmless ones such as archiving.
+export function ConfirmDialog({ open, title, text, confirmLabel, cancelLabel, onConfirm, onCancel, busy = false, tone = 'danger', icon = 'alert' }) {
   useEffect(() => {
     if (!open) return undefined
     const onKey = (event) => { if (event.key === 'Escape' && !busy) onCancel() }
@@ -201,12 +204,12 @@ export function ConfirmDialog({ open, title, text, confirmLabel, cancelLabel, on
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => { if (!busy) onCancel() }} />
       <div role="alertdialog" aria-modal="true" aria-label={title} className="admin-toast relative w-full max-w-lg rounded-3xl border border-white/10 bg-[#0d1110] p-8 shadow-2xl">
-        <span className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border border-red-400/25 bg-red-400/10 text-red-300"><Icon name="alert" /></span>
+        <span className={`mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border ${tone === 'danger' ? 'border-red-400/25 bg-red-400/10 text-red-300' : 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300'}`}><Icon name={icon} /></span>
         <h2 className="text-2xl font-semibold text-white">{title}</h2>
         {text && <p className="mt-2 text-base text-gray-400">{text}</p>}
         <div className="mt-6 flex gap-3">
           <Button variant="secondary" className="flex-1" onClick={onCancel} disabled={busy}>{cancelLabel}</Button>
-          <Button variant="danger" className="flex-1" onClick={onConfirm} loading={busy}>{confirmLabel}</Button>
+          <Button variant={tone === 'danger' ? 'danger' : 'primary'} className="flex-1" onClick={onConfirm} loading={busy}>{confirmLabel}</Button>
         </div>
       </div>
     </div>

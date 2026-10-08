@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { adminRequest } from '../api'
+import EmailRecipients from '../EmailRecipients'
+import { recipientsPayload, reportEmailResult, useEmailRecipients } from '../recipientsState'
 import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
-import { dateKey } from '../requests'
+import { dateKey, normalizeRequests } from '../requests'
 import { firstMismatch, hoursSummary } from '../availability'
 import {
-  Badge, Button, Card, Drawer, EmptyState, ErrorState, Field, Icon, PageHeader,
+  Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon, PageHeader,
   SelectInput, Skeleton, TextArea, TextInput
 } from '../ui'
 
@@ -19,14 +21,19 @@ export default function Requests() {
   const { requests, requestsResource } = useOutletContext()
   const trainersResource = useAdminResource('/admin/trainer-availability')
   const plansResource = useAdminResource('/plans')
+  // The layout's list leaves archived requests out; this one has only them.
+  const archivedResource = useAdminResource('/admin/client-requests?archived=only')
+  const archivedRequests = useMemo(() => normalizeRequests(archivedResource.data), [archivedResource.data])
 
   const [filter, setFilter] = useState('pending')
   const [query, setQuery] = useState('')
   const [approving, setApproving] = useState(null)
   const [declining, setDeclining] = useState(null)
+  const [archiving, setArchiving] = useState(null)
   const [form, setForm] = useState({ trainer: '', date: '', plan: '', perWeek: '' })
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
+  const [recipients, setRecipients, resetRecipients] = useEmailRecipients()
   const [formError, setFormError] = useState('')
 
   const trainers = useMemo(() => (Array.isArray(trainersResource.data) ? trainersResource.data : []), [trainersResource.data])
@@ -44,20 +51,54 @@ export default function Requests() {
     all: requests.length,
     pending: requests.filter(request => request.status === 'pending').length,
     approved: requests.filter(request => request.status === 'approved').length,
-    rejected: requests.filter(request => request.status === 'rejected').length
-  }), [requests])
+    rejected: requests.filter(request => request.status === 'rejected').length,
+    archived: archivedRequests.length
+  }), [requests, archivedRequests])
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    return requests.filter(request =>
-      (filter === 'all' || request.status === filter) &&
+    // Archived requests only appear in their own tab (not even in "Todas").
+    const source = filter === 'archived' ? archivedRequests : requests
+    return source.filter(request =>
+      (filter === 'all' || filter === 'archived' || request.status === filter) &&
       (!needle || `${request.client} ${request.plan}`.toLowerCase().includes(needle))
     )
-  }, [requests, filter, query])
+  }, [requests, archivedRequests, filter, query])
+  const activeResource = filter === 'archived' ? archivedResource : requestsResource
+
+  const reloadAll = () => { requestsResource.reload(); archivedResource.reload() }
+
+  const archive = async () => {
+    setBusy(true)
+    try {
+      await adminRequest('POST', '/admin/archive-request', { request_id: archiving.id })
+      setArchiving(null)
+      toast.push(t('req_archived_ok'))
+      reloadAll()
+    } catch (error) {
+      toast.push(error.message || t('action_error'), 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const unarchive = async (request) => {
+    setBusy(true)
+    try {
+      await adminRequest('POST', '/admin/unarchive-request', { request_id: request.id })
+      toast.push(t('req_unarchived_ok'))
+      reloadAll()
+    } catch (error) {
+      toast.push(error.message || t('action_error'), 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const openApprove = (request) => {
     setForm({ trainer: '', date: '', plan: '', perWeek: String(request.perWeek || 1) })
     setFormError('')
+    resetRecipients()
     setApproving(request)
   }
   const openDecline = (request) => {
@@ -81,7 +122,8 @@ export default function Requests() {
     setBusy(true)
     setFormError('')
     try {
-      await adminRequest('POST', '/admin/approve-request', {
+      const result = await adminRequest('POST', '/admin/approve-request', {
+        ...recipientsPayload(recipients),
         request_id: approving.id,
         trainer_id: Number(form.trainer),
         start_date: form.date,
@@ -90,6 +132,7 @@ export default function Requests() {
       })
       setApproving(null)
       toast.push(t('approved_ok'))
+      reportEmailResult(toast, t, result.email)
       requestsResource.reload()
     } catch (error) {
       setFormError(error.message || t('action_error'))
@@ -115,7 +158,7 @@ export default function Requests() {
 
   const filters = [
     ['pending', t('req_pending')], ['approved', t('req_approved')],
-    ['rejected', t('req_rejected')], ['all', t('req_all')]
+    ['rejected', t('req_rejected')], ['all', t('req_all')], ['archived', t('req_archived')]
   ]
 
   return (
@@ -123,7 +166,7 @@ export default function Requests() {
       <PageHeader
         title={t('req_title')}
         subtitle={t('req_sub')}
-        actions={<Button variant="secondary" onClick={requestsResource.reload}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>}
+        actions={<Button variant="secondary" onClick={reloadAll}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>}
       />
 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -144,12 +187,12 @@ export default function Requests() {
         </div>
       </div>
 
-      {requestsResource.error ? (
-        <Card><ErrorState message={`${t('load_error')} (${requestsResource.error})`} retryLabel={t('retry')} onRetry={requestsResource.reload} /></Card>
-      ) : requestsResource.loading && !requestsResource.data ? (
+      {activeResource.error ? (
+        <Card><ErrorState message={`${t('load_error')} (${activeResource.error})`} retryLabel={t('retry')} onRetry={activeResource.reload} /></Card>
+      ) : activeResource.loading && !activeResource.data ? (
         <div className="space-y-3"><Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" /></div>
       ) : visible.length === 0 ? (
-        <Card><EmptyState icon="inbox" title={t('req_empty')} /></Card>
+        <Card><EmptyState icon="inbox" title={t(filter === 'archived' ? 'req_empty_archived' : 'req_empty')} /></Card>
       ) : (
         <ul className="space-y-3">
           {visible.map(request => (
@@ -173,18 +216,28 @@ export default function Requests() {
                     </div>
                     {request.reason && <p className="mt-2 text-sm text-red-300/90">{t('req_reason')}: {request.reason}</p>}
                   </div>
-                  {request.status === 'pending' && (
-                    <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    {request.status === 'pending' && !request.archived && <>
                       <Button variant="primary" onClick={() => openApprove(request)}><Icon name="check" className="h-4 w-4" />{t('req_approve')}</Button>
                       <Button variant="danger" onClick={() => openDecline(request)}>{t('req_reject')}</Button>
-                    </div>
-                  )}
+                    </>}
+                    {request.archived
+                      ? <Button variant="secondary" onClick={() => unarchive(request)} disabled={busy}><Icon name="archive" className="h-4 w-4" />{t('req_unarchive')}</Button>
+                      : <Button variant="secondary" onClick={() => setArchiving(request)}><Icon name="archive" className="h-4 w-4" />{t('req_archive')}</Button>}
+                  </div>
                 </div>
               </Card>
             </li>
           ))}
         </ul>
       )}
+
+      <ConfirmDialog
+        open={!!archiving} busy={busy} tone="neutral" icon="archive"
+        title={t('req_archive_title')} text={t('req_archive_text')}
+        confirmLabel={t('req_archive_do')} cancelLabel={t('req_archive_keep')}
+        onConfirm={archive} onCancel={() => setArchiving(null)}
+      />
 
       <Drawer
         open={!!approving} onClose={() => setApproving(null)} busy={busy}
@@ -231,6 +284,7 @@ export default function Requests() {
             {t('will_create')} <strong className="text-base">{sessionEstimate}</strong> {t('sessions_label')}
           </div>
         )}
+        <EmailRecipients value={recipients} onChange={setRecipients} disabled={busy} />
         {busy && <p className="mt-4 text-sm text-amber-300">{t('approving_hint')}</p>}
         {formError && <p role="alert" className="mt-4 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{formError}</p>}
       </Drawer>

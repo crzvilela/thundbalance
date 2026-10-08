@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth } from '../firebase/auth'
 import Navbar from '../components/Navbar'
+import TempPasswordNotice from '../components/TempPasswordNotice'
 import { API_URL } from '../config'
 import { authFetch } from '../api/authFetch'
 import { useI18n } from '../i18n/I18nContext'
@@ -205,6 +206,7 @@ function MySessions() {
 
       <main className="relative mx-auto max-w-6xl px-5 pb-24 pt-36 md:pt-44">
         <div className="pointer-events-none absolute left-0 top-24 h-72 w-72 rounded-full bg-emerald-500/5 blur-3xl" />
+        <TempPasswordNotice />
 
         <header className="relative mb-10 flex flex-wrap items-end justify-between gap-5">
           <div>

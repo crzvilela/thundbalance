@@ -15,7 +15,10 @@ from emails import (
 )
 from emails.samples import sample_all_components, sample_ics
 from emails.transport import build_payload
-from emails.trial_emails import client_trial_approved, staff_trial_requested
+from emails.trial_emails import (
+    client_trial_approved, client_trial_confirmed, client_trial_received, staff_trial_confirmed,
+    staff_trial_declined, staff_trial_requested,
+)
 
 RECEIVED = []
 
@@ -109,10 +112,25 @@ class EmailTests(unittest.TestCase):
         self.assertNotIn("<script>", html)
 
     def test_trial_emails(self):
-        subject, html, _ = client_trial_approved("Ana", datetime(2026, 10, 12, 9), "Carles")
-        self.assertIn("confirmada / Your trial session is confirmed", subject)
+        subject, html, text = client_trial_approved("Ana", datetime(2026, 10, 12, 9), "Carles", "TOKEN123")
+        self.assertIn("Confirma tu sesión de prueba / Confirm your trial session", subject)
         self.assertIn("Lunes", html)
         self.assertIn("Monday", html)
+        self.assertIn("Confirmar mi sesión / Confirm my session", html)
+        self.assertIn("No puedo asistir / I can&#x27;t make it", html)
+        self.assertIn("/trial-session/confirm/TOKEN123\"", html)
+        self.assertIn("/trial-session/confirm/TOKEN123?action=decline", html)
+        self.assertIn("Carrer de Pallars 286", html)
+        subject, html, _ = client_trial_received("Ana", datetime(2026, 10, 12, 9))
+        self.assertIn("lunes 12 de octubre de 2026, 09:00", html)
+        subject, html, text, ics = client_trial_confirmed("Ana", datetime(2026, 10, 12, 9), "Carles", 5)
+        self.assertIn("UID:trial-5@thundbalance.com", ics)
+        self.assertIn("DTSTART:20261012T070000Z", ics)
+        trial = {"full_name": "Ana", "email": "a@b.co", "session_date": "2026-10-12", "session_time": "09:00", "trainer": "Carles"}
+        self.assertIn("CONFIRMADA", staff_trial_confirmed(trial)[0])
+        self.assertIn("Créalo a mano", staff_trial_confirmed(trial, calendar_ok=False)[1])
+        self.assertNotIn("Créalo a mano", staff_trial_confirmed(trial)[1])
+        self.assertIn("DECLINADA", staff_trial_declined(trial)[0])
         subject, html, text = staff_trial_requested({
             "full_name": "Ana\r\nBcc: x@y.z", "email": "a@b.co", "session_date": "2026-10-12", "session_time": "09:00"})
         self.assertNotIn("\n", subject)

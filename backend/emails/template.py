@@ -24,6 +24,7 @@ MUTED, LINE, PANEL = "#a3a3a3", "#2a2a2a", "#111111"
 
 FOOTER_ADDRESS = "ThundBalance, Carrer de Pallars 286, 08005 Barcelona"
 FOOTER_EMAIL = "info@thundbalance.com"
+STUDIO_PLACE = FOOTER_ADDRESS
 
 # The first production origin allowed by CORS in main.py. Set SITE_URL on Render to override.
 DEFAULT_SITE_URL = "https://thundbalance.vercel.app"
@@ -153,6 +154,13 @@ def button(label_es, label_en, url, only=None):
         f'</td></tr></table>'
     )
     return Block(_row(link, "8px 0 24px 0"), f"{label}: {url}\n")
+
+
+def link_line(label_es, label_en, url, only=None):
+    """Quiet secondary link under a button (bilingual label "ES / EN")."""
+    label = label_es if only == "es" else f"{label_es} / {label_en}"
+    link = f'<a href="{_e(url)}" target="_blank" style="font-family:{FONT};font-size:14px;line-height:1.5;color:{MUTED};text-decoration:underline;">{_e(label)}</a>'
+    return Block(_row(link, "0 0 24px 0"), f"{label}: {url}"+chr(10))
 
 
 # ------------------------------------------------------------------ the page

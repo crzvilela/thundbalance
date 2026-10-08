@@ -1,4 +1,5 @@
-"""E-mail notice sent to the studio when a trial session is requested.
+"""E-mail notices to the studio about a trial session (requested, confirmed
+or declined by the client).
 
 Built with the shared email base (backend/emails) and delivered the way it
 always was: through the Google Apps Script web app (docs/TRIAL_EMAIL_SETUP.md),
@@ -15,18 +16,21 @@ import os
 
 from emails import send_email_async
 from emails.transport import validate_address
-from emails.trial_emails import staff_trial_requested
+from emails.trial_emails import staff_trial_confirmed, staff_trial_declined, staff_trial_requested
 
 DEFAULT_RECIPIENT = "info@thundbalance.com"
 
 
-def notify_trial_requested(trial):
-    """`trial` is a dict with the request's fields (see create_trial_session)."""
+def studio_address():
+    """Where the studio's notices go (TRIAL_NOTIFY_TO, default info@thundbalance.com)."""
+    return os.getenv("TRIAL_NOTIFY_TO", DEFAULT_RECIPIENT).strip() or DEFAULT_RECIPIENT
+
+
+def _send(build, trial, legacy=False):
     if not os.getenv("TRIAL_EMAIL_WEBHOOK_URL", "").strip():
         return None
-    recipient = os.getenv("TRIAL_NOTIFY_TO", DEFAULT_RECIPIENT).strip() or DEFAULT_RECIPIENT
     try:
-        subject, html, text = staff_trial_requested(trial)
+        subject, html, text = build()
         try:
             reply_to = validate_address(trial.get("email"), "reply_to")
         except ValueError:
@@ -36,4 +40,18 @@ def notify_trial_requested(trial):
         return None
     # "trial" keeps the previous Apps Script version working (it sends its own
     # plain-text notice) until docs/trial-email.gs is updated in Google.
-    return send_email_async(recipient, subject, html, text, reply_to=reply_to, extra={"trial": trial})
+    extra = {"trial": trial} if legacy else None
+    return send_email_async(studio_address(), subject, html, text, reply_to=reply_to, extra=extra)
+
+
+def notify_trial_requested(trial):
+    """`trial` is a dict with the request's fields (see create_trial_session)."""
+    return _send(lambda: staff_trial_requested(trial), trial, legacy=True)
+
+
+def notify_trial_confirmed(trial, calendar_ok=True):
+    return _send(lambda: staff_trial_confirmed(trial, calendar_ok), trial)
+
+
+def notify_trial_declined(trial):
+    return _send(lambda: staff_trial_declined(trial), trial)

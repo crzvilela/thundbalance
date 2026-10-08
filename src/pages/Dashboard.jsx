@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { signOut } from 'firebase/auth'
 import { useNavigate } from 'react-router-dom'
 import Navbar from '../components/Navbar'
+import TempPasswordNotice from '../components/TempPasswordNotice'
 import { auth } from '../firebase/auth'
 import { API_URL } from '../config'
 import { useI18n } from '../i18n/I18nContext'
@@ -46,6 +47,7 @@ function Dashboard() {
 
   return <div className="min-h-screen bg-black text-white"><Navbar />
     <main className="max-w-7xl mx-auto px-6 pt-36 pb-20">
+      <TempPasswordNotice />
       <header className="flex justify-between items-center mb-10">
         <div><p className="text-green-400 uppercase tracking-[3px] text-sm">{t('dash_client_space')}</p><h1 style={{ fontFamily: 'Bebas Neue' }} className="text-6xl">{t('dash_title')}</h1></div>
         <button onClick={logout} className="border border-white/20 px-5 py-3 rounded-lg">{t('dash_logout')}</button>

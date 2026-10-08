@@ -84,6 +84,11 @@ def format_date_bilingual(moment):
     )
 
 
+def now_madrid():
+    """Current Madrid wall-clock time (naive)."""
+    return to_madrid(datetime.now(timezone.utc))
+
+
 def parse_madrid(date_text, time_text="00:00"):
     """'2026-10-12' + '09:00' -> naive Madrid datetime."""
     return datetime.strptime(f"{str(date_text)[:10]} {str(time_text)[:5]}", "%Y-%m-%d %H:%M")
