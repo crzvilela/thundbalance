@@ -93,9 +93,9 @@ export function TrainingCalendar({ sessions }) {
       <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">{t('pk_calendar')}</h3>
       <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
         <div className="mb-3 flex items-center justify-between">
-          <button type="button" aria-label={t('pk_prev')} onClick={() => setCursor(new Date(year, month - 1, 1))} className="rounded-lg px-3 py-1.5 text-gray-300 transition hover:bg-white/10">‹</button>
+          <button type="button" aria-label={t('pk_prev')} onClick={() => setCursor(new Date(year, month - 1, 1))} className="min-h-[44px] min-w-[44px] rounded-lg px-3 py-1.5 text-gray-300 transition hover:bg-white/10">‹</button>
           <p className="font-medium capitalize">{cursor.toLocaleDateString(locale, { month: 'long', year: 'numeric' })}</p>
-          <button type="button" aria-label={t('pk_next')} onClick={() => setCursor(new Date(year, month + 1, 1))} className="rounded-lg px-3 py-1.5 text-gray-300 transition hover:bg-white/10">›</button>
+          <button type="button" aria-label={t('pk_next')} onClick={() => setCursor(new Date(year, month + 1, 1))} className="min-h-[44px] min-w-[44px] rounded-lg px-3 py-1.5 text-gray-300 transition hover:bg-white/10">›</button>
         </div>
         <div className="grid grid-cols-7 gap-1 text-center text-xs text-gray-500">
           {WEEKDAYS.map(day => <span key={day} className="py-1">{dayLabel(day)}</span>)}

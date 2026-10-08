@@ -136,8 +136,8 @@ export default function TrialSessions() {
                       <Badge tone={STATUS_TONE[trial.status] || 'neutral'}>{t(`trs_${trial.status}`)}</Badge>
                     </div>
                     <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-400">
-                      <a href={`mailto:${trial.email}`} className="hover:text-emerald-300">{trial.email}</a>
-                      <a href={`tel:${trial.phone}`} className="hover:text-emerald-300">{trial.phone}</a>
+                      <a href={`mailto:${trial.email}`} className="inline-block py-1.5 hover:text-emerald-300">{trial.email}</a>
+                      <a href={`tel:${trial.phone}`} className="inline-block py-1.5 hover:text-emerald-300">{trial.phone}</a>
                     </p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <span className="flex items-center gap-1.5 rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-xs text-emerald-200">

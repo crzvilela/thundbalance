@@ -134,7 +134,7 @@ export default function AdminLayout() {
 
         <div className="sticky top-0 z-30 flex items-center justify-between border-b border-white/[0.07] bg-[#080b0a]/90 px-4 py-3 backdrop-blur lg:hidden">
           <p className="text-xl tracking-[0.18em]" style={{ fontFamily: 'Bebas Neue, Inter, sans-serif' }}>THUNDBALANCE</p>
-          <button type="button" onClick={() => setMenuOpen(true)} aria-label={t('nav_menu')} className="rounded-lg p-2 text-gray-300 hover:bg-white/10"><Icon name="menu" /></button>
+          <button type="button" onClick={() => setMenuOpen(true)} aria-label={t('nav_menu')} className="rounded-lg p-3 text-gray-300 hover:bg-white/10"><Icon name="menu" /></button>
         </div>
 
         {menuOpen && (

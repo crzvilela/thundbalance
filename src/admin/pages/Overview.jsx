@@ -127,7 +127,7 @@ export default function Overview() {
         <Card className="p-6 lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold">{t('pending_title')}</h2>
-            <Link to="/admin/requests" className="text-sm text-emerald-300 hover:text-emerald-200">{t('view_all')} →</Link>
+            <Link to="/admin/requests" className="inline-flex min-h-[44px] items-center text-sm text-emerald-300 hover:text-emerald-200">{t('view_all')} →</Link>
           </div>
           {requestsResource.error
             ? <ErrorState message={t('load_error')} retryLabel={t('retry')} onRetry={requestsResource.reload} />

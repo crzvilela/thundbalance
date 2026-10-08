@@ -180,7 +180,7 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
                         </span>
                         <Badge tone={cancelled ? 'red' : past ? 'neutral' : 'emerald'}>{cancelled ? t('st_cancelled') : t('st_booked')}</Badge>
                         {!cancelled && !past && (
-                          <button type="button" onClick={() => setCancelTarget(session)} className="rounded-lg px-3 py-1.5 text-sm text-red-300 transition hover:bg-red-500/15">{t('cl_cancel_session')}</button>
+                          <button type="button" onClick={() => setCancelTarget(session)} className="min-h-[44px] rounded-lg px-3 py-1.5 text-sm text-red-300 transition hover:bg-red-500/15">{t('cl_cancel_session')}</button>
                         )}
                       </li>
                     )
@@ -283,7 +283,7 @@ export default function Clients() {
       ) : (
         <ul className="grid gap-3 xl:grid-cols-2">
           {visible.map(client => (
-            <li key={client.id}>
+            <li key={client.id} className="min-w-0">
               <button type="button" onClick={() => setSelectedId(client.id)} className="block w-full rounded-2xl text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400">
                 <Card className="group p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-400/30">
                   <div className="flex items-center gap-4">
