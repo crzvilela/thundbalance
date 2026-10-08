@@ -84,7 +84,7 @@ function Register() {
   return (
     <div className="min-h-screen bg-black text-white flex items-center justify-center px-6 py-10">
 
-      <div className="w-full max-w-lg border border-white/10 p-10 rounded-2xl">
+      <div className="w-full max-w-lg border border-white/10 p-6 sm:p-10 rounded-2xl">
 
         <h1
           style={{ fontFamily: 'Bebas Neue' }}
@@ -111,7 +111,7 @@ function Register() {
             <select
               value={countryCode}
               onChange={(e) => setCountryCode(e.target.value)}
-              className="bg-black border border-white/20 px-4 py-4 rounded-lg"
+              className="shrink-0 bg-black border border-white/20 px-3 sm:px-4 py-4 rounded-lg"
             >
               <option value="+351">🇵🇹 +351</option>
               <option value="+55">🇧🇷 +55</option>
@@ -124,7 +124,7 @@ function Register() {
               placeholder="Phone Number"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              className="flex-1 bg-transparent border border-white/20 px-6 py-4 outline-none rounded-lg"
+              className="min-w-0 flex-1 bg-transparent border border-white/20 px-4 sm:px-6 py-4 outline-none rounded-lg"
             />
 
           </div>
@@ -182,7 +182,7 @@ function Register() {
 
             <Link
               to="/login"
-              className="text-white hover:text-gray-300"
+              className="inline-block py-2 text-white hover:text-gray-300"
             >
               Login
             </Link>

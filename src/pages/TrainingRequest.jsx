@@ -146,18 +146,18 @@ function TrainingRequest() {
 
       <Navbar />
 
-      <div className="max-w-4xl mx-auto pt-36 px-6">
+      <div className="max-w-4xl mx-auto pt-28 sm:pt-36 px-5 sm:px-6 pb-16">
 
         <TempPasswordNotice />
 
         <h1
           style={{ fontFamily: 'Bebas Neue' }}
-          className="text-6xl mb-12"
+          className="text-4xl sm:text-6xl mb-8 sm:mb-12"
         >
           {t('tr_title')}
         </h1>
 
-        <div className="border border-white/10 p-10 rounded-2xl">
+        <div className="border border-white/10 p-5 sm:p-10 rounded-2xl">
 
           <div className="mb-8">
 
@@ -217,7 +217,7 @@ function TrainingRequest() {
                   onClick={() =>
                     handleDayChange(day)
                   }
-                  className={`px-4 py-2 rounded-lg border ${
+                  className={`min-h-[44px] px-4 py-2 rounded-lg border ${
                     preferredDays.includes(day)
                       ? 'bg-green-600 border-green-600'
                       : 'border-white/20'
@@ -262,7 +262,7 @@ function TrainingRequest() {
           <button
             onClick={handleSubmit}
             disabled={submitting || plans.length === 0}
-            className="bg-white text-black px-8 py-4 uppercase tracking-[3px] hover:bg-gray-300 transition duration-300"
+            className="w-full sm:w-auto bg-white text-black px-8 py-4 uppercase tracking-[3px] hover:bg-gray-300 transition duration-300"
           >
             {submitting ? t('tr_submitting') : plans.length ? t('tr_submit') : t('tr_unavailable')}
           </button>
