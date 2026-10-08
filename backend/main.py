@@ -349,7 +349,7 @@ class UpdateProfile(BaseModel):
 
 class TrialSessionCreate(BaseModel):
     # Hidden field real visitors never fill; bots usually do.
-    website: str | None = None
+    tb_hp: str | None = None
     full_name: str
     email: str
     phone: str
@@ -1350,7 +1350,8 @@ def create_trial_session(
     """Public form. Stores a Pending request; the calendar event is created
     only when the admin approves it and picks a trainer."""
 
-    if trial.website:
+    if trial.tb_hp:
+        print("Trial form ignored: hidden field was filled (bot or autofill)")
         # A bot filled the hidden field: pretend it worked, store nothing.
         return {"message": "Trial session requested", "trial_id": 0}
 
