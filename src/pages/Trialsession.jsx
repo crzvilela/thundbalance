@@ -164,8 +164,13 @@ function TrialSession() {
         )}
 
         {existing ? (
-          <div role="status" className="rounded-3xl border border-emerald-400/25 bg-emerald-400/5 p-10 text-center">
-            <span className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-400/15 text-3xl text-emerald-300">{existing.status === 'confirmed' ? '✓' : '…'}</span>
+          <div role="alert" className="rounded-3xl border border-amber-400/40 bg-amber-400/[0.07] p-10 text-center">
+            <span aria-hidden="true" className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-amber-400/20 text-amber-300">
+              <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+                <path d="M12 9v4M12 17h.01" />
+              </svg>
+            </span>
             <h2 style={{ fontFamily: 'Bebas Neue' }} className="mb-3 text-4xl">{t('ts_ex_title')}</h2>
             <p className="mx-auto max-w-md text-gray-300">
               {t(`ts_ex_${existing.status}`, {

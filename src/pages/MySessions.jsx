@@ -30,7 +30,7 @@ const chip = {
   cancelled: 'border-red-400/30 bg-red-400/10 text-red-300',
   rescheduled: 'border-amber-400/30 bg-amber-400/10 text-amber-300'
 }
-const dotColor = { upcoming: 'bg-emerald-400', completed: 'bg-sky-400', cancelled: 'bg-red-400', rescheduled: 'bg-amber-400' }
+const dotColor = { trial: 'bg-violet-400', upcoming: 'bg-emerald-400', completed: 'bg-sky-400', cancelled: 'bg-red-400', rescheduled: 'bg-amber-400' }
 
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]))
 
@@ -136,6 +136,9 @@ function MySessions() {
   const openStatus = open ? statusOf(open) : null
   const canChange = open && openStatus === 'upcoming'
   const agenda = selectedDay ? (byDay.get(selectedDay) || []) : groups.upcoming.slice(0, 5)
+  // The trial session is not in the sessions list: it gets its own colour and row.
+  const trialDay = trial?.session_date || null
+  const showTrialRow = !!trial && (selectedDay ? selectedDay === trialDay : true)
   const total = groups.active.length
   const done = groups.past.length
   const next = groups.upcoming[0]
@@ -297,7 +300,7 @@ function MySessions() {
               </div>
             </section>
 
-            {sessions.length === 0 ? (
+            {sessions.length === 0 && !trial ? (
               <div className={`${card} p-12 text-center`}>
                 <p style={{ fontFamily: 'Bebas Neue' }} className="mb-3 text-4xl">{t('ms_none_title')}</p>
                 <p className="mx-auto mb-7 max-w-md text-gray-400">{t('ms_none_text')}</p>
@@ -319,6 +322,7 @@ function MySessions() {
                     {Array.from({ length: 7 }, (_, index) => new Date(2024, 0, 1 + index).toLocaleDateString(locale, { weekday: 'short' })).map(name => <div key={name} className="pb-2 text-[11px] uppercase tracking-wider text-gray-500">{name}</div>)}
                     {cells.map(cell => {
                       const list = byDay.get(cell.key) || []
+                      const hasTrial = cell.key === trialDay
                       const isSelected = cell.key === selectedDay
                       const isToday = cell.key === todayKey
                       return (
@@ -328,8 +332,9 @@ function MySessions() {
                               : isToday ? 'border-emerald-400/40 text-emerald-200 hover:bg-white/5' : 'border-transparent hover:border-white/15 hover:bg-white/5'
                           } ${cell.inMonth ? '' : 'opacity-30'}`}>
                           <span className="tabular-nums">{cell.day}</span>
-                          {list.length > 0 && (
+                          {(list.length > 0 || hasTrial) && (
                             <span className="mt-0.5 flex gap-0.5">
+                              {hasTrial && <span className={`h-1.5 w-1.5 rounded-full ${dotColor.trial}`} />}
                               {list.slice(0, 3).map(session => <span key={session.id} className={`h-1.5 w-1.5 rounded-full ${dotColor[statusOf(session)]}`} />)}
                             </span>
                           )}
@@ -342,16 +347,33 @@ function MySessions() {
                     {['upcoming', 'completed', 'rescheduled', 'cancelled'].map(key => (
                       <span key={key} className="flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${dotColor[key]}`} />{t(`ms_status_${key}`)}</span>
                     ))}
+                    {trial && <span className="flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${dotColor.trial}`} />{t('tt_legend')}</span>}
                   </div>
                 </div>
 
                 <div className={`${card} p-6 lg:col-span-2`}>
                   <h2 style={{ fontFamily: 'Bebas Neue' }} className="text-3xl">{selectedDay ? parseKey(selectedDay).toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'short' }) : t('ms_next_sessions')}</h2>
                   <p className="mb-5 mt-1 text-xs text-gray-500">{selectedDay ? t('ms_select_again') : t('ms_click_day')}</p>
-                  {agenda.length === 0 ? (
+                  {agenda.length === 0 && !showTrialRow ? (
                     <p className="rounded-2xl border border-dashed border-white/10 p-8 text-center text-sm text-gray-500">{selectedDay ? t('ms_no_session_day') : t('ms_no_upcoming')}</p>
                   ) : (
-                    <ul className="space-y-3">{agenda.map(session => <li key={session.id}><SessionRow session={session} /></li>)}</ul>
+                    <ul className="space-y-3">
+                      {showTrialRow && (
+                        <li>
+                          <div className="flex w-full items-center gap-4 rounded-2xl border border-violet-400/40 bg-violet-400/[0.06] p-4">
+                            <span className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-2xl border border-violet-400/40 bg-violet-400/10 text-violet-300">
+                              <span className="text-[10px] font-semibold uppercase leading-none">{parseKey(trial.session_date).toLocaleDateString(locale, { month: 'short' })}</span>
+                              <span style={{ fontFamily: 'Bebas Neue' }} className="text-2xl leading-none">{parseKey(trial.session_date).getDate()}</span>
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate font-medium">{t('tt_title')} · {trial.session_time}</span>
+                              <span className="block truncate text-sm text-gray-400">{trial.trainer || t('tt_trainer_tbd')} · {t(`tt_status_${trial.status}`)}</span>
+                            </span>
+                          </div>
+                        </li>
+                      )}
+                      {agenda.map(session => <li key={session.id}><SessionRow session={session} /></li>)}
+                    </ul>
                   )}
                 </div>
 
