@@ -54,12 +54,13 @@ function Field({ label, error, children, optional }) {
 }
 
 function TrialSession() {
-  const { t, language } = useI18n()
+  const { t, language, locale } = useI18n()
   const [form, setForm] = useState(EMPTY)
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [serverError, setServerError] = useState('')
   const [done, setDone] = useState(false)
+  const [existing, setExisting] = useState(null) // an open request of this email: { status, session_date, session_time }
   const [schedule, setSchedule] = useState(null) // times offered per weekday
   const [times, setTimes] = useState([]) // free start times on the chosen date
   const [loadingTimes, setLoadingTimes] = useState(false)
@@ -129,6 +130,11 @@ function TrialSession() {
         })
       })
       const data = await response.json().catch(() => ({}))
+      if (response.status === 409 && data.detail?.code === 'trial_exists') {
+        // This email already has an open request: show where it stands instead of an error.
+        setExisting(data.detail)
+        return
+      }
       if (!response.ok) {
         throw new Error(typeof data.detail === 'string' ? data.detail : 'ts_e_send')
       }
@@ -147,7 +153,7 @@ function TrialSession() {
 
       <main className="mx-auto max-w-3xl px-5 pb-24 pt-36">
         {/* The intro header is hidden once the request was sent, so only the confirmation card remains. */}
-        {!done && (
+        {!done && !existing && (
           <>
             <p className="mb-3 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-400">{t('ts_eyebrow')}</p>
             <h1 style={{ fontFamily: 'Bebas Neue' }} className="mb-3 text-5xl md:text-6xl">{t('ts_title')}</h1>
@@ -157,7 +163,23 @@ function TrialSession() {
           </>
         )}
 
-        {done ? (
+        {existing ? (
+          <div role="status" className="rounded-3xl border border-emerald-400/25 bg-emerald-400/5 p-10 text-center">
+            <span className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-400/15 text-3xl text-emerald-300">{existing.status === 'confirmed' ? '✓' : '…'}</span>
+            <h2 style={{ fontFamily: 'Bebas Neue' }} className="mb-3 text-4xl">{t('ts_ex_title')}</h2>
+            <p className="mx-auto max-w-md text-gray-300">
+              {t(`ts_ex_${existing.status}`, {
+                date: new Date(`${existing.session_date}T00:00:00`).toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+                time: existing.session_time
+              })}
+            </p>
+            <p className="mx-auto mt-3 max-w-md text-sm text-gray-500">{t('ts_ex_note')}</p>
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+              <Link to="/my-sessions" className="rounded-xl bg-white px-6 py-3 text-sm font-semibold uppercase tracking-wider text-black transition hover:bg-gray-200">{t('ts_ex_sessions')}</Link>
+              <Link to="/" className="rounded-xl border border-white/20 px-6 py-3 text-sm uppercase tracking-wider transition hover:bg-white/10">{t('ts_home')}</Link>
+            </div>
+          </div>
+        ) : done ? (
           <div role="status" className="rounded-3xl border border-emerald-400/25 bg-emerald-400/5 p-10 text-center">
             <span className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-400/15 text-3xl text-emerald-300">✓</span>
             <h2 style={{ fontFamily: 'Bebas Neue' }} className="mb-3 text-4xl">{t('ts_received')}</h2>

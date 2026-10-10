@@ -1452,6 +1452,52 @@ def _too_many_trial_requests(ip):
     return False
 
 
+def _active_trial_for_email(cursor, email):
+    """The newest trial request of this email that is still open: waiting for
+    the team (pending), waiting for the client (approved) or booked (confirmed),
+    and not in the past. Declined/cancelled ones do not count."""
+    cursor.execute(
+        """
+        SELECT ts.id, ts.status, ts.session_date, ts.session_time, ts.goal, ts.experience, t.nome
+        FROM trial_sessions ts
+        LEFT JOIN trainers t ON t.id = ts.trainer_id
+        WHERE LOWER(ts.email) = %s AND LOWER(ts.status) IN ('pending', 'approved', 'confirmed')
+          AND ts.session_date >= CURRENT_DATE
+        ORDER BY ts.created_at DESC, ts.id DESC
+        LIMIT 1
+        """,
+        (email.strip().lower(),)
+    )
+    row = cursor.fetchone()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "status": str(row[1]).strip().lower(),
+        "session_date": str(row[2]),
+        "session_time": str(row[3])[:5],
+        "goal": row[4],
+        "experience": row[5],
+        "trainer": row[6],
+    }
+
+
+@app.get("/client/trial")
+def client_trial(authorization: str | None = Header(default=None)):
+    """The logged-in client's open trial session (matched by login email), or null."""
+    claims = require_client(authorization)
+    email = str(claims.get("email", "")).strip().lower()
+    if not email:
+        return {"trial": None}
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        return {"trial": _active_trial_for_email(cursor, email)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @app.post("/trial-sessions")
 def create_trial_session(
     trial: TrialSessionCreate,
@@ -1522,19 +1568,17 @@ def create_trial_session(
                 detail="No trainer is available at that day and time. Please choose another."
             )
 
-        cursor.execute(
-            """
-            SELECT 1 FROM trial_sessions
-            WHERE LOWER(email) = %s AND LOWER(status) IN ('pending', 'approved', 'confirmed')
-              AND session_date >= CURRENT_DATE
-            LIMIT 1
-            """,
-            (email,)
-        )
-        if cursor.fetchone():
+        existing = _active_trial_for_email(cursor, email)
+        if existing:
+            # Public answer: only what the visitor needs to see, no personal data.
             raise HTTPException(
                 status_code=409,
-                detail="You already have a trial session request. We will contact you soon."
+                detail={
+                    "code": "trial_exists",
+                    "status": existing["status"],
+                    "session_date": existing["session_date"],
+                    "session_time": existing["session_time"],
+                }
             )
 
         cursor.execute(

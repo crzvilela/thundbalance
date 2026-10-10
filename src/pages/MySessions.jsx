@@ -19,6 +19,10 @@ const keyOf = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad
 const parseKey = (key) => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d) }
 const fullDate = (key, locale) => parseKey(key).toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
+// Trial goals/levels are stored in English; the index is the translation key (ts_goal_N / ts_level_N).
+const TRIAL_GOALS = ['Body recomposition', 'Lose weight', 'Build muscle', 'Increase strength', 'Rehabilitation/injury recovery', 'Conditioning', 'Endurance', 'Tone/define', 'Improve mobility & flexibility', 'Increase energy']
+const TRIAL_LEVELS = ['Beginner', 'Intermediate', 'Advanced']
+
 const card = 'rounded-3xl border border-white/10 bg-white/[0.025]'
 const chip = {
   upcoming: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300',
@@ -40,6 +44,7 @@ function MySessions() {
   const todayKey = keyOf(new Date())
 
   const [sessions, setSessions] = useState([])
+  const [trial, setTrial] = useState(null) // { status, session_date, session_time, trainer, goal, experience }
   const [trainerIds, setTrainerIds] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -69,6 +74,15 @@ function MySessions() {
       if (!sessionsResponse.ok) throw new Error('ms_err_sessions')
       const rows = await sessionsResponse.json()
       setSessions(Array.isArray(rows) ? rows.map(toSession) : [])
+
+      // The open trial session of this login email (not part of the sessions list).
+      try {
+        const trialResponse = await authFetch(`${API_URL}/client/trial`)
+        const body = trialResponse.ok ? await trialResponse.json() : null
+        setTrial(body?.trial || null)
+      } catch {
+        setTrial(null)
+      }
 
       // Trainer rows are [id, name, specialty]; the sessions only carry names.
       const trainers = trainersResponse.ok ? await trainersResponse.json() : []
@@ -233,6 +247,37 @@ function MySessions() {
           <div role="status" className={`${card} flex items-center gap-3 p-10 text-gray-400`}><Spinner /> {t('ms_loading')}</div>
         ) : (
           <>
+            {trial && (
+              <section aria-label={t('tt_title')} className="relative mb-6 rounded-3xl border border-emerald-400/25 bg-emerald-400/[0.06] p-6 md:p-8">
+                <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-400">{t('tt_title')}</p>
+                    <p className="max-w-xl text-sm text-gray-300">{t(`tt_text_${trial.status}`)}</p>
+                  </div>
+                  <span className={`rounded-full border px-3 py-1 text-xs font-medium ${trial.status === 'confirmed' ? chip.upcoming : chip.rescheduled}`}>{t(`tt_status_${trial.status}`)}</span>
+                </div>
+                <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    [t('tt_date'), fullDate(trial.session_date, locale)],
+                    [t('tt_time'), trial.session_time],
+                    [t('tt_trainer'), trial.trainer || t('tt_trainer_tbd')],
+                    [t('tt_experience'), TRIAL_LEVELS.includes(trial.experience) ? t('ts_level_' + TRIAL_LEVELS.indexOf(trial.experience)) : (trial.experience || '—')]
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                      <dt className="text-xs uppercase tracking-wider text-gray-500">{label}</dt>
+                      <dd className="mt-1 text-base">{value}</dd>
+                    </div>
+                  ))}
+                  {trial.goal && (
+                    <div className="rounded-2xl border border-white/10 bg-black/30 p-4 sm:col-span-2 lg:col-span-4">
+                      <dt className="text-xs uppercase tracking-wider text-gray-500">{t('tt_goal')}</dt>
+                      <dd className="mt-1 text-base">{trial.goal.split(',').map(goal => goal.trim()).filter(Boolean).map(goal => (TRIAL_GOALS.includes(goal) ? t('ts_goal_' + TRIAL_GOALS.indexOf(goal)) : goal)).join(', ')}</dd>
+                    </div>
+                  )}
+                </dl>
+              </section>
+            )}
+
             <section className="relative mb-6 grid gap-4 sm:grid-cols-3">
               {stats.map(stat => (
                 <div key={stat.label} className={`${card} p-6`}>
