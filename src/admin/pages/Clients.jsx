@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { adminRequest } from '../api'
 import { resolveImageUrl } from '../../api/landingPage'
 import { useAdminText } from '../useAdminText'
@@ -7,6 +8,7 @@ import { useToast } from '../toastContext'
 import { dateKey, parseDateKey } from '../requests'
 import { PackStatusBadge, PackSummary, RenewDrawer, TrainingCalendar } from '../PackPanel'
 import AddClientDrawer from '../AddClientDrawer'
+import BillingSection from '../BillingSection'
 import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Icon,
   PageHeader, SelectInput, Skeleton, TextInput
@@ -44,11 +46,23 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
   const [cancelling, setCancelling] = useState(false)
   const [renewing, setRenewing] = useState(false)
   const [resending, setResending] = useState(false)
+  const [syncing, setSyncing] = useState(false)
 
   const client = detail.data
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
   const today = dateKey(new Date())
   const sessions = useMemo(() => client?.sessions || [], [client])
+  const groups = useMemo(() => {
+    const fmt = (key) => (key ? parseDateKey(key).toLocaleDateString(language === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
+    const result = []
+    for (const pack of client?.packs || []) {
+      const own = sessions.filter(session => session.pack_id === pack.id)
+      if (own.length) result.push({ key: `pack-${pack.id}`, title: pack.name, subtitle: `${fmt(pack.start_date)} → ${fmt(pack.end_date)}${pack.sessions_per_week ? ` · ${pack.sessions_per_week}/${t('pk_per_week').toLowerCase()}` : ''}`, sessions: own })
+    }
+    const loose = sessions.filter(session => !session.pack_id)
+    if (loose.length) result.push({ key: 'none', title: t('pk_group_none'), subtitle: '', sessions: loose })
+    return result
+  }, [client, sessions, language, t])
   const active = sessions.filter(session => session.status !== 'Cancelled')
   const done = active.filter(session => session.date < today).length
 
@@ -77,6 +91,25 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
       toast.push(error.message, 'error')
     } finally {
       setResending(false)
+    }
+  }
+
+  const syncCalendar = async () => {
+    setSyncing(true)
+    try {
+      const result = await adminRequest('POST', `/admin/clients/${clientId}/sync-calendar`)
+      if (!result.created && !result.updated && !result.failed) {
+        toast.push(t('cs_nothing'))
+      } else {
+        const moved = result.updated ? ` · ${result.updated} ${t('cs_updated')}` : ''
+        toast.push(`${t('cs_created')}: ${result.created}${moved} · ${t('cs_failed')}: ${result.failed}`, result.failed ? 'warning' : 'success')
+      }
+      detail.reload()
+      onChanged()
+    } catch (error) {
+      toast.push(error.message, 'error')
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -115,7 +148,7 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
               </div>
             </div>
 
-            <PackSummary pack={client.pack} onRenew={() => setRenewing(true)} />
+            <PackSummary packs={(client.packs || []).filter(pack => pack.shown)} onRenew={() => setRenewing(true)} />
 
             {client.must_change_password && (
               <section className="rounded-xl border border-amber-400/25 bg-amber-400/5 p-4">
@@ -128,11 +161,11 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
             <section>
               <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">{t('cl_contact')}</h3>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-base">
-                <div><dt className="text-sm text-gray-500">{t('cl_phone')}</dt><dd>{client.phone ? `${client.country_code || ''} ${client.phone}` : '—'}</dd></div>
-                <div><dt className="text-sm text-gray-500">{t('cl_city')}</dt><dd>{client.city || '—'}</dd></div>
-                <div className="col-span-2"><dt className="text-sm text-gray-500">{t('cl_address')}</dt><dd>{[client.address, client.postal_code].filter(Boolean).join(', ') || '—'}</dd></div>
+                <div className="col-span-2"><dt className="text-sm text-gray-500">{t('cl_phone')}</dt><dd>{client.phone ? `${client.country_code || ''} ${client.phone}` : '—'}</dd></div>
               </dl>
             </section>
+
+            <BillingSection key={`${client.id}-${client.tax_id || ''}-${client.address || ''}-${client.country || ''}`} client={client} onSaved={() => { detail.reload(); onChanged() }} />
 
             <section>
               <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">{t('cl_progress')}</h3>
@@ -162,29 +195,49 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
             <TrainingCalendar sessions={sessions} />
 
             <section>
-              <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">{t('cl_sessions_title')} ({sessions.length})</h3>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <h3 className="text-sm font-medium uppercase tracking-wider text-gray-400">{t('cl_sessions_title')} ({sessions.length})</h3>
+                <Button variant="secondary" onClick={syncCalendar} loading={syncing} title={t('cs_hint')}>
+                  <Icon name="refresh" className="h-4 w-4" />{syncing ? t('cs_syncing') : t('cs_button')}
+                </Button>
+              </div>
               {sessions.length === 0 ? (
                 <EmptyState icon="calendar" title={t('cl_no_sessions')} />
               ) : (
-                <ul className="divide-y divide-white/[0.06] rounded-xl border border-white/[0.08] bg-white/[0.02]">
-                  {sessions.map(session => {
-                    const cancelled = session.status === 'Cancelled'
-                    const past = session.date < today
-                    return (
-                      <li key={session.id} className={`flex items-center gap-4 px-5 py-4 ${cancelled || past ? 'opacity-60' : ''}`}>
-                        <span className="w-14 text-sm tabular-nums text-gray-500">{session.number || ''}</span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-base font-medium">{parseDateKey(session.date).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                          <span className="block text-sm text-gray-500">{session.time} · {session.trainer || '—'}</span>
-                        </span>
-                        <Badge tone={cancelled ? 'red' : past ? 'neutral' : 'emerald'}>{cancelled ? t('st_cancelled') : t('st_booked')}</Badge>
-                        {!cancelled && !past && (
-                          <button type="button" onClick={() => setCancelTarget(session)} className="rounded-lg px-3 py-1.5 text-sm text-red-300 transition hover:bg-red-500/15">{t('cl_cancel_session')}</button>
-                        )}
-                      </li>
-                    )
-                  })}
-                </ul>
+                <div className="space-y-5">
+                  {groups.map(group => (
+                    <div key={group.key}>
+                      <p className="mb-2 flex flex-wrap items-baseline justify-between gap-2 text-sm font-medium text-gray-300">
+                        <span>{group.title}</span>
+                        <span className="text-xs font-normal text-gray-500">{group.subtitle}</span>
+                      </p>
+                      <ul className="divide-y divide-white/[0.06] rounded-xl border border-white/[0.08] bg-white/[0.02]">
+                        {group.sessions.map(session => {
+                          const cancelled = session.status === 'Cancelled'
+                          const past = session.date < today
+                          return (
+                            <li key={session.id} className={`flex items-center gap-4 px-5 py-4 ${cancelled || past ? 'opacity-60' : ''}`}>
+                              <span className="w-14 text-sm tabular-nums text-gray-500">{session.number || ''}</span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block text-base font-medium">{parseDateKey(session.date).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                <span className="block text-sm text-gray-500">{session.time} · {session.trainer || '—'}</span>
+                              </span>
+                              {session.calendar_sync_status === 'failed' && (
+                                <span className="flex items-center gap-1 text-amber-300" title={`${t('cs_session_warning')}: ${session.calendar_sync_error || ''}`} aria-label={t('cs_session_warning')}>
+                                  <Icon name="alert" className="h-4 w-4" />
+                                </span>
+                              )}
+                              <Badge tone={cancelled ? 'red' : past ? 'neutral' : 'emerald'}>{cancelled ? t('st_cancelled') : t('st_booked')}</Badge>
+                              {!cancelled && !past && (
+                                <button type="button" onClick={() => setCancelTarget(session)} className="min-h-[44px] rounded-lg px-3 py-1.5 text-sm text-red-300 transition hover:bg-red-500/15">{t('cl_cancel_session')}</button>
+                              )}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
               )}
             </section>
             </div>
@@ -214,8 +267,9 @@ export default function Clients() {
   const plansResource = useAdminResource('/plans')
   const trainersResource = useAdminResource('/admin/trainer-availability')
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState('all')
-  const [selectedId, setSelectedId] = useState(null)
+  const [searchParams] = useSearchParams()
+  const [filter, setFilter] = useState(() => (['with_plan', 'no_plan', 'pending', 'renew'].includes(searchParams.get('filter')) ? searchParams.get('filter') : 'all'))
+  const [selectedId, setSelectedId] = useState(() => Number(searchParams.get('client')) || null)
   const [adding, setAdding] = useState(false)
 
   const clients = useMemo(() => clientsResource.data || [], [clientsResource.data])
@@ -227,7 +281,8 @@ export default function Clients() {
     all: clients.length,
     with_plan: clients.filter(client => client.plan).length,
     no_plan: clients.filter(client => !client.plan).length,
-    pending: clients.filter(client => client.has_pending_request).length
+    pending: clients.filter(client => client.has_pending_request).length,
+    renew: clients.filter(client => client.pack_status === 'expired' || client.pack_status === 'expiring').length
   }), [clients])
 
   const visible = useMemo(() => {
@@ -236,11 +291,12 @@ export default function Clients() {
       if (filter === 'with_plan' && !client.plan) return false
       if (filter === 'no_plan' && client.plan) return false
       if (filter === 'pending' && !client.has_pending_request) return false
+      if (filter === 'renew' && client.pack_status !== 'expired' && client.pack_status !== 'expiring') return false
       return !needle || `${client.name} ${client.email}`.toLowerCase().includes(needle)
     })
   }, [clients, filter, query])
 
-  const filters = [['all', t('cl_all')], ['with_plan', t('cl_with_plan')], ['no_plan', t('cl_no_plan_filter')], ['pending', t('cl_pending')]]
+  const filters = [['all', t('cl_all')], ['with_plan', t('cl_with_plan')], ['no_plan', t('cl_no_plan_filter')], ['pending', t('cl_pending')], ['renew', t('biz_to_renew')]]
 
   return (
     <div className="admin-fade">
@@ -279,7 +335,7 @@ export default function Clients() {
       ) : (
         <ul className="grid gap-3 xl:grid-cols-2">
           {visible.map(client => (
-            <li key={client.id}>
+            <li key={client.id} className="min-w-0">
               <button type="button" onClick={() => setSelectedId(client.id)} className="block w-full rounded-2xl text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400">
                 <Card className="group p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-400/30">
                   <div className="flex items-center gap-4">
@@ -290,7 +346,8 @@ export default function Clients() {
                         {client.has_pending_request && <Badge tone="amber">{t('cl_pending')}</Badge>}
                         {(client.pack_status === 'expired' || client.pack_status === 'expiring') && <PackStatusBadge status={client.pack_status} />}
                       </div>
-                      <p className="truncate text-sm text-gray-500">{client.email}</p>
+                      <p className="truncate text-sm text-gray-500">{client.email}{client.tax_id_masked ? ` · ${client.tax_id_masked}` : ''}</p>
+                      {client.billing_missing && <p className="mt-1.5"><Badge tone="amber">{t('bl_missing')}</Badge></p>}
                     </div>
                     {client.plan ? <Badge tone="emerald">{client.plan}</Badge> : <Badge>{t('cl_no_plan')}</Badge>}
                   </div>

@@ -4,11 +4,12 @@ import { useAdminText } from './useAdminText'
 import { useToast } from './toastContext'
 import { dateKey, parseDateKey } from './requests'
 import { WEEKDAYS } from './availability'
-import { Badge, Button, Drawer } from './ui'
+import { Badge, Button, ConfirmDialog, Drawer } from './ui'
 import PackFields from './PackFields'
-import { packIsComplete, packPayload, usePackForm } from './packForm'
+import { packIsComplete, packPayload, startIsInThePast, usePackForm, usePackPreview } from './packForm'
 import EmailRecipients from './EmailRecipients'
 import { recipientsPayload, reportEmailResult, useEmailRecipients } from './recipientsState'
+import { reportCalendarResult } from './calendarSync'
 
 const STATUS_TONE = { active: 'emerald', expiring: 'amber', expired: 'red', none: 'neutral' }
 
@@ -18,39 +19,49 @@ export function PackStatusBadge({ status }) {
   return <Badge tone={STATUS_TONE[status]}>{t(`pk_status_${status}`)}</Badge>
 }
 
-// Current pack of a client: type, period, progress and schedule, with the
-// Renew button (highlighted once the pack is expiring or expired).
-export function PackSummary({ pack, onRenew }) {
+// The client's packs: one card per active pack (period, schedule, trainer and
+// done / left of THAT pack), and the button that adds another one. Packs run
+// in parallel, so adding one never replaces another.
+export function PackSummary({ packs = [], onRenew }) {
   const { t, language, dayLabel } = useAdminText()
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
   const fmt = (key) => (key ? parseDateKey(key).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
-  const urgent = pack && (pack.status === 'expired' || pack.status === 'expiring')
+  const urgent = packs.length > 0 && packs.every(pack => pack.status === 'expired' || pack.status === 'expiring')
 
   return (
     <section>
-      <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">{t('pk_title')}</h3>
-      <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
-        {pack ? (
-          <>
+      <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">
+        {t('pk_title')}{packs.length > 1 ? ` (${packs.length})` : ''}
+      </h3>
+      <div className="space-y-3">
+        {packs.length === 0 && (
+          <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+            <p className="text-gray-400">{t('pk_none')}</p>
+          </div>
+        )}
+        {packs.map(pack => (
+          <div key={pack.id} className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <p className="text-lg font-semibold">{pack.name}</p>
-              <PackStatusBadge status={pack.status} />
+              <div className="flex items-center gap-2">
+                {!pack.active && <Badge tone="neutral">{t('pk_previous')}</Badge>}
+                <PackStatusBadge status={pack.status} />
+              </div>
             </div>
             <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-base">
               <div><dt className="text-sm text-gray-500">{t('pk_period')}</dt><dd>{fmt(pack.start_date)} → {fmt(pack.end_date)}</dd></div>
               <div><dt className="text-sm text-gray-500">{t('pk_sessions')}</dt><dd>{pack.done} {t('pk_done')} · {pack.remaining} {t('pk_left')}</dd></div>
+              <div><dt className="text-sm text-gray-500">{t('pk_per_week')}</dt><dd>{pack.sessions_per_week || '—'}</dd></div>
               <div><dt className="text-sm text-gray-500">{t('pk_trainer')}</dt><dd>{pack.trainer || '—'}</dd></div>
-              <div>
+              <div className="col-span-2">
                 <dt className="text-sm text-gray-500">{t('pk_schedule')}</dt>
-                <dd>{pack.preferred_days ? `${pack.preferred_days.split(',').map(day => dayLabel(day.trim())).join(', ')} · ${pack.preferred_time || ''}` : '—'}</dd>
+                <dd>{pack.preferred_days ? `${pack.preferred_days.split(',').map(day => dayLabel(day.trim())).join(', ')} · ${String(pack.preferred_time || '').slice(0, 5)}` : '—'}</dd>
               </div>
             </dl>
-          </>
-        ) : (
-          <p className="mb-1 text-gray-400">{t('pk_none')}</p>
-        )}
-        <Button variant={urgent || !pack ? 'primary' : 'secondary'} className="mt-4" onClick={onRenew}>
-          {pack ? t('pk_renew') : t('pk_start_pack')}
+          </div>
+        ))}
+        <Button variant={urgent || packs.length === 0 ? 'primary' : 'secondary'} onClick={onRenew}>
+          {packs.length ? t('pk_add_pack') : t('pk_start_pack')}
         </Button>
       </div>
     </section>
@@ -93,9 +104,9 @@ export function TrainingCalendar({ sessions }) {
       <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">{t('pk_calendar')}</h3>
       <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
         <div className="mb-3 flex items-center justify-between">
-          <button type="button" aria-label={t('pk_prev')} onClick={() => setCursor(new Date(year, month - 1, 1))} className="rounded-lg px-3 py-1.5 text-gray-300 transition hover:bg-white/10">‹</button>
+          <button type="button" aria-label={t('pk_prev')} onClick={() => setCursor(new Date(year, month - 1, 1))} className="min-h-[44px] min-w-[44px] rounded-lg px-3 py-1.5 text-gray-300 transition hover:bg-white/10">‹</button>
           <p className="font-medium capitalize">{cursor.toLocaleDateString(locale, { month: 'long', year: 'numeric' })}</p>
-          <button type="button" aria-label={t('pk_next')} onClick={() => setCursor(new Date(year, month + 1, 1))} className="rounded-lg px-3 py-1.5 text-gray-300 transition hover:bg-white/10">›</button>
+          <button type="button" aria-label={t('pk_next')} onClick={() => setCursor(new Date(year, month + 1, 1))} className="min-h-[44px] min-w-[44px] rounded-lg px-3 py-1.5 text-gray-300 transition hover:bg-white/10">›</button>
         </div>
         <div className="grid grid-cols-7 gap-1 text-center text-xs text-gray-500">
           {WEEKDAYS.map(day => <span key={day} className="py-1">{dayLabel(day)}</span>)}
@@ -128,24 +139,46 @@ export function RenewDrawer({ client, pack, plans, trainers, onClose, onDone }) 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [recipients, setRecipients] = useEmailRecipients()
+  const [askPast, setAskPast] = useState(false)
+  const [askConflicts, setAskConflicts] = useState(false)
+  const [serverConflicts, setServerConflicts] = useState(null)
+  const preview = usePackPreview(client.id, form)
+  const conflicts = serverConflicts || preview.data?.conflicts || []
 
-  const submit = async () => {
-    if (!packIsComplete(form)) { setError(t('pk_fill')); return }
+  // Changing the form invalidates any list the server sent before.
+  const update = (patch) => { setServerConflicts(null); setAskConflicts(false); set(patch) }
+
+  const send = async (allowConflicts) => {
     setBusy(true)
     setError('')
     try {
       const result = await adminRequest('POST', `/admin/clients/${client.id}/renew-pack`, {
         ...recipientsPayload(recipients),
-        ...packPayload(form)
+        ...packPayload(form),
+        allow_conflicts: allowConflicts
       })
       toast.push(t('pk_renewed'))
       reportEmailResult(toast, t, result.email)
+      reportCalendarResult(toast, t, result.calendar)
       onDone()
     } catch (err) {
-      setError(err.message)
+      if (err.code === 'conflicts') {            // the server found collisions the preview had not shown yet
+        setServerConflicts(err.conflicts)
+        setAskConflicts(true)
+      } else {
+        setError(err.message)
+      }
     } finally {
       setBusy(false)
     }
+  }
+
+  // 1) a date in the past asks first, 2) collisions are listed first, 3) then it is created.
+  const submit = (confirmedPast = false) => {
+    if (!packIsComplete(form)) { setError(t('pk_fill')); return }
+    if (startIsInThePast(form) && !confirmedPast) { setAskPast(true); return }
+    if (conflicts.length > 0) { setAskConflicts(true); return }
+    send(false)
   }
 
   return (
@@ -154,14 +187,29 @@ export function RenewDrawer({ client, pack, plans, trainers, onClose, onDone }) 
       title={pack ? t('pk_renew_title') : t('pk_start_title')} subtitle={client.name}
       footer={<>
         <Button variant="secondary" className="flex-1" onClick={onClose} disabled={busy}>{t('cancel')}</Button>
-        <Button variant="primary" className="flex-[2]" onClick={submit} loading={busy}>{busy ? t('pk_renewing') : t('pk_confirm')}</Button>
+        <Button variant="primary" className="flex-[2]" onClick={() => submit()} loading={busy}>{busy ? t('pk_renewing') : t('pk_confirm')}</Button>
       </>}
     >
       <p className="mb-6 text-sm text-gray-400">{t('pk_renew_sub')}</p>
-      <PackFields form={form} set={set} plans={plans} trainers={trainers} pack={pack} busy={busy} />
+      <PackFields form={form} set={update} plans={plans} trainers={trainers} pack={pack} busy={busy} preview={preview} serverConflicts={serverConflicts} />
       <EmailRecipients value={recipients} onChange={setRecipients} disabled={busy} />
+      {askConflicts && conflicts.length > 0 && (
+        <div role="alert" className="mt-5 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-amber-100">
+          <p className="mb-3 text-sm">{t('cf_question')}</p>
+          <div className="flex flex-wrap gap-3">
+            <Button variant="secondary" onClick={() => setAskConflicts(false)} disabled={busy}>{t('cf_change')}</Button>
+            <Button variant="primary" onClick={() => { setAskConflicts(false); send(true) }} loading={busy}>{t('cf_create_anyway')}</Button>
+          </div>
+        </div>
+      )}
       {busy && <p className="mt-4 text-sm text-amber-300">{t('approving_hint')}</p>}
       {error && <p role="alert" className="mt-4 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</p>}
+      <ConfirmDialog
+        open={askPast} tone="neutral" icon="calendar"
+        title={t('pk_past_title')} text={t('pk_past_text')}
+        confirmLabel={t('pk_past_ok')} cancelLabel={t('cancel')}
+        onConfirm={() => { setAskPast(false); submit(true) }} onCancel={() => setAskPast(false)}
+      />
     </Drawer>
   )
 }

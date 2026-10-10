@@ -3,6 +3,7 @@ import { Link, useOutletContext } from 'react-router-dom'
 import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { dateKey, normalizeSessions, parseDateKey } from '../requests'
+import BusinessPanel from '../BusinessPanel'
 import { Badge, Button, Card, EmptyState, ErrorState, Icon, PageHeader, Skeleton, StatCard } from '../ui'
 
 const INACTIVE = new Set(['cancelled', 'canceled', 'completed', 'rejected'])
@@ -56,7 +57,16 @@ export default function Overview() {
   const { week, upcoming } = useMemo(() => {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
-    const active = sessions.filter(session => !INACTIVE.has(session.status.toLowerCase()))
+    // Trial sessions count too: pending ones are shown as such, approved ones
+    // wait for the client, confirmed ones are firm. Rejected, declined and
+    // cancelled trials are not sessions.
+    const trialSessions = trials
+      .filter(trial => ['pending', 'approved', 'confirmed'].includes(trial.status) && trial.date)
+      .map(trial => ({
+        id: `trial-${trial.id}`, client: trial.name || '—', trainer: trial.trainer || '—',
+        date: trial.date, time: String(trial.time || '').slice(0, 5), status: trial.status, isTrial: true
+      }))
+    const active = [...sessions.filter(session => !INACTIVE.has(session.status.toLowerCase())), ...trialSessions]
     const days = Array.from({ length: 7 }, (_, offset) => {
       const date = new Date(today)
       date.setDate(today.getDate() + offset)
@@ -68,13 +78,17 @@ export default function Overview() {
         count: active.filter(session => session.date === key).length
       }
     })
-    const todayKey = dateKey(today)
+    // Nearest first, and only sessions that have not started yet: a session
+    // earlier today whose time has passed is no longer "upcoming".
+    const now = new Date()
+    const nowStamp = `${dateKey(now)} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    const stamp = session => `${session.date} ${session.time}`
     const next = active
-      .filter(session => session.date >= todayKey)
-      .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
+      .filter(session => stamp(session) >= nowStamp)
+      .sort((a, b) => stamp(a).localeCompare(stamp(b)))
       .slice(0, 6)
     return { week: days, upcoming: next }
-  }, [sessions, locale])
+  }, [sessions, trials, locale])
 
   const formatDay = (key) => parseDateKey(key).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' })
 
@@ -113,7 +127,7 @@ export default function Overview() {
         <Card className="p-6 lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold">{t('pending_title')}</h2>
-            <Link to="/admin/requests" className="text-sm text-emerald-300 hover:text-emerald-200">{t('view_all')} →</Link>
+            <Link to="/admin/requests" className="inline-flex min-h-[44px] items-center text-sm text-emerald-300 hover:text-emerald-200">{t('view_all')} →</Link>
           </div>
           {requestsResource.error
             ? <ErrorState message={t('load_error')} retryLabel={t('retry')} onRetry={requestsResource.reload} />
@@ -137,6 +151,8 @@ export default function Overview() {
         </Card>
       </section>
 
+      <BusinessPanel sessions={sessions} trials={trials} />
+
       <section className="mt-6 grid gap-6 lg:grid-cols-5">
         <Card className="p-6 lg:col-span-3">
           <h2 className="mb-4 text-lg font-semibold">{t('upcoming_title')}</h2>
@@ -154,7 +170,10 @@ export default function Overview() {
                         <span className="text-base font-semibold leading-tight">{parseDateKey(session.date).getDate()}</span>
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate font-medium">{session.client}</span>
+                        <span className="flex items-center gap-2 font-medium">
+                          <span className="truncate">{session.client}</span>
+                          {session.isTrial && <Badge tone={{ pending: 'amber', approved: 'sky', confirmed: 'emerald' }[session.status]}>{t(`trial_b_${session.status}`)}</Badge>}
+                        </span>
                         <span className="block truncate text-xs text-gray-500">{formatDay(session.date)} · {session.trainer}</span>
                       </span>
                       <span className="flex items-center gap-1.5 text-sm tabular-nums text-gray-300"><Icon name="clock" className="h-4 w-4 text-gray-500" />{session.time}</span>

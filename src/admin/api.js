@@ -11,8 +11,15 @@ export async function adminRequest(method, path, body) {
   // A gateway timeout or crash can answer with HTML instead of JSON.
   const result = await response.json().catch(() => ({}))
   if (!response.ok || result.error) {
-    const detail = typeof result.detail === 'string' ? result.detail : Array.isArray(result.detail) ? 'Invalid data' : ''
-    throw new Error(`${detail || result.error || 'Request failed'} (HTTP ${response.status})`)
+    // detail can be text, a list of validation errors, or an object such as
+    // { code: 'conflicts', message, conflicts: [...] } (the pack form lists them).
+    const object = result.detail && typeof result.detail === 'object' && !Array.isArray(result.detail) ? result.detail : null
+    const detail = typeof result.detail === 'string' ? result.detail
+      : object ? object.message || ''
+      : Array.isArray(result.detail) ? 'Invalid data' : ''
+    const error = new Error(`${detail || result.error || 'Request failed'} (HTTP ${response.status})`)
+    if (object) { error.code = object.code; error.conflicts = object.conflicts }
+    throw error
   }
   return result
 }

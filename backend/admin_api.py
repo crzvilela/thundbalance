@@ -23,7 +23,15 @@ from availability import (
 )
 import mailer
 from google_calendar import delete_calendar_event, list_calendar_events
-from trial_confirmation import new_token, panel_status
+from datetime import timezone
+
+import calendar_sync
+import google_calendar
+import pack_view
+import tax_id
+from emails import log as email_log
+from emails.dates import to_madrid
+from trial_confirmation import approve_trial, panel_status, resend_approval, sync_calendar_event
 
 
 class PlanPayload(BaseModel):
@@ -46,6 +54,18 @@ class NewTrainerPayload(BaseModel):
     name: str
     specialty: str | None = None
     hours: dict[str, HoursWindow | None]
+
+
+class BillingPayload(BaseModel):
+    """Invoicing data of a client. A field that is not sent stays as it is;
+    an empty text clears it. address / postal_code / city are the existing
+    billing-address columns (morada, cep, cidade)."""
+    tax_id_type: str | None = None
+    tax_id: str | None = None
+    address: str | None = None
+    postal_code: str | None = None
+    city: str | None = None
+    country: str | None = None
 
 
 class TrialApprovePayload(BaseModel):
@@ -96,13 +116,18 @@ def register_admin_routes(app, require_admin):
                     EXISTS (
                         SELECT 1 FROM client_requests cr
                         WHERE cr.user_id = u.id AND LOWER(cr.status) = 'pending' AND cr.archived_at IS NULL
-                    )
+                    ),
+                    u.tax_id, u.morada,
+                    pl.packs
                 FROM users u
                 LEFT JOIN LATERAL (
-                    SELECT p.id, p.nome, up.end_date
+                    -- all active packs: name of the newest, the latest end date, how many
+                    SELECT (array_agg(p.id ORDER BY up.id DESC))[1] AS id,
+                           (array_agg(p.nome ORDER BY up.id DESC))[1] AS nome,
+                           MAX(up.end_date) AS end_date,
+                           COUNT(*) AS packs
                     FROM user_plans up JOIN plans p ON p.id = up.plan_id
                     WHERE up.user_id = u.id AND up.active
-                    ORDER BY up.id DESC LIMIT 1
                 ) pl ON TRUE
                 LEFT JOIN LATERAL (
                     SELECT
@@ -125,6 +150,10 @@ def register_admin_routes(app, require_admin):
                     "next_session": _iso(r[11]), "pack_end": _iso(r[12]),
                     "pack_status": _pack_status(r[6], r[12]),
                     "has_pending_request": r[13],
+                    # lists only ever carry the masked document (••••678Z)
+                    "tax_id_masked": tax_id.mask(r[14]),
+                    "billing_missing": not (r[14] and str(r[15] or "").strip()),
+                    "packs_active": r[16] or 0,
                 }
                 for r in cursor.fetchall()
             ]
@@ -139,7 +168,8 @@ def register_admin_routes(app, require_admin):
         try:
             cursor.execute(
                 """
-                SELECT id, nome, email, telefone, codigo_pais, cidade, morada, cep, foto, must_change_password
+                SELECT id, nome, email, telefone, codigo_pais, cidade, morada, cep, foto, must_change_password,
+                       tax_id_type, tax_id, country
                 FROM users WHERE id = %s
                 """,
                 (client_id,),
@@ -148,24 +178,12 @@ def register_admin_routes(app, require_admin):
             if not user:
                 raise HTTPException(status_code=404, detail="Client not found")
 
-            cursor.execute(
-                """
-                SELECT p.id, p.nome, up.start_date, up.end_date, up.sessions_per_week,
-                       up.preferred_days, up.preferred_time, up.trainer_id, t.nome
-                FROM user_plans up
-                JOIN plans p ON p.id = up.plan_id
-                LEFT JOIN trainers t ON t.id = up.trainer_id
-                WHERE up.user_id = %s AND up.active
-                ORDER BY up.id DESC LIMIT 1
-                """,
-                (client_id,),
-            )
-            plan = cursor.fetchone()
+            packs, assignment = pack_view.user_packs(cursor, client_id)
 
             cursor.execute(
                 """
                 SELECT s.id, s.session_number, s.session_date, s.session_time,
-                       t.nome, s.status
+                       t.nome, s.status, s.calendar_sync_status, s.calendar_sync_error
                 FROM sessions s LEFT JOIN trainers t ON t.id = s.trainer_id
                 WHERE s.user_id = %s
                 ORDER BY s.session_date, s.session_time
@@ -177,48 +195,130 @@ def register_admin_routes(app, require_admin):
                     "id": r[0], "number": r[1], "date": _iso(r[2]),
                     "time": str(r[3])[:5] if r[3] else "",
                     "trainer": r[4], "status": r[5],
+                    # ok | failed | pending | None (unknown: from before this was recorded)
+                    "calendar_sync_status": r[6], "calendar_sync_error": r[7],
+                    "pack_id": assignment.get(r[0]),
                 }
                 for r in cursor.fetchall()
             ]
 
-            pack = None
-            if plan:
-                # Packs saved before periods were tracked fall back to the span
-                # of the client's sessions.
-                booked = [s["date"] for s in sessions if s["status"] != "Cancelled"]
-                start = plan[2] or (datetime.strptime(min(booked), "%Y-%m-%d").date() if booked else None)
-                end = plan[3] or (datetime.strptime(max(booked), "%Y-%m-%d").date() if booked else None)
-                in_period = [
-                    s for s in sessions
-                    if s["status"] != "Cancelled"
-                    and (not start or s["date"] >= start.isoformat())
-                    and (not end or s["date"] <= end.isoformat())
-                ]
-                today_iso = datetime.now().date().isoformat()
-                pack = {
-                    "plan_id": plan[0], "name": plan[1],
-                    "start_date": _iso(start), "end_date": _iso(end),
-                    "sessions_per_week": plan[4],
-                    "preferred_days": plan[5], "preferred_time": plan[6],
-                    "trainer_id": plan[7], "trainer": plan[8],
-                    "status": _pack_status(plan[0], end),
-                    "total": len(in_period),
-                    "done": sum(1 for s in in_period if s["date"] < today_iso),
-                    "remaining": sum(1 for s in in_period if s["date"] >= today_iso),
+            # One entry per pack. `shown` packs (active, or with sessions still to
+            # come) get a card; every pack that has sessions can head a group.
+            packs_out = [
+                {
+                    "id": p["id"], "plan_id": p["plan_id"], "name": p["name"], "active": p["active"],
+                    "shown": p["shown"],
+                    "start_date": _iso(p["start_date"]), "end_date": _iso(p["end_date"]),
+                    "sessions_per_week": p["sessions_per_week"],
+                    "preferred_days": p["preferred_days"], "preferred_time": p["preferred_time"],
+                    "trainer_id": p["trainer_id"], "trainer": p["trainer"],
+                    "status": _pack_status(p["plan_id"], p["end_date"]),
+                    "total": p["total"], "done": p["done"], "remaining": p["remaining"],
                 }
+                for p in packs
+            ]
+            shown = [p for p in packs_out if p["shown"]]
+            pack = shown[-1] if shown else None          # the newest card: defaults of "Renovar pack"
+            plan = pack
 
             return {
                 "id": user[0], "name": user[1], "email": user[2], "phone": user[3],
                 "country_code": user[4], "city": user[5], "address": user[6],
                 "postal_code": user[7], "photo": user[8],
                 "must_change_password": bool(user[9]),
-                "plan": {"id": plan[0], "name": plan[1]} if plan else None,
+                # invoicing data (the full document: only on the record, only for the admin)
+                "tax_id_type": user[10], "tax_id": user[11], "country": user[12],
+                "billing_missing": not (user[11] and str(user[6] or "").strip()),
+                "plan": {"id": plan["plan_id"], "name": plan["name"]} if plan else None,
                 "pack": pack,
+                "packs": packs_out,
                 "sessions": sessions,
             }
         finally:
             cursor.close()
             conn.close()
+
+    @app.put("/admin/clients/{client_id}/billing", dependencies=admin)
+    def admin_update_billing(client_id: int, data: BillingPayload):
+        """Edits the invoicing data of a client: document, and the billing address
+        (the existing morada / cidade / cep columns, plus the country). A field that
+        is not sent stays as it is; an empty text clears it."""
+        try:
+            doc_type, document = (None, None)
+            if data.tax_id is not None:
+                doc_type, document = tax_id.clean(data.tax_id_type, data.tax_id)
+            elif data.tax_id_type is not None:
+                tax_id.check_type(data.tax_id_type)
+        except tax_id.TaxIdError as error:
+            raise HTTPException(status_code=422, detail=error.message) from None
+
+        def text(value, limit):
+            return None if value is None else (" ".join(str(value).split())[:limit] or None)
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT tax_id_type, tax_id FROM users WHERE id = %s FOR UPDATE", (client_id,))
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Client not found")
+            new_type, new_doc = row
+            if data.tax_id is not None:
+                new_type, new_doc = doc_type, document
+            elif data.tax_id_type is not None and new_doc:
+                # only the type changed: the saved document must be valid for it
+                try:
+                    new_type, new_doc = tax_id.validate(data.tax_id_type, new_doc)
+                except tax_id.TaxIdError as error:
+                    raise HTTPException(status_code=422, detail=error.message) from None
+
+            fields = {"tax_id_type": new_type, "tax_id": new_doc}
+            for column, value, limit in (
+                ("morada", data.address, 200), ("cep", data.postal_code, 20),
+                ("cidade", data.city, 80), ("country", data.country, 60),
+            ):
+                if value is not None:
+                    fields[column] = text(value, limit)
+            assignments = ", ".join(f"{column} = %s" for column in fields)
+            cursor.execute(f"UPDATE users SET {assignments} WHERE id = %s", (*fields.values(), client_id))
+            conn.commit()
+            return {"message": "Billing data saved"}
+        except HTTPException:
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
+            conn.close()
+
+    @app.post("/admin/clients/{client_id}/sync-calendar", dependencies=admin)
+    def admin_sync_client_calendar(client_id: int):
+        """Creates the calendar events that are missing for this client's future
+        sessions (and retries failed moves). Repeating it never duplicates:
+        events have a deterministic id and an existing one counts as done."""
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT 1 FROM users WHERE id = %s", (client_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Client not found")
+        finally:
+            cursor.close()
+            conn.close()
+        try:
+            return calendar_sync.sync_client(client_id)
+        except HTTPException:
+            raise
+        except Exception as error:
+            traceback.print_exc()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Could not synchronise the calendar: {type(error).__name__}",
+            ) from error
+
+    @app.get("/admin/calendar-status", dependencies=admin)
+    def admin_calendar_status():
+        """Which calendar this server writes to (masked) and where that comes from."""
+        return google_calendar.describe_target()
 
     @app.post("/admin/sessions/{session_id}/cancel", dependencies=admin)
     def admin_cancel_session(session_id: int):
@@ -236,17 +336,20 @@ def register_admin_routes(app, require_admin):
             if str(status).lower() == "cancelled":
                 return {"message": "Session already cancelled"}
 
-            if event_id:
-                try:
-                    delete_calendar_event(event_id)
-                except Exception:
-                    # The calendar event may already be gone; the session
-                    # itself must still be cancelled.
-                    traceback.print_exc()
-
             cursor.execute(
                 "UPDATE sessions SET status = 'Cancelled' WHERE id = %s", (session_id,)
             )
+            # The session is cancelled whatever Google answers; the outcome is recorded.
+            if event_id:
+                try:
+                    delete_calendar_event(event_id)
+                    calendar_sync.record(cursor, session_id, True)
+                except Exception as calendar_error:
+                    if google_calendar.http_status(calendar_error) in (404, 410):
+                        calendar_sync.record(cursor, session_id, True)       # already gone
+                    else:
+                        traceback.print_exc()
+                        calendar_sync.record(cursor, session_id, False, google_calendar.describe_error(calendar_error))
             conn.commit()
             return {"message": "Session cancelled"}
         except HTTPException:
@@ -364,9 +467,16 @@ def register_admin_routes(app, require_admin):
                 ORDER BY ts.id DESC
                 """
             )
+            rows = cursor.fetchall()
+            approval_emails = email_log.latest("trial_approved", [r[0] for r in rows])
+
+            def madrid_stamp(moment):
+                return to_madrid(moment.replace(tzinfo=timezone.utc)).strftime("%Y-%m-%dT%H:%M") if moment else None
+
             result = []
-            for r in cursor.fetchall():
+            for r in rows:
                 status = panel_status(r[9], r[15])
+                sent = approval_emails.get(str(r[0]))
                 result.append({
                     "id": r[0], "name": r[1], "email": r[2], "phone": r[3],
                     # Age follows the birth date so it stays current after the request.
@@ -381,8 +491,16 @@ def register_admin_routes(app, require_admin):
                     "approved_at": _iso(r[18]) if r[18] else None,
                     "confirmed_at": _iso(r[19]) if r[19] else None,
                     "declined_at": _iso(r[20]) if r[20] else None,
-                    # Confirmed but the Google event is missing: the admin must add it by hand.
-                    "calendar_failed": status == "confirmed" and not r[16] and bool(r[17]),
+                    # Approved or confirmed but with no event on the calendar: the panel
+                    # offers "Crear evento" (calendar_failed = the last attempt errored).
+                    "calendar_missing": status in ("approved", "confirmed") and not r[16],
+                    "calendar_failed": status in ("approved", "confirmed") and not r[16] and bool(r[17]),
+                    # Newest approval email, from email_log (None: none was ever sent)
+                    "approval_email": ({
+                        "status": "sent" if sent["status"] == email_log.SENT else "failed",
+                        "error": sent["error"],
+                        "at": madrid_stamp(sent["at"]),
+                    } if sent else None),
                 })
             return result
         finally:
@@ -391,63 +509,45 @@ def register_admin_routes(app, require_admin):
 
     @app.post("/admin/trial-sessions/{trial_id}/approve", dependencies=admin)
     def admin_approve_trial(trial_id: int, data: TrialApprovePayload):
-        """Approves the request and emails the client a link to confirm. The
-        calendar event is created later, when the client confirms; until then
-        the trainer's slot is simply held."""
-        conn = get_connection()
-        cursor = conn.cursor()
+        """Approves the request. Everything (status, token, email in the saved
+        language, provisional calendar event) happens in approve_trial(), the
+        only approval path; the answer says how the email and the calendar went."""
         try:
-            cursor.execute(
-                """
-                SELECT full_name, email, phone, goal, experience, session_date, session_time
-                FROM trial_sessions
-                WHERE id = %s AND LOWER(status) = 'pending'
-                FOR UPDATE
-                """,
-                (trial_id,),
-            )
-            trial = cursor.fetchone()
-            if not trial:
-                raise HTTPException(status_code=404, detail="Pending trial request not found")
-
-            cursor.execute("SELECT nome FROM trainers WHERE id = %s", (data.trainer_id,))
-            trainer = cursor.fetchone()
-            if not trainer:
-                raise HTTPException(status_code=404, detail="Trainer not found")
-
-            problem = slot_problem(
-                cursor, data.trainer_id, str(trial[5]), str(trial[6])[:5], ignore_trial_id=trial_id
-            )
-            if problem:
-                raise HTTPException(status_code=409, detail=problem)
-
-            token = new_token()
-            cursor.execute(
-                """
-                UPDATE trial_sessions
-                SET status = 'Approved', trainer_id = %s, confirmation_token = %s,
-                    approved_at = NOW(), rejection_reason = NULL
-                WHERE id = %s
-                """,
-                (data.trainer_id, token, trial_id),
-            )
-            conn.commit()
-            first_name = (str(trial[0]).split() or [""])[0]
-            mailer.send_trial_approved(trial[1], first_name, str(trial[5]), str(trial[6])[:5], trainer[0], token)
-            return {"message": "Trial session approved"}
+            result = approve_trial(trial_id, data.trainer_id)
         except HTTPException:
-            conn.rollback()
             raise
         except Exception as error:
-            conn.rollback()
             traceback.print_exc()
             raise HTTPException(
                 status_code=500,
                 detail=f"Could not approve the trial session: {type(error).__name__}: {str(error)[:200]}",
             ) from error
+        return {"message": "Trial session approved", **result}
+
+    @app.post("/admin/trial-sessions/{trial_id}/resend-approval", dependencies=admin)
+    def admin_resend_trial_approval(trial_id: int):
+        """Same email, same link (token unchanged). One resend per minute."""
+        return resend_approval(trial_id)
+
+    @app.post("/admin/trial-sessions/{trial_id}/calendar-event", dependencies=admin)
+    def admin_trial_calendar_event(trial_id: int):
+        """Creates the calendar event if it is missing (or refreshes the existing
+        one: it never makes a second event). The panel button "Crear evento"."""
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT status, confirmation_token FROM trial_sessions WHERE id = %s", (trial_id,))
+            row = cursor.fetchone()
         finally:
             cursor.close()
             conn.close()
+        if not row:
+            raise HTTPException(status_code=404, detail="Trial session not found")
+        status = panel_status(row[0], row[1])
+        if status not in ("approved", "confirmed"):
+            raise HTTPException(status_code=409, detail="Only approved or confirmed trial sessions have a calendar event")
+        ok = sync_calendar_event(trial_id, provisional=(status == "approved"))
+        return {"calendar": {"ok": ok}}
 
     @app.post("/admin/trial-sessions/{trial_id}/reject", dependencies=admin)
     def admin_reject_trial(trial_id: int, data: TrialRejectPayload):
@@ -479,7 +579,7 @@ def register_admin_routes(app, require_admin):
         cursor = conn.cursor()
         try:
             cursor.execute(
-                "SELECT google_event_id, status, email, full_name, session_date, session_time FROM trial_sessions WHERE id = %s", (trial_id,)
+                "SELECT google_event_id, status, email, full_name, session_date, session_time, lang FROM trial_sessions WHERE id = %s", (trial_id,)
             )
             row = cursor.fetchone()
             if not row:
@@ -496,7 +596,7 @@ def register_admin_routes(app, require_admin):
             )
             conn.commit()
             first_name = (str(row[3]).split() or [""])[0]
-            mailer.send_trial_cancelled(row[2], first_name, str(row[4]), str(row[5])[:5])
+            mailer.send_trial_cancelled(row[2], first_name, str(row[4]), str(row[5])[:5], row[6], reference=trial_id)
             return {"message": "Trial session cancelled"}
         except HTTPException:
             conn.rollback()

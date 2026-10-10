@@ -9,7 +9,9 @@ from datetime import datetime, timedelta
 from typing import Any
 from pydantic import BaseModel
 from database import get_connection
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from psycopg2.extras import Json as PgJson
 from google_calendar import (
@@ -21,12 +23,23 @@ from google_calendar import (
 )
 from landing_page_default import DEFAULT_LANDING_CONTENT
 from admin_api import register_admin_routes
+from contact_messages import register_contact_routes
 from trial_notifications import notify_trial_requested
 import mailer
-from packs import DAY_MAP, clean_pack_recipients, create_pack, delete_created_events, email_pack, validate_pack_request
+from packs import (
+    DAY_MAP, clean_pack_recipients, create_pack, delete_created_events, email_pack,
+    ensure_pack_columns, preview_pack, validate_pack_request,
+)
+import pack_view
 from emails import team_emails
+from emails import log as email_log
+from emails.texts import normalize_language
+import calendar_sync
+import google_calendar
+import tax_id
 from trial_confirmation import ensure_confirmation_fields, register_trial_confirmation_routes
 from client_accounts import ensure_account_fields, register_client_account_routes
+import firebase_accounts
 from availability import (
     WEEKDAYS,
     ensure_trainers_and_availability,
@@ -62,6 +75,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_without_input(request, exc):
+    """422 for a malformed body, without FastAPI's default echo of the offending
+    input (it could repeat a document number or an address)."""
+    return JSONResponse(
+        status_code=422,
+        content={"detail": [{"loc": list(e.get("loc", [])), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()]},
+    )
 
 
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "thundbalance").strip()
@@ -112,6 +135,7 @@ def require_client(authorization: str | None = Header(default=None)):
 
 
 register_admin_routes(app, require_admin)
+register_contact_routes(app, require_admin)
 register_trial_confirmation_routes(app)
 register_client_account_routes(app, require_admin, require_client)
 
@@ -281,6 +305,46 @@ def ensure_trial_session_fields():
 
 
 @app.on_event("startup")
+def ensure_session_pack_column():
+    # sessions.user_plan_id: which pack a session belongs to (packs run in parallel)
+    try:
+        ensure_pack_columns()
+    except Exception as error:  # noqa: BLE001
+        print(f"sessions.user_plan_id could not be created: {type(error).__name__}")
+
+
+@app.on_event("startup")
+def ensure_calendar_sync_columns():
+    # sessions.calendar_sync_status / calendar_sync_error + this database's event-id key
+    try:
+        calendar_sync.ensure_columns()
+    except Exception as error:  # noqa: BLE001
+        print(f"calendar_sync columns could not be created: {type(error).__name__}")
+    target = google_calendar.describe_target()
+    origin = "variable GOOGLE_CALENDAR_ID" if target["source"] == "env" else "constante por defecto (GOOGLE_CALENDAR_ID NO está definida)"
+    print(f"Google Calendar: {target['calendar']} (origen: {origin})", flush=True)
+
+
+@app.on_event("startup")
+def ensure_email_log_table():
+    # one row per email sent or failed (emails/log.py)
+    try:
+        email_log.ensure_table()
+    except Exception as error:  # noqa: BLE001 - logging must never stop the server
+        print(f"email_log table could not be created: {type(error).__name__}")
+
+
+@app.on_event("startup")
+def init_firebase_admin_at_startup():
+    # One diagnostic line ("Firebase Admin: OK" / "NÃO inicializado (motivo: ...)").
+    # A missing key never stops the server: only account creation answers 503.
+    try:
+        firebase_accounts.init_firebase_admin()
+    except Exception as error:  # noqa: BLE001
+        print(f"Firebase Admin: NÃO inicializado (motivo: inicialização falhou) [{type(error).__name__}]")
+
+
+@app.on_event("startup")
 def ensure_user_account_fields():
     # must_change_password (client_accounts.py)
     ensure_account_fields()
@@ -353,9 +417,15 @@ class UpdateProfile(BaseModel):
     cidade: str
     morada: str
     cep: str
+    # invoicing, all optional: not sent = unchanged, empty text = cleared
+    tax_id_type: str | None = None
+    tax_id: str | None = None
+    country: str | None = None
 
 
 class TrialSessionCreate(BaseModel):
+    # Language the visitor had on the site (en | es | ca); anything else is stored as 'en'.
+    lang: str | None = None
     # Hidden field real visitors never fill; bots usually do.
     tb_hp: str | None = None
     full_name: str
@@ -393,6 +463,7 @@ class ApproveRequest(BaseModel):
     # (None = the team's default addresses).
     email_client: bool = True
     email_extra: list[str] | None = None
+    allow_conflicts: bool = False
 
 
 class RenewPack(BaseModel):
@@ -404,6 +475,18 @@ class RenewPack(BaseModel):
     start_date: str
     email_client: bool = True
     email_extra: list[str] | None = None
+    # create the sessions even when some collide (the panel asks first)
+    allow_conflicts: bool = False
+
+
+class PackPreview(BaseModel):
+    client_id: int | None = None
+    plan_id: int
+    sessions_per_week: int
+    preferred_days: str
+    preferred_time: str
+    trainer_id: int
+    start_date: str
 
 
 class RejectRequest(BaseModel):
@@ -638,12 +721,14 @@ def get_users():
 
         cursor.execute(
             """
-            SELECT *
+            SELECT id, firebase_uid, nome, email, foto, telefone, codigo_pais, cidade, morada, cep,
+                   must_change_password, tax_id
             FROM users
             """
         )
 
-        return cursor.fetchall()
+        # same columns as before, plus the document: masked, like every list
+        return [[*row[:-1], tax_id.mask(row[-1])] for row in cursor.fetchall()]
 
     finally:
 
@@ -668,16 +753,14 @@ def get_user_by_email(email: str, claims=Depends(require_client)):
                 u.id,
                 u.nome,
                 u.email,
-                p.nome,
+                (
+                    SELECT string_agg(p.nome, ' + ' ORDER BY up.id)
+                    FROM user_plans up JOIN plans p ON p.id = up.plan_id
+                    WHERE up.user_id = u.id AND up.active
+                ),
                 u.must_change_password
 
             FROM users u
-
-            LEFT JOIN user_plans up
-                ON u.id = up.user_id
-
-            LEFT JOIN plans p
-                ON up.plan_id = p.id
 
             WHERE LOWER(u.email) = LOWER(%s)
             """,
@@ -776,12 +859,6 @@ def cancel_session(session_id: int, claims=Depends(require_client)):
 
         google_event_id = result[0]
 
-        if google_event_id:
-
-            delete_calendar_event(
-                google_event_id
-            )
-
         cursor.execute(
             """
             UPDATE sessions
@@ -790,6 +867,19 @@ def cancel_session(session_id: int, claims=Depends(require_client)):
             """,
             (session_id,)
         )
+
+        # The session is cancelled whatever Google answers; the outcome is recorded.
+        if google_event_id:
+            try:
+                delete_calendar_event(google_event_id)
+                calendar_sync.record(cursor, session_id, True)
+            except Exception as calendar_error:  # noqa: BLE001
+                if google_calendar.http_status(calendar_error) in (404, 410):
+                    calendar_sync.record(cursor, session_id, True)          # already gone
+                else:
+                    reason = google_calendar.describe_error(calendar_error)
+                    print(f"Calendar event of session {session_id} could not be deleted: {reason}")
+                    calendar_sync.record(cursor, session_id, False, reason)
 
         conn.commit()
 
@@ -833,15 +923,16 @@ def get_profile(user_id: int, claims=Depends(require_client)):
                 u.cidade,
                 u.morada,
                 u.cep,
-                p.nome
+                (
+                    SELECT string_agg(p.nome, ' + ' ORDER BY up.id)
+                    FROM user_plans up JOIN plans p ON p.id = up.plan_id
+                    WHERE up.user_id = u.id AND up.active
+                ),
+                u.tax_id_type,
+                u.tax_id,
+                u.country
 
             FROM users u
-
-            LEFT JOIN user_plans up
-                ON u.id = up.user_id
-
-            LEFT JOIN plans p
-                ON up.plan_id = p.id
 
             WHERE u.id = %s
             """,
@@ -863,7 +954,10 @@ def get_profile(user_id: int, claims=Depends(require_client)):
             "cidade": profile[6],
             "morada": profile[7],
             "cep": profile[8],
-            "plano": profile[9]
+            "plano": profile[9],
+            "tax_id_type": profile[10],
+            "tax_id": profile[11],
+            "country": profile[12]
         }
 
     finally:
@@ -972,13 +1066,20 @@ def update_session(
             )
         )
 
+        # The new date is saved whatever Google answers; if the event could not be
+        # moved this is recorded (and "Sincronizar con calendario" retries it).
         if google_event_id:
-
-            update_calendar_event(
-                google_event_id,
-                session.session_date,
-                session.session_time
-            )
+            try:
+                update_calendar_event(
+                    google_event_id,
+                    session.session_date,
+                    session.session_time
+                )
+                calendar_sync.record(cursor, session_id, True)
+            except Exception as calendar_error:  # noqa: BLE001
+                reason = google_calendar.describe_error(calendar_error)
+                print(f"Calendar event of session {session_id} could not be moved: {reason}")
+                calendar_sync.record(cursor, session_id, False, reason)
 
         conn.commit()
 
@@ -1048,17 +1149,15 @@ def admin_users():
                 u.email,
 
                 COALESCE(
-                    p.nome,
+                    (
+                        SELECT string_agg(p.nome, ' + ' ORDER BY up.id)
+                        FROM user_plans up JOIN plans p ON p.id = up.plan_id
+                        WHERE up.user_id = u.id AND up.active
+                    ),
                     'No Plan'
                 )
 
             FROM users u
-
-            LEFT JOIN user_plans up
-                ON u.id = up.user_id
-
-            LEFT JOIN plans p
-                ON up.plan_id = p.id
 
             ORDER BY u.id
             """
@@ -1180,31 +1279,48 @@ def update_profile(
 
     assert_owner(claims, user_id)
 
+    # The document is checked before anything is written. The answer carries a
+    # short code (the site shows it in the visitor's language), never the value.
+    document = None
+    if profile.tax_id is not None:
+        try:
+            document = tax_id.clean(profile.tax_id_type, profile.tax_id)
+        except tax_id.TaxIdError as error:
+            raise HTTPException(status_code=422, detail=f"tax_id_{error.code}") from None
+    elif profile.tax_id_type is not None:
+        try:
+            tax_id.check_type(profile.tax_id_type)
+        except tax_id.TaxIdError as error:
+            raise HTTPException(status_code=422, detail=f"tax_id_{error.code}") from None
+
     conn = get_connection()
     cursor = conn.cursor()
 
     try:
 
-        cursor.execute(
-            """
-            UPDATE users
-            SET
-                telefone = %s,
-                codigo_pais = %s,
-                cidade = %s,
-                morada = %s,
-                cep = %s
-            WHERE id = %s
-            """,
-            (
-                profile.telefone,
-                profile.codigo_pais,
-                profile.cidade,
-                profile.morada,
-                profile.cep,
-                user_id
-            )
-        )
+        fields = {
+            "telefone": profile.telefone,
+            "codigo_pais": profile.codigo_pais,
+            "cidade": profile.cidade,
+            "morada": profile.morada,
+            "cep": profile.cep,
+        }
+        if profile.country is not None:
+            fields["country"] = " ".join(profile.country.split())[:60] or None
+        if document is not None:
+            fields["tax_id_type"], fields["tax_id"] = document
+        elif profile.tax_id_type is not None:
+            # only the type changed: the saved document has to be valid for it
+            cursor.execute("SELECT tax_id FROM users WHERE id = %s", (user_id,))
+            saved = cursor.fetchone()
+            if saved and saved[0]:
+                try:
+                    fields["tax_id_type"], fields["tax_id"] = tax_id.validate(profile.tax_id_type, saved[0])
+                except tax_id.TaxIdError as error:
+                    raise HTTPException(status_code=422, detail=f"tax_id_{error.code}") from None
+
+        assignments = ", ".join(f"{column} = %s" for column in fields)
+        cursor.execute(f"UPDATE users SET {assignments} WHERE id = %s", (*fields.values(), user_id))
 
         conn.commit()
 
@@ -1212,12 +1328,20 @@ def update_profile(
             "message": "Profile updated successfully"
         }
 
+    except HTTPException:
+
+        conn.rollback()
+        raise
+
     except Exception as e:
 
         conn.rollback()
 
+        # Only the kind of error: the message could repeat personal data.
+        print(f"Profile update failed ({type(e).__name__})")
+
         return {
-            "error": str(e)
+            "error": "Could not update the profile"
         }
 
     finally:
@@ -1341,6 +1465,9 @@ def create_trial_session(
         # A bot filled the hidden field: pretend it worked, store nothing.
         return {"message": "Trial session requested", "trial_id": 0}
 
+    # Checked against a fixed list; the site starts in English, so that is the fallback.
+    client_lang = normalize_language(trial.lang) or "en"
+
     if _too_many_trial_requests(_client_ip(request)):
         raise HTTPException(
             status_code=429,
@@ -1423,11 +1550,12 @@ def create_trial_session(
                 experience,
                 session_date,
                 session_time,
-                status
+                status,
+                lang
             )
 
             VALUES
-            (%s,%s,%s,%s,%s,%s,%s,%s,%s,'Pending')
+            (%s,%s,%s,%s,%s,%s,%s,%s,%s,'Pending',%s)
 
             RETURNING id
             """,
@@ -1440,7 +1568,8 @@ def create_trial_session(
                 goal_text,
                 trial.experience.strip()[:60],
                 session_date,
-                trial.session_time
+                trial.session_time,
+                client_lang
             )
         )
 
@@ -1460,7 +1589,7 @@ def create_trial_session(
             "session_time": trial.session_time,
         })
         mailer.send_trial_received(email, full_name.split()[0] if full_name.split() else full_name,
-                                   session_date.isoformat(), trial.session_time)
+                                   session_date.isoformat(), trial.session_time, client_lang, reference=trial_id)
 
         return {
             "message": "Trial session requested",
@@ -1557,15 +1686,13 @@ def client_workflow(authorization: str | None = Header(default=None)):
             WHERE cr.user_id = %s ORDER BY cr.id DESC LIMIT 1
         """, (user_id,))
         request = cursor.fetchone()
-        cursor.execute("""
-            SELECT p.nome, t.nome, up.plan_id
-            FROM user_plans up
-            JOIN plans p ON p.id = up.plan_id
-            LEFT JOIN client_requests cr ON cr.user_id = up.user_id AND LOWER(cr.status) = 'approved'
-            LEFT JOIN trainers t ON t.id = cr.trainer_id
-            WHERE up.user_id = %s AND up.active = TRUE ORDER BY cr.id DESC NULLS LAST LIMIT 1
-        """, (user_id,))
-        plan = cursor.fetchone()
+        # Every active pack (a client can have several at once), each with its own counters.
+        all_packs, assignment = pack_view.user_packs(cursor, user_id)
+        active_packs = [p for p in all_packs if p["shown"]]
+        plan = None
+        if active_packs:
+            newest = active_packs[-1]
+            plan = (newest["name"], newest["trainer"], newest["plan_id"], newest["end_date"])
         cursor.execute("""
             SELECT s.id, s.session_date, s.session_time, t.nome, s.status, s.session_number
             FROM sessions s LEFT JOIN trainers t ON t.id = s.trainer_id
@@ -1581,10 +1708,20 @@ def client_workflow(authorization: str | None = Header(default=None)):
                          "package": request[3], "sessions_per_week": request[4],
                          "preferred_days": request[5], "preferred_time": request[6],
                          "trainer": request[7], "start_date": request[8]} if request else None),
-            "plan": ({"name": plan[0], "trainer": plan[1], "id": plan[2]} if plan else None),
+            "plan": ({"name": plan[0], "trainer": plan[1], "id": plan[2],
+                      "end_date": str(plan[3]) if plan[3] else None} if plan else None),
+            # all the packs that are running, each with its own counters
+            "plans": [
+                {"id": p["id"], "name": p["name"], "trainer": p["trainer"],
+                 "start_date": str(p["start_date"]) if p["start_date"] else None,
+                 "end_date": str(p["end_date"]) if p["end_date"] else None,
+                 "sessions_per_week": p["sessions_per_week"],
+                 "done": p["done"], "remaining": p["remaining"], "total": p["total"]}
+                for p in active_packs
+            ],
             "sessions": [{"id": s[0], "date": str(s[1]), "time": str(s[2]), "trainer": s[3],
-                          "status": s[4], "number": s[5]} for s in sessions],
-            "sessions_remaining": sum(1 for s in sessions if s[4] == "Booked"),
+                          "status": s[4], "number": s[5], "pack_id": assignment.get(s[0])} for s in sessions],
+            "sessions_remaining": sum(1 for s in sessions if s[4] == "Booked" and s[1] >= datetime.now().date()),
         }
     finally:
         cursor.close()
@@ -1733,6 +1870,23 @@ def admin_client_requests(archived: str = "exclude"):
         conn.close()
 
 
+@app.post("/admin/packs/preview", dependencies=[Depends(require_admin)])
+def admin_preview_pack(data: PackPreview):
+    """What a pack would create and what would collide, without writing anything.
+    The modal calls it while the form is filled in."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        return preview_pack(
+            cursor, user_id=data.client_id, plan_id=data.plan_id, trainer_id=data.trainer_id,
+            sessions_per_week=data.sessions_per_week, preferred_days=data.preferred_days,
+            preferred_time=data.preferred_time, start_date=data.start_date,
+        )
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @app.get("/admin/email-defaults", dependencies=[Depends(require_admin)])
 def admin_email_defaults():
     """Addresses pre-filled in "Enviar confirmación a" (TEAM_EMAILS or the defaults)."""
@@ -1797,7 +1951,7 @@ def approve_request(
             plan_id=plan_id, trainer_id=data.trainer_id, trainer_name=trainer_name,
             sessions_per_week=sessions_per_week, preferred_days=preferred_days,
             preferred_time=preferred_time, start_date=data.start_date,
-            request_id=data.request_id, replace_plans="delete",
+            request_id=data.request_id, allow_conflicts=data.allow_conflicts,
         )
 
         cursor.execute(
@@ -1835,6 +1989,7 @@ def approve_request(
         return {
             "message": "Request approved successfully",
             "total_sessions": created["total_sessions"],
+            "calendar": {"failed": created["calendar_failed"], "errors": created["calendar_errors"]},
             "email": email,
         }
 
@@ -1863,10 +2018,11 @@ def approve_request(
 
 @app.post("/admin/clients/{client_id}/renew-pack", dependencies=[Depends(require_admin)])
 def admin_renew_pack(client_id: int, data: RenewPack):
-    """Starts a new pack for a client: records the new period and creates its
-    sessions (database rows first, then Google Calendar events, rolled back
-    together on failure), exactly like approving a request, then emails the
-    client and the extra recipients a summary with a .ics."""
+    """Adds a new pack to a client, on any start date, WITHOUT touching the packs
+    the client already has (they run in parallel). Creates its sessions
+    (database rows first, then Google Calendar events), then emails the client
+    and the extra recipients a summary of this pack with a .ics of its sessions.
+    Colliding sessions are refused with a 409 list unless allow_conflicts."""
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -1883,29 +2039,6 @@ def admin_renew_pack(client_id: int, data: RenewPack):
             cursor, trainer_id=data.trainer_id, sessions_per_week=data.sessions_per_week,
             preferred_days=data.preferred_days, start_date=data.start_date,
         )
-        start = datetime.strptime(data.start_date, "%Y-%m-%d").date()
-
-        # A renewal starts after the current pack ends, never inside it.
-        cursor.execute(
-            """
-            SELECT COALESCE(up.end_date, (
-                SELECT MAX(session_date) FROM sessions
-                WHERE user_id = up.user_id AND status <> 'Cancelled'
-            ))
-            FROM user_plans up
-            WHERE up.user_id = %s AND up.active
-            ORDER BY up.id DESC LIMIT 1
-            """,
-            (client_id,)
-        )
-        current = cursor.fetchone()
-        current_end = current[0] if current else None
-        if current_end and start <= current_end:
-            raise HTTPException(
-                status_code=409,
-                detail=f"The current pack runs until {current_end.isoformat()}. Choose a start date after it."
-            )
-
         extra = clean_pack_recipients(data.email_extra, client_email)
 
         created = create_pack(
@@ -1914,7 +2047,7 @@ def admin_renew_pack(client_id: int, data: RenewPack):
             plan_id=data.plan_id, trainer_id=data.trainer_id, trainer_name=trainer_name,
             sessions_per_week=data.sessions_per_week, preferred_days=",".join(days),
             preferred_time=data.preferred_time, start_date=data.start_date,
-            replace_plans="deactivate",
+            allow_conflicts=data.allow_conflicts,
         )
 
         conn.commit()
@@ -1930,6 +2063,7 @@ def admin_renew_pack(client_id: int, data: RenewPack):
             "total_sessions": created["total_sessions"],
             "start_date": created["session_dates"][0],
             "end_date": created["session_dates"][-1],
+            "calendar": {"failed": created["calendar_failed"], "errors": created["calendar_errors"]},
             "email": email,
         }
 

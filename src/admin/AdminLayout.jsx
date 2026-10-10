@@ -13,6 +13,7 @@ const NAV = [
   { to: '/admin', end: true, icon: 'overview', label: 'nav_overview' },
   { to: '/admin/requests', icon: 'requests', label: 'nav_requests', badge: 'requests' },
   { to: '/admin/trials', icon: 'whistle', label: 'nav_trials', badge: 'trials' },
+  { to: '/admin/messages', icon: 'inbox', label: 'nav_messages', badge: 'messages' },
   { to: '/admin/clients', icon: 'clients', label: 'nav_clients' },
   { to: '/admin/calendar', icon: 'calendar', label: 'nav_sessions' },
   { to: '/admin/trainers', icon: 'clock', label: 'nav_trainers' },
@@ -58,7 +59,10 @@ export default function AdminLayout() {
   const trialsResource = useAdminResource('/admin/trial-sessions')
   const trials = useMemo(() => (Array.isArray(trialsResource.data) ? trialsResource.data.map(trial => ({ ...trial, status: String(trial.status).toLowerCase() })) : []), [trialsResource.data])
   const pendingTrials = trials.filter(trial => trial.status === 'pending').length
-  const badges = { requests: pendingCount, trials: pendingTrials }
+  const messagesResource = useAdminResource('/admin/contact-messages')
+  const messages = useMemo(() => (Array.isArray(messagesResource.data) ? messagesResource.data : []), [messagesResource.data])
+  const unreadMessages = messages.filter(message => !message.read).length
+  const badges = { requests: pendingCount, trials: pendingTrials, messages: unreadMessages }
 
   const push = useCallback((message, tone = 'success') => {
     const id = ++nextToastId.current
@@ -134,7 +138,7 @@ export default function AdminLayout() {
 
         <div className="sticky top-0 z-30 flex items-center justify-between border-b border-white/[0.07] bg-[#080b0a]/90 px-4 py-3 backdrop-blur lg:hidden">
           <p className="text-xl tracking-[0.18em]" style={{ fontFamily: 'Bebas Neue, Inter, sans-serif' }}>THUNDBALANCE</p>
-          <button type="button" onClick={() => setMenuOpen(true)} aria-label={t('nav_menu')} className="rounded-lg p-2 text-gray-300 hover:bg-white/10"><Icon name="menu" /></button>
+          <button type="button" onClick={() => setMenuOpen(true)} aria-label={t('nav_menu')} className="rounded-lg p-3 text-gray-300 hover:bg-white/10"><Icon name="menu" /></button>
         </div>
 
         {menuOpen && (
@@ -149,7 +153,7 @@ export default function AdminLayout() {
 
         <main className="px-4 py-8 sm:px-8 lg:ml-64 lg:px-10 lg:py-10">
           <div className="mx-auto max-w-6xl">
-            <Outlet context={{ requests, requestsResource, trials, trialsResource }} />
+            <Outlet context={{ requests, requestsResource, trials, trialsResource, messages, messagesResource }} />
           </div>
         </main>
       </div>

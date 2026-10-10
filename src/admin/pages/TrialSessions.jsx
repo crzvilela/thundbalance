@@ -29,6 +29,7 @@ export default function TrialSessions() {
   const [trainerId, setTrainerId] = useState('')
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
+  const [working, setWorking] = useState('')   // 'resend-12' | 'calendar-12' while a card button runs
   const [formError, setFormError] = useState('')
 
   // Only trainers who work on the requested weekday and hour can be chosen.
@@ -73,11 +74,67 @@ export default function TrialSessions() {
     }
   }
 
-  const approve = () => {
-    if (!trainerId) { setFormError(t('select_trainer')); return }
-    run(() => adminRequest('POST', `/admin/trial-sessions/${approving.id}/approve`, { trainer_id: Number(trainerId) }),
-      'tr_approved_ok', () => setApproving(null))
+  const emailProblem = (code) => {
+    if (!code) return ''
+    const key = `tr_err_${code}`
+    if (code.startsWith('http_')) return `${t('tr_err_http')} (${code.slice(5)})`
+    return t(key) === key ? code : t(key)
   }
+
+  // The answer says how the email and the calendar went: the approval itself
+  // is never undone, but a problem is shown, not hidden.
+  const approve = async () => {
+    if (!trainerId) { setFormError(t('select_trainer')); return }
+    setBusy(true)
+    setFormError('')
+    try {
+      const result = await adminRequest('POST', `/admin/trial-sessions/${approving.id}/approve`, { trainer_id: Number(trainerId) })
+      setApproving(null)
+      if (result.email && !result.email.sent) {
+        toast.push(`${t('tr_approved_email_failed')} (${emailProblem(result.email.problem)}).`, 'warning')
+      } else if (result.calendar && !result.calendar.ok) {
+        toast.push(t('tr_approved_calendar_failed'), 'warning')
+      } else {
+        toast.push(t('tr_approved_ok'))
+      }
+      trialsResource.reload()
+    } catch (error) {
+      setFormError(error.message)
+      toast.push(error.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const resend = async (trial) => {
+    setWorking(`resend-${trial.id}`)
+    try {
+      const result = await adminRequest('POST', `/admin/trial-sessions/${trial.id}/resend-approval`)
+      if (result.email?.sent) toast.push(t('tr_resend_ok'))
+      else toast.push(`${t('tr_resend_failed')} (${emailProblem(result.email?.problem)}).`, 'warning')
+      trialsResource.reload()
+    } catch (error) {
+      toast.push(error.message, 'error')
+    } finally {
+      setWorking('')
+    }
+  }
+
+  const createCalendarEvent = async (trial) => {
+    setWorking(`calendar-${trial.id}`)
+    try {
+      const result = await adminRequest('POST', `/admin/trial-sessions/${trial.id}/calendar-event`)
+      toast.push(t(result.calendar?.ok ? 'tr_calendar_ok' : 'tr_calendar_error'), result.calendar?.ok ? 'success' : 'warning')
+      trialsResource.reload()
+    } catch (error) {
+      toast.push(error.message, 'error')
+    } finally {
+      setWorking('')
+    }
+  }
+
+  // "2026-10-10T10:46" -> "10/10 10:46"
+  const stamp = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)} ${iso.slice(11, 16)}` : '')
   const decline = () => run(
     () => adminRequest('POST', `/admin/trial-sessions/${declining.id}/reject`, { reason: reason.trim() }),
     'tr_rejected_ok', () => setDeclining(null))
@@ -136,8 +193,8 @@ export default function TrialSessions() {
                       <Badge tone={STATUS_TONE[trial.status] || 'neutral'}>{t(`trs_${trial.status}`)}</Badge>
                     </div>
                     <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-400">
-                      <a href={`mailto:${trial.email}`} className="hover:text-emerald-300">{trial.email}</a>
-                      <a href={`tel:${trial.phone}`} className="hover:text-emerald-300">{trial.phone}</a>
+                      <a href={`mailto:${trial.email}`} className="inline-block py-1.5 hover:text-emerald-300">{trial.email}</a>
+                      <a href={`tel:${trial.phone}`} className="inline-block py-1.5 hover:text-emerald-300">{trial.phone}</a>
                     </p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <span className="flex items-center gap-1.5 rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-xs text-emerald-200">
@@ -149,7 +206,24 @@ export default function TrialSessions() {
                       {trial.age && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{trial.age}</span>}
                       {trial.trainer && <span className="rounded-md border border-sky-400/20 bg-sky-400/10 px-2 py-0.5 text-xs text-sky-200">{t('tr_trainer')}: {trial.trainer}</span>}
                     </div>
-                    {trial.calendar_failed && <p role="alert" className="mt-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-200">{t('tr_calendar_failed')}</p>}
+                    {(trial.status === 'approved' || trial.approval_email) && (
+                      <p className={`mt-3 text-sm ${trial.approval_email?.status === 'failed' ? 'text-red-300' : 'text-gray-400'}`}>
+                        {t('tr_email_label')}:{' '}
+                        {trial.approval_email
+                          ? trial.approval_email.status === 'sent'
+                            ? <span className="text-emerald-300">{t('tr_email_sent')} ✓ ({stamp(trial.approval_email.at)})</span>
+                            : <span>{t('tr_email_failed')} ✗ ({emailProblem(trial.approval_email.error)}, {stamp(trial.approval_email.at)})</span>
+                          : <span>{t('tr_email_none')}</span>}
+                      </p>
+                    )}
+                    {trial.calendar_missing && (
+                      <div role="alert" className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
+                        <span>{trial.calendar_failed ? t('tr_calendar_failed') : t('tr_calendar_missing')}</span>
+                        <Button variant="secondary" onClick={() => createCalendarEvent(trial)} loading={working === `calendar-${trial.id}`}>
+                          {working === `calendar-${trial.id}` ? t('tr_calendar_creating') : t('tr_calendar_create')}
+                        </Button>
+                      </div>
+                    )}
                     {trial.reason && <p className="mt-2 text-sm text-red-300/90">{t('req_reason')}: {trial.reason}</p>}
                   </div>
                   <div className="flex gap-2">
@@ -157,6 +231,11 @@ export default function TrialSessions() {
                       <Button variant="primary" onClick={() => { setTrainerId(''); setFormError(''); setApproving(trial) }}><Icon name="check" className="h-4 w-4" />{t('req_approve')}</Button>
                       <Button variant="danger" onClick={() => { setReason(''); setFormError(''); setDeclining(trial) }}>{t('req_reject')}</Button>
                     </>}
+                    {trial.status === 'approved' && (
+                      <Button variant="secondary" onClick={() => resend(trial)} loading={working === `resend-${trial.id}`}>
+                        {working === `resend-${trial.id}` ? t('tr_resending') : t('tr_resend')}
+                      </Button>
+                    )}
                     {(trial.status === 'approved' || trial.status === 'confirmed') && (
                       <Button variant="danger" onClick={() => { setFormError(''); setCancelling(trial) }}>{t('cl_cancel_session')}</Button>
                     )}

@@ -1,9 +1,10 @@
 """Client confirmation of an approved trial session.
 
-Flow: the admin approves (a token is created and the client is emailed), the
-client opens /trial-session/confirm/<token>, and only pressing the button on
-that page (a POST) confirms or declines. The Google Calendar event is created
-at confirmation, not before.
+Flow: the admin approves (approve_trial: a token is created, the client is
+emailed and a PROVISIONAL "[Pendiente] Trial Session" event is put on the
+calendar), the client opens /trial-session/confirm/<token>, and only pressing
+the button on that page (a POST) confirms or declines. Confirming updates the
+same event; declining deletes it. There is exactly one approval path.
 
 Statuses in trial_sessions.status:
   Pending    waiting for the admin
@@ -21,11 +22,20 @@ import traceback
 
 from fastapi import HTTPException
 
+from availability import slot_problem
 from database import get_connection
+from emails import log as email_log
 from emails.dates import now_madrid, parse_madrid
-from google_calendar import create_trial_session_event, delete_calendar_event
+from google_calendar import create_trial_session_event, delete_calendar_event, update_trial_session_event
 import mailer
 import trial_notifications
+
+RESEND_INTERVAL_SECONDS = 60
+EMAIL_WAIT_SECONDS = 25
+
+
+def _bilingual(es, en):
+    return f"{es} / {en}"
 
 # Statuses whose slot is held for the trainer (availability.py uses the same list).
 HOLDING_STATUSES = ("approved", "confirmed")
@@ -41,6 +51,11 @@ def ensure_confirmation_fields():
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMP")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS declined_at TIMESTAMP")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS calendar_error TEXT")
+        # Language of the site when the visit asked for the session (en | es | ca).
+        # Added without a default first so rows from before stay NULL (they keep the older
+        # ES+EN emails); new rows default to 'en', the language the site starts in.
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS lang TEXT")
+        cursor.execute("ALTER TABLE trial_sessions ALTER COLUMN lang SET DEFAULT 'en'")
         cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS trial_sessions_confirmation_token_key "
             "ON trial_sessions (confirmation_token)"
@@ -71,7 +86,7 @@ def _load(cursor, token, lock=False):
     cursor.execute(
         f"""
         SELECT ts.id, ts.full_name, ts.email, ts.phone, ts.age, ts.birth_date, ts.goal, ts.experience,
-               ts.session_date, ts.session_time, ts.status, ts.google_event_id, t.nome
+               ts.session_date, ts.session_time, ts.status, ts.google_event_id, t.nome, ts.lang
         FROM trial_sessions ts
         LEFT JOIN trainers t ON t.id = ts.trainer_id
         WHERE ts.confirmation_token = %s
@@ -91,6 +106,7 @@ def _trial_dict(row):
         "id": row[0], "full_name": row[1], "email": row[2], "phone": row[3], "age": row[4],
         "birth_date": row[5].isoformat() if row[5] else None, "goal": row[6], "experience": row[7],
         "session_date": str(row[8])[:10], "session_time": str(row[9])[:5], "trainer": row[12],
+        "lang": row[13],
     }
 
 
@@ -161,11 +177,12 @@ def register_trial_confirmation_routes(app):
 
             trial = _trial_dict(row)
             if wanted == "confirmed":
-                calendar_ok = _create_event(row, trial)
+                calendar_ok = sync_calendar_event(trial["id"], provisional=False)
                 trial_notifications.notify_trial_confirmed(trial, calendar_ok)
                 mailer.send_trial_confirmed(
                     trial["email"], _first_name(trial["full_name"]), trial["session_date"],
-                    trial["session_time"], trial["trainer"], trial["id"],
+                    trial["session_time"], trial["trainer"], trial["id"], trial["lang"],
+                    reference=trial["id"],
                 )
             else:
                 _remove_event(row)
@@ -190,36 +207,204 @@ def register_trial_confirmation_routes(app):
         return _answer(token, "declined")
 
 
-def _create_event(row, trial):
-    """Create the Google event. A failure leaves the session confirmed, is
-    logged, and sets calendar_error so the panel asks for a manual event."""
+def _is_gone(error):
+    """The Google event no longer exists (deleted by hand in the calendar)."""
+    status = getattr(getattr(error, "resp", None), "status", None)
+    return status in (404, 410)
+
+
+def sync_calendar_event(trial_id, provisional):
+    """Makes the calendar event match the session and returns True when it does.
+
+    - no event yet  -> creates it (title "[Pendiente] Trial Session · Ana" while
+      provisional, "Trial Session · Ana" once confirmed) and stores its id;
+    - event exists  -> updates THAT event (never a second one); if somebody
+      deleted it in Google, a new one is created.
+
+    The session row is locked while this runs, so a double click on "Crear
+    evento" or a confirmation at the same moment can not create two events.
+    A failure never undoes the approval or the confirmation: it is logged and
+    stored in calendar_error, which the panel shows with a retry button."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        cursor.execute(
+            """
+            SELECT ts.full_name, ts.email, ts.phone, ts.goal, ts.experience, ts.session_date,
+                   ts.session_time, ts.google_event_id, t.nome
+            FROM trial_sessions ts LEFT JOIN trainers t ON t.id = ts.trainer_id
+            WHERE ts.id = %s FOR UPDATE OF ts
+            """,
+            (trial_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            conn.rollback()
+            return False
+        full_name, email, phone, goal, experience, day, time, event_id, trainer = row
         try:
-            event_id = create_trial_session_event(
-                trial["full_name"], trial["email"], trial["phone"], trial["goal"], trial["experience"],
-                trial["session_date"], trial["session_time"], trial["trainer"],
-            )
+            if event_id:
+                try:
+                    update_trial_session_event(
+                        event_id, full_name, email, phone, goal, experience, trainer, provisional=provisional
+                    )
+                except Exception as error:  # noqa: BLE001
+                    if not _is_gone(error):
+                        raise
+                    event_id = None
+            if not event_id:
+                event_id = create_trial_session_event(
+                    full_name, email, phone, goal, experience, str(day)[:10], str(time)[:5], trainer,
+                    provisional=provisional,
+                )
             cursor.execute(
                 "UPDATE trial_sessions SET google_event_id = %s, calendar_error = NULL WHERE id = %s",
-                (event_id, trial["id"]),
+                (event_id, trial_id),
             )
             conn.commit()
             return True
         except Exception as error:  # noqa: BLE001
             conn.rollback()
-            print(f"Calendar event for trial {trial['id']} could not be created: {type(error).__name__}")
+            print(f"Calendar event for trial {trial_id} could not be created or updated: {type(error).__name__}")
             traceback.print_exc()
             cursor.execute(
                 "UPDATE trial_sessions SET calendar_error = %s WHERE id = %s",
-                (type(error).__name__[:80], trial["id"]),
+                (type(error).__name__[:80], trial_id),
             )
             conn.commit()
             return False
     finally:
         cursor.close()
         conn.close()
+
+
+def _email_result(future):
+    """(sent, problem) from the Future of an email, waiting for it."""
+    try:
+        result = future.result(timeout=EMAIL_WAIT_SECONDS)
+        return bool(result.ok), ("" if result.ok else result.error)
+    except Exception:  # noqa: BLE001 - timeout or worker error
+        return False, "timeout"
+
+
+def approve_trial(trial_id, trainer_id):
+    """THE way a trial session becomes "Pendiente de confirmación del cliente".
+
+    1. status -> Approved, trainer and a new token saved (nothing else can
+       approve a session: the panel button calls this and only this);
+    2. the approval email goes out in the language saved with the booking;
+    3. the provisional event is put on the shared calendar.
+
+    Email and calendar failures do not undo the approval. They are reported in
+    the return value ({"email": {"sent", "problem"}, "calendar": {"ok"}}), the
+    email also in email_log, the calendar in calendar_error."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT full_name, email, session_date, session_time, lang
+            FROM trial_sessions
+            WHERE id = %s AND LOWER(status) = 'pending'
+            FOR UPDATE
+            """,
+            (trial_id,),
+        )
+        trial = cursor.fetchone()
+        if not trial:
+            raise HTTPException(status_code=404, detail="Pending trial request not found")
+
+        cursor.execute("SELECT nome FROM trainers WHERE id = %s", (trainer_id,))
+        trainer = cursor.fetchone()
+        if not trainer:
+            raise HTTPException(status_code=404, detail="Trainer not found")
+
+        problem = slot_problem(cursor, trainer_id, str(trial[2]), str(trial[3])[:5], ignore_trial_id=trial_id)
+        if problem:
+            raise HTTPException(status_code=409, detail=problem)
+
+        token = new_token()
+        cursor.execute(
+            """
+            UPDATE trial_sessions
+            SET status = 'Approved', trainer_id = %s, confirmation_token = %s,
+                approved_at = NOW(), rejection_reason = NULL
+            WHERE id = %s
+            """,
+            (trainer_id, token, trial_id),
+        )
+        conn.commit()
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+    # From here on the session IS approved, whatever happens to the email or the calendar.
+    full_name, email, day, time, lang = trial
+    try:
+        future = mailer.send_trial_approved(
+            email, _first_name(full_name), str(day)[:10], str(time)[:5], trainer[0], token, lang,
+            reference=trial_id,
+        )
+    except Exception as error:  # noqa: BLE001 - building the email failed
+        print(f"Approval email for trial {trial_id} could not be built: {type(error).__name__}")
+        email_log.record("trial_approved", trial_id, email, False, "error")
+        future = None
+
+    calendar_ok = sync_calendar_event(trial_id, provisional=True)   # runs while the email is sent
+    sent, problem = _email_result(future) if future is not None else (False, "error")
+    return {
+        "email": {"sent": sent, "problem": problem},
+        "calendar": {"ok": calendar_ok},
+    }
+
+
+def resend_approval(trial_id):
+    """Sends the approval email again with the SAME link (the token does not
+    change and stays valid). At most once a minute per session."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT full_name, email, session_date, session_time, lang, status, confirmation_token, t.nome
+            FROM trial_sessions ts LEFT JOIN trainers t ON t.id = ts.trainer_id
+            WHERE ts.id = %s
+            """,
+            (trial_id,),
+        )
+        row = cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Trial session not found")
+    full_name, email, day, time, lang, status, token, trainer = row
+    if str(status).lower() != "approved" or not token:
+        raise HTTPException(status_code=409, detail=_bilingual(
+            "Esta sesión no está pendiente de confirmación del cliente.",
+            "This session is not waiting for the client's confirmation."))
+    if now_madrid() >= parse_madrid(str(day), str(time)[:5]):
+        raise HTTPException(status_code=409, detail=_bilingual(
+            "El enlace ya ha caducado: la hora de la sesión ya ha pasado.",
+            "The link has expired: the session time has already passed."))
+    elapsed = email_log.seconds_since_last("trial_approved", trial_id)
+    if elapsed is not None and elapsed < RESEND_INTERVAL_SECONDS:
+        wait = int(RESEND_INTERVAL_SECONDS - elapsed) + 1
+        raise HTTPException(status_code=429, detail=_bilingual(
+            f"Espera {wait} s antes de volver a reenviar el email.",
+            f"Wait {wait} s before resending the email."))
+
+    future = mailer.send_trial_approved(
+        email, _first_name(full_name), str(day)[:10], str(time)[:5], trainer, token, lang, reference=trial_id,
+    )
+    sent, problem = _email_result(future)
+    return {"email": {"sent": sent, "problem": problem}}
 
 
 def _remove_event(row):

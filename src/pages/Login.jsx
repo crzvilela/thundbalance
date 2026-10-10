@@ -149,7 +149,7 @@ function Login() {
 
             <Link
               to="/register"
-              className="text-white hover:text-gray-300"
+              className="inline-block py-2 text-white hover:text-gray-300"
             >
               Register
             </Link>

@@ -15,6 +15,7 @@ import PanelTabs from './PanelTabs'
 import { useAdminText } from '../../admin/useAdminText'
 import './EditorChrome.css'
 import TypographyControls from './TypographyControls'
+import QuickTextStyle from './QuickTextStyle'
 import { FONT_OPTIONS as FONT_FAMILIES, fontLabel, loadFont } from '../../utils/fonts'
 import {
   FieldGroup,
@@ -1113,6 +1114,8 @@ function TextPanel({ selection, onClose }) {
     <div>
       <PanelHeader title={selection.label || 'Text'} subtitle="Text content" onClose={onClose} />
 
+      <QuickTextStyle path={selection.path} />
+
       <PanelTabs tabs={[
         { key: 'content', label: t('ed_tab_content'), node: <>
       <FieldGroup label="Editing Language" hint="This also switches the preview — you're editing exactly what visitors see in that language.">
@@ -1394,6 +1397,8 @@ function ButtonPanel({ selection, onClose }) {
   return (
     <div>
       <PanelHeader title={selection.label || 'Button'} subtitle="Call-to-action button" onClose={onClose} />
+
+      <QuickTextStyle path={`${selection.path}.text`} />
 
       <PanelTabs tabs={[
         { key: 'content', label: t('ed_tab_content'), node: <>

@@ -37,7 +37,7 @@ export function Icon({ name, className = 'h-5 w-5' }) {
 
 export function Card({ className = '', children, ...rest }) {
   return (
-    <div {...rest} className={`rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-sm ${className}`}>
+    <div {...rest} className={`min-w-0 rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-sm ${className}`}>
       {children}
     </div>
   )

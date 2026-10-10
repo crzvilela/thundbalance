@@ -21,3 +21,11 @@
 @media (prefers-reduced-motion: reduce) {
   .footer-icon-link { transition: none; }
 }
+
+/* Phones: the icons keep their look, but the tappable area grows to ~44px, and
+   the legal line is no longer 10px. */
+@media (max-width: 767px), (pointer: coarse) {
+  .footer-icon-link { position: relative; }
+  .footer-icon-link::after { content: ''; position: absolute; inset: -10px; }
+  .footer-meta { font-size: 12px; }
+}

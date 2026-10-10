@@ -12,6 +12,7 @@ import { authFetch } from '../api/authFetch'
 import { resolveImageUrl } from '../api/landingPage'
 import { uploadProfilePhoto } from '../api/profilePhoto'
 import { useI18n } from '../i18n/I18nContext'
+import { DEFAULT_TAX_ID_TYPE, TAX_ID_TYPES, normalizeTaxId, taxIdProblem } from '../utils/taxId'
 
 // [field, label key, placeholder (key, or literal when it has no key), autocomplete]
 const fields = [
@@ -20,6 +21,9 @@ const fields = [
   ['cidade', 'pf_f_city', 'pf_p_city', 'address-level2'],
   ['cep', 'pf_f_postal', 'pf_p_postal', 'postal-code'],
   ['morada', 'pf_f_address', 'pf_p_address', 'street-address'],
+  ['country', 'pf_f_nation', 'pf_p_nation', 'country-name'],
+  ['tax_id_type', 'pf_f_doctype', '', 'off'],
+  ['tax_id', 'pf_f_taxid', 'pf_p_taxid', 'off'],
 ]
 const button = 'rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-50 disabled:cursor-wait'
 
@@ -62,16 +66,29 @@ function Profile() {
 
   const save = async event => {
     event.preventDefault()
-    setSaving(true); setError(''); setNotice('')
+    setError(''); setNotice('')
+    // The same check the server makes, so the answer comes before sending.
+    const problem = taxIdProblem(draft.tax_id_type || DEFAULT_TAX_ID_TYPE, draft.tax_id)
+    if (problem) { setError(`pf_tax_id_${problem}`); return }
+    setSaving(true)
     try {
       const token = await auth.currentUser.getIdToken()
       const response = await fetch(`${API_URL}/profile/${profile.id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(Object.fromEntries(fields.map(([key]) => [key, draft[key] || ''])))
+        body: JSON.stringify({
+          ...Object.fromEntries(fields.map(([key]) => [key, draft[key] || ''])),
+          tax_id_type: draft.tax_id_type || DEFAULT_TAX_ID_TYPE,
+          tax_id: normalizeTaxId(draft.tax_id),
+        })
       })
-      const result = await response.json()
-      if (!response.ok || result.error) throw new Error('pf_err_save')
-      setProfile(draft); setEditing(false); setNotice('pf_updated')
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || result.error) {
+        // the server answers a bad document with a code the site translates
+        const code = typeof result.detail === 'string' && result.detail.startsWith('tax_id_') ? `pf_${result.detail}` : 'pf_err_save'
+        throw new Error(code)
+      }
+      const saved = { ...draft, tax_id: normalizeTaxId(draft.tax_id) || null, tax_id_type: normalizeTaxId(draft.tax_id) ? (draft.tax_id_type || DEFAULT_TAX_ID_TYPE) : null }
+      setProfile(saved); setDraft(saved); setEditing(false); setNotice('pf_updated')
     } catch (err) { setError(err.message) }
     finally { setSaving(false) }
   }
@@ -153,7 +170,9 @@ function Profile() {
             <div className="grid gap-6 sm:grid-cols-2">
               {fields.map(([key, label, placeholder, autoComplete]) => <div key={key} className={key === 'morada' ? 'sm:col-span-2' : ''}>
                 <label htmlFor={`profile-${key}`} className="mb-2 block text-xs font-medium uppercase tracking-wider text-gray-400">{t(label)}</label>
-                {editing ? <input id={`profile-${key}`} autoComplete={autoComplete} type={key === 'telefone' || key === 'codigo_pais' ? 'tel' : 'text'} value={draft[key] || ''} onChange={event => setDraft(previous => ({ ...previous, [key]: event.target.value }))} placeholder={t(placeholder)} disabled={saving} className="w-full rounded-xl border border-white/15 bg-black/20 px-4 py-3 text-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/10" /> : <p className={`min-h-12 rounded-xl bg-white/[0.025] px-4 py-3 text-sm ${profile[key] ? 'text-gray-200' : 'text-gray-500'}`}>{profile[key] || t('pf_not_provided')}</p>}
+                {editing && key === 'tax_id_type' ? <select id={`profile-${key}`} value={draft.tax_id_type || DEFAULT_TAX_ID_TYPE} onChange={event => setDraft(previous => ({ ...previous, tax_id_type: event.target.value }))} disabled={saving} className="w-full rounded-xl border border-white/15 bg-black/20 px-4 py-3 text-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/10">
+                  {TAX_ID_TYPES.map(type => <option key={type} value={type}>{t(`pf_doc_${type}`)}</option>)}
+                </select> : editing ? <input id={`profile-${key}`} autoComplete={autoComplete} type={key === 'telefone' || key === 'codigo_pais' ? 'tel' : 'text'} value={draft[key] || ''} onChange={event => setDraft(previous => ({ ...previous, [key]: event.target.value }))} placeholder={t(placeholder)} disabled={saving} className="w-full rounded-xl border border-white/15 bg-black/20 px-4 py-3 text-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/10" /> : <p className={`min-h-12 rounded-xl bg-white/[0.025] px-4 py-3 text-sm ${profile[key] ? 'text-gray-200' : 'text-gray-500'}`}>{key === 'tax_id_type' ? (profile.tax_id_type ? t(`pf_doc_${profile.tax_id_type}`) : t('pf_not_provided')) : (profile[key] || t('pf_not_provided'))}</p>}
               </div>)}
             </div>
             {editing && <div className="mt-8 flex justify-end gap-3 border-t border-white/10 pt-6">

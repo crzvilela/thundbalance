@@ -129,7 +129,38 @@ TEXTS_EN = {
     "test_button": "Open ThundBalance",
 }
 
-TEXTS = {"es": TEXTS_ES, "en": TEXTS_EN}
+TEXTS_CA = {
+    "greeting": "Hola {name},",
+    "lbl_place": "Lloc",
+    "place_value": "ThundBalance, Carrer de Pallars 286, 08005 Barcelona",
+    "trial_received_subject": "Hem rebut la teva sol·licitud",
+    "trial_received_title": "Sol·licitud rebuda",
+    "trial_received_body": "Hem rebut la teva sol·licitud de sessió de prova. El nostre equip la revisarà i es posarà en contacte amb tu.",
+    "trial_received_asked": "Dia i hora sol·licitats:",
+    "trial_approved_subject": "Confirma la teva sessió de prova",
+    "trial_approved_title": "La teva sessió de prova està aprovada",
+    "trial_approved_body": "Hem aprovat la teva sessió de prova. Confirma-la per reservar el teu lloc:",
+    "trial_approved_note": "El teu lloc queda reservat, però necessitem que confirmis que hi assistiràs.",
+    "trial_approved_confirm": "Confirmar la meva sessió",
+    "trial_approved_decline": "No hi puc assistir",
+    "trial_confirmed_subject": "Sessió de prova confirmada",
+    "trial_confirmed_title": "Sessió de prova confirmada",
+    "trial_confirmed_body": "Tot a punt! La teva sessió de prova està confirmada. T'adjuntem l'esdeveniment perquè l'afegeixis al teu calendari.",
+    "trial_confirmed_note": "Si canvia alguna cosa, respon a aquest email.",
+    "trial_cancelled_subject": "La teva sessió de prova ha estat cancel·lada",
+    "trial_cancelled_title": "Sessió de prova cancel·lada",
+    "trial_cancelled_body": "La teva sessió de prova del {when} ha estat cancel·lada. Pots sol·licitar-ne una de nova a la nostra web.",
+    "trial_cancelled_button": "Demanar-ne una de nova",
+}
+
+TEXTS = {"es": TEXTS_ES, "en": TEXTS_EN, "ca": TEXTS_CA}
+LANGUAGES = ("en", "es", "ca")
+
+
+def normalize_language(value):
+    """'en' | 'es' | 'ca' for a known value, otherwise None (never guesses)."""
+    code = str(value or "").strip().lower()[:2]
+    return code if code in LANGUAGES else None
 
 
 def tr(lang, key, **values):
@@ -139,6 +170,21 @@ def tr(lang, key, **values):
     if text is None:
         text = TEXTS_ES[key]
     return text.format(**values) if values else text
+
+
+def localized_email(lang, subject_key, build, title_key=None, **values):
+    """A client email entirely in ONE language (subject, title, body, buttons,
+    dates, plain text, <html lang>). With lang=None (records saved before the
+    language was stored) it falls back to the older ES + EN layout.
+
+    `build(l)` returns the blocks for language l (use tr(l, key))."""
+    lang = normalize_language(lang)
+    if lang is None:
+        return bilingual_email(subject_key, build, title_key=title_key, **values)
+    subject = tr(lang, subject_key, **values)
+    title = tr(lang, title_key) if title_key else subject
+    html, text = render_email(title=title, blocks=build(lang), preheader=subject, lang=lang)
+    return subject, html, text
 
 
 def bilingual_email(subject_key, build, title_key=None, preheader=None, **values):

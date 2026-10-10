@@ -62,6 +62,8 @@ class Accounts(unittest.TestCase):
         import os
         main.ensure_trial_session_fields()
         main.ensure_user_account_fields()
+        main.ensure_calendar_sync_columns()
+        main.ensure_session_pack_column()
         cls.server = HTTPServer(("127.0.0.1", 0), FakeScript)
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
         os.environ["TRIAL_EMAIL_WEBHOOK_URL"] = f"http://127.0.0.1:{cls.server.server_port}/exec"
@@ -283,20 +285,23 @@ class Accounts(unittest.TestCase):
         self.assertEqual(sorted(self.deleted_events), sorted(f"evt-{n}" for n in range(1, 5)))
         self.assertNotIn("disk full", caught.exception.detail)
 
-    def test_calendar_failure_creates_nothing(self):
+    def test_calendar_failure_does_not_stop_the_client_or_the_pack(self):
         count = []
 
         def flaky(*a, **k):
             count.append(1)
             if len(count) == 2:
                 raise RuntimeError("calendar down")
-            return f"evt-{len(count)}"
+            return k.get("event_id") or f"evt-{len(count)}"
 
         packs.create_calendar_event = flaky
-        with self.assertRaises(HTTPException):
-            self.create(pack=True)
-        self.assertEqual((self.firebase, self.db_user("ana" + DOMAIN)), ({}, None))
-        self.assertEqual(self.deleted_events, ["evt-1"])
+        result = self.create(pack=True)
+        self.assertEqual(result["pack"]["total_sessions"], 4)
+        self.assertEqual(result["pack"]["calendar_failed"], 1)
+        user = self.db_user("ana" + DOMAIN)
+        self.assertIsNotNone(user)                                    # the client exists
+        self.assertEqual(self.deleted_events, [])
+        self.assertEqual(len(self.firebase), 1)
 
     def test_double_submit_creates_one_client(self):
         outcomes = []

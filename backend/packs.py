@@ -1,6 +1,11 @@
 """Creating a pack: the single implementation shared by renewing a pack,
 approving a client's request and creating a client from the admin panel.
 
+Packs are PARALLEL: creating one never closes, replaces or deletes the packs a
+client already has. Each pack has its own period, schedule and numbering, and
+its sessions carry sessions.user_plan_id (sessions from before that column
+existed are matched to a pack by date when they are read, never rewritten).
+
 Database rows go in first and Google Calendar events afterwards; the caller
 owns the transaction and the list of created event ids, so everything can be
 rolled back together.
@@ -10,10 +15,11 @@ from datetime import datetime, timedelta
 
 from fastapi import HTTPException
 
-from availability import slot_problem
+from availability import has_conflict, slot_problem, weekday_name, within_hours
 from emails import clean_recipients, send_pack_summary_email, team_emails
 from emails.dates import parse_madrid
-from google_calendar import create_calendar_event, delete_calendar_event
+import calendar_sync
+from google_calendar import create_calendar_event, delete_calendar_event, describe_error
 
 DAY_MAP = {
     "Monday": 0,
@@ -60,10 +66,82 @@ def generate_session_dates(
     return dates
 
 
+def find_conflicts(cursor, *, user_id, trainer_id, session_dates, preferred_time):
+    """Sessions of a planned pack that collide with something. Returns a list of
+    {"date", "time", "kind", "message"}; kind is one of
+      client_busy    the client already has a (non-cancelled) session at that day and hour
+      trainer_busy   the trainer already has another session then
+      trainer_hours  the trainer does not work at that day / hour
+    Nothing is written."""
+    time = str(preferred_time)[:5]
+    busy_days = set()
+    if user_id:
+        cursor.execute(
+            """
+            SELECT session_date FROM sessions
+            WHERE user_id = %s AND status = 'Booked' AND session_date = ANY(%s::date[])
+              AND to_char(session_time, 'HH24:MI') = %s
+            """,
+            (user_id, list(session_dates), time),
+        )
+        busy_days = {str(row[0]) for row in cursor.fetchall()}
+
+    conflicts = []
+    for day in session_dates:
+        if str(day) in busy_days:
+            conflicts.append({
+                "date": str(day), "time": time, "kind": "client_busy",
+                "message": "The client already has a session at that day and time.",
+            })
+        problem = slot_problem(cursor, trainer_id, day, time)
+        if problem:
+            hours_ok = within_hours(cursor, trainer_id, weekday_name(day), time)
+            kind = "trainer_busy" if hours_ok and has_conflict(cursor, trainer_id, day, time) else "trainer_hours"
+            conflicts.append({"date": str(day), "time": time, "kind": kind, "message": problem})
+    return conflicts
+
+
+def preview_pack(cursor, *, user_id, plan_id, trainer_id, sessions_per_week, preferred_days, preferred_time, start_date):
+    """What a pack would create, without creating anything: the sessions and the
+    conflicts (see find_conflicts). The start date may be any day."""
+    cursor.execute("SELECT nome, duration_weeks FROM plans WHERE id = %s", (plan_id,))
+    plan = cursor.fetchone()
+    if not plan or not plan[1]:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    _, days = validate_pack_request(
+        cursor, trainer_id=trainer_id, sessions_per_week=sessions_per_week,
+        preferred_days=preferred_days, start_date=start_date,
+    )
+    total = plan[1] * sessions_per_week
+    dates = generate_session_dates(start_date, ",".join(days), total)
+    return {
+        "total_sessions": total,
+        "dates": dates,
+        "first_date": dates[0],
+        "last_date": dates[-1],
+        "conflicts": find_conflicts(
+            cursor, user_id=user_id, trainer_id=trainer_id, session_dates=dates, preferred_time=preferred_time,
+        ),
+    }
+
+
+def conflict_error(conflicts, trainer_name):
+    """The 409 the panel turns into the "conflicts" list of the modal."""
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "conflicts",
+            "message": f"{len(conflicts)} session(s) would collide with something. Review them or create anyway.",
+            "trainer": trainer_name,
+            "conflicts": conflicts,
+        },
+    )
+
+
 def create_pack(
     cursor, created_event_ids, *, user_id, client_name, client_email, plan_id, trainer_id,
     trainer_name, sessions_per_week, preferred_days, preferred_time, start_date,
-    request_id=None, replace_plans="deactivate"
+    request_id=None, allow_conflicts=False
 ):
     """The one place that creates a pack: records the period and schedule,
     inserts every session and creates its Google Calendar event.
@@ -73,11 +151,16 @@ def create_pack(
     delete them if anything fails later (before or at commit). Nothing is
     committed here.
 
-    replace_plans: "deactivate" keeps the previous pack as history (renewals);
-    "delete" removes it (approving a client's request, as before).
+    The client's other packs are left exactly as they are (parallel packs).
+    allow_conflicts: with colliding sessions (client busy, trainer busy or
+    outside their hours) and allow_conflicts=False nothing is created and a 409
+    with the list is raised; with True ("Crear igualmente") everything is
+    created and nothing is silently dropped.
 
-    Returns {"plan_name", "total_sessions", "session_dates", "sessions"} where
-    sessions is [{"id", "start" (Madrid datetime), "trainer", "number"}].
+    Returns {"plan_name", "total_sessions", "session_dates", "sessions",
+    "calendar_failed", "calendar_errors"} where sessions is
+    [{"id", "start" (Madrid datetime), "trainer", "number"}]. Sessions whose
+    calendar event could not be created are still created (and flagged).
     """
     cursor.execute("SELECT nome, duration_weeks FROM plans WHERE id = %s", (plan_id,))
     plan = cursor.fetchone()
@@ -88,35 +171,25 @@ def create_pack(
     total_sessions = weeks * sessions_per_week
     session_dates = generate_session_dates(start_date, preferred_days, total_sessions)
 
-    # Every generated session must fit the trainer's working hours and not
-    # collide with another session, before anything is written.
-    problems = []
-    for session_date in session_dates:
-        problem = slot_problem(cursor, trainer_id, session_date, preferred_time)
-        if problem:
-            problems.append(f"{session_date}: {problem}")
-    if problems:
-        shown = "; ".join(problems[:3])
-        extra = f" (+{len(problems) - 3} more)" if len(problems) > 3 else ""
-        raise HTTPException(
-            status_code=409,
-            detail=f"{trainer_name} cannot take this schedule. {shown}{extra}",
-        )
+    conflicts = find_conflicts(
+        cursor, user_id=user_id, trainer_id=trainer_id, session_dates=session_dates,
+        preferred_time=preferred_time,
+    )
+    if conflicts and not allow_conflicts:
+        raise conflict_error(conflicts, trainer_name)
 
-    if replace_plans == "delete":
-        cursor.execute("DELETE FROM user_plans WHERE user_id = %s", (user_id,))
-    else:
-        cursor.execute("UPDATE user_plans SET active = FALSE WHERE user_id = %s", (user_id,))
     cursor.execute(
         """
         INSERT INTO user_plans
         (user_id, plan_id, active, start_date, end_date, sessions_per_week,
          preferred_days, preferred_time, trainer_id)
         VALUES (%s, %s, TRUE, %s, %s, %s, %s, %s, %s)
+        RETURNING id
         """,
         (user_id, plan_id, session_dates[0], session_dates[-1], sessions_per_week,
          preferred_days, preferred_time, trainer_id)
     )
+    pack_id = cursor.fetchone()[0]
 
     pending = []
     for index, session_date in enumerate(session_dates, start=1):
@@ -124,21 +197,34 @@ def create_pack(
         cursor.execute(
             """
             INSERT INTO sessions
-            (user_id, trainer_id, session_date, session_time, request_id, session_number, status)
-            VALUES (%s, %s, %s, %s, %s, %s, 'Booked')
+            (user_id, trainer_id, session_date, session_time, request_id, session_number, status, user_plan_id)
+            VALUES (%s, %s, %s, %s, %s, %s, 'Booked', %s)
             RETURNING id
             """,
-            (user_id, trainer_id, session_date, preferred_time, request_id, session_number)
+            (user_id, trainer_id, session_date, preferred_time, request_id, session_number, pack_id)
         )
         pending.append((cursor.fetchone()[0], session_date, session_number))
 
+    # A calendar failure never stops the sessions from existing: it is recorded
+    # on each session (calendar_sync_status / calendar_sync_error), shown in the
+    # panel, and "Sincronizar con calendario" creates what is missing.
+    key = calendar_sync.instance_key(cursor)
+    calendar_errors = []
     sessions = []
     for session_id, session_date, session_number in pending:
-        event_id = create_calendar_event(
-            trainer_name, client_name, client_email, session_date, preferred_time, session_number
-        )
-        created_event_ids.append(event_id)
-        cursor.execute("UPDATE sessions SET google_event_id = %s WHERE id = %s", (event_id, session_id))
+        try:
+            event_id = create_calendar_event(
+                trainer_name, client_name, client_email, session_date, preferred_time, session_number,
+                event_id=calendar_sync.event_id_for(key, session_id), session_id=session_id,
+            )
+            created_event_ids.append(event_id)
+            calendar_sync.record(cursor, session_id, True, event_id=event_id)
+        except Exception as error:  # noqa: BLE001
+            reason = describe_error(error)
+            print(f"Calendar event for session {session_id} could not be created: {reason}")
+            traceback.print_exc()
+            calendar_sync.record(cursor, session_id, False, reason)
+            calendar_errors.append(reason)
         sessions.append({
             "id": session_id,
             "start": parse_madrid(session_date, str(preferred_time)[:5]),
@@ -147,10 +233,14 @@ def create_pack(
         })
 
     return {
+        "pack_id": pack_id,
+        "conflicts": conflicts,
         "plan_name": plan_name,
         "total_sessions": total_sessions,
         "session_dates": session_dates,
         "sessions": sessions,
+        "calendar_failed": len(calendar_errors),
+        "calendar_errors": sorted(set(calendar_errors)),
     }
 
 
@@ -192,9 +282,8 @@ def email_pack(created, *, client_name, client_email, days, sessions_per_week, t
 
 def validate_pack_request(cursor, *, trainer_id, sessions_per_week, preferred_days, start_date):
     """Checks the parts of a pack request that do not depend on the client:
-    trainer, sessions per week, training days and start date. Returns
-    (trainer_name, days). Raises HTTPException with the same messages the
-    renewal always used."""
+    trainer, sessions per week, training days and a well-formed start date (no
+    minimum). Returns (trainer_name, days)."""
     cursor.execute("SELECT nome FROM trainers WHERE id = %s", (trainer_id,))
     trainer = cursor.fetchone()
     if not trainer:
@@ -207,11 +296,25 @@ def validate_pack_request(cursor, *, trainer_id, sessions_per_week, preferred_da
     if not days or any(day not in DAY_MAP for day in days):
         raise HTTPException(status_code=422, detail="Please choose valid training days.")
 
+    # Any day is allowed (today, inside the current pack, or in the past: the
+    # panel asks for a confirmation before sending a past date).
     try:
-        start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        datetime.strptime(start_date, "%Y-%m-%d")
     except ValueError:
         raise HTTPException(status_code=422, detail="Please choose a valid start date.")
-    if start < datetime.now().date():
-        raise HTTPException(status_code=422, detail="The start date cannot be in the past.")
 
     return trainer[0], days
+
+
+def ensure_pack_columns():
+    """sessions.user_plan_id: which pack a session belongs to (NULL for sessions
+    created before this existed; they are matched by date when read)."""
+    from database import get_connection
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_plan_id INTEGER")
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()

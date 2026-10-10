@@ -54,7 +54,7 @@ function Field({ label, error, children, optional }) {
 }
 
 function TrialSession() {
-  const { t } = useI18n()
+  const { t, language } = useI18n()
   const [form, setForm] = useState(EMPTY)
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
@@ -116,6 +116,8 @@ function TrialSession() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tb_hp: form.hp || '',
+          // the site's language now: the emails to the visitor are written in it
+          lang: language,
           full_name: form.fullName.trim(),
           email: form.email.trim(),
           phone: form.phone.trim(),

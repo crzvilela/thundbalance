@@ -2,26 +2,47 @@
 import { EditableText, EditableFormField, EditableImage, useSectionSelection, SectionEditOverlay } from './editor/Editable'
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
 import { BLANK_IMAGE_PLACEHOLDER } from '../utils/placeholderImage'
-import { useLandingContent } from '../content/LandingContentContext'
+import { API_URL } from '../config'
 import { useI18n } from '../i18n/I18nContext'
 
 function Contact({ sectionId }) {
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'Contact')
-  const { content } = useLandingContent()
-  const { t } = useI18n()
-  const [emailOpened, setEmailOpened] = useState(false)
-  const email = content.sections.footer?.contactEmail || ''
+  const { t, language } = useI18n()
+  // idle | sending | sent | error
+  const [status, setStatus] = useState('idle')
+  const [errorText, setErrorText] = useState('')
 
   if (!visible && !isEditMode) return null
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
-    if (isEditMode || !email) return
-    const values = new FormData(event.currentTarget)
-    const subject = encodeURIComponent(`${t('contact_subject')}: ${values.get('name')}`)
-    const body = encodeURIComponent(`${values.get('message')}\n\n${values.get('name')}\n${values.get('email')}`)
-    window.location.href = `mailto:${encodeURIComponent(email)}?subject=${subject}&body=${body}`
-    setEmailOpened(true)
+    if (isEditMode || status === 'sending') return
+    const form = event.currentTarget
+    const values = new FormData(form)
+    setStatus('sending')
+    setErrorText('')
+    try {
+      const response = await fetch(`${API_URL}/contact-messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: values.get('name'),
+          email: values.get('email'),
+          message: values.get('message'),
+          website: values.get('website'),
+          language
+        })
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(response.status === 422 && typeof data.detail === 'string' ? data.detail : '')
+      }
+      form.reset()
+      setStatus('sent')
+    } catch (error) {
+      setErrorText(error instanceof TypeError || !error.message ? t('contact_error') : error.message)
+      setStatus('error')
+    }
   }
 
   const textAndForm = (
@@ -33,8 +54,11 @@ function Contact({ sectionId }) {
         <EditableFormField name="name" type="text" path={`sections.${sectionId}.formLabels.name`} label="Contact Name Placeholder" autoComplete="name" required maxLength={120} className="border border-black/20 px-6 py-4 outline-none focus:border-black" />
         <EditableFormField name="email" type="email" path={`sections.${sectionId}.formLabels.email`} label="Contact Email Placeholder" autoComplete="email" required maxLength={254} className="border border-black/20 px-6 py-4 outline-none focus:border-black" />
         <EditableFormField as="textarea" name="message" path={`sections.${sectionId}.formLabels.message`} label="Contact Message Placeholder" required rows={6} maxLength={3000} className="border border-black/20 px-6 py-4 outline-none focus:border-black resize-none" />
-        <EditableText as="button" path={`sections.${sectionId}.buttonText`} label="Contact Send Button" disabled={!isEditMode && !email} style={{ fontFamily: theme.typography.accentFont }} className="mt-10 border border-black px-10 py-4 uppercase text-sm tracking-[3px] hover:bg-black hover:text-white transition-all duration-300 disabled:opacity-50" />
-        {emailOpened && <p role="status" className="text-sm text-gray-500">{t('contact_email_opened')}</p>}
+        <EditableText as="button" path={`sections.${sectionId}.buttonText`} label="Contact Send Button" disabled={!isEditMode && status === 'sending'} style={{ fontFamily: theme.typography.accentFont }} className="mt-10 border border-black px-10 py-4 uppercase text-sm tracking-[3px] hover:bg-black hover:text-white transition-all duration-300 disabled:opacity-50" />
+        <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" className="absolute left-[-9999px] h-0 w-0 opacity-0" />
+        {status === 'sending' && <p role="status" className="text-sm text-gray-500">{t('contact_sending')}</p>}
+        {status === 'sent' && <p role="status" className="text-sm text-emerald-700">{t('contact_sent')}</p>}
+        {status === 'error' && <p role="alert" className="text-sm text-red-600">{errorText}</p>}
       </form>
     </>
   )

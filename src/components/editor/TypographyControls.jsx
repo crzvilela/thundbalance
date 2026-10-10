@@ -1,8 +1,6 @@
-import { useLandingContent } from '../../content/LandingContentContext'
 import { ColorField, FieldGroup, SmallButton } from './fields'
 import FontFamilyPicker from './FontFamilyPicker'
-import { getEffectiveTypography } from '../../utils/typography'
-import { loadFont } from '../../utils/fonts'
+import { useTypography } from './useTypography'
 
 const WEIGHTS = ['100', '200', '300', '400', '500', '600', '700', '800', '900']
 const ALIGNMENTS = ['left', 'center', 'right', 'justify']
@@ -23,40 +21,12 @@ function rgbFromHex(value) {
 }
 
 export default function TypographyControls({ path }) {
-  const { content, updateField, device } = useLandingContent()
-  const entry = content.typography?.[path] || {}
-  const inherited = getEffectiveTypography({ ...content, typography: {} }, path)
-  const setEntry = next => {
-    const typography = { ...(content.typography || {}) }
-    if (Object.keys(next).length) typography[path] = next
-    else delete typography[path]
-    updateField('typography', typography)
-  }
-  const update = (property, value) => {
-    const next = { ...entry }
-    const defaultValue = inherited[property]
-    if (property === 'fontSize') {
-      const sizes = { ...(entry.fontSize || {}) }
-      if (!value || value === defaultValue?.[device]) delete sizes[device]
-      else sizes[device] = value
-      if (Object.keys(sizes).length) next.fontSize = sizes
-      else delete next.fontSize
-    } else if (value === defaultValue || value === '' || (property === 'opacity' && value === 1)) {
-      delete next[property]
-    } else next[property] = value
-    if (property === 'fontFamily' && value) loadFont(value)
-    setEntry(next)
-  }
+  const { entry, device, update, clear } = useTypography(path)
   const fontSize = entry.fontSize?.[device] || ''
   const sizeNumber = Number.parseFloat(fontSize) || 16
   const color = entry.color || '#ffffff'
   const rgb = rgbFromHex(color)
   const setRGB = (index, value) => update('color', toHex(...rgb.map((part, i) => i === index ? value : part)))
-  const clear = () => {
-    const typography = { ...(content.typography || {}) }
-    delete typography[path]
-    updateField('typography', typography)
-  }
 
   return <section className="mt-6 border-t border-white/10 pt-5">
     <h4 className="text-xs uppercase tracking-wider text-emerald-400 mb-4">Typography</h4>

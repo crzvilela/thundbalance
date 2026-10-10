@@ -53,3 +53,6 @@ firebase-service-account*.json
 secrets/
 
 backend/email_previews/
+
+# Backups written by backend/reset_test_data.py (personal data)
+backend/backup_before_reset_*.json

@@ -33,6 +33,12 @@ export const pageText = {
     dash_next_session: 'Next session', dash_to_schedule: 'To be scheduled',
     dash_package: 'Package', dash_assigned_plan: 'Assigned plan',
     dash_remaining: 'Sessions remaining', dash_upcoming: 'Upcoming sessions',
+    notice_region: 'Reminders',
+    notice_session_today: 'Your next session is today at {time}.',
+    notice_session_tomorrow: 'Your next session is tomorrow at {time}.',
+    notice_pack_ending: 'Your pack ends on {date}. Sessions left: {n}.',
+    notice_pack_ended: 'Your pack ended on {date}.',
+    notice_renew: 'Contact the studio to renew',
     dash_trainer_word: 'Trainer',
     dash_preparing: 'Your trainer is preparing your upcoming sessions. They’ll appear here as soon as they’re scheduled.',
     dash_view_all: 'View all sessions', dash_booked: 'Booked',
@@ -79,7 +85,7 @@ export const pageText = {
     pf_err_signin: 'Please sign in again to upload the photo.',
     pf_updated: 'Your profile has been updated.', pf_photo_updated: 'Your profile photo has been updated.',
     pf_photo_saved: 'Photo saved. Your menu photo will update when you sign in again.',
-    pf_f_country: 'Country code', pf_f_phone: 'Phone number', pf_f_city: 'City', pf_f_postal: 'Postal code', pf_f_address: 'Address',
+    pf_f_country: 'Country code', pf_f_phone: 'Phone number', pf_f_city: 'City', pf_f_postal: 'Postal code', pf_f_address: 'Address (billing)',
     pf_p_phone: 'Your phone number', pf_p_city: 'Your city', pf_p_postal: 'Your postal code', pf_p_address: 'Street and house number',
     pf_your_profile: 'Your profile', pf_eyebrow: 'Your account', pf_title: 'Profile',
     pf_intro: 'A little about you. Keep your details up to date.',
@@ -170,6 +176,19 @@ export const pageText = {
 
     // Temporary password notice (client pages)
     tp_banner: 'For security, please change your temporary password.', tp_go_profile: 'Go to Profile',
+
+    // Billing details (Profile)
+    pf_f_doctype: 'Document type', pf_f_taxid: 'ID / document number', pf_f_nation: 'Country',
+    pf_p_taxid: '12345678Z', pf_p_nation: 'Spain',
+    pf_doc_DNI: 'DNI', pf_doc_NIE: 'NIE', pf_doc_PASSPORT: 'Passport', pf_doc_OTHER: 'Other',
+    pf_tax_id_type: 'Invalid document type.',
+    pf_tax_id_dni_format: 'The DNI must have 8 digits and a letter.',
+    pf_tax_id_dni_letter: 'The DNI letter is not correct. Please check it.',
+    pf_tax_id_nie_format: 'The NIE must start with X, Y or Z, followed by 7 digits and a letter.',
+    pf_tax_id_nie_letter: 'The NIE letter is not correct. Please check it.',
+    pf_tax_id_other_format: 'The document must be 4 to 20 characters (letters and digits).',
+    // Dashboard: several packs
+    dash_pack_left: 'left',
   },
 
   es: {
@@ -198,6 +217,12 @@ export const pageText = {
     dash_next_session: 'Próxima sesión', dash_to_schedule: 'Por programar',
     dash_package: 'Paquete', dash_assigned_plan: 'Plan asignado',
     dash_remaining: 'Sesiones restantes', dash_upcoming: 'Próximas sesiones',
+    notice_region: 'Recordatorios',
+    notice_session_today: 'Tu próxima sesión es hoy a las {time}.',
+    notice_session_tomorrow: 'Tu próxima sesión es mañana a las {time}.',
+    notice_pack_ending: 'Tu pack termina el {date}. Sesiones restantes: {n}.',
+    notice_pack_ended: 'Tu pack terminó el {date}.',
+    notice_renew: 'Contacta con el estudio para renovar',
     dash_trainer_word: 'Entrenador',
     dash_preparing: 'Tu entrenador está preparando tus próximas sesiones. Aparecerán aquí en cuanto estén programadas.',
     dash_view_all: 'Ver todas las sesiones', dash_booked: 'Reservada',
@@ -242,7 +267,7 @@ export const pageText = {
     pf_err_signin: 'Inicia sesión de nuevo para subir la foto.',
     pf_updated: 'Tu perfil se ha actualizado.', pf_photo_updated: 'Tu foto de perfil se ha actualizado.',
     pf_photo_saved: 'Foto guardada. La foto del menú se actualizará cuando vuelvas a iniciar sesión.',
-    pf_f_country: 'Prefijo del país', pf_f_phone: 'Teléfono', pf_f_city: 'Ciudad', pf_f_postal: 'Código postal', pf_f_address: 'Dirección',
+    pf_f_country: 'Prefijo del país', pf_f_phone: 'Teléfono', pf_f_city: 'Ciudad', pf_f_postal: 'Código postal', pf_f_address: 'Dirección (facturación)',
     pf_p_phone: 'Tu teléfono', pf_p_city: 'Tu ciudad', pf_p_postal: 'Tu código postal', pf_p_address: 'Calle y número',
     pf_your_profile: 'Tu perfil', pf_eyebrow: 'Tu cuenta', pf_title: 'Perfil',
     pf_intro: 'Un poco sobre ti. Mantén tus datos al día.',
@@ -331,6 +356,19 @@ export const pageText = {
 
     // Aviso de contraseña temporal (páginas de cliente)
     tp_banner: 'Por seguridad, cambia tu contraseña temporal.', tp_go_profile: 'Ir al Perfil',
+
+    // Datos de facturación (Perfil)
+    pf_f_doctype: 'Tipo de documento', pf_f_taxid: 'DNI / NIE / Documento', pf_f_nation: 'País',
+    pf_p_taxid: '12345678Z', pf_p_nation: 'España',
+    pf_doc_DNI: 'DNI', pf_doc_NIE: 'NIE', pf_doc_PASSPORT: 'Pasaporte', pf_doc_OTHER: 'Otro',
+    pf_tax_id_type: 'Tipo de documento no válido.',
+    pf_tax_id_dni_format: 'El DNI debe tener 8 números y una letra.',
+    pf_tax_id_dni_letter: 'La letra del DNI no es correcta. Revísala, por favor.',
+    pf_tax_id_nie_format: 'El NIE debe empezar por X, Y o Z, seguido de 7 números y una letra.',
+    pf_tax_id_nie_letter: 'La letra del NIE no es correcta. Revísala, por favor.',
+    pf_tax_id_other_format: 'El documento debe tener entre 4 y 20 caracteres (letras y números).',
+    // Dashboard: varios packs
+    dash_pack_left: 'restantes',
   },
 
   ca: {
@@ -359,6 +397,12 @@ export const pageText = {
     dash_next_session: 'Propera sessió', dash_to_schedule: 'Per programar',
     dash_package: 'Paquet', dash_assigned_plan: 'Pla assignat',
     dash_remaining: 'Sessions restants', dash_upcoming: 'Properes sessions',
+    notice_region: 'Recordatoris',
+    notice_session_today: 'La teva propera sessió és avui a les {time}.',
+    notice_session_tomorrow: 'La teva propera sessió és demà a les {time}.',
+    notice_pack_ending: 'El teu pack acaba el {date}. Sessions restants: {n}.',
+    notice_pack_ended: 'El teu pack va acabar el {date}.',
+    notice_renew: 'Contacta amb l\'estudi per renovar',
     dash_trainer_word: 'Entrenador',
     dash_preparing: 'El teu entrenador està preparant les teves properes sessions. Apareixeran aquí tan bon punt estiguin programades.',
     dash_view_all: 'Veure totes les sessions', dash_booked: 'Reservada',
@@ -403,7 +447,7 @@ export const pageText = {
     pf_err_signin: 'Torna a iniciar la sessió per pujar la foto.',
     pf_updated: 'El teu perfil s\'ha actualitzat.', pf_photo_updated: 'La teva foto de perfil s\'ha actualitzat.',
     pf_photo_saved: 'Foto desada. La foto del menú s\'actualitzarà quan tornis a iniciar la sessió.',
-    pf_f_country: 'Prefix del país', pf_f_phone: 'Telèfon', pf_f_city: 'Ciutat', pf_f_postal: 'Codi postal', pf_f_address: 'Adreça',
+    pf_f_country: 'Prefix del país', pf_f_phone: 'Telèfon', pf_f_city: 'Ciutat', pf_f_postal: 'Codi postal', pf_f_address: 'Adreça (facturació)',
     pf_p_phone: 'El teu telèfon', pf_p_city: 'La teva ciutat', pf_p_postal: 'El teu codi postal', pf_p_address: 'Carrer i número',
     pf_your_profile: 'El teu perfil', pf_eyebrow: 'El teu compte', pf_title: 'Perfil',
     pf_intro: 'Una mica sobre tu. Mantén les teves dades al dia.',
@@ -492,5 +536,18 @@ export const pageText = {
 
     // Avís de contrasenya temporal (pàgines de client)
     tp_banner: 'Per seguretat, canvia la teva contrasenya temporal.', tp_go_profile: 'Anar al Perfil',
+
+    // Dades de facturació (Perfil)
+    pf_f_doctype: 'Tipus de document', pf_f_taxid: 'DNI / NIE / Document', pf_f_nation: 'País',
+    pf_p_taxid: '12345678Z', pf_p_nation: 'Espanya',
+    pf_doc_DNI: 'DNI', pf_doc_NIE: 'NIE', pf_doc_PASSPORT: 'Passaport', pf_doc_OTHER: 'Altre',
+    pf_tax_id_type: 'Tipus de document no vàlid.',
+    pf_tax_id_dni_format: 'El DNI ha de tenir 8 números i una lletra.',
+    pf_tax_id_dni_letter: 'La lletra del DNI no és correcta. Revisa-la, si us plau.',
+    pf_tax_id_nie_format: 'El NIE ha de començar per X, Y o Z, seguit de 7 números i una lletra.',
+    pf_tax_id_nie_letter: 'La lletra del NIE no és correcta. Revisa-la, si us plau.',
+    pf_tax_id_other_format: 'El document ha de tenir entre 4 i 20 caràcters (lletres i números).',
+    // Dashboard: diversos packs
+    dash_pack_left: 'restants',
   },
 }

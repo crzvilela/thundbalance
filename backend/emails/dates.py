@@ -13,6 +13,17 @@ MONTHS_EN = ["January", "February", "March", "April", "May", "June", "July",
              "August", "September", "October", "November", "December"]
 WEEKDAYS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 WEEKDAYS_EN = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+MONTHS_CA = ["gener", "febrer", "març", "abril", "maig", "juny", "juliol",
+             "agost", "setembre", "octubre", "novembre", "desembre"]
+WEEKDAYS_CA = ["dilluns", "dimarts", "dimecres", "dijous", "divendres", "dissabte", "diumenge"]
+
+LANGUAGES = ("en", "es", "ca")
+
+
+def _ca_month(index):
+    """"de gener", but "d'abril", "d'agost", "d'octubre" (vowel sounds)."""
+    name = MONTHS_CA[index]
+    return f"d'{name}" if name[0] in "aeiou" else f"de {name}"
 
 
 def _last_sunday(year, month):
@@ -61,13 +72,26 @@ class BilingualDate:
     time: str       # 09:00
     es: str         # lunes 12 de octubre de 2026, 09:00
     en: str         # Monday 12 October 2026, 09:00
+    weekday_ca: str = ""   # dilluns
+    date_ca: str = ""      # 12 d'octubre de 2026
+    ca: str = ""           # dilluns 12 d'octubre de 2026, 09:00
+
+    def weekday(self, lang):
+        return {"es": self.weekday_es, "ca": self.weekday_ca}.get(lang, self.weekday_en)
+
+    def date(self, lang):
+        return {"es": self.date_es, "ca": self.date_ca}.get(lang, self.date_en)
+
+    def full(self, lang):
+        return {"es": self.es, "ca": self.ca}.get(lang, self.en)
 
     def __str__(self):
         return f"{self.es} / {self.en}"
 
 
 def format_date_bilingual(moment):
-    """Spanish and English text for a datetime, in Madrid time."""
+    """Spanish, English and Catalan text for a datetime, in Madrid time
+    (own tables: nothing depends on the server locale)."""
     local = to_madrid(moment)
     weekday = local.weekday()
     date_es = f"{local.day} de {MONTHS_ES[local.month - 1]} de {local.year}"
@@ -81,6 +105,9 @@ def format_date_bilingual(moment):
         time=time,
         es=f"{WEEKDAYS_ES[weekday]} {date_es}, {time}",
         en=f"{WEEKDAYS_EN[weekday]} {date_en}, {time}",
+        weekday_ca=WEEKDAYS_CA[weekday],
+        date_ca=f"{local.day} {_ca_month(local.month - 1)} de {local.year}",
+        ca=f"{WEEKDAYS_CA[weekday]} {local.day} {_ca_month(local.month - 1)} de {local.year}, {time}",
     )
 
 
