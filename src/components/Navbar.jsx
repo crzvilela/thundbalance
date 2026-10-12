@@ -417,6 +417,21 @@ function NavbarInner() {
   )
 }
 
+// Shown while the page is held back for its real content and fonts. Normal
+// loads finish well before EARLY_NAVBAR_MS and go straight to the final menu, so
+// it never changes size. Only a slow start (the server waking up) shows this
+// menu early, so the visitor still sees the logo instead of a blank page.
+const EARLY_NAVBAR_MS = 1500
+
+export function WaitingNavbar() {
+  const [late, setLate] = useState(false)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setLate(true), EARLY_NAVBAR_MS)
+    return () => window.clearTimeout(timer)
+  }, [])
+  return late ? <NavbarInner /> : null
+}
+
 // The navbar is shared by every page and its settings are saved once for the
 // whole site. Pages that don't wrap themselves in a content provider (login,
 // dashboard, profile...) get one here so they show the same published navbar.
@@ -424,7 +439,7 @@ function Navbar() {
   const { hasProvider } = useLandingContent()
   if (hasProvider) return <NavbarInner />
   return (
-    <LandingContentProvider mode="view" version="published" placeholder={<NavbarInner />}>
+    <LandingContentProvider mode="view" version="published" placeholder={<WaitingNavbar />}>
       <NavbarInner />
     </LandingContentProvider>
   )
