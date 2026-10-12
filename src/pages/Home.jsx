@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom'
-import Navbar from '../components/Navbar'
+import Navbar, { WaitingNavbar } from '../components/Navbar'
 import Footer from '../components/Footer'
 import LandingSections from '../components/LandingSections'
 import { LandingContentProvider } from '../content/LandingContentContext'
@@ -12,7 +12,7 @@ function Home() {
     <LandingContentProvider
       mode="view"
       version={isPreview ? 'draft' : 'published'}
-      placeholder={<div className="bg-black min-h-screen"><Navbar /></div>}
+      placeholder={<div className="bg-black min-h-screen"><WaitingNavbar /></div>}
     >
       <div className="bg-black min-h-screen text-white overflow-x-hidden">
 
