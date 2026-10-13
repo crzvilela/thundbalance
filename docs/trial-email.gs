@@ -17,6 +17,11 @@ function doPost(e) {
       console.error('Clave incorrecta: no coincide con SECRET');
       return reply({ ok: false, error: 'unauthorized' });
     }
+    if (data.ping) {
+      // Health check from the admin panel: nothing is sent, it only proves the
+      // script is reachable, the secret matches and how many emails are left today.
+      return reply({ ok: true, ping: true, quota: MailApp.getRemainingDailyQuota() });
+    }
     if (data.subject && (data.html || data.text)) {
       return sendMessage(data);
     }

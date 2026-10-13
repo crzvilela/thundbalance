@@ -18,6 +18,7 @@ from fastapi import HTTPException
 from availability import has_conflict, slot_problem, weekday_name, within_hours
 from emails import clean_recipients, send_pack_summary_email, team_emails
 from emails.dates import parse_madrid
+import calendar_feed
 import calendar_sync
 from google_calendar import create_calendar_event, delete_calendar_event, describe_error
 
@@ -276,6 +277,8 @@ def email_pack(created, *, client_name, client_email, days, sessions_per_week, t
         "trainer": trainer_name,
         "sessions": created["sessions"],
     }
+    if to_client:
+        summary["calendar_links"] = calendar_feed.links_for_email(client_email)
     result = send_pack_summary_email(summary, to_client=to_client, extra_recipients=extra)
     return {"sent_to": result.sent_to, "failed": result.failed, "problem": result.problem}
 

@@ -2,13 +2,15 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, R
 
 import os
 import re
+import time as _time
 import json
 import traceback
 import uuid
 from datetime import datetime, timedelta
 from typing import Any
 from pydantic import BaseModel
-from database import get_connection
+from database import get_connection, run_read
+import schedule_cache
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -35,6 +37,7 @@ from emails import team_emails
 from emails import log as email_log
 from emails.texts import normalize_language
 import calendar_sync
+import calendar_feed
 import google_calendar
 import tax_id
 from trial_confirmation import ensure_confirmation_fields, register_trial_confirmation_routes
@@ -135,6 +138,14 @@ def require_client(authorization: str | None = Header(default=None)):
 
 
 register_admin_routes(app, require_admin)
+
+
+@app.on_event("startup")
+def _log_email_status():
+    # One line in the log: "Email: OK" or "Email: NÃO configurado (motivo)".
+    from emails.health import log_startup_status
+    log_startup_status()
+
 register_contact_routes(app, require_admin)
 register_trial_confirmation_routes(app)
 register_client_account_routes(app, require_admin, require_client)
@@ -187,6 +198,9 @@ def assert_session_owner(claims, session_id):
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
     assert_owner(claims, row[0])
+
+
+calendar_feed.register_calendar_feed_routes(app, require_admin, require_client, _own_user_id)
 
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
@@ -323,6 +337,15 @@ def ensure_calendar_sync_columns():
     target = google_calendar.describe_target()
     origin = "variable GOOGLE_CALENDAR_ID" if target["source"] == "env" else "constante por defecto (GOOGLE_CALENDAR_ID NO está definida)"
     print(f"Google Calendar: {target['calendar']} (origen: {origin})", flush=True)
+
+
+@app.on_event("startup")
+def ensure_calendar_feed_columns():
+    # users.calendar_feed_token + sessions.feed_sequence (calendar_feed.py)
+    try:
+        calendar_feed.ensure_columns()
+    except Exception as error:  # noqa: BLE001
+        print(f"calendar_feed columns could not be created: {type(error).__name__}")
 
 
 @app.on_event("startup")
@@ -862,7 +885,7 @@ def cancel_session(session_id: int, claims=Depends(require_client)):
         cursor.execute(
             """
             UPDATE sessions
-            SET status = 'Cancelled'
+            SET status = 'Cancelled', feed_sequence = feed_sequence + 1
             WHERE id = %s
             """,
             (session_id,)
@@ -1056,7 +1079,8 @@ def update_session(
             SET
                 session_date = %s,
                 session_time = %s,
-                rescheduled = TRUE
+                rescheduled = TRUE,
+                feed_sequence = feed_sequence + 1
             WHERE id = %s
             """,
             (
@@ -1376,21 +1400,49 @@ def available_trainers(day: str, time: str):
         conn.close()
 
 
+# A query that runs longer than this fails with a clear error instead of leaving
+# the visitor waiting (the times come from our own database; no Google call).
+SCHEDULE_QUERY_TIMEOUT_MS = 8000
+
+
+@app.api_route("/health", methods=["GET", "HEAD"])
+def health():
+    """Answers at once: no database, no Google. Used to wake the service up
+    (the site pings it when a page opens) and by an uptime monitor."""
+    return {"status": "ok"}
+
+
+@app.middleware("http")
+async def _drop_schedule_cache_after_writes(request, call_next):
+    """Any successful write (a booking, an approval, a cancellation, new hours)
+    may change the free times: the short-lived cache starts again from empty."""
+    response = await call_next(request)
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and response.status_code < 400:
+        schedule_cache.invalidate()
+    return response
+
+
+def _schedule_unavailable(error):
+    print(f"timing schedule failed: {type(error).__name__}", flush=True)
+    raise HTTPException(
+        status_code=503,
+        detail="The available times could not be loaded right now. Please try again in a moment.",
+    )
+
+
 @app.get("/schedule")
 def get_schedule():
     """Start times offered on each weekday (at least one trainer works)."""
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
+    started = _time.perf_counter()
     try:
-
-        return weekly_start_times(cursor)
-
-    finally:
-
-        cursor.close()
-        conn.close()
+        value, cached = schedule_cache.get_or_set(
+            ("week",),
+            lambda: run_read(lambda cursor: weekly_start_times(cursor, SCHEDULE_QUERY_TIMEOUT_MS), "schedule/week"),
+        )
+    except Exception as error:  # noqa: BLE001 - reported as a clear 503
+        _schedule_unavailable(error)
+    print(f"timing schedule/week cache={'hit' if cached else 'miss'} total={(_time.perf_counter() - started) * 1000:.0f}ms", flush=True)
+    return value
 
 
 @app.get("/schedule/{session_date}")
@@ -1402,17 +1454,17 @@ def get_schedule_for_date(session_date: str):
     except ValueError:
         raise HTTPException(status_code=422, detail="Use a date as YYYY-MM-DD")
 
-    conn = get_connection()
-    cursor = conn.cursor()
-
+    started = _time.perf_counter()
     try:
-
-        return free_start_times_any_trainer(cursor, day)
-
-    finally:
-
-        cursor.close()
-        conn.close()
+        value, cached = schedule_cache.get_or_set(
+            ("day", day.isoformat()),
+            lambda: run_read(
+                lambda cursor: free_start_times_any_trainer(cursor, day, SCHEDULE_QUERY_TIMEOUT_MS), "schedule/day"),
+        )
+    except Exception as error:  # noqa: BLE001 - reported as a clear 503
+        _schedule_unavailable(error)
+    print(f"timing schedule/day cache={'hit' if cached else 'miss'} total={(_time.perf_counter() - started) * 1000:.0f}ms", flush=True)
+    return value
 
 
 TRIAL_GOALS = [

@@ -41,15 +41,26 @@ def _utc(moment):
     return madrid_to_utc(moment).strftime("%Y%m%dT%H%M%SZ")
 
 
-def build_ics(events, stamp=None):
+def build_ics(events, stamp=None, method="PUBLISH", calname=None, refresh_hours=None):
     """iCalendar text for a list of events.
 
     Each event is a dict: id (used for the stable UID "{id}@thundbalance.com"),
     start (naive = Madrid time, or aware), optional end (default start + 1 h),
-    summary, optional description, location, url.
+    summary, optional description, location, url, sequence (default 0) and
+    status (CONFIRMED | CANCELLED, default CONFIRMED).
+
+    method: "PUBLISH" for an attachment; None for a subscribed feed (a feed
+    carries no METHOD). calname / refresh_hours add X-WR-CALNAME and the refresh
+    hints (REFRESH-INTERVAL / X-PUBLISHED-TTL) that subscribing clients read.
     """
     stamp = (stamp or datetime.now(timezone.utc)).astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", f"PRODID:{PRODID}", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"]
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", f"PRODID:{PRODID}", "CALSCALE:GREGORIAN"]
+    if method:
+        lines.append(f"METHOD:{method}")
+    if calname:
+        lines.append(f"X-WR-CALNAME:{_escape(calname)}")
+    if refresh_hours:
+        lines += [f"REFRESH-INTERVAL;VALUE=DURATION:PT{int(refresh_hours)}H", f"X-PUBLISHED-TTL:PT{int(refresh_hours)}H"]
     for event in events:
         start = event["start"]
         end = event.get("end") or (start + timedelta(hours=1))
@@ -67,6 +78,10 @@ def build_ics(events, stamp=None):
             lines.append(f"LOCATION:{_escape(event['location'])}")
         if event.get("url"):
             lines.append(f"URL:{event['url']}")
-        lines += ["STATUS:CONFIRMED", "SEQUENCE:0", "END:VEVENT"]
+        lines += [
+            f"STATUS:{event.get('status') or 'CONFIRMED'}",
+            f"SEQUENCE:{int(event.get('sequence') or 0)}",
+            "END:VEVENT",
+        ]
     lines.append("END:VCALENDAR")
     return "\r\n".join(_fold(line) for line in lines) + "\r\n"

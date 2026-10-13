@@ -18,6 +18,7 @@ export default function TrialSessions() {
   const toast = useToast()
   const { trials, trialsResource } = useOutletContext()
   const trainersResource = useAdminResource('/admin/trainer-availability')
+  const emailHealth = useAdminResource('/admin/email/health')
   const trainers = useMemo(() => (Array.isArray(trainersResource.data) ? trainersResource.data : []), [trainersResource.data])
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
 
@@ -120,6 +121,20 @@ export default function TrialSessions() {
     }
   }
 
+  const resendReceived = async (trial) => {
+    setWorking(`received-${trial.id}`)
+    try {
+      const result = await adminRequest('POST', `/admin/trial-sessions/${trial.id}/resend-received`)
+      if (result.email?.sent) toast.push(t('tr_received_resend_ok'))
+      else toast.push(`${t('tr_received_resend_failed')} (${emailProblem(result.email?.problem)}).`, 'warning')
+      trialsResource.reload()
+    } catch (error) {
+      toast.push(error.message, 'error')
+    } finally {
+      setWorking('')
+    }
+  }
+
   const createCalendarEvent = async (trial) => {
     setWorking(`calendar-${trial.id}`)
     try {
@@ -149,6 +164,12 @@ export default function TrialSessions() {
 
   return (
     <div className="admin-fade">
+      {emailHealth.data && emailHealth.data.email_ready === false && (
+        <div role="alert" className="mb-5 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+          <strong>{t('tr_health_bad')}</strong> ({emailProblem(emailHealth.data.reason)}). {t('tr_health_hint')}
+        </div>
+      )}
+
       <PageHeader
         title={t('tr_title')} subtitle={t('tr_sub')}
         actions={<Button variant="secondary" onClick={trialsResource.reload}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>}
@@ -206,6 +227,14 @@ export default function TrialSessions() {
                       {trial.age && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{trial.age}</span>}
                       {trial.trainer && <span className="rounded-md border border-sky-400/20 bg-sky-400/10 px-2 py-0.5 text-xs text-sky-200">{t('tr_trainer')}: {trial.trainer}</span>}
                     </div>
+                    <p className={`mt-3 text-sm ${trial.received_email?.status === 'failed' ? 'text-red-300' : 'text-gray-400'}`}>
+                      {t('tr_received_label')}:{' '}
+                      {trial.received_email
+                        ? trial.received_email.status === 'sent'
+                          ? <span className="text-emerald-300">{t('tr_email_sent')} ✓ ({stamp(trial.received_email.at)})</span>
+                          : <span>{t('tr_email_failed')} ✗ ({emailProblem(trial.received_email.error)}, {stamp(trial.received_email.at)})</span>
+                        : <span>{t('tr_email_none')}</span>}
+                    </p>
                     {(trial.status === 'approved' || trial.approval_email) && (
                       <p className={`mt-3 text-sm ${trial.approval_email?.status === 'failed' ? 'text-red-300' : 'text-gray-400'}`}>
                         {t('tr_email_label')}:{' '}
@@ -226,7 +255,12 @@ export default function TrialSessions() {
                     )}
                     {trial.reason && <p className="mt-2 text-sm text-red-300/90">{t('req_reason')}: {trial.reason}</p>}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    {['pending', 'approved', 'confirmed'].includes(trial.status) && (
+                      <Button variant="secondary" onClick={() => resendReceived(trial)} loading={working === `received-${trial.id}`}>
+                        {working === `received-${trial.id}` ? t('tr_resending') : t('tr_received_resend')}
+                      </Button>
+                    )}
                     {trial.status === 'pending' && <>
                       <Button variant="primary" onClick={() => { setTrainerId(''); setFormError(''); setApproving(trial) }}><Icon name="check" className="h-4 w-4" />{t('req_approve')}</Button>
                       <Button variant="danger" onClick={() => { setReason(''); setFormError(''); setDeclining(trial) }}>{t('req_reject')}</Button>

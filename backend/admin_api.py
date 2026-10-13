@@ -30,8 +30,9 @@ import google_calendar
 import pack_view
 import tax_id
 from emails import log as email_log
+from emails import health as email_health
 from emails.dates import to_madrid
-from trial_confirmation import approve_trial, panel_status, resend_approval, sync_calendar_event
+from trial_confirmation import approve_trial, panel_status, resend_approval, resend_received, sync_calendar_event
 
 
 class PlanPayload(BaseModel):
@@ -70,6 +71,10 @@ class BillingPayload(BaseModel):
 
 class TrialApprovePayload(BaseModel):
     trainer_id: int
+
+
+class EmailTestPayload(BaseModel):
+    to: str = Field(max_length=254)
 
 
 class TrialRejectPayload(BaseModel):
@@ -169,7 +174,7 @@ def register_admin_routes(app, require_admin):
             cursor.execute(
                 """
                 SELECT id, nome, email, telefone, codigo_pais, cidade, morada, cep, foto, must_change_password,
-                       tax_id_type, tax_id, country
+                       tax_id_type, tax_id, country, calendar_feed_token IS NOT NULL
                 FROM users WHERE id = %s
                 """,
                 (client_id,),
@@ -226,6 +231,9 @@ def register_admin_routes(app, require_admin):
                 "country_code": user[4], "city": user[5], "address": user[6],
                 "postal_code": user[7], "photo": user[8],
                 "must_change_password": bool(user[9]),
+                # whether the client's subscribable calendar link exists (the link
+                # itself is only given by /admin/clients/{id}/calendar-feed)
+                "calendar_feed_generated": bool(user[13]),
                 # invoicing data (the full document: only on the record, only for the admin)
                 "tax_id_type": user[10], "tax_id": user[11], "country": user[12],
                 "billing_missing": not (user[11] and str(user[6] or "").strip()),
@@ -337,7 +345,8 @@ def register_admin_routes(app, require_admin):
                 return {"message": "Session already cancelled"}
 
             cursor.execute(
-                "UPDATE sessions SET status = 'Cancelled' WHERE id = %s", (session_id,)
+                "UPDATE sessions SET status = 'Cancelled', feed_sequence = feed_sequence + 1 WHERE id = %s",
+                (session_id,),
             )
             # The session is cancelled whatever Google answers; the outcome is recorded.
             if event_id:
@@ -469,6 +478,7 @@ def register_admin_routes(app, require_admin):
             )
             rows = cursor.fetchall()
             approval_emails = email_log.latest("trial_approved", [r[0] for r in rows])
+            received_emails = email_log.latest("trial_received", [r[0] for r in rows])
 
             def madrid_stamp(moment):
                 return to_madrid(moment.replace(tzinfo=timezone.utc)).strftime("%Y-%m-%dT%H:%M") if moment else None
@@ -477,6 +487,7 @@ def register_admin_routes(app, require_admin):
             for r in rows:
                 status = panel_status(r[9], r[15])
                 sent = approval_emails.get(str(r[0]))
+                received = received_emails.get(str(r[0]))
                 result.append({
                     "id": r[0], "name": r[1], "email": r[2], "phone": r[3],
                     # Age follows the birth date so it stays current after the request.
@@ -501,6 +512,13 @@ def register_admin_routes(app, require_admin):
                         "error": sent["error"],
                         "at": madrid_stamp(sent["at"]),
                     } if sent else None),
+                    # Newest "request received" email to the client (None: none was ever logged,
+                    # for example a booking made before email_log existed)
+                    "received_email": ({
+                        "status": "sent" if received["status"] == email_log.SENT else "failed",
+                        "error": received["error"],
+                        "at": madrid_stamp(received["at"]),
+                    } if received else None),
                 })
             return result
         finally:
@@ -523,6 +541,28 @@ def register_admin_routes(app, require_admin):
                 detail=f"Could not approve the trial session: {type(error).__name__}: {str(error)[:200]}",
             ) from error
         return {"message": "Trial session approved", **result}
+
+    @app.post("/admin/trial-sessions/{trial_id}/resend-received", dependencies=admin)
+    def admin_resend_trial_received(trial_id: int):
+        """Sends the "request received" email to the client again. One per minute."""
+        return resend_received(trial_id)
+
+    @app.get("/admin/email/health", dependencies=admin)
+    def admin_email_health():
+        """Can the server send email right now? Asks the Google script to answer
+        a ping (nothing is sent) and reports {"email_ready", "reason", "quota"}.
+        No secret or address is ever included."""
+        status = email_health.check_ready()
+        return {**status, "detail": email_health.describe(status["reason"])}
+
+    @app.post("/admin/email/test", dependencies=admin)
+    def admin_email_test(data: EmailTestPayload):
+        """Sends a short test email to the given address."""
+        try:
+            result = email_health.send_test(data.to)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Please enter a valid email address.")
+        return {"sent": result.ok, "problem": result.error}
 
     @app.post("/admin/trial-sessions/{trial_id}/resend-approval", dependencies=admin)
     def admin_resend_trial_approval(trial_id: int):

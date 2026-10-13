@@ -16,11 +16,13 @@ import psycopg2.errors
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel
 
+import calendar_feed
 import firebase_accounts as accounts
 import tax_id
 from database import get_connection
 from emails import send_email_async
 from emails.dates import parse_madrid
+from emails.pack_emails import ICS_CONTENT_TYPE, ICS_FILENAME
 from emails.transport import validate_address
 from emails.welcome_emails import build_staff_client_created, build_welcome_email
 from packs import create_pack, delete_created_events, validate_pack_request
@@ -147,8 +149,10 @@ def send_welcome(name, email, password, pack_summary):
     client's email so the panel can tell the admin what happened. Returns
     {"sent": bool, "problem": str}. Never raises, never logs the password."""
     try:
+        if pack_summary:
+            pack_summary["calendar_links"] = calendar_feed.links_for_email(email)
         subject, html, text, ics = build_welcome_email(name, email, password, pack_summary)
-        attachments = [{"filename": "thundbalance-sesiones.ics", "content_type": "text/calendar", "data": ics.encode("utf-8")}] if ics else None
+        attachments = [{"filename": ICS_FILENAME, "content_type": ICS_CONTENT_TYPE, "data": ics.encode("utf-8")}] if ics else None
         future = send_email_async(email, subject, html, text, attachments=attachments)
 
         team_subject, team_html, team_text = build_staff_client_created(name, email, pack_summary)

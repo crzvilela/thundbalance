@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { API_URL } from '../config'
+import { cachedDay, loadDay, loadWeek, pingServer, prefetchSchedule } from '../api/schedule'
 import { useI18n } from '../i18n/I18nContext'
 
 // The English text is what the server stores; the visitor sees the translation.
@@ -63,35 +64,73 @@ function TrialSession() {
   const [existing, setExisting] = useState(null) // an open request of this email: { status, session_date, session_time }
   const [schedule, setSchedule] = useState(null) // times offered per weekday
   const [times, setTimes] = useState([]) // free start times on the chosen date
-  const [loadingTimes, setLoadingTimes] = useState(false)
+  const [timesState, setTimesState] = useState('idle') // idle | loading | ready | error
+  const [slowTimes, setSlowTimes] = useState(false)
+  const requestId = useRef(0)
+  const loadingTimes = timesState === 'loading'
 
+  // As soon as the page opens: wake the server up (it sleeps when idle), read
+  // the weekdays and fetch the times of the first bookable days, so the times
+  // are usually there before the visitor reaches the field.
   useEffect(() => {
-    fetch(`${API_URL}/schedule`)
-      .then(response => (response.ok ? response.json() : null))
-      .then(data => setSchedule(data))
-      .catch(() => setSchedule(null))
+    let cancelled = false
+    pingServer()
+    loadWeek()
+      .then(data => {
+        if (!cancelled) setSchedule(data)
+        return prefetchSchedule(date => (data[WEEKDAYS[(date.getDay() + 6) % 7]] || []).length > 0)
+      })
+      .catch(() => { if (!cancelled) setSchedule(null) })
+    return () => { cancelled = true }
   }, [])
+
+  // After 8 seconds of waiting, say that it can take a little longer.
+  useEffect(() => {
+    if (timesState !== 'loading') return undefined
+    const timer = setTimeout(() => setSlowTimes(true), 8000)
+    return () => { clearTimeout(timer); setSlowTimes(false) }
+  }, [timesState])
 
   // Only days on which at least one trainer works can be picked.
   const isBookableDay = (date) => !schedule || (schedule[WEEKDAYS[(date.getDay() + 6) % 7]] || []).length > 0
 
   // The times depend on the date: they are the hours when a trainer is free.
-  const chooseDate = async (selected) => {
+  const applyTimes = (list) => {
+    setTimes(list)
+    setTimesState('ready')
+    setForm(current => ({ ...current, time: list.includes('09:00') ? '09:00' : (list[0] || '') }))
+  }
+
+  const fetchTimesFor = async (selected, force = false) => {
+    const key = dayKey(selected)
+    const id = ++requestId.current
+    const known = force ? null : cachedDay(key)
+    if (known) {
+      applyTimes(known)
+      return
+    }
+    // The previous times stay on screen (dimmed) while the new ones arrive.
+    setTimesState('loading')
+    try {
+      const list = await loadDay(key, { force })
+      if (id === requestId.current) applyTimes(list)
+    } catch {
+      if (id !== requestId.current) return
+      setTimes([])
+      setTimesState('error')
+    }
+  }
+
+  const chooseDate = (selected) => {
     setForm(current => ({ ...current, date: selected, time: '' }))
     setErrors(current => ({ ...current, date: undefined, time: undefined }))
-    setTimes([])
-    if (!selected) return
-    setLoadingTimes(true)
-    try {
-      const response = await fetch(`${API_URL}/schedule/${dayKey(selected)}`)
-      const list = response.ok ? await response.json() : []
-      setTimes(list)
-      setForm(current => ({ ...current, time: list.includes('09:00') ? '09:00' : (list[0] || '') }))
-    } catch {
+    if (!selected) {
+      requestId.current += 1
       setTimes([])
-    } finally {
-      setLoadingTimes(false)
+      setTimesState('idle')
+      return
     }
+    fetchTimesFor(selected)
   }
 
   const set = (key) => (event) => {
@@ -270,13 +309,29 @@ function TrialSession() {
                 />
               </Field>
               <Field label={t('ts_time')} error={errors.time}>
-                <select value={form.time} onChange={set('time')} disabled={!form.date || loadingTimes || times.length === 0}
-                  className={`${control} ${border('time')}`}>
+                <select value={form.time} onChange={set('time')} aria-busy={loadingTimes}
+                  disabled={!form.date || timesState !== 'ready' || times.length === 0}
+                  className={`${control} ${border('time')} ${loadingTimes && times.length ? 'opacity-50' : ''}`}>
                   {!form.date && <option value="">{t('ts_choose_date_first')}</option>}
-                  {form.date && loadingTimes && <option value="">{t('ts_loading')}</option>}
-                  {form.date && !loadingTimes && times.length === 0 && <option value="">{t('ts_no_free')}</option>}
+                  {form.date && loadingTimes && times.length === 0 && <option value="">{t('ts_loading_times')}</option>}
+                  {form.date && timesState === 'error' && <option value="">{t('ts_times_error')}</option>}
+                  {form.date && timesState === 'ready' && times.length === 0 && <option value="">{t('ts_no_free')}</option>}
                   {times.map(time => <option key={time}>{time}</option>)}
                 </select>
+                {loadingTimes && form.date && (
+                  <span role="status" className="mt-2 flex items-center gap-2 text-sm text-gray-400">
+                    <span aria-hidden="true" className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white/20 border-t-emerald-400" />
+                    <span>{t('ts_loading_times')}{slowTimes && <> · {t('ts_loading_slow')}</>}</span>
+                  </span>
+                )}
+                {timesState === 'error' && form.date && (
+                  <span role="alert" className="mt-2 flex flex-wrap items-center gap-3 text-sm text-red-300">
+                    <span>{t('ts_times_error')}</span>
+                    <button type="button" onClick={() => fetchTimesFor(form.date, true)} className="min-h-[44px] rounded-lg border border-white/20 px-4 text-white transition hover:bg-white/10">
+                      {t('ts_retry')}
+                    </button>
+                  </span>
+                )}
               </Field>
             </div>
 
@@ -286,7 +341,7 @@ function TrialSession() {
 
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || !form.date || !form.time}
               className="mt-8 inline-flex w-full items-center justify-center gap-3 rounded-xl bg-white px-8 py-4 text-sm font-semibold uppercase tracking-[3px] text-black transition hover:bg-gray-200 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 md:w-auto"
             >
               {submitting && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />}

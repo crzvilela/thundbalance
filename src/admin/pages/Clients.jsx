@@ -47,6 +47,7 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
   const [renewing, setRenewing] = useState(false)
   const [resending, setResending] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [copyingLink, setCopyingLink] = useState(false)
 
   const client = detail.data
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
@@ -78,6 +79,21 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
       toast.push(error.message, 'error')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const copyCalendarLink = async () => {
+    setCopyingLink(true)
+    try {
+      // creates the link on first use; the panel shows "generated" afterwards
+      const links = await adminRequest('GET', `/admin/clients/${clientId}/calendar-feed`)
+      await navigator.clipboard.writeText(links.https)
+      toast.push(t('cal_copied'))
+      detail.reload()
+    } catch (error) {
+      toast.push(error.message, 'error')
+    } finally {
+      setCopyingLink(false)
     }
   }
 
@@ -157,6 +173,12 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
                 <Button variant="secondary" onClick={resend} loading={resending}>{resending ? t('cc_resending') : t('cc_resend')}</Button>
               </section>
             )}
+
+            <section>
+              <h3 className="mb-2 text-sm font-medium uppercase tracking-wider text-gray-400">{t('cal_title')}</h3>
+              <p className="mb-3 text-sm text-gray-300">{client.calendar_feed_generated ? t('cal_generated') : t('cal_not_generated')}</p>
+              <Button variant="secondary" onClick={copyCalendarLink} loading={copyingLink}>{t('cal_copy')}</Button>
+            </section>
 
             <section>
               <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">{t('cl_contact')}</h3>

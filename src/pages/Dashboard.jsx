@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import ClientNotices from '../components/ClientNotices'
 import TempPasswordNotice from '../components/TempPasswordNotice'
+import CalendarSubscribe from '../components/CalendarSubscribe'
 import { auth } from '../firebase/auth'
 import { API_URL } from '../config'
 import { useI18n } from '../i18n/I18nContext'
@@ -97,6 +98,7 @@ function Dashboard() {
           {upcoming.length ? <div className="divide-y divide-white/10">{upcoming.map(session => <div key={session.id} className="py-4 flex flex-wrap justify-between gap-2"><span>{new Date(`${session.date}T00:00:00`).toLocaleDateString(locale)}</span><span className="text-gray-400">{session.time}</span><span className="text-gray-400">{session.trainer || workflow.plan?.trainer || t('dash_trainer_word')}</span><span className="text-green-400">{session.status === 'Booked' ? t('dash_booked') : session.status}</span></div>)}</div> : <p className="text-gray-400">{t('dash_preparing')}</p>}
           <button onClick={() => navigate('/my-sessions')} className="mt-6 border border-white/20 px-5 py-3 rounded-lg">{t('dash_view_all')}</button>
         </section>
+        <CalendarSubscribe className="mt-8" />
       </>}
     </main>
   </div>

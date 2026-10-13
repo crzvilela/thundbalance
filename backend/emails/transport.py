@@ -17,6 +17,8 @@ import json
 import logging
 import os
 import re
+import socket
+import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -30,6 +32,14 @@ SENDER_NAME = "ThundBalance"
 DEFAULT_REPLY_TO = "info@thundbalance.com"
 MAX_SUBJECT = 200
 MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
+
+# One automatic retry (so at most 2 attempts) for a failure that happened BEFORE
+# the message was handed to Gmail, such as the script being unreachable or
+# answering ok:false. A read timeout is not retried: the script may already have
+# sent it, and a second send would be a duplicate.
+RETRY_DELAY_SECONDS = 4.0
+MAX_ATTEMPTS = 2
+RETRYABLE = {"unreachable", "rejected", "http_429", "http_500", "http_502", "http_503", "http_504"}
 
 _ADDRESS = re.compile(r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$")
 _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="email")
@@ -132,13 +142,22 @@ def _deliver(to, subject, html, text, reply_to=None, attachments=None, cc=None, 
         logger.error("Email service answered HTTP %s", error.code)
         return EmailResult(False, f"http_{error.code}")
     except Exception as error:  # noqa: BLE001 - an email problem must never propagate
+        cause = getattr(error, "reason", error)
+        if isinstance(cause, (TimeoutError, socket.timeout)):
+            logger.error("Email service did not answer in time")
+            return EmailResult(False, "timeout")
         logger.error("Email service unreachable (%s)", type(error).__name__)
         return EmailResult(False, "unreachable")
 
     try:
         answer = json.loads(body)
     except ValueError:
-        answer = {}
+        # An HTML page instead of JSON: the script is not deployed for "anyone",
+        # or Google asks for authorization again.
+        logger.error("Email service answered something that is not JSON")
+        return EmailResult(False, "invalid_response")
+    if not isinstance(answer, dict):
+        return EmailResult(False, "invalid_response")
     if answer.get("ok") is True:
         # one line per email: type, language, truncated recipient (no content, no secrets)
         line = f"Email sent: kind={kind or '-'} lang={lang or '-'} to={mask(payload['to'].split(',')[0])}"
@@ -147,7 +166,7 @@ def _deliver(to, subject, html, text, reply_to=None, attachments=None, cc=None, 
         return EmailResult(True)
     reason = str(answer.get("error") or "rejected")[:40]
     logger.error("Email service refused the message: %s", re.sub(r"[^\w .:-]", "", reason))
-    return EmailResult(False, "rejected")
+    return EmailResult(False, "unauthorized" if reason == "unauthorized" else "rejected")
 
 
 def send_email(to, subject, html, text, reply_to=None, attachments=None, cc=None, extra=None,
@@ -163,6 +182,12 @@ def send_email(to, subject, html, text, reply_to=None, attachments=None, cc=None
     trial-notice format working until the script is updated).
     """
     result = _deliver(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang)
+    attempts = 1
+    while not result.ok and result.error in RETRYABLE and attempts < MAX_ATTEMPTS:
+        logger.warning("Email attempt %s failed (%s); retrying once", attempts, result.error)
+        time.sleep(RETRY_DELAY_SECONDS)
+        attempts += 1
+        result = _deliver(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang)
     if kind:
         recipient = to if isinstance(to, str) else ",".join(str(item) for item in (to or []))
         email_log.record(kind, reference, recipient, result.ok, result.error)

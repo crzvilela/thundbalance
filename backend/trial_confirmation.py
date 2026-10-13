@@ -372,7 +372,7 @@ def resend_approval(trial_id):
     try:
         cursor.execute(
             """
-            SELECT full_name, email, session_date, session_time, lang, status, confirmation_token, t.nome
+            SELECT ts.full_name, ts.email, ts.session_date, ts.session_time, ts.lang, ts.status, ts.confirmation_token, t.nome
             FROM trial_sessions ts LEFT JOIN trainers t ON t.id = ts.trainer_id
             WHERE ts.id = %s
             """,
@@ -402,6 +402,41 @@ def resend_approval(trial_id):
 
     future = mailer.send_trial_approved(
         email, _first_name(full_name), str(day)[:10], str(time)[:5], trainer, token, lang, reference=trial_id,
+    )
+    sent, problem = _email_result(future)
+    return {"email": {"sent": sent, "problem": problem}}
+
+
+def resend_received(trial_id):
+    """Sends the "request received" email to the client again, in the language
+    saved with the booking. Allowed while the session is still alive (pending,
+    approved or confirmed); at most once a minute per session."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT full_name, email, session_date, session_time, lang, status FROM trial_sessions WHERE id = %s",
+            (trial_id,),
+        )
+        row = cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Trial session not found")
+    full_name, email, day, time, lang, status = row
+    if str(status).lower() in ("rejected", "cancelled", "declined"):
+        raise HTTPException(status_code=409, detail=_bilingual(
+            "Esta solicitud ya no está activa: no se reenvía el email.",
+            "This request is no longer active: the email is not sent again."))
+    elapsed = email_log.seconds_since_last("trial_received", trial_id)
+    if elapsed is not None and elapsed < RESEND_INTERVAL_SECONDS:
+        wait = int(RESEND_INTERVAL_SECONDS - elapsed) + 1
+        raise HTTPException(status_code=429, detail=_bilingual(
+            f"Espera {wait} s antes de volver a reenviar el email.",
+            f"Wait {wait} s before resending the email."))
+    future = mailer.send_trial_received(
+        email, _first_name(full_name), str(day)[:10], str(time)[:5], lang, reference=trial_id,
     )
     sent, problem = _email_result(future)
     return {"email": {"sent": sent, "problem": problem}}
