@@ -16,10 +16,12 @@ SERVICE_ACCOUNT_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "credentials.json"
 )
 
-CALENDAR_ID = os.getenv(
-    "GOOGLE_CALENDAR_ID",
-    "5b958f681e0f3a7ab9316d1955367098481d33c5682578df1fca743a260d0490@group.calendar.google.com"
-)
+DEFAULT_CALENDAR_ID = "5b958f681e0f3a7ab9316d1955367098481d33c5682578df1fca743a260d0490@group.calendar.google.com"
+
+# GOOGLE_CALENDAR_ID as pasted into the host: spaces, line breaks or quotes around
+# it are ignored, and an empty value falls back to the default instead of
+# breaking every calendar call.
+CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "").strip().strip("'\"").strip() or DEFAULT_CALENDAR_ID
 
 
 def describe_target():
@@ -30,7 +32,7 @@ def describe_target():
     calendars."""
     local, _, domain = CALENDAR_ID.partition("@")
     masked = f"…{local[-6:]}@{domain}" if domain else f"…{CALENDAR_ID[-8:]}"
-    return {"calendar": masked, "source": "env" if os.getenv("GOOGLE_CALENDAR_ID", "").strip() else "default"}
+    return {"calendar": masked, "source": "env" if CALENDAR_ID != DEFAULT_CALENDAR_ID or os.getenv("GOOGLE_CALENDAR_ID", "").strip() else "default"}
 
 
 def http_status(error):
