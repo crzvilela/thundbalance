@@ -87,7 +87,8 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
     try {
       // creates the link on first use; the panel shows "generated" afterwards
       const links = await adminRequest('GET', `/admin/clients/${clientId}/calendar-feed`)
-      await navigator.clipboard.writeText(links.https)
+      // the same link as the email button: opens Google Calendar ready to subscribe
+      await navigator.clipboard.writeText(links.google)
       toast.push(t('cal_copied'))
       detail.reload()
     } catch (error) {
