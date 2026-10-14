@@ -23,6 +23,7 @@ from database import get_connection
 from emails import send_email_async
 from emails.contact_emails import staff_contact_message
 from trial_notifications import studio_address
+import validators
 
 PER_IP_LIMIT = 5          # messages per hour from one IP address
 PER_EMAIL_LIMIT = 3       # messages per hour with the same sender e-mail
@@ -107,13 +108,12 @@ def register_contact_routes(app, require_admin):
         if (data.website or "").strip():
             return {"ok": True}
 
-        name = _clean(data.name, 120)
-        email = _clean(data.email, 254).lower()
         message = _clean(data.message, 3000, multiline=True)
-        if len(name) < 2:
-            raise HTTPException(status_code=422, detail="Please enter your name.")
-        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-            raise HTTPException(status_code=422, detail="Please enter a valid email address.")
+        try:
+            name = validators.validate_name(data.name, "name")
+            email = validators.validate_email(data.email)
+        except validators.FieldError as error:
+            raise validators.http_error(error) from None
         if len(message) < 5:
             raise HTTPException(status_code=422, detail="Please write a message.")
         if not _allow_ip(_client_ip(request)):

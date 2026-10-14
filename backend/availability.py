@@ -160,22 +160,41 @@ def free_start_times(cursor, trainer_id, day, ignore_session_id=None):
     return sorted(times - taken)
 
 
-def free_start_times_any_trainer(cursor, day):
-    """Start times on `day` when at least one active trainer is free
-    (a fixed number of queries, however many trainers there are)."""
+def _time_limit(timeout_ms):
+    return f"SET LOCAL statement_timeout = {int(timeout_ms)}; " if timeout_ms else ""
+
+
+def free_start_times_any_trainer(cursor, day, timeout_ms=None):
+    """Start times on `day` when at least one active trainer is free.
+
+    One database round trip, however many trainers there are: the working
+    windows and the taken hours (booked sessions and approved or confirmed
+    trials) come back in a single result. `timeout_ms` limits the query's run
+    time (the request fails with an error instead of hanging).
+    """
     weekday = weekday_name(day)
+    key = str(day)[:10]
     cursor.execute(
-        """
-        SELECT ta.trainer_id, ta.start_time, ta.end_time
+        _time_limit(timeout_ms) + """
+        SELECT 'w', ta.trainer_id, ta.start_time::text, ta.end_time::text
         FROM trainer_availability ta JOIN trainers t ON t.id = ta.trainer_id
         WHERE t.active AND ta.day_of_week = %s
+        UNION ALL
+        SELECT 'b', trainer_id, session_time::text, NULL
+        FROM sessions WHERE session_date = %s AND status = 'Booked'
+        UNION ALL
+        SELECT 'b', trainer_id, session_time::text, NULL
+        FROM trial_sessions WHERE session_date = %s AND LOWER(status) IN ('approved', 'confirmed')
         """,
-        (weekday,),
+        (weekday, key, key),
     )
     windows = {}
-    for trainer_id, start, end in cursor.fetchall():
-        windows.setdefault(trainer_id, []).append((to_minutes(start), to_minutes(end)))
-    busy = _busy_times(cursor, day)
+    busy = {}
+    for kind, trainer_id, first, second in cursor.fetchall():
+        if kind == "w":
+            windows.setdefault(trainer_id, []).append((to_minutes(first), to_minutes(second)))
+        elif trainer_id is not None and first is not None:
+            busy.setdefault(trainer_id, set()).add(hhmm(first))
     free = set()
     for trainer_id, trainer_windows in windows.items():
         free |= _start_times(trainer_windows) - busy.get(trainer_id, set())
@@ -191,10 +210,10 @@ def trainers_for_slot(cursor, day, time):
     ]
 
 
-def weekly_start_times(cursor):
+def weekly_start_times(cursor, timeout_ms=None):
     """{weekday: [start times with at least one active trainer working]}"""
     cursor.execute(
-        """
+        _time_limit(timeout_ms) + """
         SELECT ta.day_of_week, ta.start_time, ta.end_time
         FROM trainer_availability ta JOIN trainers t ON t.id = ta.trainer_id
         WHERE t.active

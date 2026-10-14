@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase/auth'
 import { Icon } from './ui'
+import AdminErrorBoundary from './AdminErrorBoundary'
 import { ToastContext } from './toastContext'
 import { useAdminText } from './useAdminText'
 import { useAdminResource } from './useAdminResource'
@@ -153,7 +154,7 @@ export default function AdminLayout() {
 
         <main className="px-4 py-8 sm:px-8 lg:ml-64 lg:px-10 lg:py-10">
           <div className="mx-auto max-w-6xl">
-            <Outlet context={{ requests, requestsResource, trials, trialsResource, messages, messagesResource }} />
+            <AdminErrorBoundary><Outlet context={{ requests, requestsResource, trials, trialsResource, messages, messagesResource }} /></AdminErrorBoundary>
           </div>
         </main>
       </div>

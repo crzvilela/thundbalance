@@ -3,10 +3,11 @@ import { useOutletContext } from 'react-router-dom'
 import { adminRequest } from '../api'
 import EmailRecipients from '../EmailRecipients'
 import { recipientsPayload, reportEmailResult, useEmailRecipients } from '../recipientsState'
+import { reportCalendarResult } from '../calendarSync'
 import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
-import { dateKey, normalizeRequests } from '../requests'
+import { normalizeRequests } from '../requests'
 import { firstMismatch, hoursSummary } from '../availability'
 import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon, PageHeader,
@@ -35,6 +36,7 @@ export default function Requests() {
   const [busy, setBusy] = useState(false)
   const [recipients, setRecipients, resetRecipients] = useEmailRecipients()
   const [formError, setFormError] = useState('')
+  const [conflicts, setConflicts] = useState([])
 
   const trainers = useMemo(() => (Array.isArray(trainersResource.data) ? trainersResource.data : []), [trainersResource.data])
 
@@ -98,6 +100,7 @@ export default function Requests() {
   const openApprove = (request) => {
     setForm({ trainer: '', date: '', plan: '', perWeek: String(request.perWeek || 1) })
     setFormError('')
+    setConflicts([])
     resetRecipients()
     setApproving(request)
   }
@@ -117,7 +120,7 @@ export default function Requests() {
     return weeks && form.perWeek ? weeks * Number(form.perWeek) : null
   }, [approving, form.plan, form.perWeek, plans])
 
-  const approve = async () => {
+  const approve = async (allowConflicts = false) => {
     if (!form.trainer || !form.date) { setFormError(t('need_trainer_date')); return }
     setBusy(true)
     setFormError('')
@@ -127,15 +130,19 @@ export default function Requests() {
         request_id: approving.id,
         trainer_id: Number(form.trainer),
         start_date: form.date,
+        allow_conflicts: allowConflicts,
         ...(form.plan ? { plan_id: Number(form.plan) } : {}),
         ...(form.perWeek ? { sessions_per_week: Number(form.perWeek) } : {})
       })
       setApproving(null)
+      setConflicts([])
       toast.push(t('approved_ok'))
       reportEmailResult(toast, t, result.email)
+      reportCalendarResult(toast, t, result.calendar)
       requestsResource.reload()
     } catch (error) {
-      setFormError(error.message || t('action_error'))
+      if (error.code === 'conflicts') setConflicts(error.conflicts || [])   // listed in the modal, with "Crear igualmente"
+      else setFormError(error.message || t('action_error'))
     } finally {
       setBusy(false)
     }
@@ -244,7 +251,7 @@ export default function Requests() {
         title={t('approve_title')} subtitle={approving ? `${approving.client} · ${approving.plan}` : ''}
         footer={<>
           <Button variant="secondary" className="flex-1" onClick={() => setApproving(null)} disabled={busy}>{t('cancel')}</Button>
-          <Button variant="primary" className="flex-[2]" onClick={approve} loading={busy}>{busy ? t('approving') : t('approve_confirm')}</Button>
+          <Button variant="primary" className="flex-[2]" onClick={() => approve()} loading={busy}>{busy ? t('approving') : t('approve_confirm')}</Button>
         </>}
       >
         <p className="mb-6 text-sm text-gray-400">{t('approve_sub')}</p>
@@ -260,7 +267,7 @@ export default function Requests() {
           </SelectInput>
         </Field>
         <Field label={t('start_date')}>
-          <TextInput type="date" min={dateKey(new Date())} value={form.date} onChange={event => setForm({ ...form, date: event.target.value })} disabled={busy} />
+          <TextInput type="date" value={form.date} onChange={event => { setConflicts([]); setForm({ ...form, date: event.target.value }) }} disabled={busy} />
         </Field>
         <Field label={t('package')}>
           <SelectInput value={form.plan} onChange={event => setForm({ ...form, plan: event.target.value })} disabled={busy}>
@@ -286,6 +293,20 @@ export default function Requests() {
         )}
         <EmailRecipients value={recipients} onChange={setRecipients} disabled={busy} />
         {busy && <p className="mt-4 text-sm text-amber-300">{t('approving_hint')}</p>}
+        {conflicts.length > 0 && (
+          <div role="alert" className="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-amber-100">
+            <p className="mb-2 text-sm">{t('cf_question')}</p>
+            <ul className="mb-3 space-y-1 text-sm">
+              {conflicts.slice(0, 12).map(conflict => (
+                <li key={`${conflict.date}-${conflict.kind}`}>{conflict.date} · {conflict.time} — {t(`cf_${conflict.kind}`)}</li>
+              ))}
+            </ul>
+            <div className="flex flex-wrap gap-3">
+              <Button variant="secondary" onClick={() => setConflicts([])} disabled={busy}>{t('cf_change')}</Button>
+              <Button variant="primary" onClick={() => approve(true)} loading={busy}>{t('cf_create_anyway')}</Button>
+            </div>
+          </div>
+        )}
         {formError && <p role="alert" className="mt-4 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{formError}</p>}
       </Drawer>
 

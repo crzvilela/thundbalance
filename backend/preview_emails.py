@@ -34,10 +34,6 @@ examples = {
         "sessions_per_week": 2, "days": ["Monday", "Wednesday"], "trainer": "Carles",
         "sessions": [{"id": n, "start": datetime(2026, 10, 12 + 2 * (n - 1) + (n - 1) // 2 * 3 - (n - 1) // 2 * 0, 9), "trainer": "Carles", "number": f"{n}/4"} for n in range(1, 5)],
     }),
-    "client-trial-received": client_trial_received("Ana", start),
-    "client-trial-approved": client_trial_approved("Ana", start, "Carles", "TOKEN-DE-EJEMPLO"),
-    "client-trial-confirmed": client_trial_confirmed("Ana", start, "Carles", 15)[:3],
-    "trial-cancelled": client_trial_cancelled("Ana", start),
     "staff-trial-confirmed": staff_trial_confirmed(SAMPLE_TRIAL),
     "staff-trial-confirmed-calendar-failed": staff_trial_confirmed(SAMPLE_TRIAL, calendar_ok=False),
     "staff-trial-declined": staff_trial_declined(SAMPLE_TRIAL),
@@ -47,6 +43,13 @@ examples = {
         "experience": "Beginner", "session_date": "2026-10-12", "session_time": "09:00",
     }),
 }
+# the client's trial emails, one file per language (each is written entirely in it)
+for lang in ("en", "es", "ca"):
+    examples[f"client-trial-received-{lang}"] = client_trial_received("Ana", start, lang)
+    examples[f"client-trial-approved-{lang}"] = client_trial_approved("Ana", start, "Carles", "TOKEN-DE-EJEMPLO", lang)
+    examples[f"client-trial-confirmed-{lang}"] = client_trial_confirmed("Ana", start, "Carles", 15, lang)[:3]
+    examples[f"client-trial-cancelled-{lang}"] = client_trial_cancelled("Ana", start, lang)
+
 for name, (subject, html, text) in examples.items():
     (out / f"{name}.html").write_text(html, encoding="utf-8")
     (out / f"{name}.txt").write_text(f"Subject: {subject}\n\n{text}", encoding="utf-8")

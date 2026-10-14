@@ -37,3 +37,25 @@ Al renovar un pack (y al aprobar una solicitud de entrenamiento) el panel envía
 - Local: `FIREBASE_CREDENTIALS_PATH` apuntando a un fichero **fuera del repositorio** (por ejemplo `C:\Segredos\firebase-service-account.json`).
 
 Sin esa variable el panel responde "La creación de cuentas no está configurada en el servidor". La columna `users.must_change_password` se crea sola al arrancar el servidor.
+
+### Diagnóstico de "La creación de cuentas no está configurada" (503)
+
+- Al arrancar, el servidor escribe una línea: `Firebase Admin: OK` o `Firebase Admin: NÃO inicializado (motivo: variável em falta | ficheiro não encontrado | JSON inválido | pacote em falta)`.
+- `GET /admin/firebase-status` (solo admin) devuelve `{"firebase_admin_ready": true|false, "reason": "..."}`.
+- El mensaje 503 del panel lleva el motivo entre corchetes.
+- Local (PowerShell, en la misma ventana donde arrancas uvicorn):
+  `$env:FIREBASE_CREDENTIALS_PATH = "C:\Segredos\firebase-service-account.json"; python -m uvicorn main:app --reload`
+- Render: Secret File `firebase-service-account.json` (queda en `/etc/secrets/firebase-service-account.json`) y variable `FIREBASE_CREDENTIALS_PATH=/etc/secrets/firebase-service-account.json`.
+
+## Registro de emails y evento provisional (sesiones de prueba)
+
+- Cada email que envía el servidor deja una fila en la tabla `email_log` (tipo, referencia, destinatario, estado `enviado` | `falhou`, error corto). Sin contenido ni secretos. En el panel, cada sesión de prueba muestra "Email de aprobación: enviado ✓ (fecha) / falló ✗ (motivo)" y, mientras espera al cliente, el botón "Reenviar email de aprobación" (mismo enlace; máximo 1 por minuto).
+- Al aprobar se crea ya el evento `[Pendiente] Trial Session · Nombre` en el calendario. Al confirmar el cliente es el mismo evento (`Trial Session · Nombre`); si declina, se borra. Si falla, la aprobación se mantiene y el panel ofrece "Crear evento en el calendario" (no duplica).
+- Para ver por qué no salió un email: buscar en los logs de Render las líneas `Email not sent:` / `Email service ...` o consultar `SELECT * FROM email_log ORDER BY id DESC LIMIT 20;`.
+
+## Datos de facturación de los clientes
+
+- Columnas nuevas en `users`: `tax_id_type`, `tax_id`, `country` (creadas solas al arrancar). La dirección de facturación son las columnas que ya existían (`morada`, `cidade`, `cep`).
+- Validación (`backend/tax_id.py`, igual en el frontend): DNI = 8 dígitos + letra (módulo 23); NIE = X/Y/Z + 7 dígitos + letra; Pasaporte/Otro = 4 a 20 letras o números. Se normaliza a mayúsculas sin espacios, puntos ni guiones.
+- Las listas devuelven solo el documento enmascarado (`••••678Z`). El documento completo solo lo ven el admin (ficha del cliente) y el propio cliente (Perfil).
+- El documento y la dirección no se envían nunca por email, ni a logs, ni en respuestas de error.

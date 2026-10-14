@@ -24,7 +24,10 @@ const ICONS = {
   check: <path d="m5 12 5 5 9-10" />,
   plus: <path d="M12 5v14M5 12h14" />,
   archive: <><rect x="3" y="4" width="18" height="4.5" rx="1.2" /><path d="M5 8.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5M10 12.5h4" /></>,
-  alert: <><path d="M12 3 2 20h20z" /><path d="M12 10v5M12 18v.01" /></>
+  alert: <><path d="M12 3 2 20h20z" /><path d="M12 10v5M12 18v.01" /></>,
+  doc: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v4h4M9 12h6M9 16h6" /></>,
+  copy: <><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h8" /></>,
+  pulse: <path d="M3 12h4l2.5-6 4 12 2.5-6H21" />
 }
 
 export function Icon({ name, className = 'h-5 w-5' }) {
@@ -162,7 +165,7 @@ export function SelectInput({ children, ...props }) {
 
 // Side panel used for focused tasks (approve / decline). Closes with Esc or a
 // click outside, and traps nothing else on the page.
-export function Drawer({ open, onClose, title, subtitle, children, footer, busy = false, size = 'md' }) {
+export function Drawer({ open, onClose, title, subtitle, children, footer, busy = false, size = 'md', headerless = false }) {
   useEffect(() => {
     if (!open) return undefined
     const onKey = (event) => { if (event.key === 'Escape' && !busy) onClose() }
@@ -175,6 +178,7 @@ export function Drawer({ open, onClose, title, subtitle, children, footer, busy 
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-8">
       <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" onClick={() => { if (!busy) onClose() }} />
       <aside role="dialog" aria-modal="true" aria-label={title} className={`admin-modal relative flex max-h-[94vh] min-h-[min(34rem,90vh)] w-full ${size === 'lg' ? 'max-w-7xl' : 'max-w-4xl'} flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0b0e0d] shadow-2xl shadow-black/60`}>
+        {!headerless && (
         <div className="flex items-start justify-between gap-4 border-b border-white/10 bg-white/[0.02] px-6 py-6 sm:px-10 sm:py-7">
           <div className="min-w-0">
             <h2 className="truncate text-4xl text-white sm:text-5xl" style={{ fontFamily: 'Bebas Neue, Inter, sans-serif' }}>{title}</h2>
@@ -182,7 +186,8 @@ export function Drawer({ open, onClose, title, subtitle, children, footer, busy 
           </div>
           <button type="button" onClick={onClose} disabled={busy} aria-label="Close" className="rounded-xl p-2.5 text-gray-400 transition hover:bg-white/10 hover:text-white disabled:opacity-40"><Icon name="close" className="h-6 w-6" /></button>
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-8 text-base sm:px-10">{children}</div>
+        )}
+        <div className={`flex-1 overflow-y-auto text-base ${headerless ? '' : 'px-6 py-8 sm:px-10'}`}>{children}</div>
         {footer && <div className="flex flex-wrap justify-end gap-3 border-t border-white/10 bg-white/[0.02] px-6 py-5 sm:px-10 [&>*]:!min-w-44 [&>*]:!flex-none [&>*]:!px-8 [&>*]:!py-3.5 [&>*]:!text-base">{footer}</div>}
       </aside>
     </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useAdminText } from './useAdminText'
-import { EMAIL_PATTERN, MAX_EXTRA_RECIPIENTS } from './recipientsState'
+import { MAX_EXTRA_RECIPIENTS } from './recipientsState'
+import { emailProblem } from '../utils/validators'
 
 export default function EmailRecipients({ value, onChange, disabled = false }) {
   const { t } = useAdminText()
@@ -12,7 +13,7 @@ export default function EmailRecipients({ value, onChange, disabled = false }) {
     if (!parts.length) return
     const next = [...value.extra]
     for (const part of parts) {
-      if (!EMAIL_PATTERN.test(part)) { setError(`${t('em_invalid')}: ${part}`); setDraft(part); return }
+      if (emailProblem(part)) { setError(`${t('em_invalid')}: ${part}`); setDraft(part); return }
       if (!next.includes(part)) next.push(part)
     }
     if (next.length > MAX_EXTRA_RECIPIENTS) { setError(t('em_max')); return }
@@ -39,7 +40,7 @@ export default function EmailRecipients({ value, onChange, disabled = false }) {
           </span>
         ))}
         <input
-          type="email" value={draft} placeholder={value.extra.length ? '' : t('em_placeholder')} aria-label={t('em_add')}
+          type="email" autoComplete="email" value={draft} aria-invalid={error ? true : undefined} placeholder={value.extra.length ? '' : t('em_placeholder')} aria-label={t('em_add')}
           onChange={event => { setDraft(event.target.value); setError('') }}
           onKeyDown={event => {
             if (event.key === 'Enter' || event.key === ',' || event.key === ';') { event.preventDefault(); add(draft) }

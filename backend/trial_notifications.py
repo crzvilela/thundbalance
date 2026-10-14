@@ -26,7 +26,7 @@ def studio_address():
     return os.getenv("TRIAL_NOTIFY_TO", DEFAULT_RECIPIENT).strip() or DEFAULT_RECIPIENT
 
 
-def _send(build, trial, legacy=False):
+def _send(build, trial, kind, legacy=False):
     if not os.getenv("TRIAL_EMAIL_WEBHOOK_URL", "").strip():
         return None
     try:
@@ -41,17 +41,19 @@ def _send(build, trial, legacy=False):
     # "trial" keeps the previous Apps Script version working (it sends its own
     # plain-text notice) until docs/trial-email.gs is updated in Google.
     extra = {"trial": trial} if legacy else None
-    return send_email_async(studio_address(), subject, html, text, reply_to=reply_to, extra=extra)
+    # Studio emails are Spanish only, and each event sends exactly one.
+    return send_email_async(studio_address(), subject, html, text, reply_to=reply_to, extra=extra, kind=kind, lang="es",
+                            reference=trial.get("id"))
 
 
 def notify_trial_requested(trial):
     """`trial` is a dict with the request's fields (see create_trial_session)."""
-    return _send(lambda: staff_trial_requested(trial), trial, legacy=True)
+    return _send(lambda: staff_trial_requested(trial), trial, "staff_trial_requested", legacy=True)
 
 
 def notify_trial_confirmed(trial, calendar_ok=True):
-    return _send(lambda: staff_trial_confirmed(trial, calendar_ok), trial)
+    return _send(lambda: staff_trial_confirmed(trial, calendar_ok), trial, "staff_trial_confirmed")
 
 
 def notify_trial_declined(trial):
-    return _send(lambda: staff_trial_declined(trial), trial)
+    return _send(lambda: staff_trial_declined(trial), trial, "staff_trial_declined")

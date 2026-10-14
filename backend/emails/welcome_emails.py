@@ -3,7 +3,7 @@
 The client email contains the generated password (that is its purpose); the
 studio copy never does.
 """
-from .pack_emails import build_pack_ics, render_pack_summary_block
+from .pack_emails import build_pack_ics, render_calendar_links_block, render_pack_summary_block
 from .template import button, heading, highlight_box, key_value, notice, paragraph, site_url
 from .texts import bilingual_email, spanish_email, tr
 
@@ -29,7 +29,12 @@ def build_welcome_email(name, email, password, pack_summary=None):
             notice(tr(lang, "welcome_password_note")),
         ]
         if pack_summary:
-            blocks += [paragraph(tr(lang, "welcome_pack_intro")), render_pack_summary_block(pack_summary, lang)]
+            blocks += [
+                paragraph(tr(lang, "welcome_pack_intro")),
+                render_pack_summary_block(pack_summary, lang),
+                paragraph(tr(lang, "pack_ics_note")),
+                render_calendar_links_block(pack_summary.get("calendar_links"), lang),
+            ]
         return blocks
 
     subject, html, text = bilingual_email("welcome_subject", build, title_key="welcome_title")

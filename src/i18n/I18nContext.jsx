@@ -16,12 +16,22 @@ export function I18nProvider({ children }) {
   // is "remember what they picked," not "guess from the browser."
   const [language, setLanguageState] = useState(() => {
     if (typeof window === 'undefined') return DEFAULT_LANGUAGE
+    let stored = null
     try {
-      const stored = window.localStorage.getItem(STORAGE_KEY)
-      return SUPPORTED_LANGUAGES.includes(stored) ? stored : DEFAULT_LANGUAGE
+      stored = window.localStorage.getItem(STORAGE_KEY)
     } catch {
-      return DEFAULT_LANGUAGE
+      // storage unavailable: treated as "no saved choice"
     }
+    if (SUPPORTED_LANGUAGES.includes(stored)) return stored
+    // No saved choice: a ?lang=xx in the link (e.g. from an email written in that
+    // language) decides. It is not saved, and a saved choice always wins over it.
+    try {
+      const fromLink = new URLSearchParams(window.location.search).get('lang')
+      if (SUPPORTED_LANGUAGES.includes(fromLink)) return fromLink
+    } catch {
+      // ignore a malformed query string
+    }
+    return DEFAULT_LANGUAGE
   })
 
   const setLanguage = (lang) => {

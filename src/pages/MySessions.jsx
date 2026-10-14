@@ -19,6 +19,10 @@ const keyOf = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad
 const parseKey = (key) => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d) }
 const fullDate = (key, locale) => parseKey(key).toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
+// Trial goals/levels are stored in English; the index is the translation key (ts_goal_N / ts_level_N).
+const TRIAL_GOALS = ['Body recomposition', 'Lose weight', 'Build muscle', 'Increase strength', 'Rehabilitation/injury recovery', 'Conditioning', 'Endurance', 'Tone/define', 'Improve mobility & flexibility', 'Increase energy']
+const TRIAL_LEVELS = ['Beginner', 'Intermediate', 'Advanced']
+
 const card = 'rounded-3xl border border-white/10 bg-white/[0.025]'
 const chip = {
   upcoming: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300',
@@ -26,7 +30,7 @@ const chip = {
   cancelled: 'border-red-400/30 bg-red-400/10 text-red-300',
   rescheduled: 'border-amber-400/30 bg-amber-400/10 text-amber-300'
 }
-const dotColor = { upcoming: 'bg-emerald-400', completed: 'bg-sky-400', cancelled: 'bg-red-400', rescheduled: 'bg-amber-400' }
+const dotColor = { trial: 'bg-violet-400', upcoming: 'bg-emerald-400', completed: 'bg-sky-400', cancelled: 'bg-red-400', rescheduled: 'bg-amber-400' }
 
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]))
 
@@ -40,6 +44,7 @@ function MySessions() {
   const todayKey = keyOf(new Date())
 
   const [sessions, setSessions] = useState([])
+  const [trial, setTrial] = useState(null) // { status, session_date, session_time, trainer, goal, experience }
   const [trainerIds, setTrainerIds] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -69,6 +74,15 @@ function MySessions() {
       if (!sessionsResponse.ok) throw new Error('ms_err_sessions')
       const rows = await sessionsResponse.json()
       setSessions(Array.isArray(rows) ? rows.map(toSession) : [])
+
+      // The open trial session of this login email (not part of the sessions list).
+      try {
+        const trialResponse = await authFetch(`${API_URL}/client/trial`)
+        const body = trialResponse.ok ? await trialResponse.json() : null
+        setTrial(body?.trial || null)
+      } catch {
+        setTrial(null)
+      }
 
       // Trainer rows are [id, name, specialty]; the sessions only carry names.
       const trainers = trainersResponse.ok ? await trainersResponse.json() : []
@@ -122,6 +136,9 @@ function MySessions() {
   const openStatus = open ? statusOf(open) : null
   const canChange = open && openStatus === 'upcoming'
   const agenda = selectedDay ? (byDay.get(selectedDay) || []) : groups.upcoming.slice(0, 5)
+  // The trial session is not in the sessions list: it gets its own colour and row.
+  const trialDay = trial?.session_date || null
+  const showTrialRow = !!trial && (selectedDay ? selectedDay === trialDay : true)
   const total = groups.active.length
   const done = groups.past.length
   const next = groups.upcoming[0]
@@ -233,6 +250,37 @@ function MySessions() {
           <div role="status" className={`${card} flex items-center gap-3 p-10 text-gray-400`}><Spinner /> {t('ms_loading')}</div>
         ) : (
           <>
+            {trial && (
+              <section aria-label={t('tt_title')} className="relative mb-6 rounded-3xl border border-emerald-400/25 bg-emerald-400/[0.06] p-6 md:p-8">
+                <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-400">{t('tt_title')}</p>
+                    <p className="max-w-xl text-sm text-gray-300">{t(`tt_text_${trial.status}`)}</p>
+                  </div>
+                  <span className={`rounded-full border px-3 py-1 text-xs font-medium ${trial.status === 'confirmed' ? chip.upcoming : chip.rescheduled}`}>{t(`tt_status_${trial.status}`)}</span>
+                </div>
+                <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    [t('tt_date'), fullDate(trial.session_date, locale)],
+                    [t('tt_time'), trial.session_time],
+                    [t('tt_trainer'), trial.trainer || t('tt_trainer_tbd')],
+                    [t('tt_experience'), TRIAL_LEVELS.includes(trial.experience) ? t('ts_level_' + TRIAL_LEVELS.indexOf(trial.experience)) : (trial.experience || '—')]
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                      <dt className="text-xs uppercase tracking-wider text-gray-500">{label}</dt>
+                      <dd className="mt-1 text-base">{value}</dd>
+                    </div>
+                  ))}
+                  {trial.goal && (
+                    <div className="rounded-2xl border border-white/10 bg-black/30 p-4 sm:col-span-2 lg:col-span-4">
+                      <dt className="text-xs uppercase tracking-wider text-gray-500">{t('tt_goal')}</dt>
+                      <dd className="mt-1 text-base">{trial.goal.split(',').map(goal => goal.trim()).filter(Boolean).map(goal => (TRIAL_GOALS.includes(goal) ? t('ts_goal_' + TRIAL_GOALS.indexOf(goal)) : goal)).join(', ')}</dd>
+                    </div>
+                  )}
+                </dl>
+              </section>
+            )}
+
             <section className="relative mb-6 grid gap-4 sm:grid-cols-3">
               {stats.map(stat => (
                 <div key={stat.label} className={`${card} p-6`}>
@@ -252,7 +300,7 @@ function MySessions() {
               </div>
             </section>
 
-            {sessions.length === 0 ? (
+            {sessions.length === 0 && !trial ? (
               <div className={`${card} p-12 text-center`}>
                 <p style={{ fontFamily: 'Bebas Neue' }} className="mb-3 text-4xl">{t('ms_none_title')}</p>
                 <p className="mx-auto mb-7 max-w-md text-gray-400">{t('ms_none_text')}</p>
@@ -274,6 +322,7 @@ function MySessions() {
                     {Array.from({ length: 7 }, (_, index) => new Date(2024, 0, 1 + index).toLocaleDateString(locale, { weekday: 'short' })).map(name => <div key={name} className="pb-2 text-[11px] uppercase tracking-wider text-gray-500">{name}</div>)}
                     {cells.map(cell => {
                       const list = byDay.get(cell.key) || []
+                      const hasTrial = cell.key === trialDay
                       const isSelected = cell.key === selectedDay
                       const isToday = cell.key === todayKey
                       return (
@@ -283,8 +332,9 @@ function MySessions() {
                               : isToday ? 'border-emerald-400/40 text-emerald-200 hover:bg-white/5' : 'border-transparent hover:border-white/15 hover:bg-white/5'
                           } ${cell.inMonth ? '' : 'opacity-30'}`}>
                           <span className="tabular-nums">{cell.day}</span>
-                          {list.length > 0 && (
+                          {(list.length > 0 || hasTrial) && (
                             <span className="mt-0.5 flex gap-0.5">
+                              {hasTrial && <span className={`h-1.5 w-1.5 rounded-full ${dotColor.trial}`} />}
                               {list.slice(0, 3).map(session => <span key={session.id} className={`h-1.5 w-1.5 rounded-full ${dotColor[statusOf(session)]}`} />)}
                             </span>
                           )}
@@ -297,16 +347,33 @@ function MySessions() {
                     {['upcoming', 'completed', 'rescheduled', 'cancelled'].map(key => (
                       <span key={key} className="flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${dotColor[key]}`} />{t(`ms_status_${key}`)}</span>
                     ))}
+                    {trial && <span className="flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${dotColor.trial}`} />{t('tt_legend')}</span>}
                   </div>
                 </div>
 
                 <div className={`${card} p-6 lg:col-span-2`}>
                   <h2 style={{ fontFamily: 'Bebas Neue' }} className="text-3xl">{selectedDay ? parseKey(selectedDay).toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'short' }) : t('ms_next_sessions')}</h2>
                   <p className="mb-5 mt-1 text-xs text-gray-500">{selectedDay ? t('ms_select_again') : t('ms_click_day')}</p>
-                  {agenda.length === 0 ? (
+                  {agenda.length === 0 && !showTrialRow ? (
                     <p className="rounded-2xl border border-dashed border-white/10 p-8 text-center text-sm text-gray-500">{selectedDay ? t('ms_no_session_day') : t('ms_no_upcoming')}</p>
                   ) : (
-                    <ul className="space-y-3">{agenda.map(session => <li key={session.id}><SessionRow session={session} /></li>)}</ul>
+                    <ul className="space-y-3">
+                      {showTrialRow && (
+                        <li>
+                          <div className="flex w-full items-center gap-4 rounded-2xl border border-violet-400/40 bg-violet-400/[0.06] p-4">
+                            <span className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-2xl border border-violet-400/40 bg-violet-400/10 text-violet-300">
+                              <span className="text-[10px] font-semibold uppercase leading-none">{parseKey(trial.session_date).toLocaleDateString(locale, { month: 'short' })}</span>
+                              <span style={{ fontFamily: 'Bebas Neue' }} className="text-2xl leading-none">{parseKey(trial.session_date).getDate()}</span>
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate font-medium">{t('tt_title')} · {trial.session_time}</span>
+                              <span className="block truncate text-sm text-gray-400">{trial.trainer || t('tt_trainer_tbd')} · {t(`tt_status_${trial.status}`)}</span>
+                            </span>
+                          </div>
+                        </li>
+                      )}
+                      {agenda.map(session => <li key={session.id}><SessionRow session={session} /></li>)}
+                    </ul>
                   )}
                 </div>
 

@@ -16,10 +16,14 @@ import psycopg2.errors
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel
 
+import calendar_feed
 import firebase_accounts as accounts
+import tax_id
+import validators
 from database import get_connection
 from emails import send_email_async
 from emails.dates import parse_madrid
+from emails.pack_emails import ICS_CONTENT_TYPE, ICS_FILENAME
 from emails.transport import validate_address
 from emails.welcome_emails import build_staff_client_created, build_welcome_email
 from packs import create_pack, delete_created_events, validate_pack_request
@@ -37,6 +41,7 @@ class ClientPack(BaseModel):
     preferred_time: str
     trainer_id: int
     start_date: str
+    allow_conflicts: bool = False
 
 
 class CreateClient(BaseModel):
@@ -47,6 +52,10 @@ class CreateClient(BaseModel):
     city: str | None = None
     address: str | None = None
     postal_code: str | None = None
+    # invoicing (optional): document type DNI | NIE | PASSPORT | OTHER, document, country
+    tax_id_type: str | None = None
+    tax_id: str | None = None
+    country: str | None = None
     pack: ClientPack | None = None
 
 
@@ -56,6 +65,11 @@ def ensure_account_fields():
     cursor = conn.cursor()
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE")
+        # Invoicing data. morada / cidade / cep already existed and are the billing
+        # address; only the document and the country are new. Old rows stay NULL.
+        cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS tax_id_type TEXT")
+        cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS tax_id TEXT")
+        cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT")
         conn.commit()
     finally:
         cursor.close()
@@ -74,6 +88,11 @@ UNAVAILABLE = _bilingual(
     "La creación de cuentas no está configurada en el servidor.",
     "Account creation is not configured on the server.",
 )
+
+
+def _unavailable(reason):
+    """503 text with the reason Firebase Admin is not ready (never a secret)."""
+    return f"{UNAVAILABLE} [{reason}]"
 FAILED = _bilingual(
     "No se pudo completar la operación. No se ha creado nada.",
     "The operation could not be completed. Nothing was created.",
@@ -131,8 +150,10 @@ def send_welcome(name, email, password, pack_summary):
     client's email so the panel can tell the admin what happened. Returns
     {"sent": bool, "problem": str}. Never raises, never logs the password."""
     try:
+        if pack_summary:
+            pack_summary["calendar_links"] = calendar_feed.links_for_email(email)
         subject, html, text, ics = build_welcome_email(name, email, password, pack_summary)
-        attachments = [{"filename": "thundbalance-sesiones.ics", "content_type": "text/calendar", "data": ics.encode("utf-8")}] if ics else None
+        attachments = [{"filename": ICS_FILENAME, "content_type": ICS_CONTENT_TYPE, "data": ics.encode("utf-8")}] if ics else None
         future = send_email_async(email, subject, html, text, attachments=attachments)
 
         team_subject, team_html, team_text = build_staff_client_created(name, email, pack_summary)
@@ -147,17 +168,31 @@ def send_welcome(name, email, password, pack_summary):
 
 def register_client_account_routes(app, require_admin, require_client):
 
+    @app.get("/admin/firebase-status", dependencies=[Depends(require_admin)])
+    def firebase_status():
+        """Is Firebase Admin ready? {"firebase_admin_ready": bool, "reason": text}.
+        The reason is "ok" or one of: variável em falta, ficheiro não encontrado,
+        JSON inválido, pacote em falta, inicialização falhou. Nothing else."""
+        ready, reason = accounts.status()
+        return {"firebase_admin_ready": ready, "reason": reason}
+
     @app.post("/admin/clients", dependencies=[Depends(require_admin)])
     def admin_create_client(data: CreateClient):
         """Creates a client end to end: profile, Firebase login with a generated
         password (must change it at first login), optional pack, welcome email."""
-        name = _text(data.name, 120)
-        if not name:
-            raise HTTPException(status_code=422, detail=_bilingual("El nombre es obligatorio.", "The name is required."))
+        # Same rules as every other form (validators.py); the phone is stored as E.164.
         try:
-            email = validate_address(data.email, "email").lower()
-        except ValueError:
-            raise HTTPException(status_code=422, detail=_bilingual("El email no es válido.", "The email is not valid.")) from None
+            name = validators.validate_name(data.name, "name", 120)
+            email = validators.validate_email(data.email)
+            phone = validators.validate_phone(data.phone, data.country_code) if _text(data.phone, 40) else None
+            country_code = validators.split_phone(phone)[0] if phone else _text(data.country_code, 10)
+            postal = None
+            if _text(data.postal_code, 20):
+                region = validators.region_of_phone(phone) or data.country or "ES"
+                postal = validators.validate_postal_code(data.postal_code, region)
+            doc_type, document = validators.validate_tax_id(data.tax_id_type, data.tax_id)
+        except validators.FieldError as error:
+            raise validators.http_error(error) from None
 
         conn = get_connection()
         cursor = conn.cursor()
@@ -172,12 +207,13 @@ def register_client_account_routes(app, require_admin, require_client):
 
             cursor.execute(
                 """
-                INSERT INTO users (nome, email, telefone, codigo_pais, cidade, morada, cep, must_change_password)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE)
+                INSERT INTO users (nome, email, telefone, codigo_pais, cidade, morada, cep, must_change_password,
+                                   tax_id_type, tax_id, country)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s, %s)
                 RETURNING id
                 """,
-                (name, email, _text(data.phone, 40), _text(data.country_code, 10), _text(data.city, 80),
-                 _text(data.address, 200), _text(data.postal_code, 20)),
+                (name, email, phone, country_code, _text(data.city, 80),
+                 _text(data.address, 200), postal, doc_type, document, _text(data.country, 60)),
             )
             user_id = cursor.fetchone()[0]
 
@@ -193,7 +229,7 @@ def register_client_account_routes(app, require_admin, require_client):
                     plan_id=pack.plan_id, trainer_id=pack.trainer_id, trainer_name=trainer_name,
                     sessions_per_week=pack.sessions_per_week, preferred_days=",".join(days),
                     preferred_time=pack.preferred_time, start_date=pack.start_date,
-                    replace_plans="deactivate",
+                    allow_conflicts=pack.allow_conflicts,
                 )
                 pack_summary = {
                     "client_name": name, "client_email": email, "plan_name": created["plan_name"],
@@ -202,6 +238,8 @@ def register_client_account_routes(app, require_admin, require_client):
                 }
                 pack_info = {
                     "total_sessions": created["total_sessions"],
+                    "calendar_failed": created["calendar_failed"],
+                    "calendar_errors": created["calendar_errors"],
                     "start_date": created["session_dates"][0],
                     "end_date": created["session_dates"][-1],
                 }
@@ -226,7 +264,7 @@ def register_client_account_routes(app, require_admin, require_client):
             conn.rollback()
             delete_created_events(created_event_ids)
             logger.error("Account creation unavailable: %s", error)
-            raise HTTPException(status_code=503, detail=UNAVAILABLE) from None
+            raise HTTPException(status_code=503, detail=_unavailable(str(error))) from None
         except psycopg2.errors.UniqueViolation:
             # Two requests for the same email at once (double click): the second one loses.
             conn.rollback()
@@ -280,7 +318,7 @@ def register_client_account_routes(app, require_admin, require_client):
                 accounts.set_password(uid, password)
             except accounts.AccountsUnavailable as error:
                 logger.error("Resend unavailable: %s", error)
-                raise HTTPException(status_code=503, detail=UNAVAILABLE) from None
+                raise HTTPException(status_code=503, detail=_unavailable(str(error))) from None
             except accounts.AccountError:
                 raise HTTPException(
                     status_code=502,

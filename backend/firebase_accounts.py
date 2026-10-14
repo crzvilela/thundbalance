@@ -5,10 +5,16 @@ The service-account key is read from the file named by FIREBASE_CREDENTIALS_PATH
 copied, printed or logged. Passwords live only in Firebase (stored encrypted
 there): they are passed through these functions and never written to the
 database or to logs.
+
+Firebase Admin is initialised once, at server start (init_firebase_admin), and
+the outcome is logged as one line. If the key is missing the server still
+starts and every other route keeps working; only the routes that need Firebase
+Admin answer 503, naming the reason (never a secret).
 """
 import logging
 import os
 import secrets
+import threading
 
 logger = logging.getLogger("thundbalance.accounts")
 
@@ -18,9 +24,18 @@ LOWER = "abcdefghijkmnopqrstuvwxyz"
 DIGITS = "23456789"
 PASSWORD_LENGTH = 12
 
+# The only reasons ever reported (log, 503 and health endpoint).
+REASON_OK = "ok"
+REASON_NO_VARIABLE = "variável em falta"
+REASON_NO_FILE = "ficheiro não encontrado"
+REASON_BAD_JSON = "JSON inválido"
+REASON_NO_PACKAGE = "pacote em falta"
+REASON_FAILED = "inicialização falhou"
+
 
 class AccountsUnavailable(Exception):
-    """Firebase Admin is not configured or not installed on this server."""
+    """Firebase Admin is not configured or not installed on this server.
+    str(error) is one of the REASON_* texts."""
 
 
 class EmailAlreadyRegistered(Exception):
@@ -41,25 +56,82 @@ def generate_password():
     return "".join(chars)
 
 
+_lock = threading.Lock()
 _app = None
+_reason = None          # last reason reported (None = never tried)
+
+
+def _report(reason):
+    """One diagnostic line, only when the outcome changes (no log spam)."""
+    global _reason
+    if reason == _reason:
+        return
+    _reason = reason
+    line = "Firebase Admin: OK" if reason == REASON_OK else f"Firebase Admin: NÃO inicializado (motivo: {reason})"
+    print(line, flush=True)
+    logger.info(line)
+
+
+def init_firebase_admin():
+    """Initialises firebase_admin exactly once and returns (ready, reason).
+
+    Safe to call many times and from any thread: after a success it only
+    returns; after a failure it checks again (cheap) so a fixed configuration
+    is picked up without restarting. Never raises."""
+    global _app
+    with _lock:
+        if _app is not None:
+            return True, REASON_OK
+
+        try:
+            import firebase_admin
+            from firebase_admin import credentials
+        except ImportError:
+            _report(REASON_NO_PACKAGE)
+            return False, REASON_NO_PACKAGE
+
+        path = os.getenv("FIREBASE_CREDENTIALS_PATH", "").strip()
+        if not path:
+            _report(REASON_NO_VARIABLE)
+            return False, REASON_NO_VARIABLE
+        if not os.path.isfile(path):
+            _report(REASON_NO_FILE)
+            return False, REASON_NO_FILE
+
+        try:
+            certificate = credentials.Certificate(path)
+        except ValueError:
+            # unreadable JSON or a JSON that is not a service-account key
+            _report(REASON_BAD_JSON)
+            return False, REASON_BAD_JSON
+        except Exception:  # noqa: BLE001 - never let a bad key stop the server
+            _report(REASON_FAILED)
+            return False, REASON_FAILED
+
+        try:
+            try:
+                _app = firebase_admin.get_app()          # already initialised elsewhere
+            except ValueError:
+                _app = firebase_admin.initialize_app(certificate)
+        except Exception:  # noqa: BLE001
+            _report(REASON_FAILED)
+            return False, REASON_FAILED
+
+        _report(REASON_OK)
+        return True, REASON_OK
+
+
+def status():
+    """(ready, reason) for the health endpoint; reason is one of REASON_*."""
+    return init_firebase_admin()
 
 
 def _auth():
-    """firebase_admin.auth, with the app initialised on first use."""
-    global _app
-    try:
-        import firebase_admin
-        from firebase_admin import auth, credentials
-    except ImportError as error:
-        raise AccountsUnavailable("firebase-admin is not installed") from error
-    if _app is None:
-        path = os.getenv("FIREBASE_CREDENTIALS_PATH", "").strip()
-        if not path or not os.path.isfile(path):
-            raise AccountsUnavailable("FIREBASE_CREDENTIALS_PATH is not set or the file is missing")
-        try:
-            _app = firebase_admin.initialize_app(credentials.Certificate(path))
-        except Exception as error:  # noqa: BLE001
-            raise AccountsUnavailable(f"The Firebase key could not be loaded ({type(error).__name__})") from error
+    """firebase_admin.auth, initialised (raises AccountsUnavailable otherwise)."""
+    ready, reason = init_firebase_admin()
+    if not ready:
+        raise AccountsUnavailable(reason)
+    from firebase_admin import auth
     return auth
 
 

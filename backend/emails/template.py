@@ -120,7 +120,8 @@ def notice(text, tone="info"):
 def sessions_table(sessions, lang="es"):
     """Day / date / time / trainer. sessions = [{"start": datetime, "trainer": str}, ...]
     (naive datetimes are Madrid time). lang: "es" or "en"."""
-    heads = {"es": ("Día", "Fecha", "Hora", "Entrenador"), "en": ("Day", "Date", "Time", "Trainer")}[lang]
+    heads = {"es": ("Día", "Fecha", "Hora", "Entrenador"), "en": ("Day", "Date", "Time", "Trainer"),
+             "ca": ("Dia", "Data", "Hora", "Entrenador")}[lang]
     th = "".join(
         f'<th align="left" style="padding:8px 8px 8px 0;border-bottom:1px solid {LINE};font-family:{FONT};font-size:12px;letter-spacing:1px;text-transform:uppercase;color:{MUTED};font-weight:600;">{_e(h)}</th>'
         for h in heads
@@ -129,8 +130,8 @@ def sessions_table(sessions, lang="es"):
     for item in sessions:
         d = format_date_bilingual(item["start"])
         cells = (
-            (d.weekday_es if lang == "es" else d.weekday_en).capitalize(),
-            d.date_es if lang == "es" else d.date_en,
+            d.weekday(lang).capitalize(),
+            d.date(lang),
             d.time,
             item.get("trainer") or "—",
         )
@@ -143,10 +144,11 @@ def sessions_table(sessions, lang="es"):
     return Block(_row(table), "\n".join([" | ".join(heads)] + lines) + "\n")
 
 
-def button(label_es, label_en, url, only=None):
+def button(label_es, label_en, url, only=None, label=None):
     """Main call to action: white button, black text. Bilingual label "ES / EN"
-    (pass only="es" for staff emails, which are Spanish only)."""
-    label = label_es if only == "es" else f"{label_es} / {label_en}"
+    (only="es" for staff emails, which are Spanish only; label=... for a single
+    language chosen by the caller)."""
+    label = label if label is not None else (label_es if only == "es" else f"{label_es} / {label_en}")
     link = (
         f'<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>'
         f'<td align="center" bgcolor="{WHITE}" style="background-color:{WHITE};border-radius:4px;">'
@@ -156,9 +158,10 @@ def button(label_es, label_en, url, only=None):
     return Block(_row(link, "8px 0 24px 0"), f"{label}: {url}\n")
 
 
-def link_line(label_es, label_en, url, only=None):
-    """Quiet secondary link under a button (bilingual label "ES / EN")."""
-    label = label_es if only == "es" else f"{label_es} / {label_en}"
+def link_line(label_es, label_en, url, only=None, label=None):
+    """Quiet secondary link under a button (bilingual label "ES / EN", or a
+    single-language label=...)."""
+    label = label if label is not None else (label_es if only == "es" else f"{label_es} / {label_en}")
     link = f'<a href="{_e(url)}" target="_blank" style="font-family:{FONT};font-size:14px;line-height:1.5;color:{MUTED};text-decoration:underline;">{_e(label)}</a>'
     return Block(_row(link, "0 0 24px 0"), f"{label}: {url}"+chr(10))
 
@@ -191,6 +194,7 @@ def render_email(title, blocks, blocks_after_separator=None, preheader="", lang=
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta http-equiv="Content-Language" content="{escape(lang)}">
 <meta name="color-scheme" content="dark light">
 <meta name="supported-color-schemes" content="dark light">
 <title>{escape(title)}</title>

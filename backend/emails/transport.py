@@ -17,10 +17,14 @@ import json
 import logging
 import os
 import re
+import socket
+import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+
+from . import log as email_log
 
 logger = logging.getLogger("thundbalance.emails")
 
@@ -28,6 +32,14 @@ SENDER_NAME = "ThundBalance"
 DEFAULT_REPLY_TO = "info@thundbalance.com"
 MAX_SUBJECT = 200
 MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
+
+# One automatic retry (so at most 2 attempts) for a failure that happened BEFORE
+# the message was handed to Gmail, such as the script being unreachable or
+# answering ok:false. A read timeout is not retried: the script may already have
+# sent it, and a second send would be a duplicate.
+RETRY_DELAY_SECONDS = 4.0
+MAX_ATTEMPTS = 2
+RETRYABLE = {"unreachable", "rejected", "http_429", "http_500", "http_502", "http_503", "http_504"}
 
 _ADDRESS = re.compile(r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$")
 _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="email")
@@ -69,7 +81,7 @@ def mask(address):
     return f"{name[:1]}***@{domain}" if domain else "***"
 
 
-def build_payload(to, subject, html, text, reply_to=None, attachments=None, cc=None, extra=None):
+def build_payload(to, subject, html, text, reply_to=None, attachments=None, cc=None, extra=None, language=None):
     """Validated JSON for the Apps Script. Raises ValueError on bad input."""
     recipients = _addresses(to, "to")
     if not recipients:
@@ -98,24 +110,21 @@ def build_payload(to, subject, html, text, reply_to=None, attachments=None, cc=N
         "name": SENDER_NAME,
         "attachments": files,
     }
+    if language:
+        payload["language"] = _clean_header(language, "language")[:5]
     if extra:
         payload.update(extra)
     return payload
 
 
-def send_email(to, subject, html, text, reply_to=None, attachments=None, cc=None, extra=None):
-    """Send now (blocking, up to 20 s) and report; never raises.
-
-    attachments: list of {"filename", "content_type", "data" (bytes)}.
-    extra: additional JSON fields for the script (used to keep the old
-    trial-notice format working until the script is updated).
-    """
+def _deliver(to, subject, html, text, reply_to=None, attachments=None, cc=None, extra=None, kind="", lang=""):
+    """Does the sending (see send_email). Returns an EmailResult; never raises."""
     url = os.getenv("TRIAL_EMAIL_WEBHOOK_URL", "").strip()
     if not url:
         logger.warning("Email not sent: TRIAL_EMAIL_WEBHOOK_URL is not set")
         return EmailResult(False, "not_configured")
     try:
-        payload = build_payload(to, subject, html, text, reply_to, attachments, cc, extra)
+        payload = build_payload(to, subject, html, text, reply_to, attachments, cc, extra, language=lang if lang in ("en", "es", "ca") else None)
     except (ValueError, KeyError, TypeError) as error:
         logger.error("Email rejected before sending: %s", error)
         return EmailResult(False, "invalid_input")
@@ -133,19 +142,56 @@ def send_email(to, subject, html, text, reply_to=None, attachments=None, cc=None
         logger.error("Email service answered HTTP %s", error.code)
         return EmailResult(False, f"http_{error.code}")
     except Exception as error:  # noqa: BLE001 - an email problem must never propagate
+        cause = getattr(error, "reason", error)
+        if isinstance(cause, (TimeoutError, socket.timeout)):
+            logger.error("Email service did not answer in time")
+            return EmailResult(False, "timeout")
         logger.error("Email service unreachable (%s)", type(error).__name__)
         return EmailResult(False, "unreachable")
 
     try:
         answer = json.loads(body)
     except ValueError:
-        answer = {}
+        # An HTML page instead of JSON: the script is not deployed for "anyone",
+        # or Google asks for authorization again.
+        logger.error("Email service answered something that is not JSON")
+        return EmailResult(False, "invalid_response")
+    if not isinstance(answer, dict):
+        return EmailResult(False, "invalid_response")
     if answer.get("ok") is True:
-        logger.info("Email sent to %s", mask(payload["to"].split(",")[0]))
+        # one line per email: type, language, truncated recipient (no content, no secrets)
+        line = f"Email sent: kind={kind or '-'} lang={lang or '-'} to={mask(payload['to'].split(',')[0])}"
+        print(line, flush=True)
+        logger.info(line)
         return EmailResult(True)
     reason = str(answer.get("error") or "rejected")[:40]
     logger.error("Email service refused the message: %s", re.sub(r"[^\w .:-]", "", reason))
-    return EmailResult(False, "rejected")
+    return EmailResult(False, "unauthorized" if reason == "unauthorized" else "rejected")
+
+
+def send_email(to, subject, html, text, reply_to=None, attachments=None, cc=None, extra=None,
+               kind="", lang="", reference=None):
+    """Send now (blocking, up to 20 s) and report; never raises.
+
+    kind / lang label the log line, and kind / reference (for example the trial
+    session id) label the row written to email_log, which is added for every
+    email with a kind: sent or failed, with a short error code.
+
+    attachments: list of {"filename", "content_type", "data" (bytes)}.
+    extra: additional JSON fields for the script (used to keep the old
+    trial-notice format working until the script is updated).
+    """
+    result = _deliver(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang)
+    attempts = 1
+    while not result.ok and result.error in RETRYABLE and attempts < MAX_ATTEMPTS:
+        logger.warning("Email attempt %s failed (%s); retrying once", attempts, result.error)
+        time.sleep(RETRY_DELAY_SECONDS)
+        attempts += 1
+        result = _deliver(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang)
+    if kind:
+        recipient = to if isinstance(to, str) else ",".join(str(item) for item in (to or []))
+        email_log.record(kind, reference, recipient, result.ok, result.error)
+    return result
 
 
 def send_email_async(*args, on_done=None, **kwargs):

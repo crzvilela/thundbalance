@@ -3,15 +3,16 @@ import { useAdminText } from './useAdminText'
 import { dateKey, parseDateKey } from './requests'
 import { WEEKDAYS, firstMismatch, hoursSummary } from './availability'
 import { Field, SelectInput, TextInput } from './ui'
+import { Icon } from './ui'
 import { PACK_TIMES as TIMES, packHasDaysAndTime, packMinStart } from './packForm'
 
 // The pack form: type, sessions per week, days, time, start date and trainer,
 // with the number of sessions it will create. Used by "Renovar pack" and by
 // "Añadir cliente" (state comes from usePackForm).
-export default function PackFields({ form, set, plans, trainers, pack = null, busy = false }) {
+export default function PackFields({ form, set, plans, trainers, pack = null, busy = false, preview = null, serverConflicts = null }) {
   const { t, language, dayFull, dayLabel } = useAdminText()
   const today = dateKey(new Date())
-  const minStart = packMinStart(pack)
+  const suggestion = packMinStart(pack)
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
   const ready = packHasDaysAndTime(form)
 
@@ -62,8 +63,14 @@ export default function PackFields({ form, set, plans, trainers, pack = null, bu
             {TIMES.map(time => <option key={time} value={time}>{time}</option>)}
           </SelectInput>
         </Field>
-        <Field label={t('pk_start')} hint={pack?.end_date && pack.end_date >= today ? `${t('pk_start_hint')} ${parseDateKey(pack.end_date).toLocaleDateString(locale)}` : undefined}>
-          <TextInput type="date" min={minStart} value={form.start} onChange={event => set({ start: event.target.value })} disabled={busy} />
+        <Field
+          label={t('pk_start')}
+          hint={pack?.end_date && pack.end_date >= today
+            ? `${t('pk_start_hint')} ${parseDateKey(pack.end_date).toLocaleDateString(locale)} (${parseDateKey(suggestion).toLocaleDateString(locale)})`
+            : undefined}
+        >
+          {/* any day is allowed: today, inside the current pack, or in the past */}
+          <TextInput type="date" value={form.start} onChange={event => set({ start: event.target.value })} disabled={busy} />
         </Field>
       </div>
 
@@ -78,11 +85,37 @@ export default function PackFields({ form, set, plans, trainers, pack = null, bu
         </SelectInput>
       </Field>
 
-      {estimate && (
-        <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-sm text-emerald-200">
-          {t('will_create')} <strong className="text-base">{estimate}</strong> {t('sessions_label')}
-        </div>
-      )}
+      {(() => {
+        const total = preview?.data?.total_sessions ?? estimate
+        const conflicts = serverConflicts || preview?.data?.conflicts || []
+        if (!total && !conflicts.length) return null
+        const shown = conflicts.slice(0, 12)
+        return (
+          <div className="space-y-3">
+            {total ? (
+              <div className={`rounded-xl border px-4 py-3 text-sm ${conflicts.length ? 'border-amber-400/30 bg-amber-400/10 text-amber-100' : 'border-emerald-400/20 bg-emerald-400/5 text-emerald-200'}`}>
+                {t('will_create')} <strong className="text-base">{total}</strong> {t('sessions_label')}
+                {conflicts.length > 0 && <> · <strong className="text-base">{conflicts.length}</strong> {t('cf_collide')}</>}
+                {preview?.loading && <span className="ml-2 text-xs opacity-70">…</span>}
+              </div>
+            ) : null}
+            {conflicts.length > 0 && (
+              <ul className="space-y-1.5 rounded-xl border border-amber-400/25 bg-amber-400/5 p-4 text-sm text-amber-100" aria-label={t('cf_title')}>
+                {shown.map(conflict => (
+                  <li key={`${conflict.date}-${conflict.kind}`} className="flex items-start gap-2">
+                    <Icon name="alert" className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                    <span>
+                      <strong>{parseDateKey(conflict.date).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} · {conflict.time}</strong>
+                      {' — '}{t(`cf_${conflict.kind}`)}
+                    </span>
+                  </li>
+                ))}
+                {conflicts.length > shown.length && <li className="pl-6 text-amber-200/80">+{conflicts.length - shown.length} …</li>}
+              </ul>
+            )}
+          </div>
+        )
+      })()}
     </>
   )
 }

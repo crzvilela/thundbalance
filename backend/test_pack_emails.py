@@ -151,6 +151,8 @@ class PackFlow(unittest.TestCase):
     def setUpClass(cls):
         main.ensure_trial_session_fields()
         main.ensure_client_workflow_fields()
+        main.ensure_calendar_sync_columns()
+        main.ensure_session_pack_column()
         cls.server = HTTPServer(("127.0.0.1", 0), FakeScript)
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
         conn = get_connection()
@@ -247,23 +249,34 @@ class PackFlow(unittest.TestCase):
         self.assertEqual(caught.exception.status_code, 422)
         self.assertEqual((self.count_sessions(), self.events), (0, []))
 
-    def test_calendar_failure_rolls_everything_back(self):
-        if not self.plan_id:
-            self.skipTest("no 2-week plan in the local database")
+    def test_calendar_failure_keeps_the_sessions_and_flags_them(self):
+        """A calendar problem never stops the sessions from being created: it is
+        recorded on each session and reported, and the email still goes out."""
         calls = []
 
         def flaky(*args, **kwargs):
-            calls.append(args)
+            calls.append(kwargs.get("event_id"))
             if len(calls) == 3:
                 raise RuntimeError("calendar down")
-            return f"evt-{len(calls)}"
+            return kwargs.get("event_id")
 
         packs.create_calendar_event = flaky
-        with self.assertRaises(HTTPException):
-            endpoint("/admin/clients/{client_id}/renew-pack", "POST")(self.user_id, self.payload())
-        self.assertEqual(self.count_sessions(), 0)
-        self.assertEqual(self.deleted, ["evt-1", "evt-2"])
-        self.assertEqual(RECEIVED, [])                       # nothing is emailed for a failed pack
+        result = endpoint("/admin/clients/{client_id}/renew-pack", "POST")(self.user_id, self.payload())
+        self.assertEqual(self.count_sessions(), 4)                    # sessions exist
+        self.assertEqual(result["calendar"]["failed"], 1)
+        self.assertEqual(result["calendar"]["errors"], ["RuntimeError"])
+        self.assertEqual(self.deleted, [])                             # nothing was rolled back
+        self.assertIn("ana.pack.test@example.com", result["email"]["sent_to"])   # the email still went out
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT calendar_sync_status, calendar_sync_error, google_event_id IS NULL FROM sessions WHERE user_id = %s ORDER BY id", (self.user_id,))
+        rows = cur.fetchall()
+        conn.close()
+        self.assertEqual([r[0] for r in rows], ["ok", "ok", "failed", "ok"])
+        self.assertEqual(rows[2][1:], ("RuntimeError", True))
+        # the event ids are deterministic and distinct
+        self.assertEqual(len(set(calls)), 4)
+        self.assertTrue(all(c and c.startswith("tb") and len(c) == 18 for c in calls))
 
     def test_client_switch_off_sends_only_to_extras(self):
         if not self.plan_id:

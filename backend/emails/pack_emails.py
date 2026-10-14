@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from .dates import WEEKDAYS_EN, WEEKDAYS_ES, format_date_bilingual
 from .ics import build_ics
 from .recipients import clean_recipients
-from .template import Block, STUDIO_PLACE, heading, key_value, paragraph, sessions_table
+from .template import Block, STUDIO_PLACE, button, heading, highlight_box, key_value, link_line, paragraph, sessions_table
 from .texts import bilingual_email, tr
 from .transport import send_email_async, validate_address
 
@@ -25,6 +25,19 @@ logger = logging.getLogger("thundbalance.emails")
 
 ICS_PLACE = "ThundBalance, Carrer de Pallars 286, Barcelona"
 SEND_TIMEOUT = 40  # seconds to wait for the sends before reporting
+
+# One shape for every email that carries a pack's .ics (pack email, welcome email).
+ICS_FILENAME = "thundbalance-sesiones.ics"
+ICS_CONTENT_TYPE = "text/calendar"   # METHOD:PUBLISH is inside the file; Gmail shows "Add to calendar"
+
+
+def pack_ics_attachment(summary):
+    """The attachment dict send_email() expects, for a pack summary."""
+    return {
+        "filename": ICS_FILENAME,
+        "content_type": ICS_CONTENT_TYPE,
+        "data": build_pack_ics(summary).encode("utf-8"),
+    }
 
 
 def _one_line(value, limit=80):
@@ -83,9 +96,27 @@ def build_pack_ics(summary):
     ])
 
 
+def render_calendar_links_block(links, lang="es"):
+    """"Add to my Google Calendar" button, ".ics" link, the feed URL to copy
+    (Apple Calendar / Outlook) and the refresh-delay notice. `links` is the
+    dict of calendar_feed.feed_urls(); without it the block is empty."""
+    if not links:
+        return Block("", "")
+    return _join([
+        button(None, None, links["google"], label=tr(lang, "cal_add_google")),
+        link_line(None, None, links["https"], label=tr(lang, "cal_download_ics")),
+        highlight_box(links["https"], label=tr(lang, "cal_other_apps")),
+        paragraph(tr(lang, "cal_delay_note"), muted=True),
+    ])
+
+
 def build_pack_email(summary, team_subject=False):
     """(subject, html, text): Spanish first, English below. With team_subject
-    the subject also carries the client's name."""
+    the subject also carries the client's name (and the copy has no calendar
+    subscription link: that link belongs to the client).
+    summary["calendar_links"] (optional) adds the calendar buttons."""
+    links = None if team_subject else summary.get("calendar_links")
+
     def build(lang):
         return [
             heading(tr(lang, "pack_title")),
@@ -93,7 +124,8 @@ def build_pack_email(summary, team_subject=False):
             paragraph(tr(lang, "pack_intro")),
             render_pack_summary_block(summary, lang),
             key_value([(tr(lang, "lbl_place"), STUDIO_PLACE)]),
-            paragraph(tr(lang, "pack_ics_note"), muted=True),
+            paragraph(tr(lang, "pack_ics_note")),
+            render_calendar_links_block(links, lang),
         ]
     subject, html, text = bilingual_email("pack_subject", build, title_key="pack_title")
     if team_subject:
@@ -127,11 +159,7 @@ def send_pack_summary_email(summary, to_client=True, extra_recipients=()):
                 result.problem = "client_email_invalid"
         extras = clean_recipients(extra_recipients, exclude=[client_email] if client_email else [])
 
-        attachment = {
-            "filename": "thundbalance-sesiones.ics",
-            "content_type": "text/calendar",
-            "data": build_pack_ics(summary).encode("utf-8"),
-        }
+        attachment = pack_ics_attachment(summary)
         jobs = []   # (addresses, future)
         if client_email:
             subject, html, text = build_pack_email(summary)
