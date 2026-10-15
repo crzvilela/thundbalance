@@ -18,7 +18,7 @@ export async function adminRequest(method, path, body) {
       : object ? object.message || ''
       : Array.isArray(result.detail) ? 'Invalid data' : ''
     const error = new Error(`${detail || result.error || 'Request failed'} (HTTP ${response.status})`)
-    if (object) { error.code = object.code; error.conflicts = object.conflicts }
+    if (object) { error.code = object.code; error.conflicts = object.conflicts; error.field = object.field; error.detail = object }
     throw error
   }
   return result

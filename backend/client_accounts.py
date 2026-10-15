@@ -19,6 +19,7 @@ from pydantic import BaseModel
 import calendar_feed
 import firebase_accounts as accounts
 import tax_id
+import validators
 from database import get_connection
 from emails import send_email_async
 from emails.dates import parse_madrid
@@ -179,18 +180,19 @@ def register_client_account_routes(app, require_admin, require_client):
     def admin_create_client(data: CreateClient):
         """Creates a client end to end: profile, Firebase login with a generated
         password (must change it at first login), optional pack, welcome email."""
-        name = _text(data.name, 120)
-        if not name:
-            raise HTTPException(status_code=422, detail=_bilingual("El nombre es obligatorio.", "The name is required."))
+        # Same rules as every other form (validators.py); the phone is stored as E.164.
         try:
-            email = validate_address(data.email, "email").lower()
-        except ValueError:
-            raise HTTPException(status_code=422, detail=_bilingual("El email no es válido.", "The email is not valid.")) from None
-
-        try:
-            doc_type, document = tax_id.clean(data.tax_id_type, data.tax_id)
-        except tax_id.TaxIdError as error:
-            raise HTTPException(status_code=422, detail=error.message) from None
+            name = validators.validate_name(data.name, "name", 120)
+            email = validators.validate_email(data.email)
+            phone = validators.validate_phone(data.phone, data.country_code) if _text(data.phone, 40) else None
+            country_code = validators.split_phone(phone)[0] if phone else _text(data.country_code, 10)
+            postal = None
+            if _text(data.postal_code, 20):
+                region = validators.region_of_phone(phone) or data.country or "ES"
+                postal = validators.validate_postal_code(data.postal_code, region)
+            doc_type, document = validators.validate_tax_id(data.tax_id_type, data.tax_id)
+        except validators.FieldError as error:
+            raise validators.http_error(error) from None
 
         conn = get_connection()
         cursor = conn.cursor()
@@ -210,8 +212,8 @@ def register_client_account_routes(app, require_admin, require_client):
                 VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s, %s)
                 RETURNING id
                 """,
-                (name, email, _text(data.phone, 40), _text(data.country_code, 10), _text(data.city, 80),
-                 _text(data.address, 200), _text(data.postal_code, 20), doc_type, document, _text(data.country, 60)),
+                (name, email, phone, country_code, _text(data.city, 80),
+                 _text(data.address, 200), postal, doc_type, document, _text(data.country, 60)),
             )
             user_id = cursor.fetchone()[0]
 

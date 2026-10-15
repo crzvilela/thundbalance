@@ -1,19 +1,24 @@
 """Client confirmation of an approved trial session.
 
-Flow: the admin approves (approve_trial: a token is created, the client is
-emailed and a PROVISIONAL "[Pendiente] Trial Session" event is put on the
-calendar), the client opens /trial-session/confirm/<token>, and only pressing
-the button on that page (a POST) confirms or declines. Confirming updates the
-same event; declining deletes it. There is exactly one approval path.
+Flow: the admin approves (approve_trial: a token is created and the client is
+emailed; NOTHING is put on the calendar yet), the client opens
+/trial-session/confirm/<token>, and only pressing the button on that page (a
+POST) confirms or declines. The calendar event ("Trial Session - Ana Ruiz") is
+created only when the client CONFIRMS; declining afterwards deletes it. There
+is exactly one approval path. Until the client answers, the hour stays blocked
+for the trainer by the database (availability.py counts approved and
+confirmed trials), so nobody else can book it.
 
 Statuses in trial_sessions.status:
   Pending    waiting for the admin
   Approved   approved, waiting for the client (has a confirmation_token)
-  Confirmed  the client confirmed; the calendar event exists (or calendar_error is set)
+  Confirmed  the client confirmed; the calendar event exists (or calendar_error is set
+             and the panel offers "Crear evento en el calendario")
   Declined   the client said they can't come
   Rejected   declined by the admin       Cancelled  cancelled by the admin
-Rows approved before this flow existed stay "Approved" with no token and an
-event already on the calendar; the panel shows them as confirmed.
+Rows approved before this flow existed stay "Approved" with no token; the
+panel shows them as confirmed (and offers the calendar button if they have no
+event).
 
 The public endpoints accept only the token and return the least possible data.
 """
@@ -26,7 +31,10 @@ from availability import slot_problem
 from database import get_connection
 from emails import log as email_log
 from emails.dates import now_madrid, parse_madrid
-from google_calendar import create_trial_session_event, delete_calendar_event, update_trial_session_event
+import calendar_sync
+from google_calendar import (
+    create_trial_session_event, delete_calendar_event, describe_error, update_trial_session_event,
+)
 import mailer
 import trial_notifications
 
@@ -164,7 +172,10 @@ def register_trial_confirmation_routes(app):
             if state == wanted:                       # already done: nothing is repeated
                 conn.rollback()
                 return {"outcome": f"already_{wanted}", **view}
-            if state != "pending_confirmation":       # the other answer was given first
+            # A confirmed session can still be declined (the event is deleted);
+            # a declined one can not be confirmed again from the same link.
+            changing_mind = state == "confirmed" and wanted == "declined"
+            if state != "pending_confirmation" and not changing_mind:
                 conn.rollback()
                 return {"outcome": f"already_{state}", **view}
 
@@ -177,7 +188,7 @@ def register_trial_confirmation_routes(app):
 
             trial = _trial_dict(row)
             if wanted == "confirmed":
-                calendar_ok = sync_calendar_event(trial["id"], provisional=False)
+                calendar_ok = sync_calendar_event(trial["id"])
                 trial_notifications.notify_trial_confirmed(trial, calendar_ok)
                 mailer.send_trial_confirmed(
                     trial["email"], _first_name(trial["full_name"]), trial["session_date"],
@@ -213,18 +224,19 @@ def _is_gone(error):
     return status in (404, 410)
 
 
-def sync_calendar_event(trial_id, provisional):
-    """Makes the calendar event match the session and returns True when it does.
+def sync_calendar_event(trial_id):
+    """Makes the calendar event of a CONFIRMED trial session exist and match
+    the session, and returns True when it does.
 
-    - no event yet  -> creates it (title "[Pendiente] Trial Session · Ana" while
-      provisional, "Trial Session · Ana" once confirmed) and stores its id;
+    - no event yet  -> creates it ("Trial Session - Ana Ruiz") with a
+      deterministic id and stores it;
     - event exists  -> updates THAT event (never a second one); if somebody
-      deleted it in Google, a new one is created.
+      deleted it in Google, it is created again.
 
     The session row is locked while this runs, so a double click on "Crear
     evento" or a confirmation at the same moment can not create two events.
-    A failure never undoes the approval or the confirmation: it is logged and
-    stored in calendar_error, which the panel shows with a retry button."""
+    A failure never undoes the confirmation: it is logged and stored in
+    calendar_error, which the panel shows with a retry button."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -242,11 +254,15 @@ def sync_calendar_event(trial_id, provisional):
             conn.rollback()
             return False
         full_name, email, phone, goal, experience, day, time, event_id, trainer = row
+        day, time = str(day)[:10], str(time)[:5]
         try:
+            key = calendar_sync.instance_key(cursor)
+            wanted_id = calendar_sync.trial_event_id_for(key, trial_id)
             if event_id:
                 try:
                     update_trial_session_event(
-                        event_id, full_name, email, phone, goal, experience, trainer, provisional=provisional
+                        event_id, full_name, email, phone, goal, experience, day, time, trainer,
+                        trial_id=trial_id,
                     )
                 except Exception as error:  # noqa: BLE001
                     if not _is_gone(error):
@@ -254,8 +270,8 @@ def sync_calendar_event(trial_id, provisional):
                     event_id = None
             if not event_id:
                 event_id = create_trial_session_event(
-                    full_name, email, phone, goal, experience, str(day)[:10], str(time)[:5], trainer,
-                    provisional=provisional,
+                    full_name, email, phone, goal, experience, day, time, trainer,
+                    event_id=wanted_id, trial_id=trial_id,
                 )
             cursor.execute(
                 "UPDATE trial_sessions SET google_event_id = %s, calendar_error = NULL WHERE id = %s",
@@ -265,11 +281,12 @@ def sync_calendar_event(trial_id, provisional):
             return True
         except Exception as error:  # noqa: BLE001
             conn.rollback()
-            print(f"Calendar event for trial {trial_id} could not be created or updated: {type(error).__name__}")
+            reason = describe_error(error)
+            print(f"Calendar event for trial {trial_id} could not be created or updated: {reason}")
             traceback.print_exc()
             cursor.execute(
                 "UPDATE trial_sessions SET calendar_error = %s WHERE id = %s",
-                (type(error).__name__[:80], trial_id),
+                (reason[:200], trial_id),
             )
             conn.commit()
             return False
@@ -292,12 +309,14 @@ def approve_trial(trial_id, trainer_id):
 
     1. status -> Approved, trainer and a new token saved (nothing else can
        approve a session: the panel button calls this and only this);
-    2. the approval email goes out in the language saved with the booking;
-    3. the provisional event is put on the shared calendar.
+    2. the approval email goes out in the language saved with the booking.
 
-    Email and calendar failures do not undo the approval. They are reported in
-    the return value ({"email": {"sent", "problem"}, "calendar": {"ok"}}), the
-    email also in email_log, the calendar in calendar_error."""
+    NO calendar event is created here: it is created when the client
+    confirms. The hour stays blocked meanwhile (the database holds it, see
+    availability.py).
+
+    An email failure does not undo the approval. It is reported in the return
+    value ({"email": {"sent", "problem"}}) and in email_log."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -356,12 +375,8 @@ def approve_trial(trial_id, trainer_id):
         email_log.record("trial_approved", trial_id, email, False, "error")
         future = None
 
-    calendar_ok = sync_calendar_event(trial_id, provisional=True)   # runs while the email is sent
     sent, problem = _email_result(future) if future is not None else (False, "error")
-    return {
-        "email": {"sent": sent, "problem": problem},
-        "calendar": {"ok": calendar_ok},
-    }
+    return {"email": {"sent": sent, "problem": problem}}
 
 
 def resend_approval(trial_id):
@@ -443,20 +458,40 @@ def resend_received(trial_id):
 
 
 def _remove_event(row):
-    """Delete the calendar event if one exists (a declined session frees the slot)."""
+    """Delete the calendar event if one exists (a declined session frees the
+    slot). An event that is already gone counts as deleted; any other failure
+    is stored in calendar_error and the id is kept so it can be retried."""
     event_id = row[11]
     if not event_id:
         return
     try:
-        delete_calendar_event(event_id)
+        try:
+            delete_calendar_event(event_id)
+        except Exception as error:  # noqa: BLE001
+            if not _is_gone(error):
+                raise
         conn = get_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute("UPDATE trial_sessions SET google_event_id = NULL WHERE id = %s", (row[0],))
+            cursor.execute(
+                "UPDATE trial_sessions SET google_event_id = NULL, calendar_error = NULL WHERE id = %s", (row[0],)
+            )
             conn.commit()
         finally:
             cursor.close()
             conn.close()
-    except Exception:  # noqa: BLE001
-        print(f"Calendar event for trial {row[0]} could not be deleted")
+    except Exception as error:  # noqa: BLE001
+        reason = describe_error(error)
+        print(f"Calendar event for trial {row[0]} could not be deleted: {reason}")
         traceback.print_exc()
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "UPDATE trial_sessions SET calendar_error = %s WHERE id = %s",
+                (f"No se pudo borrar el evento: {reason}"[:200], row[0]),
+            )
+            conn.commit()
+        finally:
+            cursor.close()
+            conn.close()

@@ -37,6 +37,7 @@ export default function Requests() {
   const [recipients, setRecipients, resetRecipients] = useEmailRecipients()
   const [formError, setFormError] = useState('')
   const [conflicts, setConflicts] = useState([])
+  const [replaceInfo, setReplaceInfo] = useState(null)   // { count, first_date, last_date } the server asked to confirm
 
   const trainers = useMemo(() => (Array.isArray(trainersResource.data) ? trainersResource.data : []), [trainersResource.data])
 
@@ -120,7 +121,7 @@ export default function Requests() {
     return weeks && form.perWeek ? weeks * Number(form.perWeek) : null
   }, [approving, form.plan, form.perWeek, plans])
 
-  const approve = async (allowConflicts = false) => {
+  const approve = async (allowConflicts = false, confirmReplace = false) => {
     if (!form.trainer || !form.date) { setFormError(t('need_trainer_date')); return }
     setBusy(true)
     setFormError('')
@@ -131,6 +132,7 @@ export default function Requests() {
         trainer_id: Number(form.trainer),
         start_date: form.date,
         allow_conflicts: allowConflicts,
+        confirm_replace: confirmReplace,
         ...(form.plan ? { plan_id: Number(form.plan) } : {}),
         ...(form.perWeek ? { sessions_per_week: Number(form.perWeek) } : {})
       })
@@ -142,6 +144,7 @@ export default function Requests() {
       requestsResource.reload()
     } catch (error) {
       if (error.code === 'conflicts') setConflicts(error.conflicts || [])   // listed in the modal, with "Crear igualmente"
+      else if (error.code === 'replaces_pack') setReplaceInfo(error.detail)  // asks first: N sessions are cancelled
       else setFormError(error.message || t('action_error'))
     } finally {
       setBusy(false)
@@ -244,6 +247,14 @@ export default function Requests() {
         title={t('req_archive_title')} text={t('req_archive_text')}
         confirmLabel={t('req_archive_do')} cancelLabel={t('req_archive_keep')}
         onConfirm={archive} onCancel={() => setArchiving(null)}
+      />
+
+      <ConfirmDialog
+        open={!!replaceInfo} busy={busy} tone="danger" icon="calendar"
+        title={t('pk_replace_title')}
+        text={replaceInfo ? `${t('pk_replace_text')} ${replaceInfo.count} (${replaceInfo.first_date} → ${replaceInfo.last_date})` : ''}
+        confirmLabel={t('pk_replace_ok')} cancelLabel={t('cancel')}
+        onConfirm={() => { setReplaceInfo(null); approve(false, true) }} onCancel={() => setReplaceInfo(null)}
       />
 
       <Drawer

@@ -7,6 +7,7 @@ one where it matters here: inserting an id that exists answers HTTP 409, a
 deleted event keeps its id reserved, events().get() of an unknown id is 404.
 The local database is used and cleaned up.
 """
+import os
 import threading
 import unittest
 from datetime import date, timedelta
@@ -37,6 +38,7 @@ class FakeCalendar:
         self.fail = None                 # set to an HTTP status to make every call fail
         self.auto = 0
         self.log = []
+        self.list_kwargs = {}
 
     def events(self):
         return self
@@ -92,8 +94,14 @@ class FakeCalendar:
         return self._call("delete", run)
 
     def list(self, **kwargs):
+        self.list_kwargs = kwargs
         def run():
-            return {"items": [e for e in self.store.values() if e.get("status") != "cancelled"]}
+            items = [e for e in self.store.values() if e.get("status") != "cancelled"]
+            wanted = kwargs.get("privateExtendedProperty")
+            if wanted:
+                key, _, value = wanted.partition("=")
+                items = [e for e in items if ((e.get("extendedProperties") or {}).get("private") or {}).get(key) == value]
+            return {"items": items}
         return self._call("list", run)
 
     def live(self):
@@ -104,7 +112,11 @@ class Sync(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         main.ensure_calendar_sync_columns()
+        main.ensure_client_lifecycle_columns()
         main.ensure_session_pack_column()
+        # The calendar id is only ever read from this variable (there is no default).
+        cls._old_calendar_id = os.environ.get("GOOGLE_CALENDAR_ID")
+        os.environ["GOOGLE_CALENDAR_ID"] = "pt-test@example.com"
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("SELECT id FROM trainers WHERE active AND nome IN ('Guille','Matilda') ORDER BY id LIMIT 1")
@@ -112,6 +124,13 @@ class Sync(unittest.TestCase):
         cur.execute("SELECT id FROM trainers WHERE active ORDER BY id LIMIT 1")
         cls.trainer_id = (row or cur.fetchone())[0]
         conn.close()
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._old_calendar_id is None:
+            os.environ.pop("GOOGLE_CALENDAR_ID", None)
+        else:
+            os.environ["GOOGLE_CALENDAR_ID"] = cls._old_calendar_id
 
     def setUp(self):
         self.cleanup()
@@ -260,9 +279,9 @@ class Sync(unittest.TestCase):
         result = calendar_sync.sync_client(self.user_id)
         self.assertEqual(result["created"], 0)
         self.assertEqual(result["failed"], 1)
-        self.assertEqual(result["errors"], ["Google Calendar HTTP 403"])
+        self.assertEqual(result["errors"], [gc.describe_error(http_error(403))])
         status, event_id, sync, error, _, _ = self.row(sid)
-        self.assertEqual((status, event_id, sync, error), ("Booked", None, "failed", "Google Calendar HTTP 403"))
+        self.assertEqual((status, event_id, sync, error), ("Booked", None, "failed", gc.describe_error(http_error(403))))
         self.fake.fail = None
         result = calendar_sync.sync_client(self.user_id)
         self.assertEqual((result["created"], result["failed"]), (1, 0))
@@ -328,9 +347,103 @@ class Sync(unittest.TestCase):
 
         status_route = next(r for r in main.app.routes if getattr(r, "path", None) == "/admin/calendar-status")
         shown = status_route.endpoint()
-        self.assertEqual(set(shown), {"calendar", "source"})
-        self.assertIn(shown["source"], ("env", "default"))
-        self.assertLess(len(shown["calendar"]), 45)                        # masked, not the full id
+        self.assertEqual(set(shown), {"configured", "calendar", "reason"})
+        self.assertTrue(shown["configured"])
+        self.assertEqual(shown["calendar"], "…e1.com"[:0] + "…" + "pt-test@example.com"[-6:])   # last 6 only
+        self.assertNotIn("pt-test", shown["calendar"])                      # masked, not the full id
+
+    # ----- configuration of the calendar id
+    def test_the_id_comes_from_one_variable_and_is_used_as_written(self):
+        os.environ["GOOGLE_CALENDAR_ID"] = "  pt@thundbalance.com 	"
+        self.assertEqual(gc.get_calendar_id(), "pt@thundbalance.com")      # an email, trimmed, not validated
+        self.assertEqual(gc.mask_calendar_id(gc.get_calendar_id()), "…ce.com")
+
+    def test_primary_or_empty_is_refused(self):
+        for bad in ("primary", "PRIMARY", " Primary ", ""):
+            os.environ["GOOGLE_CALENDAR_ID"] = bad
+            with self.assertRaises(gc.CalendarNotConfigured):
+                gc.get_calendar_id()
+            self.assertFalse(gc.describe_target()["configured"])
+        os.environ["GOOGLE_CALENDAR_ID"] = "pt-test@example.com"
+
+    def test_nothing_is_sent_to_google_without_a_calendar_id(self):
+        os.environ["GOOGLE_CALENDAR_ID"] = ""
+        sid = self.add_session(10)
+        result = calendar_sync.sync_client(self.user_id)
+        self.assertEqual((result["created"], result["failed"]), (0, 1))
+        self.assertEqual(self.fake.log, [])                                # no call reached the (fake) API
+        self.assertEqual(self.row(sid)[2], "failed")
+        os.environ["GOOGLE_CALENDAR_ID"] = "pt-test@example.com"
+
+    # ----- titles, descriptions and the app tag
+    def set_client(self, name, phone="+34613502662"):
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE users SET nome = %s, telefone = %s WHERE id = %s", (name, phone, self.user_id))
+        conn.commit()
+        conn.close()
+
+    def test_event_title_description_and_tag(self):
+        self.set_client("David Madrenas Pérez")
+        sid = self.add_session(10, hour="14:00", number="2/8")
+        calendar_sync.sync_client(self.user_id)
+        event = self.fake.store[self.row(sid)[1]]
+        self.assertEqual(event["summary"], "David Pérez 2/8")              # name + LAST surname + x/n, no "PT"
+        lines = event["description"].split(chr(10))
+        labels = [line.split(":")[0] for line in lines]
+        self.assertEqual(labels[:6], ["Cliente", "Email", "Teléfono", "Día", "Horario", "Entrenador"])
+        self.assertIn("Cliente: David Madrenas Pérez", lines)
+        self.assertIn(f"Email: henrique{DOMAIN}", lines)
+        self.assertIn("Teléfono: +34613502662", lines)
+        self.assertIn("Horario: 14:00 - 15:00", lines)
+        self.assertTrue(any(line.startswith("Pack:") and line.endswith("sesión 2/8") for line in lines) or labels[-1] != "Pack")
+        self.assertEqual(event["extendedProperties"]["private"]["app"], "thundbalance")
+        self.assertEqual(event["extendedProperties"]["private"]["thundbalance_session_id"], str(sid))
+        text = event["description"].lower()
+        self.assertNotIn("nif", text)
+        self.assertNotIn("dni", text)
+
+    def test_a_single_name_is_used_as_it_is(self):
+        self.set_client("Madonna")
+        sid = self.add_session(10, number="1/4")
+        calendar_sync.sync_client(self.user_id)
+        self.assertEqual(self.fake.store[self.row(sid)[1]]["summary"], "Madonna 1/4")
+
+    def test_numbers_stay_fixed_when_a_session_is_cancelled(self):
+        self.set_client("Ana García López")
+        first = self.add_session(10, number="1/4")
+        second = self.add_session(17, number="2/4")
+        third = self.add_session(24, number="3/4")
+        calendar_sync.sync_client(self.user_id)
+        route = next(r for r in main.app.routes if getattr(r, "path", None) == "/admin/sessions/{session_id}/cancel")
+        route.endpoint(second)
+        self.assertEqual(self.fake.live()[self.row(third)[1]]["summary"], "Ana López 3/4")   # NOT renumbered to 2/3
+        self.assertEqual(self.fake.live()[self.row(first)[1]]["summary"], "Ana López 1/4")
+        calendar_sync.sync_client(self.user_id)
+        self.assertEqual(self.fake.live()[self.row(third)[1]]["summary"], "Ana López 3/4")
+
+    def test_sync_rewrites_old_titles_and_does_nothing_the_second_time(self):
+        self.set_client("Ana García López")
+        sid = self.add_session(10, number="1/4")
+        calendar_sync.sync_client(self.user_id)
+        event_id = self.row(sid)[1]
+        self.fake.store[event_id]["summary"] = "🏋️ ThundBalance • Ana García López (1/4)"   # the old format
+        self.fake.store[event_id]["extendedProperties"] = {}
+        result = calendar_sync.sync_client(self.user_id)
+        self.assertEqual((result["created"], result["updated"], result["failed"]), (0, 1, 0))
+        self.assertEqual(self.fake.store[event_id]["summary"], "Ana López 1/4")
+        self.assertEqual(self.fake.store[event_id]["extendedProperties"]["private"]["app"], "thundbalance")
+        again = calendar_sync.sync_client(self.user_id)
+        self.assertEqual((again["created"], again["updated"], again["already_ok"]), (0, 0, 1))
+
+    def test_clear_calendar_only_touches_events_tagged_by_the_app(self):
+        self.fake.store["manual"] = {"id": "manual", "summary": "Dentist", "status": "confirmed"}
+        self.add_session(10)
+        calendar_sync.sync_client(self.user_id)
+        self.assertEqual(len(self.fake.live()), 2)
+        self.assertEqual(self.fake.list_kwargs.get("privateExtendedProperty"), None)
+        gc.clear_calendar()
+        self.assertEqual(list(self.fake.live()), ["manual"])
 
 
 if __name__ == "__main__":

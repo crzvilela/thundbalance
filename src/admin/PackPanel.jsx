@@ -19,9 +19,9 @@ export function PackStatusBadge({ status }) {
   return <Badge tone={STATUS_TONE[status]}>{t(`pk_status_${status}`)}</Badge>
 }
 
-// The client's packs: one card per active pack (period, schedule, trainer and
-// done / left of THAT pack), and the button that adds another one. Packs run
-// in parallel, so adding one never replaces another.
+// The client's packs: the active one (period, schedule, trainer and done /
+// left) and the previous one while it still has sessions to come. A client has
+// ONE active pack: a new pack replaces the current one from its start date.
 export function PackSummary({ packs = [], onRenew }) {
   const { t, language, dayLabel } = useAdminText()
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
@@ -142,20 +142,25 @@ export function RenewDrawer({ client, pack, plans, trainers, onClose, onDone }) 
   const [askPast, setAskPast] = useState(false)
   const [askConflicts, setAskConflicts] = useState(false)
   const [serverConflicts, setServerConflicts] = useState(null)
+  const [askReplace, setAskReplace] = useState(false)
+  const [serverReplaces, setServerReplaces] = useState(null)
   const preview = usePackPreview(client.id, form)
   const conflicts = serverConflicts || preview.data?.conflicts || []
+  // Sessions of the current pack that this one cancels (the preview tells before anything is sent).
+  const replaces = serverReplaces || preview.data?.replaces || null
 
   // Changing the form invalidates any list the server sent before.
-  const update = (patch) => { setServerConflicts(null); setAskConflicts(false); set(patch) }
+  const update = (patch) => { setServerConflicts(null); setServerReplaces(null); setAskConflicts(false); setAskReplace(false); set(patch) }
 
-  const send = async (allowConflicts) => {
+  const send = async (allowConflicts, confirmReplace = false) => {
     setBusy(true)
     setError('')
     try {
       const result = await adminRequest('POST', `/admin/clients/${client.id}/renew-pack`, {
         ...recipientsPayload(recipients),
         ...packPayload(form),
-        allow_conflicts: allowConflicts
+        allow_conflicts: allowConflicts,
+        confirm_replace: confirmReplace
       })
       toast.push(t('pk_renewed'))
       reportEmailResult(toast, t, result.email)
@@ -165,6 +170,9 @@ export function RenewDrawer({ client, pack, plans, trainers, onClose, onDone }) 
       if (err.code === 'conflicts') {            // the server found collisions the preview had not shown yet
         setServerConflicts(err.conflicts)
         setAskConflicts(true)
+      } else if (err.code === 'replaces_pack') { // the server wants the admin's confirmation first
+        setServerReplaces(err.detail)
+        setAskReplace(true)
       } else {
         setError(err.message)
       }
@@ -173,12 +181,15 @@ export function RenewDrawer({ client, pack, plans, trainers, onClose, onDone }) 
     }
   }
 
-  // 1) a date in the past asks first, 2) collisions are listed first, 3) then it is created.
-  const submit = (confirmedPast = false) => {
+  // 1) a date in the past asks first, 2) replacing the current pack asks (with
+  // the number of sessions that are cancelled), 3) collisions are listed first,
+  // 4) then it is created.
+  const submit = (confirmedPast = false, confirmedReplace = false) => {
     if (!packIsComplete(form)) { setError(t('pk_fill')); return }
     if (startIsInThePast(form) && !confirmedPast) { setAskPast(true); return }
+    if (replaces?.count > 0 && !confirmedReplace) { setAskReplace(true); return }
     if (conflicts.length > 0) { setAskConflicts(true); return }
-    send(false)
+    send(false, replaces?.count > 0)
   }
 
   return (
@@ -198,7 +209,7 @@ export function RenewDrawer({ client, pack, plans, trainers, onClose, onDone }) 
           <p className="mb-3 text-sm">{t('cf_question')}</p>
           <div className="flex flex-wrap gap-3">
             <Button variant="secondary" onClick={() => setAskConflicts(false)} disabled={busy}>{t('cf_change')}</Button>
-            <Button variant="primary" onClick={() => { setAskConflicts(false); send(true) }} loading={busy}>{t('cf_create_anyway')}</Button>
+            <Button variant="primary" onClick={() => { setAskConflicts(false); send(true, replaces?.count > 0) }} loading={busy}>{t('cf_create_anyway')}</Button>
           </div>
         </div>
       )}
@@ -209,6 +220,13 @@ export function RenewDrawer({ client, pack, plans, trainers, onClose, onDone }) 
         title={t('pk_past_title')} text={t('pk_past_text')}
         confirmLabel={t('pk_past_ok')} cancelLabel={t('cancel')}
         onConfirm={() => { setAskPast(false); submit(true) }} onCancel={() => setAskPast(false)}
+      />
+      <ConfirmDialog
+        open={askReplace && replaces?.count > 0} tone="danger" icon="calendar"
+        title={t('pk_replace_title')}
+        text={`${t('pk_replace_text')} ${replaces?.count} (${replaces?.first_date} → ${replaces?.last_date})`}
+        confirmLabel={t('pk_replace_ok')} cancelLabel={t('cancel')} busy={busy}
+        onConfirm={() => { setAskReplace(false); submit(true, true) }} onCancel={() => setAskReplace(false)}
       />
     </Drawer>
   )

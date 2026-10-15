@@ -85,6 +85,12 @@ export default function PackFields({ form, set, plans, trainers, pack = null, bu
         </SelectInput>
       </Field>
 
+      {preview?.data?.replaces?.count > 0 && (
+        <div role="status" className="mb-4 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+          {t('pk_replace_note')} <strong className="text-base">{preview.data.replaces.count}</strong> ({preview.data.replaces.first_date} → {preview.data.replaces.last_date})
+        </div>
+      )}
+
       {(() => {
         const total = preview?.data?.total_sessions ?? estimate
         const conflicts = serverConflicts || preview?.data?.conflicts || []

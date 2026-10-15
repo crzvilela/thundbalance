@@ -168,3 +168,61 @@ def delete_login(uid):
         logger.error("Firebase account %s could not be removed (%s)", uid, type(error).__name__)
         return False
     return True
+
+
+# --------------------------------------------------------------------------
+# Archiving and deleting a client (client_lifecycle.py)
+# --------------------------------------------------------------------------
+
+def find_uid(uid, email):
+    """The Firebase uid of a client: the stored one, or the one found by email
+    for profiles created before the uid was stored. None when the account does
+    not exist (any more). Raises AccountsUnavailable / AccountError otherwise."""
+    auth = _auth()
+    try:
+        if uid:
+            return auth.get_user(uid).uid
+        if email:
+            return auth.get_user_by_email(email).uid
+        return None
+    except auth.UserNotFoundError:
+        if uid and email:                      # the stored uid is stale: try the email
+            try:
+                return auth.get_user_by_email(email).uid
+            except auth.UserNotFoundError:
+                return None
+            except Exception as error:  # noqa: BLE001
+                raise AccountError(type(error).__name__) from error
+        return None
+    except Exception as error:  # noqa: BLE001
+        logger.error("Firebase account could not be looked up (%s)", type(error).__name__)
+        raise AccountError(type(error).__name__) from error
+
+
+def set_disabled(uid, disabled):
+    """Disables (True) or re-enables (False) a login. A disabled account can
+    not sign in and its refresh tokens are revoked, so open sessions end as
+    soon as their short-lived token expires. Already in that state = success."""
+    auth = _auth()
+    try:
+        auth.update_user(uid, disabled=bool(disabled))
+        if disabled:
+            auth.revoke_refresh_tokens(uid)
+    except Exception as error:  # noqa: BLE001
+        logger.error("Firebase account could not be %s (%s)", "disabled" if disabled else "enabled", type(error).__name__)
+        raise AccountError(type(error).__name__) from error
+
+
+def delete_account(uid):
+    """Deletes a Firebase account. "It does not exist" counts as success
+    (returns False); True means it was deleted now. Other failures raise
+    AccountError / AccountsUnavailable."""
+    auth = _auth()
+    try:
+        auth.delete_user(uid)
+        return True
+    except auth.UserNotFoundError:
+        return False
+    except Exception as error:  # noqa: BLE001
+        logger.error("Firebase account could not be deleted (%s)", type(error).__name__)
+        raise AccountError(type(error).__name__) from error

@@ -2,15 +2,26 @@ import { useRef, useState } from 'react'
 import { adminRequest } from './api'
 import { useAdminText } from './useAdminText'
 import { useToast } from './toastContext'
-import { Button, ConfirmDialog, Drawer, Field, SelectInput, TextInput } from './ui'
+import { Button, ConfirmDialog, Drawer } from './ui'
 import PackFields from './PackFields'
 import { packIsComplete, packPayload, startIsInThePast, usePackForm, usePackPreview } from './packForm'
 import { reportCalendarResult } from './calendarSync'
-import { DEFAULT_TAX_ID_TYPE, TAX_ID_TYPES, normalizeTaxId, taxIdProblem } from '../utils/taxId'
+import { DEFAULT_TAX_ID_TYPE, normalizeTaxId } from '../utils/taxId'
+import FormField from '../components/forms/FormField'
+import { INPUT_CLASS, inputBorder } from '../components/forms/inputStyles'
+import PhoneInput from '../components/forms/PhoneInput'
+import EmailInput from '../components/forms/EmailInput'
+import PostalCodeInput from '../components/forms/PostalCodeInput'
+import TaxIdInput from '../components/forms/TaxIdInput'
+import { focusFirstInvalid } from '../components/forms/focusFirstInvalid'
+import { formText, serverFieldError } from '../i18n/formText'
+import {
+  callingCodeOf, countryIsoOf, documentProblem, emailProblem, nameProblem, normalizeEmail, phoneProblem, postalCodeProblem, regionOfPhone
+} from '../utils/validators'
 
-const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+const SERVER_FIELDS = { name: 'name', email: 'email', phone: 'phone', postal_code: 'postal', tax_id: 'taxId' }
 const EMPTY = {
-  name: '', email: '', countryCode: '+34', phone: '', city: '', address: '', postal: '',
+  name: '', email: '', phone: '', city: '', address: '', postal: '',
   taxType: DEFAULT_TAX_ID_TYPE, taxId: '', country: 'España'
 }
 
@@ -19,7 +30,9 @@ const EMPTY = {
 // a first pack. If the welcome email fails the client still exists and this
 // window offers "Reenviar credenciales".
 export default function AddClientDrawer({ plans, trainers, onClose, onCreated }) {
-  const { t } = useAdminText()
+  const { t, language } = useAdminText()
+  const [fieldErrors, setFieldErrors] = useState({})
+  const formRef = useRef(null)
   const toast = useToast()
   const [profile, setProfile] = useState(EMPTY)
   const [withPack, setWithPack] = useState(false)
@@ -36,15 +49,26 @@ export default function AddClientDrawer({ plans, trainers, onClose, onCreated })
   const conflicts = serverConflicts || preview.data?.conflicts || []
   const updatePack = (patch) => { setServerConflicts(null); setAskConflicts(false); setPack(patch) }
 
-  const set = (field) => (event) => setProfile(current => ({ ...current, [field]: event.target.value }))
+  const setValue = (field, value) => {
+    setProfile(current => ({ ...current, [field]: value }))
+    if (fieldErrors[field]) setFieldErrors(current => ({ ...current, [field]: undefined }))
+  }
+  const set = (field) => (event) => setValue(field, event.target.value)
+  const postalCountry = regionOfPhone(profile.phone) || countryIsoOf(profile.country)
 
   // 1) checks, 2) a date in the past asks first, 3) collisions are listed first, 4) then it is created
   const submit = (confirmedPast = false) => {
     if (submitting.current) return
-    if (!profile.name.trim()) { setError(t('cc_err_name')); return }
-    if (!EMAIL.test(profile.email.trim())) { setError(t('cc_err_email')); return }
-    const documentProblem = taxIdProblem(profile.taxType, profile.taxId)
-    if (documentProblem) { setError(t(`tx_${documentProblem}`)); return }
+    const codes = {
+      name: nameProblem(profile.name),
+      email: emailProblem(profile.email),
+      phone: phoneProblem(profile.phone, { required: false }),
+      postal: postalCodeProblem(profile.postal, postalCountry, { required: false }),
+      taxId: documentProblem(profile.taxType, profile.taxId),
+    }
+    const found = Object.fromEntries(Object.entries(codes).filter(([, code]) => code).map(([key, code]) => [key, formText(language, code)]))
+    setFieldErrors(found)
+    if (Object.keys(found).length) { setError(''); focusFirstInvalid(formRef.current); return }
     if (withPack && !packIsComplete(pack)) { setError(t('pk_fill')); return }
     if (withPack && startIsInThePast(pack) && !confirmedPast) { setAskPast(true); return }
     if (withPack && conflicts.length > 0) { setAskConflicts(true); return }
@@ -58,9 +82,9 @@ export default function AddClientDrawer({ plans, trainers, onClose, onCreated })
     try {
       const result = await adminRequest('POST', '/admin/clients', {
         name: profile.name.trim(),
-        email: profile.email.trim(),
-        phone: profile.phone.trim() || null,
-        country_code: profile.phone.trim() ? profile.countryCode.trim() || null : null,
+        email: normalizeEmail(profile.email),
+        phone: profile.phone || null,                         // E.164
+        country_code: profile.phone ? callingCodeOf(profile.phone) : null,
         city: profile.city.trim() || null,
         address: profile.address.trim() || null,
         postal_code: profile.postal.trim() || null,
@@ -79,9 +103,13 @@ export default function AddClientDrawer({ plans, trainers, onClose, onCreated })
         setCreated(result)
       }
     } catch (err) {
+      const fieldError = err.field ? serverFieldError(err.detail, language) : null
       if (err.code === 'conflicts') {            // the server found collisions the preview had not shown
         setServerConflicts(err.conflicts)
         setAskConflicts(true)
+      } else if (fieldError && SERVER_FIELDS[fieldError.field]) {
+        setFieldErrors({ [SERVER_FIELDS[fieldError.field]]: fieldError.message })
+        focusFirstInvalid(formRef.current)
       } else {
         setError(err.message)
       }
@@ -129,46 +157,39 @@ export default function AddClientDrawer({ plans, trainers, onClose, onCreated })
         <Button variant="primary" className="flex-[2]" onClick={() => submit()} loading={busy}>{busy ? t('cc_creating') : t('cc_create')}</Button>
       </>}
     >
+      <div ref={formRef}>
       <div className="grid gap-x-8 md:grid-cols-2">
-        <Field label={`${t('cc_name')} *`}>
-          <TextInput value={profile.name} onChange={set('name')} disabled={busy} autoComplete="off" maxLength={120} />
-        </Field>
-        <Field label={`${t('cc_email')} *`}>
-          <TextInput type="email" value={profile.email} onChange={set('email')} disabled={busy} autoComplete="off" />
-        </Field>
-        <Field label={t('cc_phone')}>
-          <div className="flex gap-3">
-            <TextInput value={profile.countryCode} onChange={set('countryCode')} disabled={busy} aria-label={t('cc_code')} className="!w-24 shrink-0" maxLength={6} />
-            <TextInput type="tel" value={profile.phone} onChange={set('phone')} disabled={busy} autoComplete="off" />
-          </div>
-        </Field>
-        <Field label={t('cc_city')}>
-          <TextInput value={profile.city} onChange={set('city')} disabled={busy} maxLength={80} />
-        </Field>
-        <Field label={t('cc_address')}>
-          <TextInput value={profile.address} onChange={set('address')} disabled={busy} maxLength={200} />
-        </Field>
-        <Field label={t('cc_postal')}>
-          <TextInput value={profile.postal} onChange={set('postal')} disabled={busy} maxLength={20} />
-        </Field>
-        <Field label={t('cc_country')}>
-          <TextInput value={profile.country} onChange={set('country')} disabled={busy} maxLength={60} />
-        </Field>
+        <FormField label={t('cc_name')} required error={fieldErrors.name}>
+          {({ id, describedBy, invalid }) => <input id={id} value={profile.name} onChange={set('name')} disabled={busy} autoComplete="off" maxLength={120}
+            onBlur={() => { const code = nameProblem(profile.name); setFieldErrors(current => ({ ...current, name: code ? formText(language, code) : undefined })) }}
+            aria-invalid={invalid || undefined} aria-required="true" aria-describedby={describedBy} className={`${INPUT_CLASS} ${inputBorder(invalid)}`} />}
+        </FormField>
+        <EmailInput label={t('cc_email')} required language={language} value={profile.email} error={fieldErrors.email}
+          disabled={busy} autoComplete="off" onChange={value => setValue('email', value)} />
+        <div className="md:col-span-2">
+          <PhoneInput label={t('cc_phone')} language={language} value={profile.phone} error={fieldErrors.phone}
+            disabled={busy} onChange={value => setValue('phone', value)} />
+        </div>
+        {[['city', 'cc_city', 80], ['address', 'cc_address', 200]].map(([key, label, max]) => (
+          <FormField key={key} label={t(label)}>
+            {({ id, describedBy }) => <input id={id} value={profile[key]} onChange={set(key)} disabled={busy} maxLength={max}
+              aria-describedby={describedBy} className={`${INPUT_CLASS} ${inputBorder(false)}`} />}
+          </FormField>
+        ))}
+        <PostalCodeInput label={t('cc_postal')} language={language} country={postalCountry} value={profile.postal}
+          error={fieldErrors.postal} disabled={busy} onChange={value => setValue('postal', value)} />
+        <FormField label={t('cc_country')}>
+          {({ id, describedBy }) => <input id={id} value={profile.country} onChange={set('country')} disabled={busy} maxLength={60}
+            aria-describedby={describedBy} className={`${INPUT_CLASS} ${inputBorder(false)}`} />}
+        </FormField>
       </div>
 
       <section className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
         <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">{t('bl_optional')}</h3>
-        <div className="grid gap-x-8 md:grid-cols-2">
-          <Field label={t('cc_doc_type')}>
-            <SelectInput value={profile.taxType} onChange={set('taxType')} disabled={busy}>
-              {TAX_ID_TYPES.map(type => <option key={type} value={type}>{t(`bl_type_${type}`)}</option>)}
-            </SelectInput>
-          </Field>
-          <Field label={t('cc_doc')}>
-            <TextInput value={profile.taxId} onChange={set('taxId')} disabled={busy} autoComplete="off" maxLength={30} placeholder="12345678Z" />
-          </Field>
-        </div>
+        <TaxIdInput label={t('cc_doc')} language={language} type={profile.taxType} value={profile.taxId} error={fieldErrors.taxId}
+          disabled={busy} onChange={value => setValue('taxId', value)} onTypeChange={type => setValue('taxType', type)} />
       </section>
+      </div>
 
       <section className="mt-4 rounded-xl border border-white/10 bg-white/[0.02] p-5">
         <label className="flex cursor-pointer items-center gap-3 text-base font-medium">

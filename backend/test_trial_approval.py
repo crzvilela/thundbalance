@@ -1,5 +1,6 @@
-"""Approving a trial session: email in the saved language, a provisional
-calendar event, a log of every email and a resend button.
+"""Approving a trial session: email in the saved language, a log of every
+email and a resend button. Approving creates NO calendar event: it is created
+when the client confirms.
 
     python -m unittest test_trial_approval -v
 
@@ -95,7 +96,7 @@ class Approval(unittest.TestCase):
         def fake_create(*args, **kwargs):
             if self.calendar_down:
                 raise RuntimeError("calendar down")
-            self.events.append(kwargs.get("provisional"))
+            self.events.append(kwargs.get("event_id"))
             return f"evt-{len(self.events)}"
 
         def fake_update(event_id, *args, **kwargs):
@@ -103,7 +104,7 @@ class Approval(unittest.TestCase):
                 raise RuntimeError("calendar down")
             if self.event_gone:
                 raise Gone()
-            self.updates.append((event_id, kwargs.get("provisional")))
+            self.updates.append(event_id)
 
         self._orig = (tc.create_trial_session_event, tc.update_trial_session_event, tc.delete_calendar_event,
                       admin_api.delete_calendar_event)
@@ -166,15 +167,18 @@ class Approval(unittest.TestCase):
         conn.close()
 
     # ----- tests
-    def test_approving_sends_the_email_logs_it_and_creates_the_provisional_event(self):
+    def confirm(self, trial_id):
+        return endpoint("/trial-sessions/confirmation/{token}/confirm", "POST")(self.row(trial_id)[2])
+
+    def test_approving_sends_the_email_logs_it_and_creates_no_event(self):
         trial_id = self.new_trial(lang="ca")
         result = self.approve(trial_id)
 
         self.assertEqual(result["email"], {"sent": True, "problem": ""})
-        self.assertTrue(result["calendar"]["ok"])
+        self.assertNotIn("calendar", result)                           # nothing was put on the calendar
         status, event_id, token, _ = self.row(trial_id)
-        self.assertEqual((status, event_id), ("Approved", "evt-1"))
-        self.assertEqual(self.events, [True])                          # provisional=True
+        self.assertEqual((status, event_id), ("Approved", None))
+        self.assertEqual((self.events, self.updates), ([], []))
 
         approved = [m for m in RECEIVED if m["to"] == f"a{DOMAIN}"]
         self.assertEqual(len(approved), 1)
@@ -248,56 +252,77 @@ class Approval(unittest.TestCase):
         self.assertEqual(self.row(trial_id)[0], "Approved")
 
     def test_calendar_failure_is_flagged_and_the_button_never_duplicates(self):
-        self.calendar_down = True
         trial_id = self.new_trial()
         result = self.approve(trial_id)
-        self.assertEqual(self.row(trial_id)[0], "Approved")            # approval kept
-        self.assertEqual(result["calendar"]["ok"], False)
-        self.assertEqual(result["email"]["sent"], True)                # the email still went out
+        self.assertEqual(result["email"]["sent"], True)
+        self.assertFalse(self.card(trial_id)["calendar_missing"])      # approved: no event by design
+
+        self.calendar_down = True
+        self.assertEqual(self.confirm(trial_id)["outcome"], "confirmed")
+        self.assertEqual(self.row(trial_id)[0], "Confirmed")           # confirmation kept
         card = self.card(trial_id)
-        self.assertTrue(card["calendar_missing"])
+        self.assertTrue(card["calendar_missing"])                      # the panel shows the warning + button
         self.assertTrue(card["calendar_failed"])
 
         self.calendar_down = False
         button = endpoint("/admin/trial-sessions/{trial_id}/calendar-event", "POST")
         self.assertTrue(button(trial_id)["calendar"]["ok"])
-        self.assertEqual(self.events, [True])                          # created once, provisional
+        self.assertEqual(len(self.events), 1)                          # created once
         self.assertFalse(self.card(trial_id)["calendar_missing"])
         self.assertTrue(button(trial_id)["calendar"]["ok"])            # pressed again
         self.assertTrue(button(trial_id)["calendar"]["ok"])
-        self.assertEqual(self.events, [True])                          # still ONE event
-        self.assertEqual(self.updates[-1], ("evt-1", True))            # refreshed, not duplicated
+        self.assertEqual(len(self.events), 1)                          # still ONE event
+        self.assertEqual(self.updates[-1], "evt-1")                    # refreshed, not duplicated
+
+    def test_the_button_is_refused_while_the_client_has_not_confirmed(self):
+        trial_id = self.new_trial()
+        self.approve(trial_id)
+        with self.assertRaises(HTTPException) as caught:
+            endpoint("/admin/trial-sessions/{trial_id}/calendar-event", "POST")(trial_id)
+        self.assertEqual(caught.exception.status_code, 409)
+        self.assertEqual(self.events, [])
 
     def test_an_event_deleted_by_hand_is_recreated_by_the_button(self):
         trial_id = self.new_trial()
         self.approve(trial_id)
+        self.confirm(trial_id)
+        self.assertEqual(self.row(trial_id)[1], "evt-1")
         self.event_gone = True
         self.assertTrue(endpoint("/admin/trial-sessions/{trial_id}/calendar-event", "POST")(trial_id)["calendar"]["ok"])
         self.assertEqual(len(self.events), 2)
         self.assertEqual(self.row(trial_id)[1], "evt-2")
 
-    def test_a_row_approved_before_this_change_is_not_fixed_on_its_own(self):
-        token = "legacy-token-" + "x" * 30
-        trial_id = self.new_trial(status="Approved", token=token, lang=None)
+    def test_a_row_approved_before_the_confirmation_flow_is_shown_as_confirmed(self):
+        trial_id = self.new_trial(status="Approved", lang=None)        # no token: approved long ago
         card = self.card(trial_id)                                     # listing it does nothing
+        self.assertEqual(card["status"], "confirmed")
         self.assertTrue(card["calendar_missing"])
         self.assertFalse(card["calendar_failed"])
         self.assertEqual((self.events, self.updates), ([], []))
         self.assertIsNone(self.row(trial_id)[1])
         endpoint("/admin/trial-sessions/{trial_id}/calendar-event", "POST")(trial_id)   # only the button does
-        self.assertEqual(self.events, [True])
+        self.assertEqual(len(self.events), 1)
         self.assertEqual(self.row(trial_id)[1], "evt-1")
 
-    def test_confirm_updates_the_same_event_and_decline_deletes_it(self):
+    def test_a_row_waiting_for_the_client_has_no_calendar_warning(self):
+        token = "legacy-token-" + "x" * 30
+        trial_id = self.new_trial(status="Approved", token=token, lang=None)
+        card = self.card(trial_id)
+        self.assertEqual(card["status"], "approved")
+        self.assertFalse(card["calendar_missing"])
+
+    def test_confirm_creates_the_event_and_decline_deletes_it(self):
         confirmed = self.new_trial(tag="c", hour="11:00")
         self.approve(confirmed)
-        endpoint("/trial-sessions/confirmation/{token}/confirm", "POST")(self.row(confirmed)[2])
-        self.assertEqual(self.events, [True])                          # no second event
-        self.assertEqual(self.updates, [("evt-1", False)])             # same event, no "[Pendiente]"
+        self.assertEqual(self.events, [])                              # not at approval
+        self.confirm(confirmed)
+        self.assertEqual(len(self.events), 1)                          # created at confirmation
+        self.assertEqual(self.updates, [])
         declined = self.new_trial(tag="d", hour="12:00")
         self.approve(declined)
+        self.confirm(declined)
         endpoint("/trial-sessions/confirmation/{token}/decline", "POST")(self.row(declined)[2])
-        self.assertEqual(self.deleted, ["evt-2"])
+        self.assertEqual(self.deleted, ["evt-2"])                      # declining after confirming removes it
         self.assertIsNone(self.row(declined)[1])
 
     def test_one_log_row_per_email_and_nothing_sensitive(self):

@@ -1,46 +1,15 @@
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
+"""Manual check of the Google Calendar connection.
 
-SCOPES = [
-    "https://www.googleapis.com/auth/calendar"
-]
+Kept only so the old command still works. It no longer has an id of its own:
+it runs scripts/check_calendar_config.py, which uses GOOGLE_CALENDAR_ID (the
+same variable as the server), creates a test event, reads it back and deletes it.
 
-SERVICE_ACCOUNT_FILE = "credentials.json"
+    python google_calendar_test.py
+"""
+import os
+import runpy
 
-CALENDAR_ID = "5b958f681e0f3a7ab9316d1955367098481d33c5682578df1fca743a260d0490@group.calendar.google.com"
-
-credentials = service_account.Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_FILE,
-    scopes=SCOPES
+runpy.run_path(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts", "check_calendar_config.py"),
+    run_name="__main__",
 )
-
-service = build(
-    "calendar",
-    "v3",
-    credentials=credentials
-)
-
-event = {
-
-    "summary": "TEST SESSION",
-
-    "description": "Created from FastAPI",
-
-    "start": {
-        "dateTime": "2026-06-20T18:00:00",
-        "timeZone": "Europe/Madrid"
-    },
-
-    "end": {
-        "dateTime": "2026-06-20T19:00:00",
-        "timeZone": "Europe/Madrid"
-    }
-
-}
-
-created_event = service.events().insert(
-    calendarId=CALENDAR_ID,
-    body=event
-).execute()
-
-print(created_event["id"])

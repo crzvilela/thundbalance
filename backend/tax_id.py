@@ -22,7 +22,7 @@ MESSAGES = {
     "dni_letter": "La letra del DNI no es correcta. / The DNI letter is not correct.",
     "nie_format": "El NIE debe empezar por X, Y o Z, seguido de 7 números y una letra. / The NIE must start with X, Y or Z, followed by 7 digits and a letter.",
     "nie_letter": "La letra del NIE no es correcta. / The NIE letter is not correct.",
-    "other_format": "El documento debe tener entre 4 y 20 caracteres (letras y números). / The document must be 4 to 20 characters (letters and digits).",
+    "other_format": "El documento debe tener entre 5 y 20 caracteres (letras y números). / The document must be 5 to 20 characters (letters and digits).",
 }
 
 
@@ -66,7 +66,7 @@ def validate(doc_type, value):
         if _control_letter(_NIE_PREFIX[text[0]] + text[1:8]) != text[8]:
             raise TaxIdError("nie_letter")
     else:  # passport / other: reasonable length and characters, no checksum
-        if not 4 <= len(text) <= 20 or not text.isalnum():
+        if not 5 <= len(text) <= 20 or not text.isalnum():
             raise TaxIdError("other_format")
     return doc_type, text
 

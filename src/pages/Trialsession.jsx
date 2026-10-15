@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { cloneElement, isValidElement, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import DatePicker from 'react-datepicker'
@@ -6,6 +6,12 @@ import 'react-datepicker/dist/react-datepicker.css'
 import { API_URL } from '../config'
 import { cachedDay, loadDay, loadWeek, pingServer, prefetchSchedule } from '../api/schedule'
 import { useI18n } from '../i18n/I18nContext'
+import FormField from '../components/forms/FormField'
+import PhoneInput from '../components/forms/PhoneInput'
+import EmailInput from '../components/forms/EmailInput'
+import { focusFirstInvalid } from '../components/forms/focusFirstInvalid'
+import { formText, serverFieldError } from '../i18n/formText'
+import { birthDateProblem, emailProblem, nameProblem, normalizeEmail, phoneProblem } from '../utils/validators'
 
 // The English text is what the server stores; the visitor sees the translation.
 const GOALS = [
@@ -29,11 +35,16 @@ const control = 'w-full rounded-xl border bg-black/40 px-4 py-3.5 text-white out
 
 function validate(form) {
   const errors = {}
-  if (form.fullName.trim().length < 2) errors.fullName = 'ts_e_name'
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) errors.email = 'ts_e_email'
-  if (form.phone.replace(/\D/g, '').length < 6) errors.phone = 'ts_e_phone'
+  const name = nameProblem(form.fullName)
+  if (name) errors.fullName = `form:${name}`
+  const email = emailProblem(form.email)
+  if (email) errors.email = `form:${email}`
+  const phone = phoneProblem(form.phone)
+  if (phone) errors.phone = `form:${phone}`
+  const birth = birthDateProblem(form.birthDate)
   const age = ageFrom(form.birthDate)
-  if (form.birthDate && (age < 10 || age > 100)) errors.birthDate = 'ts_e_birth'
+  if (birth) errors.birthDate = `form:${birth}`
+  else if (form.birthDate && (age < 10 || age > 100)) errors.birthDate = 'ts_e_birth'
   if (form.goals.length === 0) errors.goals = 'ts_e_goals'
   if (!form.experience) errors.experience = 'ts_e_experience'
   if (!form.date) errors.date = 'ts_e_date'
@@ -41,16 +52,26 @@ function validate(form) {
   return errors
 }
 
-function Field({ label, error, children, optional }) {
+// An error is a site text key, "form:<code>" (shared field texts) or "msg:<text>" (from the server).
+function useErrorText() {
+  const { t, language } = useI18n()
+  return (error) => {
+    if (!error) return ''
+    if (error.startsWith('form:')) return formText(language, error.slice(5))
+    if (error.startsWith('msg:')) return error.slice(4)
+    return t(error)
+  }
+}
+
+function Field({ label, error, children, optional, required }) {
   const { t } = useI18n()
+  const errorText = useErrorText()
   return (
-    <label className="block">
-      <span className="mb-2 block text-xs font-medium uppercase tracking-wider text-gray-400">
-        {label}{optional && <span className="ml-1 normal-case tracking-normal text-gray-600">{t('ts_optional')}</span>}
-      </span>
-      {children}
-      {error && <span role="alert" className="mt-1.5 block text-sm text-red-300">{t(error)}</span>}
-    </label>
+    <FormField label={label} required={required} error={errorText(error)} suffix={optional ? t('ts_optional') : undefined}>
+      {({ id, describedBy, invalid }) => (isValidElement(children) && typeof children.type === 'string'
+        ? cloneElement(children, { id, 'aria-describedby': describedBy, 'aria-invalid': invalid || undefined, 'aria-required': required || undefined })
+        : children)}
+    </FormField>
   )
 }
 
@@ -60,6 +81,8 @@ function TrialSession() {
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [serverError, setServerError] = useState('')
+  const formRef = useRef(null)
+  const errorText = useErrorText()
   const [done, setDone] = useState(false)
   const [existing, setExisting] = useState(null) // an open request of this email: { status, session_date, session_time }
   const [schedule, setSchedule] = useState(null) // times offered per weekday
@@ -144,7 +167,10 @@ function TrialSession() {
     const found = validate(form)
     setErrors(found)
     setServerError('')
-    if (Object.keys(found).length) return
+    if (Object.keys(found).length) {
+      focusFirstInvalid(formRef.current)
+      return
+    }
 
     const { date } = form
     const sessionDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -159,8 +185,8 @@ function TrialSession() {
           // the site's language now: the emails to the visitor are written in it
           lang: language,
           full_name: form.fullName.trim(),
-          email: form.email.trim(),
-          phone: form.phone.trim(),
+          email: normalizeEmail(form.email),
+          phone: form.phone,
           birth_date: form.birthDate ? dayKey(form.birthDate) : null,
           goals: form.goals,
           experience: form.experience,
@@ -173,6 +199,16 @@ function TrialSession() {
         // This email already has an open request: show where it stands instead of an error.
         setExisting(data.detail)
         return
+      }
+      const fieldError = response.status === 422 ? serverFieldError(data.detail, language) : null
+      if (fieldError) {
+        const key = { full_name: 'fullName', email: 'email', phone: 'phone', birth_date: 'birthDate' }[fieldError.field]
+        if (key) {
+          setErrors(current => ({ ...current, [key]: `msg:${fieldError.message}` }))
+          focusFirstInvalid(formRef.current)
+          return
+        }
+        throw new Error(`msg:${fieldError.message}`)
       }
       if (!response.ok) {
         throw new Error(typeof data.detail === 'string' ? data.detail : 'ts_e_send')
@@ -236,24 +272,32 @@ function TrialSession() {
             </div>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} noValidate className="rounded-3xl border border-white/10 bg-white/[0.025] p-6 md:p-10">
+          <form ref={formRef} onSubmit={handleSubmit} noValidate className="rounded-3xl border border-white/10 bg-white/[0.025] p-6 md:p-10">
             {/* Anti-bot trap: a checkbox off screen. Autofill and password managers fill text fields but never tick a checkbox, so a real visitor can not trip it. */}
             <input type="checkbox" name="tb_hp_field" id="tb_hp_field" tabIndex={-1} autoComplete="off" aria-hidden="true" checked={Boolean(form.hp)} onChange={(event) => setForm(current => ({ ...current, hp: event.target.checked ? '1' : '' }))} style={{ position: 'absolute', left: '-10000px', width: 1, height: 1, opacity: 0 }} />
             <div className="grid gap-6 md:grid-cols-2">
-              <Field label={t('ts_full_name')} error={errors.fullName}>
-                <input type="text" autoComplete="name" value={form.fullName} onChange={set('fullName')} className={`${control} ${border('fullName')}`} />
+              <Field label={t('ts_full_name')} error={errors.fullName} required>
+                <input type="text" autoComplete="name" maxLength={100} value={form.fullName} onChange={set('fullName')}
+                  onBlur={() => { const problem = nameProblem(form.fullName); setErrors(current => ({ ...current, fullName: problem ? `form:${problem}` : undefined })) }}
+                  className={`${control} ${border('fullName')}`} />
               </Field>
-              <Field label={t('ts_email')} error={errors.email}>
-                <input type="email" autoComplete="email" value={form.email} onChange={set('email')} className={`${control} ${border('email')}`} />
-              </Field>
-              <Field label={t('ts_phone')} error={errors.phone}>
-                <input type="tel" autoComplete="tel" value={form.phone} onChange={set('phone')} className={`${control} ${border('phone')}`} />
-              </Field>
+              <EmailInput
+                label={t('ts_email')} required language={language} value={form.email}
+                error={errorText(errors.email)}
+                onChange={value => { setForm(current => ({ ...current, email: value })); if (errors.email) setErrors(current => ({ ...current, email: undefined })) }}
+              />
+              <PhoneInput
+                label={t('ts_phone')} required language={language} value={form.phone}
+                error={errorText(errors.phone)}
+                onChange={value => { setForm(current => ({ ...current, phone: value })); if (errors.phone) setErrors(current => ({ ...current, phone: undefined })) }}
+              />
               <Field label={t('ts_birth')} error={errors.birthDate} optional>
                 <DatePicker
                   selected={form.birthDate}
                   onChange={date => setForm(current => ({ ...current, birthDate: date }))}
                   maxDate={new Date()}
+                  minDate={new Date(1900, 0, 1)}
+                  ariaInvalid={errors.birthDate ? 'true' : undefined}
                   showYearDropdown
                   showMonthDropdown
                   dropdownMode="select"
@@ -337,7 +381,7 @@ function TrialSession() {
             </div>
 
             {serverError && (
-              <p role="alert" className="mt-6 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{t(serverError)}</p>
+              <p role="alert" className="mt-6 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{errorText(serverError)}</p>
             )}
 
             <button

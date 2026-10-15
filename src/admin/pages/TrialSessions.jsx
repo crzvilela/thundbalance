@@ -5,6 +5,7 @@ import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { parseDateKey } from '../requests'
+import SectionCard from '../../components/admin/SectionCard'
 import { canStart, hoursSummary, weekdayOf } from '../availability'
 import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon,
@@ -82,8 +83,9 @@ export default function TrialSessions() {
     return t(key) === key ? code : t(key)
   }
 
-  // The answer says how the email and the calendar went: the approval itself
-  // is never undone, but a problem is shown, not hidden.
+  // The answer says how the email went: the approval itself is never undone, but
+  // a problem is shown, not hidden. Approving puts nothing on the calendar: the
+  // event is created when the client confirms.
   const approve = async () => {
     if (!trainerId) { setFormError(t('select_trainer')); return }
     setBusy(true)
@@ -93,8 +95,6 @@ export default function TrialSessions() {
       setApproving(null)
       if (result.email && !result.email.sent) {
         toast.push(`${t('tr_approved_email_failed')} (${emailProblem(result.email.problem)}).`, 'warning')
-      } else if (result.calendar && !result.calendar.ok) {
-        toast.push(t('tr_approved_calendar_failed'), 'warning')
       } else {
         toast.push(t('tr_approved_ok'))
       }
@@ -227,7 +227,8 @@ export default function TrialSessions() {
                       {trial.age && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{trial.age}</span>}
                       {trial.trainer && <span className="rounded-md border border-sky-400/20 bg-sky-400/10 px-2 py-0.5 text-xs text-sky-200">{t('tr_trainer')}: {trial.trainer}</span>}
                     </div>
-                    <p className={`mt-3 text-sm ${trial.received_email?.status === 'failed' ? 'text-red-300' : 'text-gray-400'}`}>
+                    <SectionCard className="mt-4 !p-4" title={t('fx_tab_activity')} collapsible defaultOpen={(trial.received_email?.status === 'failed' || trial.approval_email?.status === 'failed' || trial.calendar_missing)}>
+                    <p className={`mb-3 text-sm ${trial.received_email?.status === 'failed' ? 'text-red-300' : 'text-gray-400'}`}>
                       {t('tr_received_label')}:{' '}
                       {trial.received_email
                         ? trial.received_email.status === 'sent'
@@ -246,13 +247,14 @@ export default function TrialSessions() {
                       </p>
                     )}
                     {trial.calendar_missing && (
-                      <div role="alert" className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
+                      <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
                         <span>{trial.calendar_failed ? t('tr_calendar_failed') : t('tr_calendar_missing')}</span>
                         <Button variant="secondary" onClick={() => createCalendarEvent(trial)} loading={working === `calendar-${trial.id}`}>
                           {working === `calendar-${trial.id}` ? t('tr_calendar_creating') : t('tr_calendar_create')}
                         </Button>
                       </div>
                     )}
+                    </SectionCard>
                     {trial.reason && <p className="mt-2 text-sm text-red-300/90">{t('req_reason')}: {trial.reason}</p>}
                   </div>
                   <div className="flex flex-wrap gap-2">

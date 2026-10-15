@@ -103,9 +103,10 @@ def main():
                 cursor.execute(f"SELECT google_event_id FROM {table} WHERE google_event_id IS NOT NULL")
                 events += [row[0] for row in cursor.fetchall()]
         events = sorted(set(events))
-        from google_calendar import CALENDAR_ID
+        from google_calendar import describe_target
+        target = describe_target()
         print(f"\nGoogle Calendar events to delete: {len(events)}")
-        print(f"Calendar: {CALENDAR_ID}")
+        print(f"Calendar (GOOGLE_CALENDAR_ID, masked): {target['calendar'] or 'NOT CONFIGURED: ' + str(target['reason'])}")
     else:
         print("\nGoogle Calendar: untouched (--keep-calendar)")
 

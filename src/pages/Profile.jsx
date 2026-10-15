@@ -12,11 +12,18 @@ import { authFetch } from '../api/authFetch'
 import { resolveImageUrl } from '../api/landingPage'
 import { uploadProfilePhoto } from '../api/profilePhoto'
 import { useI18n } from '../i18n/I18nContext'
-import { DEFAULT_TAX_ID_TYPE, TAX_ID_TYPES, normalizeTaxId, taxIdProblem } from '../utils/taxId'
+import { DEFAULT_TAX_ID_TYPE, normalizeTaxId } from '../utils/taxId'
+import FormField from '../components/forms/FormField'
+import { INPUT_CLASS, inputBorder } from '../components/forms/inputStyles'
+import PhoneInput from '../components/forms/PhoneInput'
+import PostalCodeInput from '../components/forms/PostalCodeInput'
+import TaxIdInput from '../components/forms/TaxIdInput'
+import { focusFirstInvalid } from '../components/forms/focusFirstInvalid'
+import { formText, serverFieldError } from '../i18n/formText'
+import { callingCodeOf, documentProblem, formatPhone, phoneProblem, postalCodeProblem, regionOfPhone } from '../utils/validators'
 
 // [field, label key, placeholder (key, or literal when it has no key), autocomplete]
 const fields = [
-  ['codigo_pais', 'pf_f_country', '+34', 'tel-country-code'],
   ['telefone', 'pf_f_phone', 'pf_p_phone', 'tel-national'],
   ['cidade', 'pf_f_city', 'pf_p_city', 'address-level2'],
   ['cep', 'pf_f_postal', 'pf_p_postal', 'postal-code'],
@@ -29,7 +36,9 @@ const button = 'rounded-xl px-5 py-3 text-sm font-semibold transition disabled:o
 
 function Profile() {
   const navigate = useNavigate()
-  const { t } = useI18n()
+  const { t, language } = useI18n()
+  const [fieldErrors, setFieldErrors] = useState({})
+  const formRef = useRef(null)
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [draft, setDraft] = useState(null)
@@ -67,9 +76,23 @@ function Profile() {
   const save = async event => {
     event.preventDefault()
     setError(''); setNotice('')
-    // The same check the server makes, so the answer comes before sending.
-    const problem = taxIdProblem(draft.tax_id_type || DEFAULT_TAX_ID_TYPE, draft.tax_id)
-    if (problem) { setError(`pf_tax_id_${problem}`); return }
+    if (saving) return
+    // The same checks the server makes, so the answer comes before sending. A
+    // phone or postal code left exactly as it was saved is not checked again
+    // (old records keep saving without errors).
+    const found = {}
+    if ((draft.telefone || '') !== (profile.telefone || '')) {
+      const code = phoneProblem(draft.telefone)
+      if (code) found.telefone = formText(language, code)
+    }
+    if ((draft.cep || '') !== (profile.cep || '')) {
+      const code = postalCodeProblem(draft.cep, regionOfPhone(draft.telefone) || 'ES', { required: false })
+      if (code) found.cep = formText(language, code)
+    }
+    const document = documentProblem(draft.tax_id_type || DEFAULT_TAX_ID_TYPE, draft.tax_id)
+    if (document) found.tax_id = formText(language, document)
+    setFieldErrors(found)
+    if (Object.keys(found).length) { focusFirstInvalid(formRef.current); return }
     setSaving(true)
     try {
       const token = await auth.currentUser.getIdToken()
@@ -77,18 +100,28 @@ function Profile() {
         method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           ...Object.fromEntries(fields.map(([key]) => [key, draft[key] || ''])),
+          // E.164 numbers carry their own country code; an untouched old number keeps the saved one
+          codigo_pais: String(draft.telefone || '').startsWith('+') ? callingCodeOf(draft.telefone) : (draft.codigo_pais || ''),
           tax_id_type: draft.tax_id_type || DEFAULT_TAX_ID_TYPE,
           tax_id: normalizeTaxId(draft.tax_id),
         })
       })
       const result = await response.json().catch(() => ({}))
+      const fieldError = response.status === 422 ? serverFieldError(result.detail, language) : null
+      const fieldKey = fieldError && { phone: 'telefone', postal_code: 'cep', tax_id: 'tax_id' }[fieldError.field]
+      if (fieldKey) {
+        setFieldErrors({ [fieldKey]: fieldError.message })
+        focusFirstInvalid(formRef.current)
+        return
+      }
       if (!response.ok || result.error) {
         // the server answers a bad document with a code the site translates
         const code = typeof result.detail === 'string' && result.detail.startsWith('tax_id_') ? `pf_${result.detail}` : 'pf_err_save'
         throw new Error(code)
       }
       const saved = { ...draft, tax_id: normalizeTaxId(draft.tax_id) || null, tax_id_type: normalizeTaxId(draft.tax_id) ? (draft.tax_id_type || DEFAULT_TAX_ID_TYPE) : null }
-      setProfile(saved); setDraft(saved); setEditing(false); setNotice('pf_updated')
+      if (String(saved.telefone || '').startsWith('+')) saved.codigo_pais = callingCodeOf(saved.telefone)
+      setProfile(saved); setDraft(saved); setEditing(false); setFieldErrors({}); setNotice('pf_updated')
     } catch (err) { setError(err.message) }
     finally { setSaving(false) }
   }
@@ -162,21 +195,48 @@ function Profile() {
             </div>
           </aside>
           <div className="min-w-0 space-y-6 self-start">
-          <form onSubmit={save} className="rounded-3xl border border-white/10 bg-white/[0.025] p-6 md:p-9">
+          <form ref={formRef} onSubmit={save} noValidate className="rounded-3xl border border-white/10 bg-white/[0.025] p-6 md:p-9">
             <div className="mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-6">
               <div><h2 className="text-xl font-semibold">{t('pf_details')}</h2><p className="mt-2 text-sm text-gray-500">{t('pf_details_text')}</p></div>
               {!editing && <button type="button" onClick={() => { setDraft(profile); setEditing(true); setNotice('') }} className={`${button} border border-white/15 hover:bg-white/10`}>{t('pf_edit')}</button>}
             </div>
-            <div className="grid gap-6 sm:grid-cols-2">
-              {fields.map(([key, label, placeholder, autoComplete]) => <div key={key} className={key === 'morada' ? 'sm:col-span-2' : ''}>
-                <label htmlFor={`profile-${key}`} className="mb-2 block text-xs font-medium uppercase tracking-wider text-gray-400">{t(label)}</label>
-                {editing && key === 'tax_id_type' ? <select id={`profile-${key}`} value={draft.tax_id_type || DEFAULT_TAX_ID_TYPE} onChange={event => setDraft(previous => ({ ...previous, tax_id_type: event.target.value }))} disabled={saving} className="w-full rounded-xl border border-white/15 bg-black/20 px-4 py-3 text-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/10">
-                  {TAX_ID_TYPES.map(type => <option key={type} value={type}>{t(`pf_doc_${type}`)}</option>)}
-                </select> : editing ? <input id={`profile-${key}`} autoComplete={autoComplete} type={key === 'telefone' || key === 'codigo_pais' ? 'tel' : 'text'} value={draft[key] || ''} onChange={event => setDraft(previous => ({ ...previous, [key]: event.target.value }))} placeholder={t(placeholder)} disabled={saving} className="w-full rounded-xl border border-white/15 bg-black/20 px-4 py-3 text-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/10" /> : <p className={`min-h-12 rounded-xl bg-white/[0.025] px-4 py-3 text-sm ${profile[key] ? 'text-gray-200' : 'text-gray-500'}`}>{key === 'tax_id_type' ? (profile.tax_id_type ? t(`pf_doc_${profile.tax_id_type}`) : t('pf_not_provided')) : (profile[key] || t('pf_not_provided'))}</p>}
+            {editing ? <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+              {fields.map(([key, label, placeholder, autoComplete]) => {
+                const set = value => { setDraft(previous => ({ ...previous, [key]: value })); if (fieldErrors[key]) setFieldErrors(previous => ({ ...previous, [key]: undefined })) }
+                if (key === 'tax_id_type') return null
+                if (key === 'telefone') return <div key={key} className="sm:col-span-2">
+                  <PhoneInput label={t(label)} required language={language} value={draft.telefone || ''} fallbackCode={draft.codigo_pais || '+34'}
+                    validate={(draft.telefone || '') !== (profile.telefone || '')} error={fieldErrors.telefone} disabled={saving} onChange={set} />
+                </div>
+                if (key === 'cep') return <div key={key}>
+                  <PostalCodeInput label={t(label)} language={language} country={regionOfPhone(draft.telefone) || 'ES'} value={draft.cep || ''}
+                    validate={(draft.cep || '') !== (profile.cep || '')} error={fieldErrors.cep} disabled={saving} onChange={set} />
+                </div>
+                if (key === 'tax_id') return <div key={key} className="sm:col-span-2">
+                  <TaxIdInput label={t(label)} language={language} type={draft.tax_id_type || DEFAULT_TAX_ID_TYPE} value={draft.tax_id || ''}
+                    error={fieldErrors.tax_id} disabled={saving} onChange={set}
+                    onTypeChange={type => setDraft(previous => ({ ...previous, tax_id_type: type }))} />
+                </div>
+                return <div key={key} className={key === 'morada' ? 'sm:col-span-2' : ''}>
+                  <FormField label={t(label)}>
+                    {({ id, describedBy, invalid }) => <input id={id} autoComplete={autoComplete} type="text" maxLength={key === 'morada' ? 200 : 80}
+                      value={draft[key] || ''} onChange={event => set(event.target.value)} placeholder={t(placeholder)} disabled={saving}
+                      aria-describedby={describedBy} aria-invalid={invalid || undefined} className={`${INPUT_CLASS} ${inputBorder(invalid)}`} />}
+                  </FormField>
+                </div>
+              })}
+            </div> : <div className="grid gap-6 sm:grid-cols-2">
+              {fields.map(([key, label]) => <div key={key} className={key === 'morada' ? 'sm:col-span-2' : ''}>
+                <p className="mb-2 block text-xs font-medium uppercase tracking-wider text-gray-400">{t(label)}</p>
+                <p className={`min-h-12 rounded-xl bg-white/[0.025] px-4 py-3 text-sm ${profile[key] ? 'text-gray-200' : 'text-gray-500'}`}>
+                  {key === 'tax_id_type' ? (profile.tax_id_type ? t(`pf_doc_${profile.tax_id_type}`) : t('pf_not_provided'))
+                    : key === 'telefone' ? (profile.telefone ? formatPhone(profile.telefone, profile.codigo_pais) : t('pf_not_provided'))
+                      : (profile[key] || t('pf_not_provided'))}
+                </p>
               </div>)}
-            </div>
+            </div>}
             {editing && <div className="mt-8 flex justify-end gap-3 border-t border-white/10 pt-6">
-              <button type="button" disabled={saving} onClick={() => { setDraft(profile); setEditing(false) }} className={`${button} border border-white/15 hover:bg-white/10`}>{t('pf_cancel')}</button>
+              <button type="button" disabled={saving} onClick={() => { setDraft(profile); setEditing(false); setFieldErrors({}) }} className={`${button} border border-white/15 hover:bg-white/10`}>{t('pf_cancel')}</button>
               <button type="submit" disabled={saving || uploading} className={`${button} bg-emerald-400 text-black hover:bg-emerald-300`}>{saving ? t('pf_saving') : t('pf_save')}</button>
             </div>}
           </form>

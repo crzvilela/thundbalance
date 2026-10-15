@@ -1,6 +1,10 @@
-"""Packs that run in parallel, any start date, and conflicts:
+"""One active pack per client: a new pack replaces the previous one from its
+start date (any day), the admin confirms first and sees how many sessions are
+cancelled; numbers stay fixed. Also any start date and conflicts:
 
     python -m unittest test_parallel_packs -v
+
+(The file keeps its old name; packs no longer run in parallel.)
 
 Google Mail is a local fake server, the Google Calendar is faked. The local
 database is used and cleaned up.
@@ -48,13 +52,14 @@ def next_weekday(offset, weekday):
     return day
 
 
-class Parallel(unittest.TestCase):
+class Parallel(unittest.TestCase):          # "Parallel" is the old name; see the module docstring
     @classmethod
     def setUpClass(cls):
         import os
         main.ensure_trial_session_fields()
         main.ensure_session_pack_column()
         main.ensure_calendar_sync_columns()
+        main.ensure_client_lifecycle_columns()
         main.ensure_client_workflow_fields()
         cls.server = HTTPServer(("127.0.0.1", 0), FakeScript)
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
@@ -100,9 +105,10 @@ class Parallel(unittest.TestCase):
         RECEIVED.clear()
         self.cleanup()
         self.events = []
+        self.deleted = []
         self._orig = (packs.create_calendar_event, packs.delete_calendar_event)
-        packs.create_calendar_event = lambda *a, **k: (self.events.append(a), k.get("event_id") or "evt")[1]
-        packs.delete_calendar_event = lambda event_id: None
+        packs.create_calendar_event = lambda *a, **k: (self.events.append((a, k)), k.get("event_id") or "evt")[1]
+        packs.delete_calendar_event = lambda event_id: self.deleted.append(event_id)
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("INSERT INTO users (nome, email) VALUES ('Henrique Paralelo', %s) RETURNING id", (f"hp{DOMAIN}",))
@@ -115,11 +121,22 @@ class Parallel(unittest.TestCase):
         self.cleanup()
 
     # ----- helpers
-    def renew(self, *, per_week, days, start, time="09:00", allow=False, trainer=None, extra=None):
+    def renew(self, *, per_week, days, start, time="09:00", allow=False, trainer=None, extra=None, confirm=True):
         return route("/admin/clients/{client_id}/renew-pack", "POST")(self.user_id, main.RenewPack(
             plan_id=self.plan_id, sessions_per_week=per_week, preferred_days=days, preferred_time=time,
             trainer_id=trainer or self.trainer_id, start_date=start.isoformat(),
-            email_extra=extra if extra is not None else [], allow_conflicts=allow))
+            email_extra=extra if extra is not None else [], allow_conflicts=allow, confirm_replace=confirm))
+
+    def add_session(self, day, time="09:00", status="Booked"):
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO sessions (user_id, trainer_id, session_date, session_time, status, session_number) "
+            "VALUES (%s, %s, %s, %s, %s, '1/1') RETURNING id", (self.user_id, self.trainer_id, day, time, status))
+        session_id = cur.fetchone()[0]
+        conn.commit()
+        conn.close()
+        return session_id
 
     def plans_rows(self):
         conn = get_connection()
@@ -140,57 +157,113 @@ class Parallel(unittest.TestCase):
     def detail(self):
         return route("/admin/clients/{client_id}", "GET")(self.user_id)
 
-    # ----- parallel packs
-    def test_a_second_pack_inside_the_first_leaves_both_active(self):
+    # ----- one active pack: the new one replaces the previous from its start date
+    def test_a_new_pack_replaces_the_previous_one_only_after_confirmation(self):
         monday = next_weekday(14, 0)
         first = self.renew(per_week=1, days="Monday", start=monday)
         self.assertEqual(first["total_sessions"], 2)
         before_plans, before_sessions = self.plans_rows(), self.sessions_rows()
 
-        # 2 per week, starting inside the first pack's period
-        second = self.renew(per_week=2, days="Tuesday,Thursday", start=monday + timedelta(days=1), time="10:00")
+        # without the admin's confirmation: nothing changes and the answer says how many are cancelled
+        with self.assertRaises(HTTPException) as caught:
+            self.renew(per_week=2, days="Tuesday,Thursday", start=monday, time="10:00", confirm=False)
+        self.assertEqual(caught.exception.status_code, 409)
+        self.assertEqual(caught.exception.detail["code"], "replaces_pack")
+        self.assertEqual(caught.exception.detail["count"], 2)
+        self.assertEqual((self.plans_rows(), self.sessions_rows()), (before_plans, before_sessions))
+        self.assertEqual(self.deleted, [])
+
+        second = self.renew(per_week=2, days="Tuesday,Thursday", start=monday, time="10:00")
         self.assertEqual(second["total_sessions"], 4)
+        self.assertEqual(second["calendar"], {"failed": 0, "errors": []})
 
         plans_after = self.plans_rows()
-        self.assertEqual(len(plans_after), 2)
-        self.assertEqual(plans_after[0], before_plans[0])              # the first pack is untouched
-        self.assertTrue(all(row[1] for row in plans_after))             # both active
-        # the first pack's sessions are exactly as they were
-        first_ids = [r[0] for r in before_sessions]
-        still = [r for r in self.sessions_rows() if r[0] in first_ids]
-        self.assertEqual([tuple(r) for r in still], [tuple(r) for r in before_sessions])
+        self.assertEqual([row[1] for row in plans_after], [False, True])     # ONE active pack
+        # the old pack's sessions from the start date on are cancelled, with their numbers intact ...
+        old = [r for r in self.sessions_rows() if r[4] == plans_after[0][0]]
+        self.assertEqual([(r[3], r[5]) for r in old], [("Cancelled", "1/2"), ("Cancelled", "2/2")])
+        # ... and their calendar events deleted (the new pack's events are untouched)
+        self.assertEqual(len(self.deleted), 2)
+        self.assertEqual(sum(1 for r in self.sessions_rows() if r[4] == plans_after[1][0] and r[3] == "Booked"), 4)
 
-        pack_a, pack_b = plans_after[0][0], plans_after[1][0]
-        owners = {r[0]: r[4] for r in self.sessions_rows()}
-        self.assertEqual(sum(1 for v in owners.values() if v == pack_a), 2)
-        self.assertEqual(sum(1 for v in owners.values() if v == pack_b), 4)
+    def test_only_the_sessions_from_the_start_date_are_cancelled(self):
+        monday = next_weekday(14, 0)
+        self.renew(per_week=1, days="Monday", start=monday)                 # monday and monday + 7
+        preview = route("/admin/packs/preview", "POST")(main.PackPreview(
+            client_id=self.user_id, plan_id=self.plan_id, sessions_per_week=1, preferred_days="Wednesday",
+            preferred_time="10:00", trainer_id=self.trainer_id, start_date=(monday + timedelta(days=7)).isoformat()))
+        self.assertEqual(preview["replaces"], {
+            "count": 1, "first_date": (monday + timedelta(days=7)).isoformat(),
+            "last_date": (monday + timedelta(days=7)).isoformat()})
+        self.renew(per_week=1, days="Wednesday", start=monday + timedelta(days=7), time="10:00")
+        rows = {str(r[1]): (r[3], r[5]) for r in self.sessions_rows() if r[5] in ("1/2", "2/2")}
+        self.assertEqual(rows[monday.isoformat()], ("Booked", "1/2"))        # before the start: stays
+        self.assertEqual(rows[(monday + timedelta(days=7)).isoformat()], ("Cancelled", "2/2"))   # NOT renumbered
+        old_pack = self.plans_rows()[0]
+        self.assertFalse(old_pack[1])
+        self.assertEqual(old_pack[3], monday + timedelta(days=6))            # its period ends the day before
 
-    def test_the_record_shows_one_card_per_pack_with_its_own_counters(self):
+    def test_nothing_is_asked_when_there_is_nothing_to_cancel(self):
         monday = next_weekday(14, 0)
         self.renew(per_week=1, days="Monday", start=monday)
-        self.renew(per_week=2, days="Tuesday,Thursday", start=monday + timedelta(days=1), time="10:00")
+        later = monday + timedelta(days=70)                                 # after the old pack ended
+        result = self.renew(per_week=1, days="Wednesday", start=later, time="10:00", confirm=False)
+        self.assertEqual(result["total_sessions"], 2)
+        self.assertEqual([row[1] for row in self.plans_rows()], [False, True])
+        self.assertEqual(self.deleted, [])
+
+    def test_a_failed_event_delete_is_reported_but_the_pack_is_created(self):
+        monday = next_weekday(14, 0)
+        self.renew(per_week=1, days="Monday", start=monday)
+
+        def broken(event_id):
+            raise RuntimeError("calendar down")
+        packs.delete_calendar_event = broken
+        result = self.renew(per_week=1, days="Tuesday", start=monday, time="10:00")
+        self.assertEqual(result["total_sessions"], 2)
+        self.assertEqual(result["calendar"]["failed"], 2)
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT status, calendar_sync_status FROM sessions WHERE user_id = %s AND session_number IN ('1/2','2/2') "
+                    "AND status = 'Cancelled'", (self.user_id,))
+        self.assertEqual(cur.fetchall(), [("Cancelled", "failed")] * 2)     # recorded; "Sincronizar" can retry
+        conn.close()
+
+    def test_new_events_use_the_name_format_and_the_pack_name(self):
+        monday = next_weekday(14, 0)
+        self.renew(per_week=1, days="Monday", start=monday)
+        args, kwargs = self.events[0]
+        self.assertEqual(args[1], "Henrique Paralelo")                        # the client's profile name
+        self.assertEqual(args[5], "1/2")                                      # x/n, fixed at creation
+        self.assertEqual(kwargs["pack_name"], "TEST parallel 2 weeks")
+        self.assertIn("client_phone", kwargs)
+        import event_format
+        self.assertEqual(event_format.session_title("Henrique Paralelo", args[5]), "Henrique Paralelo 1/2")
+
+    def test_the_record_shows_the_active_pack_and_the_one_still_running(self):
+        monday = next_weekday(14, 0)
+        self.renew(per_week=1, days="Monday", start=monday)
+        self.renew(per_week=2, days="Tuesday,Thursday", start=monday + timedelta(days=7), time="10:00")
 
         detail = self.detail()
         cards = [p for p in detail["packs"] if p["shown"]]
-        self.assertEqual(len(cards), 2)
-        self.assertEqual([(p["total"], p["done"], p["remaining"]) for p in cards], [(2, 0, 2), (4, 0, 4)])
-        self.assertEqual([p["sessions_per_week"] for p in cards], [1, 2])
+        self.assertEqual(len(cards), 2)                                     # the old one still has its first session
+        old, new = cards
+        self.assertEqual((old["active"], new["active"]), (False, True))
+        self.assertEqual([(p["total"], p["done"], p["remaining"]) for p in cards], [(1, 0, 1), (4, 0, 4)])
         self.assertEqual(sum(p["total"] for p in cards), len([s for s in detail["sessions"] if s["status"] != "Cancelled"]))
-        self.assertEqual({s["pack_id"] for s in detail["sessions"]}, {cards[0]["id"], cards[1]["id"]})
-        self.assertEqual(detail["pack"]["id"], cards[1]["id"])          # the newest card is the default of "Renovar pack"
-        # numbering belongs to each pack: 1/2, 2/2 and 1/4 ... 4/4
-        numbers = sorted({(s["pack_id"], s["number"]) for s in detail["sessions"]})
-        self.assertEqual([n for _, n in numbers if _ == cards[0]["id"]], ["1/2", "2/2"])
-        self.assertEqual([n for _, n in numbers if _ == cards[1]["id"]], ["1/4", "2/4", "3/4", "4/4"])
+        self.assertEqual(detail["pack"]["id"], new["id"])                   # the newest card is the default of "Renovar pack"
+        numbers = sorted({(s["pack_id"], s["number"]) for s in detail["sessions"] if s["status"] != "Cancelled"})
+        self.assertEqual([n for pid, n in numbers if pid == new["id"]], ["1/4", "2/4", "3/4", "4/4"])
 
         listed = next(c for c in route("/admin/clients", "GET")() if c["id"] == self.user_id)
-        self.assertEqual((listed["packs_active"], listed["total"], listed["upcoming"]), (2, 6, 6))
-        self.assertEqual(listed["next_session"], monday.isoformat())      # the earliest of ALL packs
+        self.assertEqual(listed["packs_active"], 1)
+        self.assertEqual(listed["next_session"], monday.isoformat())
 
-    def test_the_client_dashboard_counts_every_pack(self):
+    def test_the_client_dashboard_counts_the_sessions_still_to_come(self):
         monday = next_weekday(14, 0)
         self.renew(per_week=1, days="Monday", start=monday)
-        self.renew(per_week=2, days="Tuesday,Thursday", start=monday + timedelta(days=1), time="10:00")
+        self.renew(per_week=2, days="Tuesday,Thursday", start=monday + timedelta(days=7), time="10:00")
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("UPDATE users SET firebase_uid = 'uid-hp' WHERE id = %s", (self.user_id,))
@@ -205,18 +278,9 @@ class Parallel(unittest.TestCase):
             main.require_client = real
 
         self.assertEqual(workflow["state"], "active")
-        self.assertEqual(len(workflow["plans"]), 2)                          # both packs, not just the last
-        self.assertEqual([(p["total"], p["remaining"]) for p in workflow["plans"]], [(2, 2), (4, 4)])
-        self.assertEqual(workflow["sessions_remaining"], 6)                   # all the packs together
-        self.assertEqual(len(workflow["sessions"]), 6)
-        first_pack = workflow["plans"][0]["id"]
-        self.assertEqual(sum(1 for s in workflow["sessions"] if s["pack_id"] == first_pack), 2)
-        # the soonest upcoming session of ALL packs is the first Monday
+        self.assertEqual(workflow["sessions_remaining"], 5)                  # 1 left of the old pack + 4 of the new
+        self.assertEqual(len([x for x in workflow["sessions"] if x["status"] != "Cancelled"]), 5)
         self.assertEqual(workflow["sessions"][0]["date"], monday.isoformat())
-
-        claims = {"sub": "x", "email": f"hp{DOMAIN}"}
-        found = route("/users/email/{email}", "GET")(f"hp{DOMAIN}", claims)
-        self.assertEqual(found["plano"], "TEST parallel 2 weeks + TEST parallel 2 weeks")
 
     # ----- any start date
     def test_the_start_date_can_be_today_or_in_the_past(self):
@@ -238,7 +302,7 @@ class Parallel(unittest.TestCase):
         self.assertEqual(result["start_date"], inside.isoformat())
         self.assertEqual(len(self.plans_rows()), 2)
 
-    def test_approving_a_request_adds_a_pack_and_removes_nothing(self):
+    def test_approving_a_request_replaces_the_pack_after_confirmation(self):
         monday = next_weekday(14, 0)
         self.renew(per_week=1, days="Monday", start=monday)
         conn = get_connection()
@@ -249,37 +313,47 @@ class Parallel(unittest.TestCase):
         request_id = cur.fetchone()[0]
         conn.commit()
         conn.close()
-        route("/admin/approve-request", "POST")(main.ApproveRequest(
-            request_id=request_id, trainer_id=self.trainer_id, start_date=(monday + timedelta(days=2)).isoformat(), email_extra=[]))
-        self.assertEqual(len(self.plans_rows()), 2)
-        self.assertTrue(all(r[1] for r in self.plans_rows()))
+        asked = main.ApproveRequest(
+            request_id=request_id, trainer_id=self.trainer_id, start_date=(monday + timedelta(days=2)).isoformat(), email_extra=[])
+        with self.assertRaises(HTTPException) as caught:
+            route("/admin/approve-request", "POST")(asked)
+        self.assertEqual(caught.exception.detail["code"], "replaces_pack")
+        self.assertEqual(len(self.plans_rows()), 1)                      # nothing created
+        asked.confirm_replace = True
+        route("/admin/approve-request", "POST")(asked)
+        self.assertEqual([r[1] for r in self.plans_rows()], [False, True])
 
     # ----- conflicts
     def test_a_colliding_pack_is_refused_with_a_list_and_nothing_is_created(self):
-        monday = next_weekday(14, 0)
-        self.renew(per_week=1, days="Monday", start=monday)             # Mondays 09:00
+        today = date.today()
+        past_monday = today - timedelta(days=today.weekday() + 7)       # a session that already happened
+        self.add_session(past_monday, "09:00")
         plans_before, sessions_before = self.plans_rows(), self.sessions_rows()
 
         with self.assertRaises(HTTPException) as caught:
-            self.renew(per_week=1, days="Monday", start=monday)         # the same day and hour again
+            self.renew(per_week=1, days="Monday", start=past_monday)    # the same day and hour again
         self.assertEqual(caught.exception.status_code, 409)
         detail = caught.exception.detail
         self.assertEqual(detail["code"], "conflicts")
-        kinds = {c["kind"] for c in detail["conflicts"]}
-        self.assertIn("client_busy", kinds)
-        self.assertEqual({c["date"] for c in detail["conflicts"] if c["kind"] == "client_busy"},
-                         {monday.isoformat(), (monday + timedelta(days=7)).isoformat()})
+        self.assertEqual({c["date"] for c in detail["conflicts"] if c["kind"] == "client_busy"}, {past_monday.isoformat()})
         self.assertEqual((self.plans_rows(), self.sessions_rows()), (plans_before, sessions_before))   # nothing silently created
-        self.assertEqual(RECEIVED and len([m for m in RECEIVED if "thundbalance-sesiones.ics" in json.dumps(m)]), 1)  # only the first pack's email
 
     def test_create_anyway_creates_everything_including_the_colliding_sessions(self):
-        monday = next_weekday(14, 0)
-        self.renew(per_week=1, days="Monday", start=monday)
-        result = self.renew(per_week=1, days="Monday", start=monday, allow=True)
+        today = date.today()
+        past_monday = today - timedelta(days=today.weekday() + 7)
+        self.add_session(past_monday, "09:00")
+        result = self.renew(per_week=1, days="Monday", start=past_monday, allow=True)
         self.assertEqual(result["total_sessions"], 2)
-        self.assertEqual(len(self.plans_rows()), 2)
-        same_slot = [r for r in self.sessions_rows() if r[1] == monday]
+        same_slot = [r for r in self.sessions_rows() if r[1] == past_monday]
         self.assertEqual(len(same_slot), 2)                             # two sessions the same day and hour, on purpose
+
+    def test_the_sessions_being_replaced_are_not_conflicts(self):
+        monday = next_weekday(14, 0)
+        self.renew(per_week=1, days="Monday", start=monday)             # Mondays 09:00
+        # the same days and hour again: it replaces them, so it collides with nothing
+        result = self.renew(per_week=1, days="Monday", start=monday)
+        self.assertEqual(result["total_sessions"], 2)
+        self.assertEqual([r[1] for r in self.plans_rows()], [False, True])
 
     def test_trainer_busy_and_trainer_hours_are_told_apart(self):
         monday = next_weekday(14, 0)
@@ -308,13 +382,15 @@ class Parallel(unittest.TestCase):
             client_id=self.user_id, plan_id=self.plan_id, sessions_per_week=1, preferred_days="Monday",
             preferred_time="09:00", trainer_id=self.trainer_id, start_date=monday.isoformat()))
         self.assertEqual(preview["total_sessions"], 2)
-        self.assertEqual(len([c for c in preview["conflicts"] if c["kind"] == "client_busy"]), 2)
+        self.assertEqual(preview["replaces"]["count"], 2)               # how many the admin is asked to confirm
+        self.assertEqual([c for c in preview["conflicts"] if c["kind"] == "client_busy"], [])   # they will be cancelled
         self.assertEqual((self.plans_rows(), self.sessions_rows()), (plans_before, sessions_before))
 
         free = route("/admin/packs/preview", "POST")(main.PackPreview(
             client_id=None, plan_id=self.plan_id, sessions_per_week=1, preferred_days="Wednesday",
             preferred_time="16:00", trainer_id=self.trainer_id, start_date=next_weekday(20, 2).isoformat()))
         self.assertEqual((free["total_sessions"], free["conflicts"]), (2, []))
+        self.assertEqual(free["replaces"]["count"], 0)
 
     # ----- sessions that existed before parallel packs
     def test_old_sessions_are_matched_by_date_and_nothing_is_rewritten(self):

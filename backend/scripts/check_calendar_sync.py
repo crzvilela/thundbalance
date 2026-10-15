@@ -38,13 +38,6 @@ def mask(value, keep=8):
     return f"…{value[-keep:]}" if len(value) > keep else value
 
 
-def mask_calendar_id(value):
-    """…d0490@group.calendar.google.com: only the last characters of the part
-    before the @ are shown, enough to tell calendars apart."""
-    local, _, domain = str(value or "").partition("@")
-    return f"…{local[-6:]}@{domain}" if domain else mask(value)
-
-
 def section(title):
     print(f"\n=== {title} ===")
 
@@ -52,10 +45,12 @@ def section(title):
 # --------------------------------------------------------------- 1. configuration
 def show_configuration():
     section("Calendário e credenciais")
-    from_env = bool(os.getenv("GOOGLE_CALENDAR_ID", "").strip())
-    print(f"ID do calendário (máscara): {mask_calendar_id(gc.CALENDAR_ID)}")
-    print("Origem do ID: " + ("variável de ambiente GOOGLE_CALENDAR_ID"
-                              if from_env else "constante por omissão em google_calendar.py (a variável GOOGLE_CALENDAR_ID NÃO está definida)"))
+    try:
+        print(f"ID do calendário (máscara): {gc.mask_calendar_id(gc.get_calendar_id())}")
+        print("Origem do ID: variável de ambiente GOOGLE_CALENDAR_ID")
+    except gc.CalendarNotConfigured as error:
+        print(f"Calendário NÃO configurado: {error}")
+        sys.exit(1)
     if gc._read_env("GOOGLE_CREDENTIALS_JSON"):
         print("Credenciais: variável de ambiente GOOGLE_CREDENTIALS_JSON")
     elif os.path.isfile(gc.SERVICE_ACCOUNT_FILE):
@@ -115,7 +110,6 @@ def compare_sessions(rows, days):
     events = {event["id"]: event for event in gc.list_calendar_events(time_min, time_max) if event.get("id")}
     print(f"Eventos lidos do calendário entre {first} e {last}: {len(events)}")
 
-    service = None
     counts = Counter()
     problems = []
     for sid, client, day, time, trainer, status, event_id, number, sync, sync_error in rows:
@@ -126,10 +120,8 @@ def compare_sessions(rows, days):
         else:
             event = events.get(event_id)
             if event is None:                      # outside the window or really gone
-                if service is None:
-                    service = gc.get_calendar_service()
                 try:
-                    event = service.events().get(calendarId=gc.CALENDAR_ID, eventId=event_id).execute()
+                    event = gc.get_calendar_event(event_id)
                 except Exception as error:  # noqa: BLE001
                     status_code = getattr(getattr(error, "resp", None), "status", None)
                     event = None if status_code in (404, 410) else {"_error": type(error).__name__}
@@ -168,18 +160,18 @@ def compare_sessions(rows, days):
 # --------------------------------------------------------------- 3. static review of the code
 def code_review():
     section("Como o código cria o evento (revisão estática)")
-    source = open(os.path.join(BACKEND, "google_calendar.py"), encoding="utf-8").read()
+    source = open(os.path.join(BACKEND, "event_format.py"), encoding="utf-8").read()
     tree = ast.parse(source)
     for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == "create_calendar_event":
+        if isinstance(node, ast.FunctionDef) and node.name == "event_times":
             body = ast.get_source_segment(source, node)
-            print("create_calendar_event:")
+            print("event_times (event_format.py):")
             print("  hora construída com datetime.fromisoformat(data + ' ' + hora) (hora local, sem conversão para UTC):",
                   "sim" if "fromisoformat" in body and "utc" not in body.lower().replace("timezone", "") else "VERIFICAR")
             print("  timeZone explícito Europe/Madrid no início e no fim:",
-                  "sim" if body.count('"timeZone": "Europe/Madrid"') >= 2 else "NÃO")
-            print("  identificador do evento determinístico (id/extendedProperties):",
-                  "sim" if ("extendedProperties" in body or '"id":' in body) else "não (o Google gera um id novo em cada chamada)")
+                  "sim" if body.count('"timeZone": TIMEZONE') >= 2 and 'TIMEZONE = "Europe/Madrid"' in source else "NÃO")
+    print("  identificador do evento determinístico + marca privada app=thundbalance:",
+          "sim" if "APP_PROPERTY" in source and "event_id_for" in open(os.path.join(BACKEND, "calendar_sync.py"), encoding="utf-8").read() else "NÃO")
 
     section("Quem cria eventos de sessões de cliente")
     for path in sorted(glob.glob(os.path.join(BACKEND, "*.py"))):
@@ -191,7 +183,8 @@ def code_review():
             if "create_calendar_event(" in line and "def " not in line:
                 print(f"  {name}:{number}  {line.strip()}")
     print("  'Renovar pack', 'aprovar pedido' e 'Añadir cliente' passam por packs.create_pack (uma só função).")
-    print("  'Asignar plan' (admin_assign_plan) só muda o tipo de pack: NÃO cria sessões nem eventos.")
+    print("  'Asignar plan' (admin_assign_plan) só muda o tipo de pack e depois reescreve a descrição dos eventos futuros.")
+    print("  O título e a descrição de TODOS os eventos vêm de event_format.py (uma só função).")
 
 
 def _calls_outside_nested_try(statements):

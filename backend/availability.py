@@ -62,17 +62,21 @@ def within_hours(cursor, trainer_id, weekday, time):
     return any(low <= start and end <= high for low, high in _windows(cursor, trainer_id, weekday))
 
 
-def has_conflict(cursor, trainer_id, day, time, ignore_session_id=None, ignore_trial_id=None):
+def has_conflict(cursor, trainer_id, day, time, ignore_session_id=None, ignore_trial_id=None,
+                 ignore_session_ids=None):
     """True when the trainer already has a booked session or an approved
-    trial at that exact date and time."""
+    trial at that exact date and time. ignore_session_ids: sessions that are
+    being replaced by a new pack (they will be cancelled)."""
     cursor.execute(
         """
         SELECT 1 FROM sessions
         WHERE trainer_id = %s AND session_date = %s AND session_time = %s
           AND status = 'Booked' AND (%s::int IS NULL OR id <> %s::int)
+          AND id <> ALL(%s::int[])
         LIMIT 1
         """,
-        (trainer_id, str(day)[:10], hhmm(time), ignore_session_id, ignore_session_id),
+        (trainer_id, str(day)[:10], hhmm(time), ignore_session_id, ignore_session_id,
+         list(ignore_session_ids or [])),
     )
     if cursor.fetchone():
         return True
@@ -88,7 +92,8 @@ def has_conflict(cursor, trainer_id, day, time, ignore_session_id=None, ignore_t
     return cursor.fetchone() is not None
 
 
-def slot_problem(cursor, trainer_id, day, time, ignore_session_id=None, ignore_trial_id=None):
+def slot_problem(cursor, trainer_id, day, time, ignore_session_id=None, ignore_trial_id=None,
+                 ignore_session_ids=None):
     """None when the trainer can take the slot, otherwise a human-readable
     reason (used verbatim in error messages)."""
     cursor.execute("SELECT nome, active FROM trainers WHERE id = %s", (trainer_id,))
@@ -111,7 +116,7 @@ def slot_problem(cursor, trainer_id, day, time, ignore_session_id=None, ignore_t
             f"(works {low // 60:02d}:{low % 60:02d}-{high // 60:02d}:{high % 60:02d})."
         )
 
-    if has_conflict(cursor, trainer_id, day, time, ignore_session_id, ignore_trial_id):
+    if has_conflict(cursor, trainer_id, day, time, ignore_session_id, ignore_trial_id, ignore_session_ids):
         return f"{name} already has a session on {str(day)[:10]} at {hhmm(time)}."
     return None
 

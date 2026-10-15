@@ -37,10 +37,16 @@ function TrialConfirm() {
         if (!response.ok) throw new Error('server')
         return response.json()
       })
-      .then(data => { if (active) setView(data) })
+      .then(data => {
+        if (!active) return
+        // A confirmed session can still be declined: the link of the "decline"
+        // button goes straight to the question.
+        const reopen = data.state === 'confirmed' && searchParams.get('action') === 'decline'
+        setView(reopen ? { ...data, state: 'pending_confirmation' } : data)
+      })
       .catch(() => { if (active) setView({ state: 'error' }) })
     return () => { active = false }
-  }, [token, attempt])
+  }, [token, attempt, searchParams])
 
   const answer = async action => {
     setBusy(true)
@@ -110,7 +116,9 @@ function TrialConfirm() {
   } else if (view.state === 'confirmed' || view.state === 'declined') {
     const confirmed = view.state === 'confirmed'
     content = message(confirmed ? 'tc_confirmed_title' : 'tc_declined_title', confirmed ? 'tc_already_confirmed' : 'tc_already_declined',
-      confirmed ? null : <Link to="/trial-session" className={primary}>{t('tc_new_request')}</Link>)
+      confirmed
+        ? <button type="button" onClick={() => { setMode('decline'); setView({ ...view, state: 'pending_confirmation' }) }} className={secondary}>{t('tc_decline')}</button>
+        : <Link to="/trial-session" className={primary}>{t('tc_new_request')}</Link>)
   } else {
     const declining = mode === 'decline'
     content = (

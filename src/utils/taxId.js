@@ -26,5 +26,5 @@ export function taxIdProblem(type, value) {
     const number = { X: '0', Y: '1', Z: '2' }[text[0]] + text.slice(1, 8)
     return LETTERS[Number(number) % 23] === text[8] ? null : 'nie_letter'
   }
-  return /^[\p{L}\p{N}]{4,20}$/u.test(text) ? null : 'other_format'
+  return /^[\p{L}\p{N}]{5,20}$/u.test(text) ? null : 'other_format'
 }

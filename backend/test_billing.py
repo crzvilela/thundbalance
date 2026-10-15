@@ -295,7 +295,7 @@ class Endpoints(unittest.TestCase):
         self.assertEqual((profile["tax_id_type"], profile["tax_id"], profile["country"]), ("DNI", DNI, "España"))
 
         update = route("/profile/{user_id}", "PUT")
-        body = dict(telefone="600", codigo_pais="+34", cidade="Barcelona", morada="Calle Nueva 5", cep="08001")
+        body = dict(telefone="600123456", codigo_pais="+34", cidade="Barcelona", morada="Calle Nueva 5", cep="08001")
         self.assertEqual(update(user_id, main.UpdateProfile(**body, tax_id_type="NIE", tax_id=NIE, country="Francia"), claims),
                          {"message": "Profile updated successfully"})
         self.assertEqual(self.user("ana" + DOMAIN)[1:5], ("NIE", NIE, "Francia", "Calle Nueva 5"))
@@ -322,7 +322,7 @@ class Endpoints(unittest.TestCase):
         out = io.StringIO()
         with redirect_stdout(out):
             result = route("/profile/{user_id}", "PUT")(user_id, main.UpdateProfile(
-                telefone="1", codigo_pais="+34", cidade="x", morada=SECRET_STREET, cep="1", country=too_long), claims)
+                telefone="600123456", codigo_pais="+34", cidade="x", morada=SECRET_STREET, cep="08001", country=too_long), claims)
         self.assertNotIn(SECRET_STREET, json.dumps(result))
         self.assertNotIn(SECRET_STREET, out.getvalue())
 

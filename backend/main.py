@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, R
 
 import os
 import re
+import threading
 import time as _time
 import json
 import traceback
@@ -25,12 +26,13 @@ from google_calendar import (
 )
 from landing_page_default import DEFAULT_LANDING_CONTENT
 from admin_api import register_admin_routes
+from client_lifecycle import ensure_columns as ensure_lifecycle_columns, register_client_lifecycle_routes
 from contact_messages import register_contact_routes
 from trial_notifications import notify_trial_requested
 import mailer
 from packs import (
     DAY_MAP, clean_pack_recipients, create_pack, delete_created_events, email_pack,
-    ensure_pack_columns, preview_pack, validate_pack_request,
+    ensure_pack_columns, preview_pack, remove_replaced_events, validate_pack_request,
 )
 import pack_view
 from emails import team_emails
@@ -40,6 +42,7 @@ import calendar_sync
 import calendar_feed
 import google_calendar
 import tax_id
+import validators
 from trial_confirmation import ensure_confirmation_fields, register_trial_confirmation_routes
 from client_accounts import ensure_account_fields, register_client_account_routes
 import firebase_accounts
@@ -138,6 +141,19 @@ def require_client(authorization: str | None = Header(default=None)):
 
 
 register_admin_routes(app, require_admin)
+register_client_lifecycle_routes(
+    app, require_admin, ADMIN_EMAIL,
+    upload_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads"),
+)
+
+
+@app.on_event("startup")
+def ensure_client_lifecycle_columns():
+    # users.archived_at + admin_audit_log (client_lifecycle.py). Idempotent.
+    try:
+        ensure_lifecycle_columns()
+    except Exception as error:  # noqa: BLE001
+        print(f"client lifecycle columns could not be created: {type(error).__name__}")
 
 
 @app.on_event("startup")
@@ -334,9 +350,12 @@ def ensure_calendar_sync_columns():
         calendar_sync.ensure_columns()
     except Exception as error:  # noqa: BLE001
         print(f"calendar_sync columns could not be created: {type(error).__name__}")
-    target = google_calendar.describe_target()
-    origin = "variable GOOGLE_CALENDAR_ID" if target["source"] == "env" else "constante por defecto (GOOGLE_CALENDAR_ID NO está definida)"
-    print(f"Google Calendar: {target['calendar']} (origen: {origin})", flush=True)
+    # "Calendar: OK (…ce.com)" or "Calendar: NÃO configurado (motivo)". It asks
+    # Google, so it runs apart: a slow answer never delays the server.
+    threading.Thread(
+        target=lambda: print(google_calendar.status_line(), flush=True),
+        daemon=True,
+    ).start()
 
 
 @app.on_event("startup")
@@ -487,6 +506,9 @@ class ApproveRequest(BaseModel):
     email_client: bool = True
     email_extra: list[str] | None = None
     allow_conflicts: bool = False
+    # the admin confirmed that the client's current pack is replaced from the
+    # start date (its future sessions from then on are cancelled)
+    confirm_replace: bool = False
 
 
 class RenewPack(BaseModel):
@@ -500,6 +522,9 @@ class RenewPack(BaseModel):
     email_extra: list[str] | None = None
     # create the sessions even when some collide (the panel asks first)
     allow_conflicts: bool = False
+    # the admin confirmed that the client's current pack is replaced from the
+    # start date (its future sessions from then on are cancelled)
+    confirm_replace: bool = False
 
 
 class PackPreview(BaseModel):
@@ -652,6 +677,16 @@ def create_user(user: UserCreate, claims=Depends(require_client)):
     user.firebase_uid = claims.get("sub")
     user.email = str(claims.get("email") or user.email).strip()
 
+    try:
+        user.nome = validators.validate_name(user.nome, "name")
+        if user.telefone:
+            user.telefone = validators.validate_phone(user.telefone, user.codigo_pais)
+            user.codigo_pais = validators.split_phone(user.telefone)[0]
+        if user.cep:
+            user.cep = validators.validate_postal_code(user.cep, validators.region_of_phone(user.telefone) or "ES")
+    except validators.FieldError as error:
+        raise validators.http_error(error) from None
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -747,6 +782,7 @@ def get_users():
             SELECT id, firebase_uid, nome, email, foto, telefone, codigo_pais, cidade, morada, cep,
                    must_change_password, tax_id
             FROM users
+            WHERE archived_at IS NULL
             """
         )
 
@@ -1094,11 +1130,8 @@ def update_session(
         # moved this is recorded (and "Sincronizar con calendario" retries it).
         if google_event_id:
             try:
-                update_calendar_event(
-                    google_event_id,
-                    session.session_date,
-                    session.session_time
-                )
+                # New day and hour plus the rewritten description (Día / Horario)
+                calendar_sync.push_session(cursor, session_id)
                 calendar_sync.record(cursor, session_id, True)
             except Exception as calendar_error:  # noqa: BLE001
                 reason = google_calendar.describe_error(calendar_error)
@@ -1133,7 +1166,7 @@ def get_admin_stats():
 
     try:
 
-        cursor.execute("SELECT COUNT(*) FROM users")
+        cursor.execute("SELECT COUNT(*) FROM users WHERE archived_at IS NULL")
         total_users = cursor.fetchone()[0]
 
         cursor.execute("SELECT COUNT(*) FROM trainers")
@@ -1182,6 +1215,8 @@ def admin_users():
                 )
 
             FROM users u
+
+            WHERE u.archived_at IS NULL
 
             ORDER BY u.id
             """
@@ -1322,12 +1357,27 @@ def update_profile(
 
     try:
 
+        # A phone or postal code that is exactly what is already saved is not
+        # checked again: old records keep opening and saving. A new value must be valid.
+        cursor.execute("SELECT telefone, cep, country FROM users WHERE id = %s", (user_id,))
+        saved_contact = cursor.fetchone() or (None, None, None)
+        telefone, codigo_pais, cep = profile.telefone, profile.codigo_pais, profile.cep
+        try:
+            if str(telefone or "").strip() != str(saved_contact[0] or "").strip():
+                telefone = validators.validate_phone(telefone, codigo_pais)
+                codigo_pais = validators.split_phone(telefone)[0]
+            if str(cep or "").strip() != str(saved_contact[1] or "").strip() and str(cep or "").strip():
+                region = validators.region_of_phone(telefone) or profile.country or saved_contact[2] or "ES"
+                cep = validators.validate_postal_code(cep, region)
+        except validators.FieldError as error:
+            raise validators.http_error(error) from None
+
         fields = {
-            "telefone": profile.telefone,
-            "codigo_pais": profile.codigo_pais,
+            "telefone": telefone,
+            "codigo_pais": codigo_pais,
             "cidade": profile.cidade,
             "morada": profile.morada,
-            "cep": profile.cep,
+            "cep": cep,
         }
         if profile.country is not None:
             fields["country"] = " ".join(profile.country.split())[:60] or None
@@ -1572,26 +1622,20 @@ def create_trial_session(
             detail="Too many requests from this connection. Please try again later."
         )
 
-    full_name = trial.full_name.strip()
-    email = trial.email.strip().lower()
-    phone = trial.phone.strip()
-
-    if len(full_name) < 2 or len(full_name) > 100:
-        raise HTTPException(status_code=422, detail="Please enter your full name.")
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email) or len(email) > 150:
-        raise HTTPException(status_code=422, detail="Please enter a valid email address.")
-    if len(re.sub(r"\D", "", phone)) < 6 or len(phone) > 30:
-        raise HTTPException(status_code=422, detail="Please enter a valid phone number.")
+    # The same rules as the site (validators.py); the answer is a code and a fixed
+    # message, never the value typed. The phone is stored as E.164 (+34613502662).
+    try:
+        full_name = validators.validate_name(trial.full_name, "full_name", 100)
+        email = validators.validate_email(trial.email)
+        phone = validators.validate_phone(trial.phone)
+        birth_date = validators.validate_birth_date(trial.birth_date) if trial.birth_date else None
+    except validators.FieldError as error:
+        raise validators.http_error(error) from None
     age = trial.age
-    birth_date = None
-    if trial.birth_date:
-        try:
-            birth_date = datetime.strptime(trial.birth_date, "%Y-%m-%d").date()
-        except ValueError:
-            raise HTTPException(status_code=422, detail="Please enter a valid date of birth.")
+    if birth_date:
         age = age_from_birth_date(birth_date)
     if age is not None and not 10 <= age <= 100:
-        raise HTTPException(status_code=422, detail="Please enter a valid date of birth.")
+        raise validators.http_error(validators.FieldError("invalid_birth_date", "birth_date"))
 
     chosen = trial.goals if trial.goals is not None else [g.strip() for g in trial.goal.split(",") if g.strip()]
     goals = [g for g in TRIAL_GOALS if g in chosen]
@@ -1744,8 +1788,18 @@ def admin_assign_plan(
 
         conn.commit()
 
+        # The pack name is part of every event description: bring the client's
+        # future events to the new pack. A calendar failure never undoes the
+        # change; it is reported (and "Sincronizar con calendario" retries it).
+        calendar = None
+        try:
+            calendar = calendar_sync.sync_client(data.user_id)
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+
         return {
-            "message": "Plan assigned successfully"
+            "message": "Plan assigned successfully",
+            "calendar": calendar,
         }
 
     except Exception as e:
@@ -2048,6 +2102,7 @@ def approve_request(
             sessions_per_week=sessions_per_week, preferred_days=preferred_days,
             preferred_time=preferred_time, start_date=data.start_date,
             request_id=data.request_id, allow_conflicts=data.allow_conflicts,
+            confirm_replace=data.confirm_replace,
         )
 
         cursor.execute(
@@ -2074,6 +2129,7 @@ def approve_request(
         )
 
         conn.commit()
+        remove_replaced_events(created)     # only now: the cancelled sessions are saved
 
         email = email_pack(
             created, client_name=client_name, client_email=client_email,
@@ -2143,10 +2199,11 @@ def admin_renew_pack(client_id: int, data: RenewPack):
             plan_id=data.plan_id, trainer_id=data.trainer_id, trainer_name=trainer_name,
             sessions_per_week=data.sessions_per_week, preferred_days=",".join(days),
             preferred_time=data.preferred_time, start_date=data.start_date,
-            allow_conflicts=data.allow_conflicts,
+            allow_conflicts=data.allow_conflicts, confirm_replace=data.confirm_replace,
         )
 
         conn.commit()
+        remove_replaced_events(created)     # only now: the cancelled sessions are saved
 
         email = email_pack(
             created, client_name=client_name, client_email=client_email, days=days,

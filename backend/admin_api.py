@@ -29,6 +29,7 @@ import calendar_sync
 import google_calendar
 import pack_view
 import tax_id
+import validators
 from emails import log as email_log
 from emails import health as email_health
 from emails.dates import to_madrid
@@ -106,7 +107,10 @@ def register_admin_routes(app, require_admin):
     admin = [Depends(require_admin)]
 
     @app.get("/admin/clients", dependencies=admin)
-    def admin_clients():
+    def admin_clients(archived: str | None = None):
+        """The normal list leaves archived clients out; ?archived=only returns
+        only them (the "Archivados" tab)."""
+        only_archived = archived == "only"
         conn = get_connection()
         cursor = conn.cursor()
         try:
@@ -123,7 +127,8 @@ def register_admin_routes(app, require_admin):
                         WHERE cr.user_id = u.id AND LOWER(cr.status) = 'pending' AND cr.archived_at IS NULL
                     ),
                     u.tax_id, u.morada,
-                    pl.packs
+                    pl.packs,
+                    u.archived_at
                 FROM users u
                 LEFT JOIN LATERAL (
                     -- all active packs: name of the newest, the latest end date, how many
@@ -143,8 +148,10 @@ def register_admin_routes(app, require_admin):
                         MAX(session_date) FILTER (WHERE status <> 'Cancelled') AS last_date
                     FROM sessions WHERE user_id = u.id
                 ) s ON TRUE
+                WHERE (u.archived_at IS NOT NULL) = %s
                 ORDER BY LOWER(u.nome)
-                """
+                """,
+                (only_archived,),
             )
             return [
                 {
@@ -159,6 +166,7 @@ def register_admin_routes(app, require_admin):
                     "tax_id_masked": tax_id.mask(r[14]),
                     "billing_missing": not (r[14] and str(r[15] or "").strip()),
                     "packs_active": r[16] or 0,
+                    "archived_at": _iso(r[17]),
                 }
                 for r in cursor.fetchall()
             ]
@@ -174,7 +182,7 @@ def register_admin_routes(app, require_admin):
             cursor.execute(
                 """
                 SELECT id, nome, email, telefone, codigo_pais, cidade, morada, cep, foto, must_change_password,
-                       tax_id_type, tax_id, country, calendar_feed_token IS NOT NULL
+                       tax_id_type, tax_id, country, calendar_feed_token IS NOT NULL, archived_at
                 FROM users WHERE id = %s
                 """,
                 (client_id,),
@@ -234,6 +242,7 @@ def register_admin_routes(app, require_admin):
                 # whether the client's subscribable calendar link exists (the link
                 # itself is only given by /admin/clients/{id}/calendar-feed)
                 "calendar_feed_generated": bool(user[13]),
+                "archived_at": _iso(user[14]),
                 # invoicing data (the full document: only on the record, only for the admin)
                 "tax_id_type": user[10], "tax_id": user[11], "country": user[12],
                 "billing_missing": not (user[11] and str(user[6] or "").strip()),
@@ -281,6 +290,15 @@ def register_admin_routes(app, require_admin):
                     raise HTTPException(status_code=422, detail=error.message) from None
 
             fields = {"tax_id_type": new_type, "tax_id": new_doc}
+            if data.postal_code is not None and text(data.postal_code, 20):
+                cursor.execute("SELECT telefone, country, cep FROM users WHERE id = %s", (client_id,))
+                saved = cursor.fetchone() or (None, None, None)
+                if text(data.postal_code, 20) != (saved[2] or ""):      # unchanged old values are not checked again
+                    region = validators.region_of_phone(saved[0]) or data.country or saved[1] or "ES"
+                    try:
+                        validators.validate_postal_code(data.postal_code, region)
+                    except validators.FieldError as error:
+                        raise validators.http_error(error) from None
             for column, value, limit in (
                 ("morada", data.address, 200), ("cep", data.postal_code, 20),
                 ("cidade", data.city, 80), ("country", data.country, 60),
@@ -502,10 +520,11 @@ def register_admin_routes(app, require_admin):
                     "approved_at": _iso(r[18]) if r[18] else None,
                     "confirmed_at": _iso(r[19]) if r[19] else None,
                     "declined_at": _iso(r[20]) if r[20] else None,
-                    # Approved or confirmed but with no event on the calendar: the panel
-                    # offers "Crear evento" (calendar_failed = the last attempt errored).
-                    "calendar_missing": status in ("approved", "confirmed") and not r[16],
-                    "calendar_failed": status in ("approved", "confirmed") and not r[16] and bool(r[17]),
+                    # Confirmed by the client but with no event on the calendar: the panel
+                    # offers "Crear evento en el calendario" (calendar_failed = the last
+                    # attempt errored). An approved session has no event by design.
+                    "calendar_missing": status == "confirmed" and not r[16],
+                    "calendar_failed": status == "confirmed" and not r[16] and bool(r[17]),
                     # Newest approval email, from email_log (None: none was ever sent)
                     "approval_email": ({
                         "status": "sent" if sent["status"] == email_log.SENT else "failed",
@@ -528,8 +547,8 @@ def register_admin_routes(app, require_admin):
     @app.post("/admin/trial-sessions/{trial_id}/approve", dependencies=admin)
     def admin_approve_trial(trial_id: int, data: TrialApprovePayload):
         """Approves the request. Everything (status, token, email in the saved
-        language, provisional calendar event) happens in approve_trial(), the
-        only approval path; the answer says how the email and the calendar went."""
+        language) happens in approve_trial(), the only approval path. Approving
+        creates NO calendar event: it is created when the client confirms."""
         try:
             result = approve_trial(trial_id, data.trainer_id)
         except HTTPException:
@@ -571,8 +590,9 @@ def register_admin_routes(app, require_admin):
 
     @app.post("/admin/trial-sessions/{trial_id}/calendar-event", dependencies=admin)
     def admin_trial_calendar_event(trial_id: int):
-        """Creates the calendar event if it is missing (or refreshes the existing
-        one: it never makes a second event). The panel button "Crear evento"."""
+        """Creates the calendar event of a CONFIRMED trial session if it is
+        missing (or refreshes the existing one: it never makes a second event).
+        The panel button "Crear evento en el calendario"."""
         conn = get_connection()
         cursor = conn.cursor()
         try:
@@ -584,9 +604,12 @@ def register_admin_routes(app, require_admin):
         if not row:
             raise HTTPException(status_code=404, detail="Trial session not found")
         status = panel_status(row[0], row[1])
-        if status not in ("approved", "confirmed"):
-            raise HTTPException(status_code=409, detail="Only approved or confirmed trial sessions have a calendar event")
-        ok = sync_calendar_event(trial_id, provisional=(status == "approved"))
+        if status != "confirmed":
+            raise HTTPException(
+                status_code=409,
+                detail="Only trial sessions confirmed by the client have a calendar event",
+            )
+        ok = sync_calendar_event(trial_id)
         return {"calendar": {"ok": ok}}
 
     @app.post("/admin/trial-sessions/{trial_id}/reject", dependencies=admin)
