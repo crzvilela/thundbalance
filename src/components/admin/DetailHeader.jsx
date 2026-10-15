@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../../admin/ui'
 
-// "···" menu: items are { label, icon, onClick, disabled, hidden, danger }.
-// A `danger` item is drawn in red, separated from the rest.
+// "···" menu: items are { label, icon, onClick, disabled, hidden }.
 export function MoreMenu({ items, label }) {
   const [open, setOpen] = useState(false)
   const box = useRef(null)
@@ -24,15 +23,11 @@ export function MoreMenu({ items, label }) {
       </button>
       {open && (
         <div role="menu" className="absolute right-0 top-full z-20 mt-2 w-64 overflow-hidden rounded-xl border border-white/10 bg-[#101413] py-1 shadow-2xl shadow-black/60">
-          {visible.map((item, index) => (
+          {visible.map(item => (
             <button key={item.label} type="button" role="menuitem" disabled={item.disabled}
               onClick={() => { setOpen(false); item.onClick() }}
-              className={`flex min-h-[44px] w-full items-center gap-3 px-4 text-left text-sm transition disabled:opacity-50 ${
-                item.danger
-                  ? `text-red-300 hover:bg-red-500/15 ${index > 0 ? 'border-t border-white/10' : ''}`
-                  : 'text-gray-100 hover:bg-white/10'
-              }`}>
-              {item.icon && <Icon name={item.icon} className={`h-4 w-4 ${item.danger ? 'text-red-300' : 'text-gray-400'}`} />}{item.label}
+              className="flex min-h-[44px] w-full items-center gap-3 px-4 text-left text-sm text-gray-100 transition hover:bg-white/10 disabled:opacity-50">
+              {item.icon && <Icon name={item.icon} className="h-4 w-4 text-gray-400" />}{item.label}
             </button>
           ))}
         </div>
