@@ -151,7 +151,7 @@ class EmailTests(unittest.TestCase):
         os.environ["TRIAL_EMAIL_WEBHOOK_SECRET"] = "wrong"
         result = send_email("ana@example.com", "S", "<p>x</p>", "x")
         self.assertFalse(result.ok)
-        self.assertEqual(result.error, "rejected")
+        self.assertEqual(result.error, "unauthorized")
 
     def test_unreachable_and_unconfigured_do_not_raise(self):
         os.environ["TRIAL_EMAIL_WEBHOOK_URL"] = "http://127.0.0.1:9/none"

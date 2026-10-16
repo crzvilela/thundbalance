@@ -9,6 +9,7 @@ import { VideoMedia } from './EditableVideo'
 // same solid color they already had before this was configurable).
 // Independent of background.type — a leftover `color` value doesn't hurt
 // when type is 'image'/'video' since it just paints underneath the media.
+// eslint-disable-next-line react-refresh/only-export-components
 export function sectionBackgroundStyle(background) {
   if (!background || !background.color) return undefined
   return { backgroundColor: background.color }

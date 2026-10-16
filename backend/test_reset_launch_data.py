@@ -80,8 +80,13 @@ def run(*argv):
 class ResetLaunchData(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        # CREATE DATABASE ... TEMPLATE needs the source database free: when the whole suite
+        # runs, other tests may have left pooled connections open on it.
+        database._drop_idle()
         conn = admin_connection()
         cur = conn.cursor()
+        cur.execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    "WHERE datname IN ('thundbalance', %s) AND pid <> pg_backend_pid()", (COPY_NAME,))
         cur.execute(f"DROP DATABASE IF EXISTS {COPY_NAME}")
         cur.execute(f"CREATE DATABASE {COPY_NAME} TEMPLATE thundbalance")
         conn.close()

@@ -199,7 +199,7 @@ class Accounts(unittest.TestCase):
             result = self.create()
         user = self.db_user("ana" + DOMAIN)
         self.assertEqual((user[1], user[2], user[3]), ("Ana García", "fake-uid-1", True))
-        self.assertEqual(user[4:], ("600123456", "+34", "Barcelona", "Carrer X 1", "08005"))
+        self.assertEqual(user[4:], ("+34600123456", "+34", "Barcelona", "Carrer X 1", "08005"))
         self.assertTrue(result["email"]["sent"])
         self.assertIsNone(result["pack"])
         self.assertEqual(self.events, [])

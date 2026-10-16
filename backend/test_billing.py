@@ -217,9 +217,11 @@ class Endpoints(unittest.TestCase):
         with self.assertRaises(HTTPException) as caught:
             self.create(email="bad" + DOMAIN, tax_id_type="DNI", tax_id="12345678A")
         self.assertEqual(caught.exception.status_code, 422)
-        self.assertIn("La letra del DNI no es correcta", caught.exception.detail)
-        self.assertIn("The DNI letter is not correct", caught.exception.detail)
-        self.assertNotIn("12345678A", caught.exception.detail)
+        detail = caught.exception.detail          # {"code", "field", "message"}
+        self.assertEqual(detail["code"], "tax_id_dni_letter")
+        self.assertIn("La letra del DNI no es correcta", detail["message"])
+        self.assertIn("The DNI letter is not correct", detail["message"])
+        self.assertNotIn("12345678A", str(detail))
         self.assertIsNone(self.user("bad" + DOMAIN))                   # nothing was created
         self.assertEqual(self.firebase.get("bad" + DOMAIN), None)
 
@@ -329,12 +331,12 @@ class Endpoints(unittest.TestCase):
     # ----- nothing sensitive leaves through emails, logs or validation errors
     def test_emails_logs_and_errors_never_carry_the_document_or_the_address(self):
         result = self.create(tax_id_type="DNI", tax_id=DNI, address=SECRET_STREET, country="España",
-                             city="Barcelona", postal_code="99887", pack=True)
+                             city="Barcelona", postal_code="28013", pack=True)
         self.assertTrue(result["email"]["sent"])
         self.drain_mail()                                              # the studio copy is sent in the background
         self.assertGreaterEqual(len(RECEIVED), 2)                      # welcome (+pack summary) and the studio copy
         everything = json.dumps(RECEIVED, ensure_ascii=False)
-        for secret in (DNI, "12.345.678", SECRET_STREET, "99887", "España"):
+        for secret in (DNI, "12.345.678", SECRET_STREET, "28013", "España"):
             self.assertNotIn(secret, everything, f"{secret!r} leaked into an email")
 
         logged = "\n".join(self.logs.lines) + self.stdout

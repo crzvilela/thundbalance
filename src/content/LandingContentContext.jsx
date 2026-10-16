@@ -126,6 +126,7 @@ const LandingContentContext = createContext(defaultContextValue)
 
 // Any component (even outside a Provider, e.g. Navbar rendered on other
 // pages) can safely call this hook and will get sensible read-only defaults.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useLandingContent() {
   return useContext(LandingContentContext)
 }

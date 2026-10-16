@@ -32,11 +32,13 @@ function Dashboard() {
   }, [navigate])
 
   useEffect(() => {
-    loadWorkflow()
     const refresh = () => loadWorkflow()
+    // first load on the next tick, so the effect itself does not set state synchronously
+    const first = window.setTimeout(refresh, 0)
     const timer = window.setInterval(refresh, 15000)
     window.addEventListener('focus', refresh)
     return () => {
+      window.clearTimeout(first)
       window.clearInterval(timer)
       window.removeEventListener('focus', refresh)
     }
