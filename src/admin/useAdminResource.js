@@ -14,7 +14,12 @@ export function useAdminResource(path) {
 
     adminFetch(`${API_URL}${path}`)
       .then(async response => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        if (!response.ok) {
+          // The server explains why (e.g. "Could not read Google Calendar: ..."): show it.
+          const body = await response.json().catch(() => ({}))
+          const reason = typeof body.detail === 'string' ? body.detail : (body.detail?.message || '')
+          throw new Error(`HTTP ${response.status}${reason ? `: ${reason.slice(0, 300)}` : ''}`)
+        }
         return response.json()
       })
       .then(data => { if (!cancelled) setState({ data, loading: false, error: '' }) })
