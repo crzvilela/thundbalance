@@ -7,6 +7,7 @@ cancelled.
 """
 from .dates import format_date_bilingual, parse_madrid
 from .ics import build_ics
+from calendar_titles import client_trial_title
 from .template import (
     STUDIO_PLACE, button, heading, key_value, link_line, notice, paragraph, sessions_table, site_url,
 )
@@ -170,15 +171,18 @@ def client_trial_confirmed(name, start, trainer, trial_id, lang=None):
     ics = build_ics([{
         "id": f"trial-{trial_id}",
         "start": start,
-        "summary": {"es": "ThundBalance · Sesión de prueba", "ca": "ThundBalance · Sessió de prova",
-                    "en": "ThundBalance · Trial session"}.get(lang, "ThundBalance · Sesión de prueba / Trial session"),
+        "summary": client_trial_title(trainer),
+        "sequence": 0,
         "description": (f"{ {'es': 'Entrenador', 'ca': 'Entrenador'}.get(lang, 'Trainer') if lang else 'Entrenador / Trainer'}: {trainer}") if trainer else "",
         "location": STUDIO_PLACE,
     }])
     return subject, html, text, ics
 
 
-def client_trial_cancelled(name, start, lang=None):
+def client_trial_cancelled(name, start, lang=None, trial_id=None, trainer=None, sequence=1):
+    """(subject, html, text, ics). `ics` is a METHOD:CANCEL file (STATUS:CANCELLED, the same
+    UID as the confirmation, a higher SEQUENCE) when the caller gives the trial id, so the event
+    leaves the client's calendar; otherwise None."""
     lang = normalize_language(lang)
     day = format_date_bilingual(start)
 
@@ -189,4 +193,15 @@ def client_trial_cancelled(name, start, lang=None):
             paragraph(tr(l, "trial_cancelled_body", when=day.full(l))),
             _button(lang, "trial_cancelled_button", f"{site_url()}/trial-session" + (f"?lang={lang}" if lang else "")),
         ]
-    return localized_email(lang, "trial_cancelled_subject", build, title_key="trial_cancelled_title")
+    subject, html, text = localized_email(lang, "trial_cancelled_subject", build, title_key="trial_cancelled_title")
+    ics = None
+    if trial_id is not None:
+        ics = build_ics([{
+            "id": f"trial-{trial_id}",
+            "start": start,
+            "summary": client_trial_title(trainer),
+            "location": STUDIO_PLACE,
+            "sequence": int(sequence),
+            "status": "CANCELLED",
+        }], method="CANCEL")
+    return subject, html, text, ics

@@ -59,6 +59,8 @@ def ensure_confirmation_fields():
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMP")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS declined_at TIMESTAMP")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS calendar_error TEXT")
+        # SEQUENCE of the client's calendar event: bumped when a confirmed session is declined or cancelled
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS feed_sequence INTEGER NOT NULL DEFAULT 0")
         # Language of the site when the visit asked for the session (en | es | ca).
         # Added without a default first so rows from before stay NULL (they keep the older
         # ES+EN emails); new rows default to 'en', the language the site starts in.
@@ -180,8 +182,10 @@ def register_trial_confirmation_routes(app):
                 return {"outcome": f"already_{state}", **view}
 
             column = "confirmed_at" if wanted == "confirmed" else "declined_at"
+            # a confirmed session that is declined leaves the client's calendar: its SEQUENCE grows
+            bump = ", feed_sequence = feed_sequence + 1" if changing_mind else ""
             cursor.execute(
-                f"UPDATE trial_sessions SET status = %s, {column} = NOW() WHERE id = %s",
+                f"UPDATE trial_sessions SET status = %s, {column} = NOW(){bump} WHERE id = %s",
                 ("Confirmed" if wanted == "confirmed" else "Declined", row[0]),
             )
             conn.commit()                             # the answer is saved before anything else
@@ -458,12 +462,16 @@ def resend_received(trial_id):
 
 
 def _remove_event(row):
-    """Delete the calendar event if one exists (a declined session frees the
+    remove_trial_event(row[0], row[11])
+
+
+def remove_trial_event(trial_id, event_id):
+    """Delete the calendar event if one exists (a declined or cancelled session frees the
     slot). An event that is already gone counts as deleted; any other failure
     is stored in calendar_error and the id is kept so it can be retried."""
-    event_id = row[11]
     if not event_id:
         return
+    row = (trial_id,)
     try:
         try:
             delete_calendar_event(event_id)

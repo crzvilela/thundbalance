@@ -33,7 +33,9 @@ import validators
 from emails import log as email_log
 from emails import health as email_health
 from emails.dates import to_madrid
-from trial_confirmation import approve_trial, panel_status, resend_approval, resend_received, sync_calendar_event
+from trial_confirmation import (
+    approve_trial, panel_status, remove_trial_event, resend_approval, resend_received, sync_calendar_event,
+)
 
 
 class PlanPayload(BaseModel):
@@ -642,24 +644,30 @@ def register_admin_routes(app, require_admin):
         cursor = conn.cursor()
         try:
             cursor.execute(
-                "SELECT google_event_id, status, email, full_name, session_date, session_time, lang FROM trial_sessions WHERE id = %s", (trial_id,)
+                """SELECT ts.google_event_id, ts.status, ts.email, ts.full_name, ts.session_date, ts.session_time, ts.lang,
+                          ts.confirmed_at IS NOT NULL OR ts.confirmation_token IS NULL, t.nome
+                   FROM trial_sessions ts LEFT JOIN trainers t ON t.id = ts.trainer_id WHERE ts.id = %s""", (trial_id,)
             )
             row = cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Trial session not found")
             if str(row[1]).lower() not in ("approved", "confirmed"):
                 raise HTTPException(status_code=409, detail="Only approved or confirmed trial sessions can be cancelled")
-            if row[0]:
-                try:
-                    delete_calendar_event(row[0])
-                except Exception:
-                    traceback.print_exc()
+            # the event id is kept until Google confirms the deletion (remove_trial_event below)
             cursor.execute(
-                "UPDATE trial_sessions SET status = 'Cancelled', google_event_id = NULL WHERE id = %s", (trial_id,)
+                "UPDATE trial_sessions SET status = 'Cancelled', feed_sequence = feed_sequence + 1 WHERE id = %s "
+                "RETURNING feed_sequence", (trial_id,)
             )
+            sequence = cursor.fetchone()[0]
             conn.commit()
+            remove_trial_event(trial_id, row[0])
             first_name = (str(row[3]).split() or [""])[0]
-            mailer.send_trial_cancelled(row[2], first_name, str(row[4]), str(row[5])[:5], row[6], reference=trial_id)
+            # the client had it in their calendar only if they had confirmed it
+            confirmed = str(row[1]).lower() == "confirmed" or (str(row[1]).lower() == "approved" and row[7])
+            mailer.send_trial_cancelled(
+                row[2], first_name, str(row[4]), str(row[5])[:5], row[6], reference=trial_id,
+                trial_id=trial_id if confirmed else None, trainer=row[8], sequence=sequence,
+            )
             return {"message": "Trial session cancelled"}
         except HTTPException:
             conn.rollback()

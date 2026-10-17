@@ -286,6 +286,62 @@ class Flow(unittest.TestCase):
             mailer.send_trial_cancelled = orig
         self.assertEqual(len(sent), 2)
 
+    # ----- the client's calendar: SEQUENCE and the cancellation file
+    def feed_sequence(self, trial_id):
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT feed_sequence, google_event_id FROM trial_sessions WHERE id=%s", (trial_id,))
+        data = cur.fetchone()
+        conn.close()
+        return data
+
+    def test_declining_after_confirming_removes_the_event_and_raises_the_sequence(self):
+        trial_id = self.new_trial(days=22, hour="10:00")
+        token = self.approve(trial_id)
+        self.confirm(token)
+        self.assertEqual(self.feed_sequence(trial_id), (0, "evt-1"))
+        self.assertEqual(self.decline(token)["outcome"], "declined")
+        self.assertEqual(self.deleted, ["evt-1"])
+        self.assertEqual(self.feed_sequence(trial_id), (1, None))          # the client's calendar copy is cancelled
+        self.assertEqual(self.decline(token)["outcome"], "already_declined")
+        self.assertEqual(self.feed_sequence(trial_id)[0], 1)               # pressed twice: bumped once
+
+    def test_cancelling_a_confirmed_trial_sends_the_cancellation_file_only_to_those_who_had_it(self):
+        cancel = endpoint("/admin/trial-sessions/{trial_id}/cancel", "POST")
+        calls = []
+        orig = mailer.send_trial_cancelled
+        mailer.send_trial_cancelled = lambda *a, **k: calls.append(k)
+        try:
+            waiting = self.new_trial(days=23, hour="09:00")
+            self.approve(waiting)
+            cancel(waiting)
+            confirmed = self.new_trial(days=24, hour="09:00")
+            self.confirm(self.approve(confirmed))
+            cancel(confirmed)
+        finally:
+            mailer.send_trial_cancelled = orig
+        self.assertIsNone(calls[0]["trial_id"])                            # never in the client's calendar
+        self.assertEqual((calls[1]["trial_id"], calls[1]["sequence"]), (confirmed, 1))
+        self.assertEqual(self.feed_sequence(confirmed), (1, None))
+
+    def test_cancelling_keeps_the_event_id_when_google_fails(self):
+        trial_id = self.new_trial(days=25, hour="09:00")
+        self.confirm(self.approve(trial_id))
+        orig = mailer.send_trial_cancelled
+        mailer.send_trial_cancelled = lambda *a, **k: None
+
+        def broken(event_id):
+            raise RuntimeError("calendar down")
+
+        tc.delete_calendar_event = broken
+        try:
+            endpoint("/admin/trial-sessions/{trial_id}/cancel", "POST")(trial_id)
+        finally:
+            mailer.send_trial_cancelled = orig
+        status, event_id, _, calendar_error, _, _ = self.row(trial_id)
+        self.assertEqual((status, event_id), ("Cancelled", "evt-1"))       # kept, so it can be removed later
+        self.assertTrue(calendar_error)
+
 
 if __name__ == "__main__":
     unittest.main()

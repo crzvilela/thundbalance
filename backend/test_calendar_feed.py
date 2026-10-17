@@ -13,22 +13,34 @@ import calendar_feed
 
 
 class FakeCursor:
-    def __init__(self, rows):
-        self.rows = rows
+    """Answers each query of the feed by what it asks for."""
+
+    def __init__(self, sessions=(), trials=(), email="ana@example.com"):
+        self.sessions, self.trials, self.email = list(sessions), list(trials), email
         self.params = None
+        self._last = ""
 
     def execute(self, sql, params=None):
-        self.params = params
+        self._last = " ".join(sql.split())
+        if "FROM sessions" in self._last:
+            self.params = params
+
+    def fetchone(self):
+        return (self.email,) if "FROM users" in self._last else None
 
     def fetchall(self):
-        return self.rows
+        if "FROM sessions" in self._last:
+            return self.sessions
+        if "FROM trial_sessions" in self._last:
+            return self.trials
+        return []
 
 
 class CalendarFeedTests(unittest.TestCase):
     def feed(self):
         rows = [
-            (7, date(2026, 11, 3), time(10, 0), "Booked", 0, "Carles Puig"),
-            (8, date(2026, 11, 5), time(10, 0), "Cancelled", 2, "Carles Puig"),
+            (7, date(2026, 11, 3), time(10, 0), "Booked", 0, "Carles Puig", "1/12"),
+            (8, date(2026, 11, 5), time(10, 0), "Cancelled", 2, "Carles Puig", "2/12"),
         ]
         return calendar_feed.build_feed(FakeCursor(rows), 1, today=date(2026, 10, 20))
 
@@ -36,7 +48,9 @@ class CalendarFeedTests(unittest.TestCase):
         feed = self.feed()
         self.assertIn("UID:session-7@thundbalance.com", feed)
         self.assertIn("UID:session-8@thundbalance.com", feed)
-        self.assertIn("STATUS:CANCELLED\r\nSEQUENCE:2", feed)
+        # the SEQUENCE is the session's own counter plus the title version
+        self.assertIn("STATUS:CANCELLED\r\nSEQUENCE:3", feed)
+        self.assertIn("STATUS:CONFIRMED\r\nSEQUENCE:1", feed)
         self.assertNotIn("METHOD:", feed)
         self.assertIn("X-WR-CALNAME:ThundBalance", feed)
 
@@ -47,13 +61,14 @@ class CalendarFeedTests(unittest.TestCase):
 
     def test_feed_is_minimal(self):
         feed = self.feed()
-        self.assertIn("SUMMARY:ThundBalance · Sesión con Carles", feed)
+        self.assertIn("SUMMARY:ThundBalance · Sesión con Carles 1/12", feed)
+        self.assertIn("SUMMARY:ThundBalance · Sesión con Carles 2/12", feed)
         self.assertNotIn("Puig", feed)
         self.assertNotIn("@gmail", feed)
         self.assertIn(r"LOCATION:ThundBalance\, Carrer de Pallars 286\, Barcelona", feed)
 
     def test_window_starts_30_days_back(self):
-        cursor = FakeCursor([])
+        cursor = FakeCursor()
         calendar_feed.build_feed(cursor, 1, today=date(2026, 10, 20))
         self.assertEqual(cursor.params[1], date(2026, 9, 20))
 

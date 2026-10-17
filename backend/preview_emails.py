@@ -48,7 +48,7 @@ for lang in ("en", "es", "ca"):
     examples[f"client-trial-received-{lang}"] = client_trial_received("Ana", start, lang)
     examples[f"client-trial-approved-{lang}"] = client_trial_approved("Ana", start, "Carles", "TOKEN-DE-EJEMPLO", lang)
     examples[f"client-trial-confirmed-{lang}"] = client_trial_confirmed("Ana", start, "Carles", 15, lang)[:3]
-    examples[f"client-trial-cancelled-{lang}"] = client_trial_cancelled("Ana", start, lang)
+    examples[f"client-trial-cancelled-{lang}"] = client_trial_cancelled("Ana", start, lang)[:3]
 
 for name, (subject, html, text) in examples.items():
     (out / f"{name}.html").write_text(html, encoding="utf-8")

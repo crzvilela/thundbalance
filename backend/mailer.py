@@ -29,5 +29,13 @@ def send_trial_confirmed(to, name, date_text, time_text, trainer, trial_id, lang
     return _send(to, built, "trial_confirmed", lang, reference, attachments=[attachment])
 
 
-def send_trial_cancelled(to, name, date_text, time_text, lang=None, reference=None):
-    return _send(to, client_trial_cancelled(name, parse_madrid(date_text, time_text), lang), "trial_cancelled", lang, reference)
+def send_trial_cancelled(to, name, date_text, time_text, lang=None, reference=None,
+                         trial_id=None, trainer=None, sequence=1):
+    """With trial_id (the session had been confirmed) the email carries a calendar file that
+    cancels the event the client had added."""
+    built = client_trial_cancelled(name, parse_madrid(date_text, time_text), lang, trial_id, trainer, sequence)
+    options = {}
+    if built[3]:
+        options["attachments"] = [{"filename": "thundbalance-sesion-de-prueba-cancelada.ics",
+                                   "content_type": "text/calendar; method=CANCEL", "data": built[3].encode("utf-8")}]
+    return _send(to, built, "trial_cancelled", lang, reference, **options)

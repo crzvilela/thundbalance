@@ -13,6 +13,10 @@ calendar app can subscribe to:
   the SEQUENCE of its event grows and calendar apps replace their copy. A
   cancelled session stays in the feed as STATUS:CANCELLED so it disappears from
   the subscriber's calendar on the next refresh.
+- Trial sessions the client CONFIRMED (matched by the account's email) are in the feed too, with
+  the UID "trial-{id}" (the same as the .ics of the confirmation email). One declined or cancelled
+  after confirming stays as STATUS:CANCELLED with a higher SEQUENCE.
+- Titles come from calendar_titles.py (pack number x/n included).
 - Content is minimal: no email, phone, document, or client name.
 
 Environment: PUBLIC_API_URL (optional) is the public origin of this backend,
@@ -30,6 +34,7 @@ from fastapi.responses import Response
 
 from database import get_connection
 from emails.dates import parse_madrid
+from calendar_titles import client_session_title, client_trial_title, session_sequence
 from emails.ics import build_ics
 
 logger = logging.getLogger("thundbalance.calendar")
@@ -52,6 +57,8 @@ def ensure_columns():
             "CREATE UNIQUE INDEX IF NOT EXISTS users_calendar_feed_token_key ON users (calendar_feed_token)"
         )
         cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS feed_sequence INTEGER NOT NULL DEFAULT 0")
+        # same idea for trial sessions: bumped when a confirmed trial is declined or cancelled
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS feed_sequence INTEGER NOT NULL DEFAULT 0")
         conn.commit()
     finally:
         cursor.close()
@@ -124,24 +131,19 @@ def links_for_email(client_email):
 
 # --------------------------------------------------------------------- feed
 
-def _first_name(full_name):
-    parts = str(full_name or "").split()
-    return parts[0] if parts else ""
-
-
-def session_summary(trainer_name):
-    first = _first_name(trainer_name)
-    return f"ThundBalance · Sesión con {first}" if first else "ThundBalance · Sesión"
+def session_summary(trainer_name, session_number=None):
+    """Kept for callers of the old name: the title now lives in calendar_titles.py."""
+    return client_session_title(trainer_name, session_number)
 
 
 def build_feed(cursor, user_id, today=None):
-    """iCalendar text: sessions from the last 30 days on, cancelled ones included
-    as STATUS:CANCELLED. Only ids, dates, trainer first name and the studio
-    address leave the database."""
+    """iCalendar text: sessions (and confirmed trial sessions) from the last 30 days on,
+    cancelled ones included as STATUS:CANCELLED. Only ids, dates, trainer first name, the
+    pack position and the studio address leave the database."""
     since = (today or date.today()) - timedelta(days=PAST_DAYS)
     cursor.execute(
         """
-        SELECT s.id, s.session_date, s.session_time, s.status, s.feed_sequence, t.nome
+        SELECT s.id, s.session_date, s.session_time, s.status, s.feed_sequence, t.nome, s.session_number
         FROM sessions s LEFT JOIN trainers t ON t.id = s.trainer_id
         WHERE s.user_id = %s AND s.session_date >= %s
         ORDER BY s.session_date, s.session_time, s.id
@@ -149,16 +151,54 @@ def build_feed(cursor, user_id, today=None):
         (user_id, since),
     )
     events = []
-    for session_id, day, moment, status, sequence, trainer in cursor.fetchall():
+    for session_id, day, moment, status, sequence, trainer, number in cursor.fetchall():
         events.append({
             "id": f"session-{session_id}",
             "start": parse_madrid(str(day), str(moment)[:5]),
-            "summary": session_summary(trainer),
+            "summary": client_session_title(trainer, number),
             "location": FEED_PLACE,
-            "sequence": sequence or 0,
+            "sequence": session_sequence(sequence),
             "status": "CANCELLED" if str(status).lower() == "cancelled" else "CONFIRMED",
         })
+    events += trial_feed_events(cursor, user_id, since)
     return build_ics(events, method=None, calname="ThundBalance", refresh_hours=REFRESH_HOURS)
+
+
+def trial_feed_events(cursor, user_id, since):
+    """The trial sessions of this client (same email as the account) that the client
+    confirmed. Not the ones still waiting, and no account means no feed at all."""
+    cursor.execute("SELECT email FROM users WHERE id = %s", (user_id,))
+    row = cursor.fetchone()
+    email = str(row[0] or "").strip().lower() if row else ""
+    if not email:
+        return []
+    cursor.execute(
+        """
+        SELECT ts.id, ts.session_date, ts.session_time, ts.status, ts.feed_sequence, t.nome,
+               ts.confirmed_at IS NOT NULL, ts.confirmation_token IS NULL
+        FROM trial_sessions ts LEFT JOIN trainers t ON t.id = ts.trainer_id
+        WHERE LOWER(ts.email) = %s AND ts.session_date >= %s
+        ORDER BY ts.session_date, ts.session_time, ts.id
+        """,
+        (email, since),
+    )
+    events = []
+    for trial_id, day, moment, status, sequence, trainer, was_confirmed, legacy in cursor.fetchall():
+        status = str(status).lower()
+        # approved before the confirmation flow existed (no token) counts as confirmed
+        confirmed_now = status == "confirmed" or (status == "approved" and legacy)
+        cancelled_after = status in ("declined", "cancelled") and was_confirmed
+        if not (confirmed_now or cancelled_after):
+            continue
+        events.append({
+            "id": f"trial-{trial_id}",
+            "start": parse_madrid(str(day), str(moment)[:5]),
+            "summary": client_trial_title(trainer),
+            "location": FEED_PLACE,
+            "sequence": int(sequence or 0),
+            "status": "CONFIRMED" if confirmed_now else "CANCELLED",
+        })
+    return events
 
 
 def bump_sequence(cursor, session_id):

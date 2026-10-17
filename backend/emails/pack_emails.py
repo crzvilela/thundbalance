@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 
 from .dates import WEEKDAYS_EN, WEEKDAYS_ES, format_date_bilingual
 from .ics import build_ics
+from calendar_titles import client_session_title, session_sequence
 from .recipients import clean_recipients
 from .template import Block, STUDIO_PLACE, button, heading, highlight_box, key_value, link_line, paragraph, sessions_table
 from .texts import bilingual_email, tr
@@ -86,9 +87,8 @@ def build_pack_ics(summary):
         {
             "id": f"session-{item['id']}",
             "start": item["start"],
-            "summary": " · ".join(
-                part for part in ("ThundBalance", f"Sesión {item['number']}" if item.get("number") else "", item.get("trainer")) if part
-            ),
+            "summary": client_session_title(item.get("trainer"), item.get("number")),
+            "sequence": session_sequence(item.get("feed_sequence", 0)),
             "description": f"Entrenador / Trainer: {item['trainer']}" if item.get("trainer") else "",
             "location": ICS_PLACE,
         }
