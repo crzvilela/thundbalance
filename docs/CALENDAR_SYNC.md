@@ -3,8 +3,8 @@
 ## Qué calendario se usa
 
 - **Una sola variable**: `GOOGLE_CALENDAR_ID`, leída en un único sitio (`backend/google_calendar.py`, `get_calendar_id()`). No hay ningún ID en el código, el frontend ni los scripts. Sin variable (o vacía, o con el valor `primary`) el servidor NO escribe en ningún calendario: lo registra en el arranque y en cada sesión afectada.
-- **Valor**: para el calendario principal del estudio es el propio email, `pt@thundbalance.com`. Se usa tal cual (solo se recortan espacios/comillas); no se valida el formato `@group.calendar.google.com`.
-- **Nunca `primary`**: para una cuenta de servicio `primary` es SU calendario, no el de pt@. El calendario de pt@ tiene que estar compartido con el `client_email` de `credentials.json` con el permiso **"Hacer cambios en eventos"** (Configuración del calendario > Compartir con personas concretas).
+- **Valor**: el ID del calendario (en Google Calendar: Configuración del calendario > Integrar el calendario). Durante las pruebas es el calendario de prueba actual; cuando exista el calendario del estudio (`pt@thundbalance.com`) se cambia solo esta variable en Render. Se usa tal cual (solo se recortan espacios/comillas); no se valida el formato `@group.calendar.google.com`.
+- **Nunca `primary`**: para una cuenta de servicio `primary` es SU calendario, no el del estudio. El calendario elegido tiene que estar compartido con el `client_email` de `credentials.json` con el permiso **"Hacer cambios en eventos"** (Configuración del calendario > Compartir con personas concretas).
 - **Credenciales**: `GOOGLE_CREDENTIALS_JSON` (Render) o `backend/credentials.json` (local).
 - **Local y Render deben usar el mismo ID**; si no, las sesiones creadas desde uno quedan en un calendario que el otro no muestra.
 - **Arranque**: una línea `Calendar: OK (…últimos 6 caracteres)` o `Calendar: NÃO configurado (motivo)`. `GET /admin/calendar-status` devuelve `{configured, calendar (enmascarado), reason}`.
