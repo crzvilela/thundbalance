@@ -27,7 +27,9 @@ const ICONS = {
   alert: <><path d="M12 3 2 20h20z" /><path d="M12 10v5M12 18v.01" /></>,
   doc: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v4h4M9 12h6M9 16h6" /></>,
   copy: <><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h8" /></>,
-  pulse: <path d="M3 12h4l2.5-6 4 12 2.5-6H21" />
+  pulse: <path d="M3 12h4l2.5-6 4 12 2.5-6H21" />,
+  sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>,
+  moon: <path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z" />
 }
 
 export function Icon({ name, className = 'h-5 w-5' }) {

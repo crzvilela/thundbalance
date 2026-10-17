@@ -13,8 +13,6 @@ import json
 import logging
 import threading
 import unittest
-
-import testsafety
 from contextlib import redirect_stdout
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -103,7 +101,6 @@ class Algorithm(unittest.TestCase):
 class Endpoints(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        testsafety.require_local_database()
         import os
         main.ensure_trial_session_fields()
         main.ensure_user_account_fields()

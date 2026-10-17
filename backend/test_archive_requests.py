@@ -5,8 +5,6 @@
 Uses the LOCAL database and removes what it creates.
 """
 import unittest
-
-import testsafety
 from datetime import date, timedelta
 
 from fastapi import HTTPException
@@ -25,7 +23,6 @@ def endpoint(path, method):
 class ArchiveRequests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        testsafety.require_local_database()
         main.ensure_client_workflow_fields()      # the real startup migration (twice: must be idempotent)
         main.ensure_client_workflow_fields()
         conn = get_connection()

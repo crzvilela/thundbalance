@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <title>Prueba ThundBalance</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* One look on purpose: the same black and green as the site. */
+    :root {
+      color-scheme: dark;
+      --bg: #080a09;
+      --surface: #111614;
+      --line: #24302a;
+      --fg: #eef3f0;
+      --muted: #93a39a;
+      --accent: #34d399;
+      --accent-ink: #04120c;
+      --display: 'Bebas Neue', Impact, 'Arial Narrow', sans-serif;
+      --body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--body);
+      font-size: 16px;
+      line-height: 1.65;
+      padding-inline: 22px;
+      padding-block: 28px 56px;
+      background-image: radial-gradient(700px 380px at 85% -8%, rgba(52, 211, 153, .09), transparent 70%);
+      background-repeat: no-repeat;
+    }
+    main { max-width: 640px; margin-inline: auto; display: flex; flex-direction: column; gap: 56px; }
+    h1, h2 { font-family: var(--display); font-weight: 400; letter-spacing: .02em; margin: 0; text-wrap: balance; }
+    h1 { font-size: clamp(54px, 13vw, 96px); line-height: .92; }
+    h2 { font-size: 34px; line-height: 1; }
+    p { margin: 0; }
+
+    .brand { font-family: var(--display); font-size: 22px; letter-spacing: .22em; display: flex; align-items: center; gap: 10px; }
+    .brand::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px rgba(52, 211, 153, .8); }
+
+    .hero { display: flex; flex-direction: column; gap: 22px; padding-top: 28px; }
+    .lead { color: var(--muted); font-size: 18px; max-width: 46ch; }
+    .cta {
+      align-self: flex-start;
+      display: inline-flex; align-items: center; gap: 10px;
+      background: var(--accent); color: var(--accent-ink);
+      font-weight: 600; font-size: 16px; text-decoration: none;
+      padding: 15px 26px; border-radius: 12px;
+      transition: transform .15s ease, box-shadow .15s ease;
+    }
+    .cta:hover { transform: translateY(-1px); box-shadow: 0 10px 28px rgba(52, 211, 153, .28); }
+    .cta:active { transform: scale(.98); }
+    a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    .note { color: var(--muted); font-size: 14px; }
+
+    .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; counter-reset: step; }
+    .steps li {
+      counter-increment: step;
+      display: grid; grid-template-columns: 40px 1fr; gap: 16px; align-items: start;
+      background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px;
+    }
+    .steps li::before {
+      content: counter(step);
+      font-family: var(--display); font-size: 26px; line-height: 40px; text-align: center;
+      width: 40px; height: 40px; border-radius: 50%;
+      background: rgba(52, 211, 153, .12); color: var(--accent);
+    }
+    .steps b { display: block; font-weight: 600; }
+    .steps span { color: var(--muted); font-size: 15px; }
+    .steps a { color: var(--accent); text-decoration: none; font-weight: 500; }
+    .steps a:hover { text-decoration: underline; }
+
+    .section { display: flex; flex-direction: column; gap: 18px; }
+    .asks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+    .asks li { padding-left: 18px; position: relative; font-size: 17px; }
+    .asks li::before { content: ""; position: absolute; left: 0; top: .7em; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+
+    footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 18px; }
+    @media (max-width: 480px) {
+      .steps li { grid-template-columns: 1fr; gap: 10px; }
+      .cta { align-self: stretch; justify-content: center; }
+    }
+    @media (prefers-reduced-motion: reduce) { .cta { transition: none; } html { scroll-behavior: auto; } }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="brand">THUNDBALANCE</p>
+
+    <section class="hero">
+      <h1>Pruébala y cuéntame qué piensas</h1>
+      <p class="lead">La web ya está lista. Crea un usuario nuevo y recórrela como lo haría un cliente.</p>
+      <a class="cta" href="https://thundbalance.vercel.app/register" target="_blank" rel="noopener noreferrer">Crear mi usuario de prueba <span aria-hidden="true">→</span></a>
+      <p class="note">Es una versión de pruebas: puedes crear y cancelar lo que quieras.</p>
+    </section>
+
+    <section class="section">
+      <h2>Qué probar</h2>
+      <ol class="steps">
+        <li>
+          <div><b>Crea tu usuario</b><span>Regístrate con cualquier email y entra. Puedes añadir tu foto en el <a href="https://thundbalance.vercel.app/profile" target="_blank" rel="noopener noreferrer">perfil</a>.</span></div>
+        </li>
+        <li>
+          <div><b>Pide un entrenamiento</b><span>Elige un <a href="https://thundbalance.vercel.app/training-request" target="_blank" rel="noopener noreferrer">pack</a> y tus días y hora. O reserva una <a href="https://thundbalance.vercel.app/trial-session" target="_blank" rel="noopener noreferrer">sesión de prueba</a>: la web solo te ofrece horas en las que hay un entrenador libre.</span></div>
+        </li>
+        <li>
+          <div><b>Mira tus sesiones</b><span>En <a href="https://thundbalance.vercel.app/my-sessions" target="_blank" rel="noopener noreferrer">Mis sesiones</a> verás tu calendario y podrás reagendar o cancelar.</span></div>
+        </li>
+      </ol>
+      <p class="note">¿Quieres ver también el panel de administración? Pídeme el acceso y te lo paso aparte.</p>
+    </section>
+
+    <section class="section">
+      <h2>Cuando termines, dime</h2>
+      <ul class="asks">
+        <li>Qué te parece en general.</li>
+        <li>Qué mejorarías.</li>
+        <li>Qué no te ha gustado.</li>
+      </ul>
+    </section>
+
+    <footer>ThundBalance · Versión de pruebas</footer>
+  </main>
+</body>
+</html>

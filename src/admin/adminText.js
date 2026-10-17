@@ -32,6 +32,7 @@ export const adminText = {
     nav_menu: 'Menu',
     nav_close: 'Close menu',
     language: 'Language',
+    theme: 'Theme', theme_light: 'Light', theme_dark: 'Dark',
 
     overview_sub: "Here's what's happening at ThundBalance.",
     stat_clients: 'Clients',
@@ -630,6 +631,7 @@ export const adminText = {
     nav_menu: 'Menú',
     nav_close: 'Cerrar menú',
     language: 'Idioma',
+    theme: 'Tema', theme_light: 'Claro', theme_dark: 'Oscuro',
 
     overview_sub: 'Esto es lo que está pasando en ThundBalance.',
     stat_clients: 'Clientes',

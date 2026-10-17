@@ -6,8 +6,6 @@
 It creates its own rows and removes them at the end.
 """
 import unittest
-
-import testsafety
 from datetime import date, timedelta
 
 from fastapi import HTTPException
@@ -37,7 +35,6 @@ class Sent:
 class Flow(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        testsafety.require_local_database()
         main.ensure_trial_session_fields()   # the real startup migration (includes ensure_confirmation_fields)
         main.ensure_email_log_table()
         main.ensure_trial_session_fields()   # twice: must be idempotent

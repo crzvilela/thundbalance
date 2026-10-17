@@ -13,8 +13,6 @@ import base64
 import json
 import threading
 import unittest
-
-import testsafety
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -57,7 +55,6 @@ def next_weekday(offset, weekday):
 class Parallel(unittest.TestCase):          # "Parallel" is the old name; see the module docstring
     @classmethod
     def setUpClass(cls):
-        testsafety.require_local_database()
         import os
         main.ensure_trial_session_fields()
         main.ensure_session_pack_column()

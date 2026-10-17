@@ -9,6 +9,14 @@ import { useAdminText } from './useAdminText'
 import { useAdminResource } from './useAdminResource'
 import { normalizeRequests } from './requests'
 import './admin.css'
+import './admin-light.css'
+
+const THEME_KEY = 'tb_admin_theme'
+
+// The saved choice (light | dark). Dark is the default; storage can be unavailable.
+function readTheme() {
+  try { return window.localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark' } catch { return 'dark' }
+}
 
 const NAV = [
   { to: '/admin', end: true, icon: 'overview', label: 'nav_overview' },
@@ -49,6 +57,11 @@ export default function AdminLayout() {
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const [toasts, setToasts] = useState([])
+  const [theme, setTheme] = useState(readTheme)
+  const chooseTheme = (mode) => {
+    setTheme(mode)
+    try { window.localStorage.setItem(THEME_KEY, mode) } catch { /* the choice just is not remembered */ }
+  }
   const nextToastId = useRef(0)
 
   // Requests are loaded once here: the sidebar badge, the overview and the
@@ -109,6 +122,17 @@ export default function AdminLayout() {
 
       <div className="space-y-3 border-t border-white/10 p-4">
         <div className="flex items-center justify-between">
+          <span className="text-xs uppercase tracking-wider text-gray-500">{t('theme')}</span>
+          <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="group" aria-label={t('theme')}>
+            {[['light', 'sun'], ['dark', 'moon']].map(([mode, icon]) => (
+              <button key={mode} type="button" onClick={() => chooseTheme(mode)} aria-pressed={theme === mode} aria-label={t(`theme_${mode}`)} title={t(`theme_${mode}`)}
+                className={`flex items-center rounded-md px-3 py-1 transition ${theme === mode ? 'bg-emerald-400 text-black' : 'text-gray-400 hover:text-white'}`}>
+                <Icon name={icon} className="h-4 w-4" />
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
           <span className="text-xs uppercase tracking-wider text-gray-500">{t('language')}</span>
           <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="group" aria-label={t('language')}>
             {['en', 'es'].map(code => (
@@ -132,7 +156,7 @@ export default function AdminLayout() {
 
   return (
     <ToastContext.Provider value={toastValue}>
-      <div className="admin-shell min-h-screen text-white">
+      <div className={`admin-shell min-h-screen text-white ${theme === 'light' ? 'admin-light' : ''}`}>
         <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-white/[0.07] bg-[#080b0a]/90 backdrop-blur lg:block">
           {sidebar}
         </aside>

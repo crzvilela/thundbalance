@@ -20,7 +20,7 @@ export default function FormField({ label, required = false, hint, error, suffix
   const describedBy = [error ? errorId : null, hint ? hintId : null].filter(Boolean).join(' ') || undefined
 
   return (
-    <div className={`block min-w-0 ${className}`}>
+    <div className={`block ${className}`}>
       {label && (
         <label htmlFor={fieldId} className="mb-2 flex items-center justify-between gap-3 text-xs font-medium uppercase tracking-wider text-gray-400">
           <span>

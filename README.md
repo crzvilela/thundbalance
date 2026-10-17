@@ -178,17 +178,3 @@ keyboard sizing, input validation, percentages, alignment, margins, atomic
 Undo/Redo, Save/Publish, Preview, reload and public CSS at seven viewport widths.
 External frames/widgets are blocked during automation; the tests verify their
 container layout and do not depend on Google or other third-party services.
-
-### Changing the site domain
-
-The API only answers browsers coming from the sites it knows. When the site
-moves to a new domain, add it in Render (Environment) as
-`CORS_ORIGINS=https://www.new-domain.com` (several, separated by commas), and
-set `SITE_URL` to the same address so the links in emails point to it.
-
-### Database tests
-
-The backend tests write and delete rows, so they refuse to run when
-`DATABASE_URL` points to a remote database (they are skipped, with a message).
-Run them against the local database: `cd backend` and
-`python -m unittest test_billing -v` (with `DATABASE_URL` unset).

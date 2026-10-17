@@ -2,12 +2,12 @@
 
 Which calendar? The id comes from ONE environment variable, GOOGLE_CALENDAR_ID,
 read in ONE place (get_calendar_id). There is no default and no id anywhere in
-the code. The value is the calendar's id (for a personal calendar its own
-email, later the studio's pt@thundbalance.com): it is used exactly as written
-(trimmed), without checking it for a "@group.calendar.google.com" ending.
+the code. For the studio the value is the calendar's own email
+(pt@thundbalance.com): it is used exactly as written (trimmed), without
+checking it for a "@group.calendar.google.com" ending.
 
 The word "primary" is refused on purpose: for a service account "primary" is
-the service account's OWN empty calendar, never the studio's. Share the
+the service account's OWN empty calendar, never the one of pt@. Share the
 calendar with the service account (Configuración > Compartir con personas
 concretas > "Hacer cambios en eventos") and put its id in GOOGLE_CALENDAR_ID.
 

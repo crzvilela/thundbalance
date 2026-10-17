@@ -7,8 +7,6 @@ import json
 import os
 import threading
 import unittest
-
-import testsafety
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -43,7 +41,6 @@ class FakeScript(BaseHTTPRequestHandler):
 class EmailTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        testsafety.require_local_database()
         cls.server = HTTPServer(("127.0.0.1", 0), FakeScript)
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
         cls.url = f"http://127.0.0.1:{cls.server.server_port}/exec"

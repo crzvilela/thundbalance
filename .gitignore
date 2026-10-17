@@ -56,11 +56,3 @@ backend/email_previews/
 
 # Backups written by backend/reset_test_data.py (personal data)
 backend/backup_before_reset_*.json
-
-# Backups with personal data
-backup_before_reset_*
-backups/
-
-# nested copy of the repository folder
-thundbalance-repo/
-enviar/

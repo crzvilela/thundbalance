@@ -12,8 +12,6 @@ import os
 import re
 import threading
 import unittest
-
-import testsafety
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from types import SimpleNamespace
@@ -56,7 +54,6 @@ class Gone(Exception):
 class Approval(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        testsafety.require_local_database()
         main.ensure_trial_session_fields()
         main.ensure_email_log_table()
         cls.server = HTTPServer(("127.0.0.1", 0), FakeScript)
