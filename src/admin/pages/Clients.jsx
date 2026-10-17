@@ -14,6 +14,9 @@ import DetailHeader, { MoreMenu } from '../../components/admin/DetailHeader'
 import StatChip from '../../components/admin/StatChip'
 import SectionCard from '../../components/admin/SectionCard'
 import { formatPhone, toE164 } from '../../utils/validators'
+import { ADMIN_EMAIL } from '../../config'
+import { auth } from '../../firebase/auth'
+import { ArchiveDialog, DeleteDialog } from '../ClientLifecycleDialogs'
 import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Icon,
   PageHeader, SelectInput, Skeleton, TextInput
@@ -30,6 +33,13 @@ function Avatar({ client, size = 'h-12 w-12 text-base' }) {
       {photo ? <img src={photo} alt="" className="h-full w-full object-cover" /> : initials(client.name)}
     </span>
   )
+}
+
+// The admin account and the account of whoever is signed in can not be archived
+// or deleted (the server refuses them too; here the actions are just hidden).
+function isProtectedAccount(email) {
+  const value = String(email || '').trim().toLowerCase()
+  return !!value && (value === ADMIN_EMAIL || value === String(auth.currentUser?.email || '').trim().toLowerCase())
 }
 
 function ProgressBar({ done, total }) {
@@ -70,6 +80,8 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
   const [editingBilling, setEditingBilling] = useState(null)   // null = follow billing_missing
   const [showDocument, setShowDocument] = useState(false)
   const [pendingLeave, setPendingLeave] = useState(null)       // a tab id, or '__close'
+  const [lifecycle, setLifecycle] = useState(null)             // 'archive' | 'delete'
+  const [restoring, setRestoring] = useState(false)
 
   const client = detail.data
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
@@ -193,8 +205,12 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
       if (!result.created && !result.updated && !result.failed) {
         toast.push(t('cs_nothing'))
       } else {
-        const moved = result.updated ? ` · ${result.updated} ${t('cs_updated')}` : ''
-        toast.push(`${t('cs_created')}: ${result.created}${moved} · ${t('cs_failed')}: ${result.failed}`, result.failed ? 'warning' : 'success')
+        // created, updated and failed are always shown; the first reason helps when something failed
+        const reason = result.failed && result.errors?.[0] ? ` (${result.errors[0]})` : ''
+        toast.push(
+          `${t('cs_created')}: ${result.created} · ${t('cs_updated')}: ${result.updated} · ${t('cs_failed')}: ${result.failed}${reason}`,
+          result.failed ? 'warning' : 'success'
+        )
       }
       detail.reload()
       onChanged()
@@ -247,6 +263,7 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
   )
   const badges = client && (
     <>
+      {archivedClient && <Badge tone="amber">{t('lc_archived_badge')}</Badge>}
       {mainPack ? <Badge tone="emerald">{mainPack.name}</Badge> : <Badge>{t('cl_no_plan')}</Badge>}
       {client.billing_missing && <Badge tone="amber">{t('bl_missing')}</Badge>}
       {client.must_change_password && <Badge tone="amber">{t('fx_temp_badge')}</Badge>}
@@ -260,11 +277,29 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
       <StatChip label={t('fx_last_session')} value={lastSession ? fmtDate(lastSession.date, { day: 'numeric', month: 'short' }) : t('fx_none')} />
     </>
   )
+  const archivedClient = !!client?.archived_at
+  const protectedClient = isProtectedAccount(client?.email)
+  const restore = async () => {
+    setRestoring(true)
+    try {
+      await adminRequest('POST', `/admin/clients/${clientId}/unarchive`)
+      toast.push(t('lc_unarchived_ok'))
+      detail.reload()
+      onChanged()
+    } catch (error) {
+      toast.push(error.message, 'error')
+    } finally {
+      setRestoring(false)
+    }
+  }
   const menuItems = client ? [
     { label: t('fx_edit_data'), icon: 'clients', onClick: () => goTab('datos') },
     { label: t('cc_resend'), icon: 'refresh', onClick: resend, disabled: resending, hidden: !client.must_change_password },
     { label: syncing ? t('cs_syncing') : t('cs_button'), icon: 'calendar', onClick: syncCalendar, disabled: syncing },
     { label: t('cal_copy'), icon: 'copy', onClick: copyCalendarLink, disabled: copyingLink },
+    { label: t('lc_archive_menu'), icon: 'archive', onClick: () => setLifecycle('archive'), hidden: archivedClient || protectedClient },
+    { label: t('lc_unarchive'), icon: 'refresh', onClick: restore, disabled: restoring, hidden: !archivedClient || protectedClient },
+    { label: t('lc_delete_menu'), icon: 'alert', onClick: () => setLifecycle('delete'), danger: true, hidden: protectedClient },
   ] : []
   const actions = client && (
     <>
@@ -521,6 +556,20 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
         confirmLabel={t('cl_cancel_do')} cancelLabel={t('cl_cancel_keep')}
         onConfirm={cancelSession} onCancel={() => setCancelTarget(null)}
       />
+      {lifecycle === 'archive' && client && (
+        <ArchiveDialog
+          client={client} futureSessions={upcoming.length}
+          onClose={() => setLifecycle(null)}
+          onDone={() => { setLifecycle(null); onChanged(); onClose() }}
+        />
+      )}
+      {lifecycle === 'delete' && client && (
+        <DeleteDialog
+          client={client}
+          onClose={() => setLifecycle(null)}
+          onDone={() => { setLifecycle(null); onChanged(); onClose() }}
+        />
+      )}
       <ConfirmDialog
         open={!!pendingLeave} tone="neutral"
         title={t('fx_unsaved_title')} text={t('fx_unsaved')}
@@ -534,11 +583,25 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
 export default function Clients() {
   const { t, language } = useAdminText()
   const clientsResource = useAdminResource('/admin/clients')
+  // Archived clients are left out of the normal list; this one has only them.
+  const archivedResource = useAdminResource('/admin/clients?archived=only')
   const plansResource = useAdminResource('/plans')
   const trainersResource = useAdminResource('/admin/trainer-availability')
   const [query, setQuery] = useState('')
   const [searchParams, setSearchParams] = useSearchParams()
-  const [filter, setFilter] = useState(() => (['with_plan', 'no_plan', 'pending', 'renew'].includes(searchParams.get('filter')) ? searchParams.get('filter') : 'all'))
+  const [filter, setFilter] = useState(() => (['with_plan', 'no_plan', 'pending', 'renew', 'archived'].includes(searchParams.get('filter')) ? searchParams.get('filter') : 'all'))
+  const toast = useToast()
+  const [lifecycle, setLifecycle] = useState(null)             // the client being archived
+  const reloadAll = () => { clientsResource.reload(); archivedResource.reload() }
+  const restoreClient = async (client) => {
+    try {
+      await adminRequest('POST', `/admin/clients/${client.id}/unarchive`)
+      toast.push(t('lc_unarchived_ok'))
+      reloadAll()
+    } catch (error) {
+      toast.push(error.message, 'error')
+    }
+  }
   // the open file lives in the URL (?client=ID&tab=sesiones): reload and back keep it
   const selectedId = Number(searchParams.get('client')) || null
   const setSelectedId = (id) => setSearchParams(previous => {
@@ -550,18 +613,21 @@ export default function Clients() {
   })
   const [adding, setAdding] = useState(false)
 
-  const clients = useMemo(() => clientsResource.data || [], [clientsResource.data])
+  const activeClients = useMemo(() => clientsResource.data || [], [clientsResource.data])
+  const archivedClients = useMemo(() => archivedResource.data || [], [archivedResource.data])
+  const clients = filter === 'archived' ? archivedClients : activeClients
   const plans = useMemo(() => plansResource.data || [], [plansResource.data])
   const trainers = useMemo(() => (Array.isArray(trainersResource.data) ? trainersResource.data : []), [trainersResource.data])
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
 
   const counts = useMemo(() => ({
-    all: clients.length,
-    with_plan: clients.filter(client => client.plan).length,
-    no_plan: clients.filter(client => !client.plan).length,
-    pending: clients.filter(client => client.has_pending_request).length,
-    renew: clients.filter(client => client.pack_status === 'expired' || client.pack_status === 'expiring').length
-  }), [clients])
+    all: activeClients.length,
+    with_plan: activeClients.filter(client => client.plan).length,
+    no_plan: activeClients.filter(client => !client.plan).length,
+    pending: activeClients.filter(client => client.has_pending_request).length,
+    renew: activeClients.filter(client => client.pack_status === 'expired' || client.pack_status === 'expiring').length,
+    archived: archivedClients.length
+  }), [activeClients, archivedClients])
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -574,14 +640,14 @@ export default function Clients() {
     })
   }, [clients, filter, query])
 
-  const filters = [['all', t('cl_all')], ['with_plan', t('cl_with_plan')], ['no_plan', t('cl_no_plan_filter')], ['pending', t('cl_pending')], ['renew', t('biz_to_renew')]]
+  const filters = [['all', t('cl_all')], ['with_plan', t('cl_with_plan')], ['no_plan', t('cl_no_plan_filter')], ['pending', t('cl_pending')], ['renew', t('biz_to_renew')], ['archived', t('lc_archived_filter')]]
 
   return (
     <div className="admin-fade">
       <PageHeader
         title={t('clients_title')} subtitle={t('clients_sub')}
         actions={<>
-          <Button variant="secondary" onClick={clientsResource.reload}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>
+          <Button variant="secondary" onClick={reloadAll}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>
           <Button variant="primary" onClick={() => setAdding(true)}><Icon name="plus" className="h-4 w-4" />{t('cc_add')}</Button>
         </>}
       />
@@ -609,13 +675,13 @@ export default function Clients() {
       ) : clientsResource.loading && !clientsResource.data ? (
         <div className="space-y-3"><Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" /></div>
       ) : visible.length === 0 ? (
-        <Card><EmptyState icon="clients" title={clients.length ? t('cl_empty') : t('cl_none')} /></Card>
+        <Card><EmptyState icon="clients" title={clients.length ? t('cl_empty') : filter === 'archived' ? t('lc_none_archived') : t('cl_none')} /></Card>
       ) : (
         <ul className="grid gap-3 xl:grid-cols-2">
           {visible.map(client => (
-            <li key={client.id} className="min-w-0">
+            <li key={client.id} className="relative min-w-0">
               <button type="button" onClick={() => setSelectedId(client.id)} className="block w-full rounded-2xl text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400">
-                <Card className="group p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-400/30">
+                <Card className="group p-5 pr-16 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-400/30">
                   <div className="flex items-center gap-4">
                     <Avatar client={client} />
                     <div className="min-w-0 flex-1">
@@ -627,7 +693,8 @@ export default function Clients() {
                       <p className="truncate text-sm text-gray-500">{client.email}{client.tax_id_masked ? ` · ${client.tax_id_masked}` : ''}</p>
                       {client.billing_missing && <p className="mt-1.5"><Badge tone="amber">{t('bl_missing')}</Badge></p>}
                     </div>
-                    {client.plan ? <Badge tone="emerald">{client.plan}</Badge> : <Badge>{t('cl_no_plan')}</Badge>}
+                    {client.archived_at ? <Badge tone="amber">{t('lc_archived_badge')}</Badge>
+                      : client.plan ? <Badge tone="emerald">{client.plan}</Badge> : <Badge>{t('cl_no_plan')}</Badge>}
                   </div>
                   <div className="mt-4">
                     <div className="mb-2 flex items-center justify-between text-xs text-gray-500">
@@ -638,6 +705,15 @@ export default function Clients() {
                   </div>
                 </Card>
               </button>
+              {!isProtectedAccount(client.email) && (
+                <div className="absolute right-3 top-3">
+                  <MoreMenu label={t('fx_more')} items={[
+                    client.archived_at
+                      ? { label: t('lc_unarchive'), icon: 'refresh', onClick: () => restoreClient(client) }
+                      : { label: t('lc_archive_menu'), icon: 'archive', onClick: () => setLifecycle(client) }
+                  ]} />
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -646,14 +722,22 @@ export default function Clients() {
       {adding && (
         <AddClientDrawer
           plans={plans} trainers={trainers}
-          onClose={() => setAdding(false)} onCreated={() => clientsResource.reload()}
+          onClose={() => setAdding(false)} onCreated={() => reloadAll()}
         />
       )}
 
       {selectedId && (
         <ClientDrawer
           key={selectedId} clientId={selectedId} plans={plans} trainers={trainers}
-          onClose={() => setSelectedId(null)} onChanged={clientsResource.reload}
+          onClose={() => setSelectedId(null)} onChanged={reloadAll}
+        />
+      )}
+
+      {lifecycle && (
+        <ArchiveDialog
+          client={lifecycle} futureSessions={lifecycle.upcoming || 0}
+          onClose={() => setLifecycle(null)}
+          onDone={() => { setLifecycle(null); reloadAll() }}
         />
       )}
     </div>
