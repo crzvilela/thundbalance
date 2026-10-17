@@ -9,6 +9,8 @@ booking itself validates the slot again whatever the cache says.
 The local database is used and cleaned.
 """
 import unittest
+
+import testsafety
 from datetime import date, timedelta
 from unittest import mock
 
@@ -33,6 +35,7 @@ def weekday(offset):
 class ScheduleSpeed(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        testsafety.require_local_database()
         main.ensure_trial_session_fields()
         cls.client = TestClient(main.app)
         cls.client.__enter__()

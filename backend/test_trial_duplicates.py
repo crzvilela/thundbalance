@@ -5,6 +5,8 @@
 Uses the local database; the rows it creates are removed.
 """
 import unittest
+
+import testsafety
 from datetime import date, timedelta
 from types import SimpleNamespace
 
@@ -20,6 +22,7 @@ EMAIL = f"ana{DOMAIN}"
 class TrialDuplicates(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        testsafety.require_local_database()
         main.ensure_trial_session_fields()
 
     def setUp(self):

@@ -10,6 +10,8 @@ The local database is used and cleaned up.
 import os
 import threading
 import unittest
+
+import testsafety
 from datetime import date, timedelta
 
 import httplib2
@@ -111,6 +113,7 @@ class FakeCalendar:
 class Sync(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        testsafety.require_local_database()
         main.ensure_calendar_sync_columns()
         main.ensure_client_lifecycle_columns()
         main.ensure_session_pack_column()

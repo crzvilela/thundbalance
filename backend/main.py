@@ -65,18 +65,19 @@ from google.oauth2 import id_token
 
 
 app = FastAPI()
+
+# Sites allowed to call this API from a browser. Extra ones (the final domain)
+# come from CORS_ORIGINS in the environment, comma separated, so changing
+# domain is a Render setting and not a code change.
+CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://thundbalance.vercel.app",
+] + [origin.strip().rstrip("/") for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-
-        "http://localhost:5173",
-
-        "http://127.0.0.1:5173",
-
-        "https://thundbalance.vercel.app"
-
-    ],
-    
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

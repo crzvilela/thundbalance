@@ -12,6 +12,8 @@ import json
 import os
 import threading
 import unittest
+
+import testsafety
 from contextlib import redirect_stdout
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -82,6 +84,7 @@ def log_rows(kind=None, reference=None):
 class Delivery(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        testsafety.require_local_database()
         main.ensure_trial_session_fields()
         from emails.log import ensure_table
         ensure_table()

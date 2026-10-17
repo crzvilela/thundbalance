@@ -6,6 +6,8 @@ Firebase and Google Calendar are replaced by fakes; the local database is used
 and cleaned up.
 """
 import unittest
+
+import testsafety
 from datetime import date, timedelta
 from types import SimpleNamespace
 
@@ -33,6 +35,7 @@ class Gone(Exception):
 class Lifecycle(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        testsafety.require_local_database()
         main.ensure_client_lifecycle_columns()
         main.ensure_calendar_sync_columns()
         main.ensure_session_pack_column()

@@ -12,6 +12,8 @@ import os
 import re
 import threading
 import unittest
+
+import testsafety
 from contextlib import redirect_stdout
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -62,6 +64,7 @@ def plain(html):
 class Languages(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        testsafety.require_local_database()
         main.ensure_trial_session_fields()
         cls.server = HTTPServer(("127.0.0.1", 0), FakeScript)
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
