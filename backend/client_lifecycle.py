@@ -29,6 +29,8 @@ the outcome. No names, emails or documents are ever logged or stored there.
 """
 import logging
 import os
+import threading
+import time
 import traceback
 
 from fastapi import Depends, HTTPException
@@ -77,6 +79,49 @@ def ensure_columns():
     finally:
         cursor.close()
         conn.close()
+
+
+# An archived client's Firebase account is disabled, but an ID token issued
+# before that stays valid for up to an hour. require_client asks this (cached
+# for a few seconds) so such a token stops working at once on this server.
+_ARCHIVED_TTL = 20
+_archived_cache = {}
+_archived_lock = threading.Lock()
+
+
+def forget_archived():
+    with _archived_lock:
+        _archived_cache.clear()
+
+
+def is_archived(email):
+    """True when the client with this login email is archived. A database
+    problem answers False: it must never lock everybody out."""
+    key = _norm(email)
+    if not key:
+        return False
+    now = time.monotonic()
+    with _archived_lock:
+        hit = _archived_cache.get(key)
+        if hit and hit[0] > now:
+            return hit[1]
+    value = False
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT 1 FROM users WHERE LOWER(email) = %s AND archived_at IS NOT NULL LIMIT 1", (key,)
+            )
+            value = cursor.fetchone() is not None
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception:  # noqa: BLE001
+        return False
+    with _archived_lock:
+        _archived_cache[key] = (now + _ARCHIVED_TTL, value)
+    return value
 
 
 def audit(claims, action, client_id, outcome, detail=None):
@@ -239,6 +284,7 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
             deleted, failures = _delete_events(cursor, pending) if pending else (0, [])
             conn.commit()
 
+            forget_archived()
             audit(claims, "archive", client_id, "ok" if not failures else "partial",
                   f"cancelled={len(cancelled_ids)} events_failed={len(failures)}")
             return {
@@ -276,6 +322,7 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
                 raise _account_problem(error) from None
             cursor.execute("UPDATE users SET archived_at = NULL WHERE id = %s", (client_id,))
             conn.commit()
+            forget_archived()
             audit(claims, "unarchive", client_id, "ok")
             return {"message": "Client restored", "account": account}
         except HTTPException:
@@ -392,6 +439,7 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
                 except OSError:
                     logger.error("A profile photo could not be removed")
 
+            forget_archived()
             audit(claims, "delete", client_id, "ok")
             return {"message": "Client deleted", "deleted": True, "steps": steps}
         except HTTPException:

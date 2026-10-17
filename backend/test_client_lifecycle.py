@@ -38,6 +38,7 @@ class Lifecycle(unittest.TestCase):
         testsafety.require_local_database()
         main.ensure_client_lifecycle_columns()
         main.ensure_calendar_sync_columns()
+        main.ensure_calendar_feed_columns()
         main.ensure_session_pack_column()
         main.ensure_trial_session_fields()
         main.ensure_email_log_table()
@@ -234,6 +235,23 @@ class Lifecycle(unittest.TestCase):
         return route("/admin/clients/{client_id}/archive").endpoint(self.user_id, client_lifecycle.ArchivePayload(), claims)
 
     # ----- archive
+    def test_an_archived_client_loses_access_even_with_a_token_issued_before(self):
+        email = self.one("SELECT email FROM users WHERE id = %s", self.user_id)[0][0]
+        verify = main.id_token.verify_firebase_token
+        main.id_token.verify_firebase_token = lambda *a, **k: {
+            "iss": f"https://securetoken.google.com/{main.FIREBASE_PROJECT_ID}", "email": email, "sub": "uid-ana"}
+        try:
+            self.assertEqual(main.require_client("Bearer x")["email"], email)       # active: fine
+            self.archive()
+            with self.assertRaises(HTTPException) as blocked:
+                main.require_client("Bearer x")
+            self.assertEqual(blocked.exception.status_code, 403)
+            route("/admin/clients/{client_id}/unarchive").endpoint(self.user_id, ADMIN_CLAIMS)
+            self.assertEqual(main.require_client("Bearer x")["email"], email)       # restored
+        finally:
+            main.id_token.verify_firebase_token = verify
+            client_lifecycle.forget_archived()
+
     def test_archiving_without_cancelling_keeps_sessions_and_events(self):
         self.assertIn(self.user_id, self.listed())
         result = self.archive()
