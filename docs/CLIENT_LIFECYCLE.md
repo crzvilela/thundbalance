@@ -9,7 +9,7 @@ Código: `backend/client_lifecycle.py`, `src/admin/ClientLifecycleDialogs.jsx`, 
 
 ## Archivar (reversible)
 - `users.archived_at` (se crea al arrancar con `ADD COLUMN IF NOT EXISTS`).
-- Se desactiva la cuenta de Firebase (`disabled = True`) y se revocan sus refresh tokens; al desarchivar se reactiva. Si Firebase falla no se cambia nada y se puede repetir.
+- **Archivar es solo para organizar**: la cuenta de Firebase no se toca y el cliente puede seguir entrando y usando la web. Al desarchivar se reactiva, sin fallar, una cuenta que una versión anterior hubiera desactivado.
 - Opción "Cancelar también sus sesiones futuras" (desmarcada por defecto): muestra cuántas y pide una segunda confirmación (`confirm_cancel`; sin ella el servidor responde 409 `confirm_cancel` con el número). Se cancelan las sesiones `Booked` de hoy en adelante y se borran sus eventos de Google Calendar. Si el borrado de algún evento falla, el archivo se mantiene, se avisa y volver a archivar lo reintenta.
 - Los archivados salen de `GET /admin/clients` (la lista normal), de `/admin/stats`, `/admin/users` y `/users`. `GET /admin/clients?archived=only` devuelve solo los archivados (pestaña "Archivados" con contador).
 - Desarchivar no recrea sesiones canceladas.

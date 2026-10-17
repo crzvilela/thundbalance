@@ -26,7 +26,7 @@ from google_calendar import (
 )
 from landing_page_default import DEFAULT_LANDING_CONTENT
 from admin_api import register_admin_routes
-from client_lifecycle import ensure_columns as ensure_lifecycle_columns, is_archived as is_client_archived, register_client_lifecycle_routes
+from client_lifecycle import ensure_columns as ensure_lifecycle_columns, register_client_lifecycle_routes
 from contact_messages import register_contact_routes
 from trial_notifications import notify_trial_requested
 import mailer
@@ -138,10 +138,6 @@ def require_client(authorization: str | None = Header(default=None)):
         raise HTTPException(status_code=401, detail="Invalid or expired login")
     if claims.get("iss") != f"https://securetoken.google.com/{FIREBASE_PROJECT_ID}":
         raise HTTPException(status_code=401, detail="Invalid login issuer")
-    # an archived client can not use a token issued before the archiving
-    token_email = str(claims.get("email", "")).strip().casefold()
-    if token_email != ADMIN_EMAIL and is_client_archived(token_email):
-        raise HTTPException(status_code=403, detail="This account has been archived")
     return claims
 
 

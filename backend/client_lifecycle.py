@@ -3,8 +3,9 @@
 ARCHIVE (reversible, organisation only)
   - users.archived_at is set; the client leaves the normal list, searches and
     counters (the lists filter on it);
-  - the Firebase account is DISABLED (and its refresh tokens revoked), so the
-    client can not sign in; un-archiving enables it again;
+  - the Firebase account is NOT touched: an archived client can still sign in
+    and use the site as usual. Archiving only tidies the admin lists;
+    un-archiving also re-enables a login that an older version had disabled;
   - future sessions are cancelled (and their calendar events deleted) only when
     the admin asked for it, and the second confirmation was sent
     (cancel_future_sessions + confirm_cancel; without the second the server
@@ -79,49 +80,6 @@ def ensure_columns():
     finally:
         cursor.close()
         conn.close()
-
-
-# An archived client's Firebase account is disabled, but an ID token issued
-# before that stays valid for up to an hour. require_client asks this (cached
-# for a few seconds) so such a token stops working at once on this server.
-_ARCHIVED_TTL = 20
-_archived_cache = {}
-_archived_lock = threading.Lock()
-
-
-def forget_archived():
-    with _archived_lock:
-        _archived_cache.clear()
-
-
-def is_archived(email):
-    """True when the client with this login email is archived. A database
-    problem answers False: it must never lock everybody out."""
-    key = _norm(email)
-    if not key:
-        return False
-    now = time.monotonic()
-    with _archived_lock:
-        hit = _archived_cache.get(key)
-        if hit and hit[0] > now:
-            return hit[1]
-    value = False
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                "SELECT 1 FROM users WHERE LOWER(email) = %s AND archived_at IS NOT NULL LIMIT 1", (key,)
-            )
-            value = cursor.fetchone() is not None
-        finally:
-            cursor.close()
-            conn.close()
-    except Exception:  # noqa: BLE001
-        return False
-    with _archived_lock:
-        _archived_cache[key] = (now + _ARCHIVED_TTL, value)
-    return value
 
 
 def audit(claims, action, client_id, outcome, detail=None):
@@ -245,19 +203,10 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
                     },
                 )
 
-            # 1) the login first: if Firebase fails nothing has changed and the
-            #    same call can simply be repeated.
-            account = "none"
-            try:
-                uid = accounts.find_uid(firebase_uid, email)
-                if uid:
-                    accounts.set_disabled(uid, True)
-                    account = "disabled"
-            except (accounts.AccountsUnavailable, accounts.AccountError) as error:
-                audit(claims, "archive", client_id, "failed", "firebase")
-                raise _account_problem(error) from None
+            # the login (Firebase) is left alone: archiving is only for organisation
+            account = "unchanged"
 
-            # 2) the database
+            # 1) the database
             cancelled_ids = future_ids if data.cancel_future_sessions else []
             cursor.execute(
                 "UPDATE users SET archived_at = COALESCE(archived_at, NOW() AT TIME ZONE 'UTC') WHERE id = %s",
@@ -270,7 +219,7 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
                 )
             conn.commit()
 
-            # 3) their calendar events: the ones just cancelled, and any left
+            # 2) their calendar events: the ones just cancelled, and any left
             #    from an earlier attempt that failed (so repeating the action finishes it)
             cursor.execute(
                 """
@@ -284,7 +233,6 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
             deleted, failures = _delete_events(cursor, pending) if pending else (0, [])
             conn.commit()
 
-            forget_archived()
             audit(claims, "archive", client_id, "ok" if not failures else "partial",
                   f"cancelled={len(cancelled_ids)} events_failed={len(failures)}")
             return {
@@ -311,18 +259,19 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
         cursor = conn.cursor()
         try:
             _, _, email, firebase_uid, _, _ = load_target(cursor, client_id, claims)
+            # Archiving no longer disables the login, but a client archived by an older
+            # version may still have it disabled: switch it on, without failing if
+            # Firebase is not available (the archive mark is what matters here).
             account = "none"
             try:
                 uid = accounts.find_uid(firebase_uid, email)
                 if uid:
                     accounts.set_disabled(uid, False)
                     account = "enabled"
-            except (accounts.AccountsUnavailable, accounts.AccountError) as error:
-                audit(claims, "unarchive", client_id, "failed", "firebase")
-                raise _account_problem(error) from None
+            except (accounts.AccountsUnavailable, accounts.AccountError):
+                account = "unchecked"
             cursor.execute("UPDATE users SET archived_at = NULL WHERE id = %s", (client_id,))
             conn.commit()
-            forget_archived()
             audit(claims, "unarchive", client_id, "ok")
             return {"message": "Client restored", "account": account}
         except HTTPException:
@@ -439,7 +388,6 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
                 except OSError:
                     logger.error("A profile photo could not be removed")
 
-            forget_archived()
             audit(claims, "delete", client_id, "ok")
             return {"message": "Client deleted", "deleted": True, "steps": steps}
         except HTTPException:

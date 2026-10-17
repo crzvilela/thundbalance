@@ -235,28 +235,24 @@ class Lifecycle(unittest.TestCase):
         return route("/admin/clients/{client_id}/archive").endpoint(self.user_id, client_lifecycle.ArchivePayload(), claims)
 
     # ----- archive
-    def test_an_archived_client_loses_access_even_with_a_token_issued_before(self):
+    def test_an_archived_client_can_still_sign_in_and_use_the_site(self):
         email = self.one("SELECT email FROM users WHERE id = %s", self.user_id)[0][0]
         verify = main.id_token.verify_firebase_token
         main.id_token.verify_firebase_token = lambda *a, **k: {
             "iss": f"https://securetoken.google.com/{main.FIREBASE_PROJECT_ID}", "email": email, "sub": "uid-ana"}
         try:
-            self.assertEqual(main.require_client("Bearer x")["email"], email)       # active: fine
             self.archive()
-            with self.assertRaises(HTTPException) as blocked:
-                main.require_client("Bearer x")
-            self.assertEqual(blocked.exception.status_code, 403)
-            route("/admin/clients/{client_id}/unarchive").endpoint(self.user_id, ADMIN_CLAIMS)
-            self.assertEqual(main.require_client("Bearer x")["email"], email)       # restored
+            self.assertEqual(main.require_client("Bearer x")["email"], email)    # still accepted
+            self.assertFalse(self.firebase["users"]["uid-ana"]["disabled"])        # the login is untouched
+            self.assertEqual(self.firebase["calls"], [])
         finally:
             main.id_token.verify_firebase_token = verify
-            client_lifecycle.forget_archived()
 
     def test_archiving_without_cancelling_keeps_sessions_and_events(self):
         self.assertIn(self.user_id, self.listed())
         result = self.archive()
-        self.assertEqual((result["cancelled_sessions"], result["account"]), (0, "disabled"))
-        self.assertTrue(self.firebase["users"]["uid-ana"]["disabled"])    # can not sign in
+        self.assertEqual((result["cancelled_sessions"], result["account"]), (0, "unchanged"))
+        self.assertFalse(self.firebase["users"]["uid-ana"]["disabled"])   # the login keeps working
         self.assertEqual(self.google_deleted, [])                         # events stay
         statuses = self.one("SELECT status FROM sessions WHERE user_id = %s", self.user_id)
         self.assertEqual({s[0] for s in statuses}, {"Booked"})
@@ -284,8 +280,9 @@ class Lifecycle(unittest.TestCase):
         rows = dict(self.one("SELECT id, status FROM sessions WHERE user_id = %s", self.user_id))
         self.assertEqual([rows[i] for i in self.session_ids], ["Booked", "Cancelled", "Cancelled"])
 
-    def test_unarchiving_reenables_the_login_and_does_not_recreate_sessions(self):
+    def test_unarchiving_does_not_recreate_sessions_and_reenables_a_login_disabled_by_an_older_version(self):
         self.archive(cancel_future_sessions=True, confirm_cancel=True)
+        self.firebase["users"]["uid-ana"]["disabled"] = True     # as an older version left it
         result = self.unarchive()
         self.assertEqual(result["account"], "enabled")
         self.assertFalse(self.firebase["users"]["uid-ana"]["disabled"])
@@ -294,14 +291,15 @@ class Lifecycle(unittest.TestCase):
         rows = dict(self.one("SELECT id, status FROM sessions WHERE user_id = %s", self.user_id))
         self.assertEqual([rows[i] for i in self.session_ids], ["Booked", "Cancelled", "Cancelled"])   # still cancelled
 
-    def test_a_firebase_failure_changes_nothing(self):
+    def test_archiving_does_not_need_firebase(self):
         self.firebase_fail = True
-        with self.assertRaises(HTTPException) as caught:
-            self.archive(cancel_future_sessions=True, confirm_cancel=True)
-        self.assertEqual(caught.exception.status_code, 502)
+        result = self.archive(cancel_future_sessions=True, confirm_cancel=True)
+        self.assertEqual(result["cancelled_sessions"], 2)
+        self.assertNotIn(self.user_id, self.listed())
+        self.assertEqual(self.firebase["calls"], [])
+        again = self.unarchive()                                         # Firebase down: still restored
+        self.assertEqual(again["account"], "unchecked")
         self.assertIn(self.user_id, self.listed())
-        statuses = self.one("SELECT status FROM sessions WHERE user_id = %s", self.user_id)
-        self.assertEqual({s[0] for s in statuses}, {"Booked"})
 
     def test_a_calendar_failure_while_archiving_is_reported_and_retried(self):
         self.google_fail = True
