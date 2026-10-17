@@ -261,6 +261,9 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
       {client.city && <span>{client.city}</span>}
     </>
   )
+  // declared before `badges` and `menuItems`, which read them
+  const archivedClient = !!client?.archived_at
+  const protectedClient = isProtectedAccount(client?.email)
   const badges = client && (
     <>
       {archivedClient && <Badge tone="amber">{t('lc_archived_badge')}</Badge>}
@@ -277,8 +280,6 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
       <StatChip label={t('fx_last_session')} value={lastSession ? fmtDate(lastSession.date, { day: 'numeric', month: 'short' }) : t('fx_none')} />
     </>
   )
-  const archivedClient = !!client?.archived_at
-  const protectedClient = isProtectedAccount(client?.email)
   const restore = async () => {
     setRestoring(true)
     try {
