@@ -50,7 +50,7 @@ class CalendarFeedTests(unittest.TestCase):
         self.assertIn("SUMMARY:ThundBalance · Sesión con Carles", feed)
         self.assertNotIn("Puig", feed)
         self.assertNotIn("@gmail", feed)
-        self.assertIn("LOCATION:ThundBalance\, Carrer de Pallars 286\, Barcelona", feed)
+        self.assertIn(r"LOCATION:ThundBalance\, Carrer de Pallars 286\, Barcelona", feed)
 
     def test_window_starts_30_days_back(self):
         cursor = FakeCursor([])

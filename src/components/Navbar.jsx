@@ -101,7 +101,7 @@ function NavbarInner() {
 
     } catch (error) {
 
-      console.log(error)
+      console.error('Sign out failed:', error)
 
     }
 

@@ -1,33 +1,35 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 
 import Home from '../pages/Home'
 import Login from '../pages/Login'
-import Register from '../pages/Register'
-import Dashboard from '../pages/Dashboard'
-import MySessions from '../pages/MySessions'
-import Profile from '../pages/Profile'
-import LandingPageEditor from '../pages/admin/LandingPageEditor'
-import AdminLayout from '../admin/AdminLayout'
-import Overview from '../admin/pages/Overview'
-import Requests from '../admin/pages/Requests'
-import Clients from '../admin/pages/Clients'
-import TrialSessions from '../admin/pages/TrialSessions'
-import Calendar from '../admin/pages/Calendar'
-import Trainers from '../admin/pages/Trainers'
-import Plans from '../admin/pages/Plans'
-import Videos from '../admin/pages/Videos'
-import Messages from '../admin/pages/Messages'
-import TrainingTips from '../pages/TrainingTips'
-import TrialSession from '../pages/Trialsession'
-import TrialConfirm from '../pages/TrialConfirm'
-import TrainingRequest from '../pages/TrainingRequest'
-import AdminLogin from '../pages/admin/AdminLogin'
 import RequireAdmin from '../components/admin/RequireAdmin'
+const Register = lazy(() => import('../pages/Register'))
+const Dashboard = lazy(() => import('../pages/Dashboard'))
+const MySessions = lazy(() => import('../pages/MySessions'))
+const Profile = lazy(() => import('../pages/Profile'))
+const LandingPageEditor = lazy(() => import('../pages/admin/LandingPageEditor'))
+const AdminLayout = lazy(() => import('../admin/AdminLayout'))
+const Overview = lazy(() => import('../admin/pages/Overview'))
+const Requests = lazy(() => import('../admin/pages/Requests'))
+const Clients = lazy(() => import('../admin/pages/Clients'))
+const TrialSessions = lazy(() => import('../admin/pages/TrialSessions'))
+const Calendar = lazy(() => import('../admin/pages/Calendar'))
+const Trainers = lazy(() => import('../admin/pages/Trainers'))
+const Plans = lazy(() => import('../admin/pages/Plans'))
+const Videos = lazy(() => import('../admin/pages/Videos'))
+const Messages = lazy(() => import('../admin/pages/Messages'))
+const TrainingTips = lazy(() => import('../pages/TrainingTips'))
+const TrialSession = lazy(() => import('../pages/Trialsession'))
+const TrialConfirm = lazy(() => import('../pages/TrialConfirm'))
+const TrainingRequest = lazy(() => import('../pages/TrainingRequest'))
+const AdminLogin = lazy(() => import('../pages/admin/AdminLogin'))
 
 function AppRoutes() {
   return (
     <BrowserRouter>
 
+      <Suspense fallback={<div className="min-h-screen bg-black" aria-busy="true" />}>
       <Routes>
 
         <Route path="/" element={<Home />} />
@@ -75,6 +77,7 @@ function AppRoutes() {
         <Route path="/training-request" element={<TrainingRequest />}/>
       
       </Routes>
+      </Suspense>
 
     </BrowserRouter>
   )

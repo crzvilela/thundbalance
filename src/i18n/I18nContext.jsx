@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { translations } from './translations'
 
 const STORAGE_KEY = 'tb_language'
@@ -33,6 +33,9 @@ export function I18nProvider({ children }) {
     }
     return DEFAULT_LANGUAGE
   })
+
+  // screen readers, translation tools and search engines read this
+  useEffect(() => { document.documentElement.lang = language }, [language])
 
   const setLanguage = (lang) => {
     if (!SUPPORTED_LANGUAGES.includes(lang)) return

@@ -60,3 +60,7 @@ backend/backup_before_reset_*.json
 # Backups with personal data
 backup_before_reset_*
 backups/
+
+# nested copy of the repository folder
+thundbalance-repo/
+enviar/
