@@ -62,9 +62,15 @@ def staff_reschedule_requested(ctx):
                 (tr("es", "rs_lbl_note"), ctx.get("client_note")),
             ]),
             paragraph(tr("es", "rs_staff_req_manage"), muted=True),
-            button(tr("es", "rs_staff_button"), "", f"{site_url()}/admin/calendar?tab=requests", only="es"),
+            button(tr("es", "rs_staff_button"), "", _panel_link(ctx), only="es"),
         ]
     return spanish_email(subject, build, preheader=subject)
+
+
+def _panel_link(ctx):
+    """The Schedule page of the panel, with this request highlighted."""
+    request = ctx.get("id")
+    return f"{site_url()}/admin/schedule" + (f"?request={request}" if isinstance(request, int) else "")
 
 
 def staff_counter_answer(ctx, accepted):
@@ -82,7 +88,7 @@ def staff_counter_answer(ctx, accepted):
                 (tr("es", "rs_lbl_proposed"), f"{proposed.weekday_es} {proposed.date_es}, {proposed.time}"),
             ]),
             paragraph(tr("es", f"{prefix}_note"), muted=True),
-            button(tr("es", "rs_staff_button"), "", f"{site_url()}/admin/calendar?tab=requests", only="es"),
+            button(tr("es", "rs_staff_button"), "", _panel_link(ctx), only="es"),
         ]
     return spanish_email(subject, build, preheader=subject)
 

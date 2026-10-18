@@ -15,6 +15,7 @@ const Requests = lazy(() => import('../admin/pages/Requests'))
 const Clients = lazy(() => import('../admin/pages/Clients'))
 const TrialSessions = lazy(() => import('../admin/pages/TrialSessions'))
 const Calendar = lazy(() => import('../admin/pages/Calendar'))
+const Schedule = lazy(() => import('../admin/pages/Schedule'))
 const Trainers = lazy(() => import('../admin/pages/Trainers'))
 const Plans = lazy(() => import('../admin/pages/Plans'))
 const Videos = lazy(() => import('../admin/pages/Videos'))
@@ -56,6 +57,7 @@ function AppRoutes() {
           <Route path="trials" element={<TrialSessions />} />
           <Route path="clients" element={<Clients />} />
           <Route path="calendar" element={<Calendar />} />
+          <Route path="schedule" element={<Schedule />} />
           <Route path="trainers" element={<Trainers />} />
           <Route path="sessions" element={<Navigate to="/admin/calendar" replace />} />
           <Route path="plans" element={<Plans />} />

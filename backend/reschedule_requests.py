@@ -326,6 +326,22 @@ def create_request(user_id, session_id, requested_date, requested_time, note=Non
     return _after(request_id, notify.staff_requested)
 
 
+def _session_state(session_id):
+    """Where the session is now and how its Google event went (the panel warns when it failed)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT session_date, session_time, calendar_sync_status, calendar_sync_error FROM sessions WHERE id = %s", (session_id,))
+        row = cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+    if not row:
+        return None
+    return {"date": str(row[0])[:10], "time": hhmm(row[1]), "sync_status": row[2], "sync_error": row[3]}
+
+
 def _after(request_id, sender=None, **options):
     """Reads the committed request and (optionally) sends the e-mail. Returns {"request": ..., "email": ...}."""
     conn = get_connection()
@@ -336,7 +352,7 @@ def _after(request_id, sender=None, **options):
     finally:
         cursor.close()
         conn.close()
-    result = {"request": _public(req)}
+    result = {"request": _public(req), "session": _session_state(req["session_id"])}
     if sender and context:
         result["email"] = notify.wait(sender(context, **options))
     return result
@@ -442,11 +458,40 @@ def pending_count():
         conn.close()
 
 
-def list_for_admin(status=None, trainer_id=None, email=None, limit=25, offset=0):
-    """Requests newest first (pending ones first), filtered, paged: {"items", "total", "limit", "offset"}."""
+def open_count():
+    """Requests that need the studio's attention or an answer: pending + counter_proposed (the menu badge)."""
     ensure_tables_once()
-    if status and status not in STATUSES:
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        expire_stale(cursor)
+        conn.commit()
+        cursor.execute("SELECT status, COUNT(*) FROM reschedule_requests WHERE status = ANY(%s) GROUP BY status", (list(OPEN_STATUSES),))
+        counts = {status: total for status, total in cursor.fetchall()}
+        return {"pending": counts.get("pending", 0), "counter_proposed": counts.get("counter_proposed", 0),
+                "open": sum(counts.values())}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def _id_list(value):
+    """ "1,3" / [1, 3] -> [1, 3] (anything else is ignored)."""
+    parts = value.split(",") if isinstance(value, str) else (value or [])
+    return sorted({int(part) for part in parts if str(part).strip().isdigit()})
+
+
+def list_for_admin(status=None, trainer_id=None, email=None, limit=25, offset=0, trainer_ids=None, request_id=None):
+    """Requests filtered and paged: {"items", "total", "counts", "limit", "offset"}.
+    `status` may be one status or several separated by commas. Open requests come first, the session
+    that is closest first (the most urgent); the closed ones follow, the latest decision first.
+    `counts` are per status for the same email / trainer filters (they feed the tabs).
+    Open requests carry `conflict`: why the requested (or proposed) hour no longer works, or None."""
+    ensure_tables_once()
+    statuses = [part.strip() for part in str(status or "").split(",") if part.strip()]
+    if any(part not in STATUSES for part in statuses):
         raise fail(422, "invalid_status", "Unknown status.")
+    trainers = _id_list(trainer_ids) + ([int(trainer_id)] if trainer_id else [])
     limit = max(1, min(int(limit), 100))
     offset = max(0, int(offset))
     like = f"%{_escape_like(email)}%" if email and str(email).strip() else None
@@ -455,24 +500,31 @@ def list_for_admin(status=None, trainer_id=None, email=None, limit=25, offset=0)
     try:
         expire_stale(cursor)
         conn.commit()
-        where = """(%(status)s::text IS NULL OR rr.status = %(status)s) AND (%(trainer)s::int IS NULL OR s.trainer_id = %(trainer)s)
-                   AND (%(like)s::text IS NULL OR LOWER(u.email) LIKE %(like)s)"""
-        params = {"status": status or None, "trainer": trainer_id, "like": like, "limit": limit, "offset": offset}
-        cursor.execute(
-            f"SELECT COUNT(*) FROM reschedule_requests rr JOIN users u ON u.id = rr.user_id JOIN sessions s ON s.id = rr.session_id WHERE {where}",
-            params,
-        )
+        base = """(%(trainers)s::int[] IS NULL OR s.trainer_id = ANY(%(trainers)s::int[]))
+                  AND (%(like)s::text IS NULL OR LOWER(u.email) LIKE %(like)s)
+                  AND (%(rid)s::int IS NULL OR rr.id = %(rid)s)"""
+        where = f"(%(statuses)s::text[] IS NULL OR rr.status = ANY(%(statuses)s::text[])) AND {base}"
+        params = {"statuses": statuses or None, "trainers": trainers or None, "like": like, "rid": request_id,
+                  "limit": limit, "offset": offset}
+        joins = "FROM reschedule_requests rr JOIN users u ON u.id = rr.user_id JOIN sessions s ON s.id = rr.session_id"
+        cursor.execute(f"SELECT COUNT(*) {joins} WHERE {where}", params)
         total = cursor.fetchone()[0]
+        cursor.execute(f"SELECT rr.status, COUNT(*) {joins} WHERE {base} GROUP BY rr.status", params)
+        counts = {name: 0 for name in STATUSES}
+        counts.update({name: amount for name, amount in cursor.fetchall()})
         cursor.execute(
             f"""
             SELECT rr.id, rr.session_id, rr.status, rr.original_date, rr.original_time, rr.requested_date, rr.requested_time,
                    rr.client_note, rr.admin_note, rr.counter_date, rr.counter_time, rr.created_at, rr.decided_at,
-                   u.id, u.nome, u.email, s.session_number, s.trainer_id, t.nome, rr.lang
+                   u.id, u.nome, u.email, s.session_number, s.trainer_id, t.nome, rr.lang,
+                   t.color, s.session_date, s.session_time, rr.decided_by, s.calendar_sync_status, s.calendar_sync_error, s.status
             FROM reschedule_requests rr
             JOIN users u ON u.id = rr.user_id JOIN sessions s ON s.id = rr.session_id
             LEFT JOIN trainers t ON t.id = s.trainer_id
             WHERE {where}
-            ORDER BY (rr.status = 'pending') DESC, rr.created_at DESC, rr.id DESC
+            ORDER BY (rr.status IN ('pending', 'counter_proposed')) DESC,
+                     CASE WHEN rr.status IN ('pending', 'counter_proposed') THEN s.session_date + s.session_time END ASC,
+                     COALESCE(rr.decided_at, rr.created_at) DESC, rr.id DESC
             LIMIT %(limit)s OFFSET %(offset)s
             """,
             params,
@@ -487,10 +539,17 @@ def list_for_admin(status=None, trainer_id=None, email=None, limit=25, offset=0)
                 "created_at": r[11].isoformat() if r[11] else None, "decided_at": r[12].isoformat() if r[12] else None,
                 "client_id": r[13], "client_name": r[14], "client_email": r[15], "number": r[16],
                 "trainer_id": r[17], "trainer": r[18], "lang": r[19],
+                "color": r[20], "session_date": str(r[21])[:10], "session_time": hhmm(r[22]), "decided_by": r[23],
+                "sync_status": r[24], "sync_error": r[25], "session_status": r[26], "conflict": None,
             }
             for r in cursor.fetchall()
         ]
-        return {"items": items, "total": total, "limit": limit, "offset": offset}
+        for item in items:                  # is the hour that would be applied still free?
+            if item["status"] in OPEN_STATUSES:
+                day, time = ((item["counter_date"], item["counter_time"]) if item["status"] == "counter_proposed"
+                             else (item["requested_date"], item["requested_time"]))
+                item["conflict"] = _slot_error(cursor, item["client_id"], item["trainer_id"], item["session_id"], day, time)
+        return {"items": items, "total": total, "counts": counts, "limit": limit, "offset": offset}
     finally:
         cursor.close()
         conn.close()
@@ -757,12 +816,14 @@ def register_reschedule_routes(app, require_admin, require_client, own_user_id):
 
     # ---- the studio (Firebase ID token + administrator)
     @app.get("/admin/reschedule-requests", dependencies=admin)
-    def admin_list(status: str = "", trainer_id: int | None = None, email: str = "", limit: int = 25, offset: int = 0):
-        return list_for_admin(status or None, trainer_id, email, limit, offset)
+    def admin_list(status: str = "", trainer_id: int | None = None, email: str = "", limit: int = 25, offset: int = 0,
+                   trainer_ids: str = "", request_id: int | None = None):
+        return list_for_admin(status or None, trainer_id, email, limit, offset, trainer_ids, request_id)
 
     @app.get("/admin/reschedule-requests/count", dependencies=admin)
     def admin_count():
-        return {"pending": pending_count()}
+        """pending (kept as it was), counter_proposed and open = both (the menu badge)."""
+        return open_count()
 
     @app.post("/admin/reschedule-requests/{request_id}/approve")
     def admin_approve(request_id: int, claims=Depends(require_admin)):

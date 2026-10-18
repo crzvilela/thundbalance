@@ -31,7 +31,7 @@ export function Tabs({ tabs, value, onChange, label, idPrefix = 'tabs', classNam
           >
             {tab.icon && <Icon name={tab.icon} className="h-4 w-4" />}
             {tab.label}
-            {tab.alert && <span className="h-2 w-2 rounded-full bg-amber-400" aria-hidden="true" />}
+            {tab.alert && <><span className="h-2 w-2 rounded-full bg-amber-400" aria-hidden="true" />{tab.alertLabel && <span className="sr-only">{tab.alertLabel}</span>}</>}
           </button>
         )
       })}

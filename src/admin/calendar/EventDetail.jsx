@@ -4,6 +4,7 @@ import { API_URL } from '../../config'
 import { adminRequest } from '../api'
 import { useAdminText } from '../useAdminText'
 import { useToast } from '../toastContext'
+import { useFocusTrap } from '../useFocusTrap'
 import { Badge, Button, ConfirmDialog, Icon } from '../ui'
 import { NEUTRAL_COLOR, dayKey, describeWhen, madridWallClock } from './calendarConfig'
 
@@ -47,8 +48,8 @@ export default function EventDetail({ event, onClose, onChanged }) {
   const canSync = !isTrial || props.status === 'confirmed'
   const syncFailed = props.syncStatus === 'failed'
 
+  useFocusTrap(panel, true)
   useEffect(() => {
-    panel.current?.focus()
     const onKey = (keyEvent) => { if (keyEvent.key === 'Escape' && !saving && !confirmCancel) onClose() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -178,6 +179,13 @@ export default function EventDetail({ event, onClose, onChanged }) {
                   </div>
                 )}
               </div>
+            )}
+
+            {props.changeRequestId && (
+              <p role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+                <span className="font-semibold">{props.changeRequestStatus === 'counter_proposed' ? t('sch_open_counter') : t('sch_open_change')}</span>
+                <Link to={`/admin/schedule?request=${props.changeRequestId}`} className="font-semibold underline underline-offset-4">{t('sch_view_request')}</Link>
+              </p>
             )}
 
             {syncFailed && (

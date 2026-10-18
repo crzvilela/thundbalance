@@ -25,6 +25,7 @@ const NAV = [
   { to: '/admin/messages', icon: 'inbox', label: 'nav_messages', badge: 'messages' },
   { to: '/admin/clients', icon: 'clients', label: 'nav_clients' },
   { to: '/admin/calendar', icon: 'calendar', label: 'nav_sessions' },
+  { to: '/admin/schedule', icon: 'refresh', label: 'nav_schedule', badge: 'schedule' },
   { to: '/admin/trainers', icon: 'clock', label: 'nav_trainers' },
   { to: '/admin/plans', icon: 'bolt', label: 'nav_plans' },
   { to: '/admin/videos', icon: 'video', label: 'nav_videos' }
@@ -73,10 +74,13 @@ export default function AdminLayout() {
   const trialsResource = useAdminResource('/admin/trial-sessions')
   const trials = useMemo(() => (Array.isArray(trialsResource.data) ? trialsResource.data.map(trial => ({ ...trial, status: String(trial.status).toLowerCase() })) : []), [trialsResource.data])
   const pendingTrials = trials.filter(trial => trial.status === 'pending').length
-  const messagesResource = useAdminResource('/admin/contact-messages')
-  const messages = useMemo(() => (Array.isArray(messagesResource.data) ? messagesResource.data : []), [messagesResource.data])
-  const unreadMessages = messages.filter(message => !message.read).length
-  const badges = { requests: pendingCount, trials: pendingTrials, messages: unreadMessages }
+  // contact messages: only the count (unread, not archived) is needed here; the Messages page loads its own list
+  const messagesResource = useAdminResource('/admin/contact-messages/count')
+  const unreadMessages = messagesResource.data?.unread || 0
+  // Date-change requests that need an action (pending + counter-proposals); reloaded after every action on the Schedule page.
+  const scheduleResource = useAdminResource('/admin/reschedule-requests/count')
+  const scheduleCount = scheduleResource.data?.open || 0
+  const badges = { requests: pendingCount, trials: pendingTrials, messages: unreadMessages, schedule: scheduleCount }
 
   const push = useCallback((message, tone = 'success') => {
     const id = ++nextToastId.current
@@ -178,7 +182,7 @@ export default function AdminLayout() {
 
         <main className="px-4 py-8 sm:px-8 lg:ml-64 lg:px-10 lg:py-10">
           <div className="mx-auto max-w-6xl">
-            <AdminErrorBoundary><Outlet context={{ requests, requestsResource, trials, trialsResource, messages, messagesResource }} /></AdminErrorBoundary>
+            <AdminErrorBoundary><Outlet context={{ requests, requestsResource, trials, trialsResource, messagesResource, scheduleResource }} /></AdminErrorBoundary>
           </div>
         </main>
       </div>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { adminRequest } from './api'
 import { useAdminText } from './useAdminText'
 import { useToast } from './toastContext'
-import { Badge, Button, Field, TextInput } from './ui'
+import { Button, Field, TextInput } from './ui'
 import { DEFAULT_TAX_ID_TYPE, normalizeTaxId } from '../utils/taxId'
 import PostalCodeInput from '../components/forms/PostalCodeInput'
 import TaxIdInput from '../components/forms/TaxIdInput'
@@ -36,7 +36,6 @@ export default function BillingSection({ client, onSaved, onDirtyChange, bare = 
   const set = (field) => (event) => setValue(field, event.target.value)
   const postalCountry = regionOfPhone(client.phone) || countryIsoOf(form.country)
   const postalChanged = form.postal !== (client.postal_code || '')
-  const missing = !form.taxId.trim() || !form.address.trim()
   const dirty = form.type !== (client.tax_id_type || DEFAULT_TAX_ID_TYPE) || form.taxId !== (client.tax_id || '')
     || form.address !== (client.address || '') || form.postal !== (client.postal_code || '')
     || form.city !== (client.city || '') || form.country !== (client.country || '')
@@ -84,11 +83,9 @@ export default function BillingSection({ client, onSaved, onDirtyChange, bare = 
       {!bare && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-medium uppercase tracking-wider text-gray-400">{t('bl_title')}</h3>
-          {client.billing_missing && <Badge tone="amber">{t('bl_missing')}</Badge>}
         </div>
       )}
       <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
-        {missing && <p className="mb-4 text-sm text-amber-200">{t('bl_missing_text')}</p>}
         <TaxIdInput label={t('bl_doc')} language={language} type={form.type} value={form.taxId} error={fieldErrors.taxId}
           disabled={busy} onChange={value => setValue('taxId', value)} onTypeChange={type => setValue('type', type)} />
         <Field label={t('bl_address')}>

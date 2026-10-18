@@ -131,7 +131,7 @@ def _iso(day, moment):
 
 def session_event(row, now):
     (session_id, day, moment, status, rescheduled, number, user_id, name, email, phone, code,
-     trainer_id, trainer, color, pack, sync_status, sync_error) = row
+     trainer_id, trainer, color, pack, sync_status, sync_error, change_id, change_status) = row
     start, end = _iso(day, moment)
     number = str(number or "").strip()
     email = str(email or "").strip()
@@ -146,6 +146,7 @@ def session_event(row, now):
             "number": number, "pack": pack or "", "clientId": user_id, "clientName": name or "", "email": email,
             "phone": _phone(phone, code), "trainerId": trainer_id, "trainer": trainer or "", "color": color or "",
             "rescheduled": bool(rescheduled), "syncStatus": sync_status, "syncError": sync_error,
+            "changeRequestId": change_id, "changeRequestStatus": change_status,     # open reschedule request, if any
         },
     }
 
@@ -175,6 +176,8 @@ def calendar_events(cursor, first, last, email=None, trainer_ids=None, kind="all
     events = []
 
     if kind in ("all", "packs"):
+        import reschedule_requests              # the table the open-request columns read (created if missing)
+        reschedule_requests.ensure_tables_once()
         where, params = ["s.session_date >= %s", "s.session_date < %s"], [first, last]
         if not show_cancelled:
             where.append("LOWER(s.status) <> 'cancelled'")
@@ -189,7 +192,9 @@ def calendar_events(cursor, first, last, email=None, trainer_ids=None, kind="all
             SELECT s.id, s.session_date, s.session_time, s.status, s.rescheduled, s.session_number,
                    s.user_id, u.nome, u.email, u.telefone, u.codigo_pais,
                    s.trainer_id, t.nome, t.color, COALESCE(p1.nome, p2.nome),
-                   s.calendar_sync_status, s.calendar_sync_error
+                   s.calendar_sync_status, s.calendar_sync_error,
+                   (SELECT rr.id FROM reschedule_requests rr WHERE rr.session_id = s.id AND rr.status IN ('pending', 'counter_proposed') LIMIT 1),
+                   (SELECT rr.status FROM reschedule_requests rr WHERE rr.session_id = s.id AND rr.status IN ('pending', 'counter_proposed') LIMIT 1)
             FROM sessions s
             LEFT JOIN users u ON u.id = s.user_id
             LEFT JOIN trainers t ON t.id = s.trainer_id

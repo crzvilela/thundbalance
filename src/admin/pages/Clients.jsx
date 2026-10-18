@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { adminRequest } from '../api'
-import { resolveImageUrl } from '../../api/landingPage'
 import { useAdminText } from '../useAdminText'
 import { useFeatures } from '../../api/features'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { dateKey, parseDateKey } from '../requests'
-import { PackStatusBadge, PackSummary, RenewDrawer, TrainingCalendar } from '../PackPanel'
+import { PackSummary, RenewDrawer, TrainingCalendar } from '../PackPanel'
+import { ClientAvatar, ClientRow } from '../ClientRows'
 import AddClientDrawer from '../AddClientDrawer'
 import BillingSection from '../BillingSection'
 import { Tabs, TabPanel } from '../../components/admin/Tabs'
@@ -22,19 +22,6 @@ import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Icon,
   PageHeader, SelectInput, Skeleton, TextInput
 } from '../ui'
-
-function initials(name) {
-  return String(name || '?').split(' ').slice(0, 2).map(part => part[0]).join('').toUpperCase()
-}
-
-function Avatar({ client, size = 'h-12 w-12 text-base' }) {
-  const photo = resolveImageUrl(client.photo)
-  return (
-    <span className={`flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-emerald-400/25 to-emerald-700/10 font-semibold text-emerald-200`}>
-      {photo ? <img src={photo} alt="" className="h-full w-full object-cover" /> : initials(client.name)}
-    </span>
-  )
-}
 
 // The admin account and the account of whoever is signed in can not be archived
 // or deleted (the server refuses them too; here the actions are just hidden).
@@ -113,6 +100,9 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
   const okSync = sessions.filter(session => session.calendar_sync_status === 'ok').length
   const pendingSync = sessions.filter(session => session.calendar_sync_status === 'pending').length
 
+  // what the invoices still need; the warning lives in the Facturación tab only (and a dot on its name)
+  const billingMissing = client ? [!client.tax_id && 'doc', !client.address && 'address', !client.country && 'country'].filter(Boolean) : []
+
   // ---------------------------------------------------------------- tabs
   const hasActivity = !!client && ((clientCalendar && client.calendar_feed_generated) || client.must_change_password || failedSync + okSync + pendingSync > 0)
   const tabs = useMemo(() => {
@@ -121,11 +111,11 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
       { id: 'sesiones', label: t('fx_tab_sessions'), icon: 'calendar' },
       { id: 'packs', label: t('fx_tab_packs'), icon: 'bolt' },
       { id: 'datos', label: t('fx_tab_personal'), icon: 'clients' },
-      { id: 'facturacion', label: t('fx_tab_billing'), icon: 'doc', alert: !!client?.billing_missing },
+      { id: 'facturacion', label: t('fx_tab_billing'), icon: 'doc', alert: billingMissing.length > 0, alertLabel: t('bl_missing') },
     ]
-    if (hasActivity) list.push({ id: 'actividad', label: t('fx_tab_activity'), icon: 'pulse', alert: failedSync > 0 })
+    if (hasActivity) list.push({ id: 'actividad', label: t('fx_tab_activity'), icon: 'pulse', alert: failedSync > 0, alertLabel: t('cs_session_warning') })
     return list
-  }, [t, client, hasActivity, failedSync])
+  }, [t, hasActivity, failedSync, billingMissing.length])
   const requested = searchParams.get('tab')
   const activeTab = TAB_IDS.includes(requested) && tabs.some(tab => tab.id === requested) ? requested : 'resumen'
 
@@ -270,7 +260,6 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
     <>
       {archivedClient && <Badge tone="amber">{t('lc_archived_badge')}</Badge>}
       {mainPack ? <Badge tone="emerald">{mainPack.name}</Badge> : <Badge>{t('cl_no_plan')}</Badge>}
-      {client.billing_missing && <Badge tone="amber">{t('bl_missing')}</Badge>}
       {client.must_change_password && <Badge tone="amber">{t('fx_temp_badge')}</Badge>}
     </>
   )
@@ -360,7 +349,7 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
 
   return (
     <>
-      <Drawer open onClose={requestClose} size="lg" headerless title={client?.name || '…'}>
+      <Drawer open onClose={requestClose} size="lg" fullOnMobile headerless title={client?.name || '…'}>
         {detail.error ? (
           <div className="p-6 sm:p-10">
             <ErrorState message={`${t('cl_detail_error')} (${detail.error})`} retryLabel={t('retry')} onRetry={detail.reload} />
@@ -371,7 +360,7 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
           <>
             <div className="sticky top-0 z-10">
               <DetailHeader
-                avatar={<Avatar client={client} size="h-12 w-12 text-base sm:h-16 sm:w-16 sm:text-xl" />}
+                avatar={<ClientAvatar client={client} size="h-12 w-12 text-base sm:h-16 sm:w-16 sm:text-xl" />}
                 title={client.name} meta={meta} badges={badges} chips={chips} actions={actions}
                 onClose={requestClose} closeLabel={t('fx_close')}
               />
@@ -402,12 +391,6 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
                     <SectionCard title={t('cc_temp_title')} tone="amber" className="lg:col-span-2">
                       <p className="mb-3 text-sm text-gray-300">{t('cc_temp_text')}</p>
                       <Button variant="secondary" onClick={resend} loading={resending}>{resending ? t('cc_resending') : t('cc_resend')}</Button>
-                    </SectionCard>
-                  )}
-                  {client.billing_missing && (
-                    <SectionCard title={t('bl_missing')} tone="amber" className="lg:col-span-2">
-                      <p className="mb-3 text-sm text-gray-300">{t('bl_missing_text')}</p>
-                      <Button variant="secondary" onClick={() => goTab('facturacion')}>{t('fx_go_billing')}</Button>
                     </SectionCard>
                   )}
 
@@ -494,9 +477,17 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
 
               <TabPanel id="facturacion" idPrefix={TAB_PREFIX} active={activeTab === 'facturacion'}>
                 <div className="space-y-5">
+                  {billingMissing.length > 0 && (
+                    <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-5 py-4 text-sm text-amber-100">
+                      <p className="flex min-w-0 items-center gap-2.5">
+                        <Icon name="alert" className="h-4 w-4 shrink-0" />
+                        <span>{t('bl_missing_list').replace('{list}', billingMissing.map(key => t(`bl_miss_${key}`)).join(', '))}</span>
+                      </p>
+                      {!editing && <Button variant="secondary" onClick={() => setEditingBilling(true)}>{t('bl_complete')}</Button>}
+                    </div>
+                  )}
                   <SectionCard title={t('bl_title')}
                     actions={<div className="flex items-center gap-2">
-                      {client.billing_missing && <Badge tone="amber">{t('bl_missing')}</Badge>}
                       {!editing && <Button variant="secondary" onClick={() => setEditingBilling(true)}>{t('fx_edit')}</Button>}
                     </div>}>
                     {editing ? (
@@ -507,7 +498,6 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
                       />
                     ) : (
                       <>
-                        {client.billing_missing && <p className="mb-4 text-sm text-amber-200">{t('bl_missing_text')}</p>}
                         <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
                           <Detail label={t('fx_billing_doc')} wide>
                             {documentText && (
@@ -583,28 +573,20 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
   )
 }
 
+const PAGE_SIZE = 50
+
 export default function Clients() {
-  const { t, language } = useAdminText()
+  const { t } = useAdminText()
   const clientsResource = useAdminResource('/admin/clients')
   // Archived clients are left out of the normal list; this one has only them.
   const archivedResource = useAdminResource('/admin/clients?archived=only')
   const plansResource = useAdminResource('/plans')
   const trainersResource = useAdminResource('/admin/trainer-availability')
   const [query, setQuery] = useState('')
+  const [shown, setShown] = useState(PAGE_SIZE)                 // how many rows are drawn (50 more each time)
   const [searchParams, setSearchParams] = useSearchParams()
   const [filter, setFilter] = useState(() => (['with_plan', 'no_plan', 'pending', 'renew', 'archived'].includes(searchParams.get('filter')) ? searchParams.get('filter') : 'all'))
-  const toast = useToast()
-  const [lifecycle, setLifecycle] = useState(null)             // the client being archived
   const reloadAll = () => { clientsResource.reload(); archivedResource.reload() }
-  const restoreClient = async (client) => {
-    try {
-      await adminRequest('POST', `/admin/clients/${client.id}/unarchive`)
-      toast.push(t('lc_unarchived_ok'))
-      reloadAll()
-    } catch (error) {
-      toast.push(error.message, 'error')
-    }
-  }
   // the open file lives in the URL (?client=ID&tab=sesiones): reload and back keep it
   const selectedId = Number(searchParams.get('client')) || null
   const setSelectedId = (id) => setSearchParams(previous => {
@@ -621,7 +603,6 @@ export default function Clients() {
   const clients = filter === 'archived' ? archivedClients : activeClients
   const plans = useMemo(() => plansResource.data || [], [plansResource.data])
   const trainers = useMemo(() => (Array.isArray(trainersResource.data) ? trainersResource.data : []), [trainersResource.data])
-  const locale = language === 'es' ? 'es-ES' : 'en-GB'
 
   const counts = useMemo(() => ({
     all: activeClients.length,
@@ -632,6 +613,7 @@ export default function Clients() {
     archived: archivedClients.length
   }), [activeClients, archivedClients])
 
+  // same filters and the same order as before; the search looks at the email, the only thing a row shows
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
     return clients.filter(client => {
@@ -639,9 +621,13 @@ export default function Clients() {
       if (filter === 'no_plan' && client.plan) return false
       if (filter === 'pending' && !client.has_pending_request) return false
       if (filter === 'renew' && client.pack_status !== 'expired' && client.pack_status !== 'expiring') return false
-      return !needle || `${client.name} ${client.email}`.toLowerCase().includes(needle)
+      return !needle || String(client.email || '').toLowerCase().includes(needle)
     })
   }, [clients, filter, query])
+  const rows = visible.slice(0, shown)
+
+  const changeQuery = (value) => { setQuery(value); setShown(PAGE_SIZE) }
+  const changeFilter = (key) => { setFilter(key); setShown(PAGE_SIZE) }
 
   const filters = [['all', t('cl_all')], ['with_plan', t('cl_with_plan')], ['no_plan', t('cl_no_plan_filter')], ['pending', t('cl_pending')], ['renew', t('biz_to_renew')], ['archived', t('lc_archived_filter')]]
 
@@ -658,7 +644,7 @@ export default function Clients() {
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2" role="tablist">
           {filters.map(([key, label]) => (
-            <button key={key} type="button" role="tab" aria-selected={filter === key} onClick={() => setFilter(key)}
+            <button key={key} type="button" role="tab" aria-selected={filter === key} onClick={() => changeFilter(key)}
               className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition ${
                 filter === key ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300' : 'border-white/10 text-gray-400 hover:border-white/25 hover:text-white'
               }`}>
@@ -667,59 +653,48 @@ export default function Clients() {
             </button>
           ))}
         </div>
-        <div className="relative w-full sm:w-72">
+        <div className="relative w-full sm:w-80">
           <Icon name="search" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-          <TextInput value={query} onChange={event => setQuery(event.target.value)} placeholder={t('cl_search')} aria-label={t('cl_search')} className="!pl-10" />
+          <TextInput
+            type="text" inputMode="email" value={query} onChange={event => changeQuery(event.target.value)}
+            placeholder={t('cl_search')} aria-label={t('cl_search')} className="!pl-10 !pr-11"
+          />
+          {query && (
+            <button type="button" onClick={() => changeQuery('')} aria-label={t('cl_clear')} title={t('cl_clear')}
+              className="absolute right-1.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 transition hover:bg-white/10 hover:text-white">
+              <Icon name="close" className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 
       {clientsResource.error ? (
         <Card><ErrorState message={`${t('load_error')} (${clientsResource.error})`} retryLabel={t('retry')} onRetry={clientsResource.reload} /></Card>
       ) : clientsResource.loading && !clientsResource.data ? (
-        <div className="space-y-3"><Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" /></div>
+        <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02]" role="status" aria-label="…">
+          {Array.from({ length: 6 }, (_, index) => (
+            <div key={index} className="flex h-16 items-center gap-4 border-b border-white/[0.06] px-5 last:border-b-0">
+              <Skeleton className="!h-10 !w-10 shrink-0 !rounded-full" /><Skeleton className="!h-4 w-64 max-w-[60%]" />
+            </div>
+          ))}
+        </div>
       ) : visible.length === 0 ? (
         <Card><EmptyState icon="clients" title={clients.length ? t('cl_empty') : filter === 'archived' ? t('lc_none_archived') : t('cl_none')} /></Card>
       ) : (
-        <ul className="grid gap-3 xl:grid-cols-2">
-          {visible.map(client => (
-            <li key={client.id} className="relative min-w-0">
-              <button type="button" onClick={() => setSelectedId(client.id)} className="block w-full rounded-2xl text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400">
-                <Card className="group p-5 pr-16 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-400/30">
-                  <div className="flex items-center gap-4">
-                    <Avatar client={client} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate font-semibold">{client.name}</p>
-                        {client.has_pending_request && <Badge tone="amber">{t('cl_pending')}</Badge>}
-                        {(client.pack_status === 'expired' || client.pack_status === 'expiring') && <PackStatusBadge status={client.pack_status} />}
-                      </div>
-                      <p className="truncate text-sm text-gray-500">{client.email}{client.tax_id_masked ? ` · ${client.tax_id_masked}` : ''}</p>
-                      {client.billing_missing && <p className="mt-1.5"><Badge tone="amber">{t('bl_missing')}</Badge></p>}
-                    </div>
-                    {client.archived_at ? <Badge tone="amber">{t('lc_archived_badge')}</Badge>
-                      : client.plan ? <Badge tone="emerald">{client.plan}</Badge> : <Badge>{t('cl_no_plan')}</Badge>}
-                  </div>
-                  <div className="mt-4">
-                    <div className="mb-2 flex items-center justify-between text-xs text-gray-500">
-                      <span>{client.completed}/{client.total} {t('cl_sessions')}</span>
-                      <span>{t('cl_next')}: <span className="text-gray-300">{client.next_session ? parseDateKey(client.next_session).toLocaleDateString(locale, { day: 'numeric', month: 'short' }) : t('cl_no_next')}</span></span>
-                    </div>
-                    <ProgressBar done={client.completed} total={client.total} />
-                  </div>
-                </Card>
-              </button>
-              {!isProtectedAccount(client.email) && (
-                <div className="absolute right-3 top-3">
-                  <MoreMenu label={t('fx_more')} items={[
-                    client.archived_at
-                      ? { label: t('lc_unarchive'), icon: 'refresh', onClick: () => restoreClient(client) }
-                      : { label: t('lc_archive_menu'), icon: 'archive', onClick: () => setLifecycle(client) }
-                  ]} />
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
+        <>
+          <p role="status" className="mb-2 px-1 text-xs text-gray-500">{t(visible.length === 1 ? 'cl_count_one' : 'cl_count_other').replace('{n}', visible.length)}</p>
+          <ul className="divide-y divide-white/[0.06] overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02]">
+            {rows.map(client => (
+              <ClientRow key={client.id} client={client} onOpen={setSelectedId} label={t('cl_open').replace('{email}', client.email)} />
+            ))}
+          </ul>
+          {visible.length > rows.length && (
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm text-gray-500">
+              <span>{t('cl_showing').replace('{shown}', rows.length).replace('{total}', visible.length)}</span>
+              <Button variant="secondary" onClick={() => setShown(count => count + PAGE_SIZE)}>{t('cl_show_more')}</Button>
+            </div>
+          )}
+        </>
       )}
 
       {adding && (
@@ -733,14 +708,6 @@ export default function Clients() {
         <ClientDrawer
           key={selectedId} clientId={selectedId} plans={plans} trainers={trainers}
           onClose={() => setSelectedId(null)} onChanged={reloadAll}
-        />
-      )}
-
-      {lifecycle && (
-        <ArchiveDialog
-          client={lifecycle} futureSessions={lifecycle.upcoming || 0}
-          onClose={() => setLifecycle(null)}
-          onDone={() => { setLifecycle(null); reloadAll() }}
         />
       )}
     </div>

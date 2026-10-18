@@ -490,6 +490,58 @@ class Requests(unittest.TestCase):
             rr.list_for_admin(status="nonsense")
         self.assertEqual(rr.list_for_admin(email="%")["total"], 0)                                # wildcards are literal
 
+    def test_the_schedule_page_gets_counts_urgency_conflicts_and_sync_state(self):
+        far = self.request()
+        near_day = weekday_after(10)
+        near_session = self.new_session(self.bia, near_day, self.free[0], "2/4", synced=False)
+        near = rr.create_request(self.bia, near_session, self.slot_day.isoformat(), self.free[2], None, "es")["request"]
+        listing = rr.list_for_admin(status="pending,counter_proposed")
+        self.assertEqual([item["id"] for item in listing["items"]], [near["id"], far["id"]])    # the closest session first
+        self.assertEqual((listing["counts"]["pending"], listing["counts"]["approved"]), (2, 0))
+        self.assertEqual(rr.open_count(), {"pending": 2, "counter_proposed": 0, "open": 2})
+        first = listing["items"][1]
+        self.assertEqual((first["session_date"], first["session_time"], first["number"]), (str(self.original), self.free[0], "3/8"))
+        self.assertIsNone(first["conflict"])
+        self.assertTrue(first["color"])
+        # somebody takes the hour that was asked for: the card says so, nothing else changes
+        self.new_session(self.bia, self.slot_day, self.free[1], "1/4", synced=False)
+        flagged = {item["id"]: item["conflict"] for item in rr.list_for_admin(status="pending")["items"]}
+        self.assertTrue(flagged[far["id"]])
+        self.assertEqual(self.status_of(far["id"]), "pending")
+        # a proposal is checked against the proposed hour; counts follow the filters, not the tab
+        rr.counter(near["id"], self.slot_day.isoformat(), self.free[0], "ok", "boss")
+        self.assertEqual(rr.open_count(), {"pending": 1, "counter_proposed": 1, "open": 2})
+        self.assertEqual(rr.list_for_admin(email="bia@")["counts"]["counter_proposed"], 1)
+        self.assertEqual(rr.list_for_admin(email="ana@")["counts"]["counter_proposed"], 0)
+        self.assertEqual(rr.list_for_admin(status="counter_proposed", trainer_ids=f"{self.trainer_id},99999999")["total"], 1)
+        self.assertEqual(rr.list_for_admin(trainer_ids="99999999")["total"], 0)
+        self.assertEqual([item["id"] for item in rr.list_for_admin(request_id=far["id"])["items"]], [far["id"]])
+        # decided cards say who decided; a failed Google update is shown on the card
+        self.sql("DELETE FROM sessions WHERE user_id = %s AND session_number = '1/4'", (self.bia,))   # the hour is free again
+        self.google.fail = True
+        approved = rr.approve(far["id"], "boss@example.org")
+        self.assertEqual(approved["session"]["sync_status"], "failed")
+        item = rr.list_for_admin(status="approved")["items"][0]
+        self.assertEqual((item["decided_by"], item["sync_status"], item["session_date"]), ("boss@example.org", "failed", str(self.slot_day)))
+        self.google.fail = False
+
+    def test_the_admin_calendar_marks_sessions_with_an_open_request(self):
+        import admin_calendar
+        created = self.request()
+        conn = get_connection()
+        cur = conn.cursor()
+        events = admin_calendar.calendar_events(cur, str(self.original), str(self.original + timedelta(days=1)))
+        conn.close()
+        props = [event["extendedProps"] for event in events if event["extendedProps"].get("sessionId") == self.session][0]
+        self.assertEqual((props["changeRequestId"], props["changeRequestStatus"]), (created["id"], "pending"))
+        rr.reject(created["id"])
+        conn = get_connection()
+        cur = conn.cursor()
+        events = admin_calendar.calendar_events(cur, str(self.original), str(self.original + timedelta(days=1)))
+        conn.close()
+        props = [event["extendedProps"] for event in events if event["extendedProps"].get("sessionId") == self.session][0]
+        self.assertIsNone(props["changeRequestId"])
+
     # ----- e-mails
     def test_emails_are_one_language_and_have_no_calendar_part(self):
         ctx = {"id": 7, "client_name": "Ana María Ruiz", "client_email": f"ana{DOMAIN}", "number": "3/8", "trainer": "Matilda",
@@ -514,7 +566,7 @@ class Requests(unittest.TestCase):
         # the studio's e-mail: Spanish only, with the client's e-mail, the note and the panel link
         subject, staff_html, _ = staff_reschedule_requested(ctx)
         self.assertIn("Solicitud de cambio de fecha", subject)
-        for text_in in (f"ana{DOMAIN}", "Tengo un viaje", "/admin/calendar?tab=requests", "3/8"):
+        for text_in in (f"ana{DOMAIN}", "Tengo un viaje", "/admin/schedule?request=7", "3/8"):
             self.assertIn(text_in, staff_html)
 
     def test_an_email_failure_never_breaks_the_request(self):
