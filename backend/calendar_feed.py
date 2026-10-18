@@ -136,6 +136,19 @@ def session_summary(trainer_name, session_number=None):
     return client_session_title(trainer_name, session_number)
 
 
+def session_event(session_id, day, moment, status, sequence, trainer, number):
+    """The iCalendar event of one pack session: the same UID, title and SEQUENCE in the
+    feed, in the .ics downloads of My Sessions and in the .ics attached to the emails."""
+    return {
+        "id": f"session-{session_id}",
+        "start": parse_madrid(str(day), str(moment)[:5]),
+        "summary": client_session_title(trainer, number),
+        "location": FEED_PLACE,
+        "sequence": session_sequence(sequence),
+        "status": "CANCELLED" if str(status).lower() == "cancelled" else "CONFIRMED",
+    }
+
+
 def build_feed(cursor, user_id, today=None):
     """iCalendar text: sessions (and confirmed trial sessions) from the last 30 days on,
     cancelled ones included as STATUS:CANCELLED. Only ids, dates, trainer first name, the
@@ -150,16 +163,7 @@ def build_feed(cursor, user_id, today=None):
         """,
         (user_id, since),
     )
-    events = []
-    for session_id, day, moment, status, sequence, trainer, number in cursor.fetchall():
-        events.append({
-            "id": f"session-{session_id}",
-            "start": parse_madrid(str(day), str(moment)[:5]),
-            "summary": client_session_title(trainer, number),
-            "location": FEED_PLACE,
-            "sequence": session_sequence(sequence),
-            "status": "CANCELLED" if str(status).lower() == "cancelled" else "CONFIRMED",
-        })
+    events = [session_event(*row) for row in cursor.fetchall()]
     events += trial_feed_events(cursor, user_id, since)
     return build_ics(events, method=None, calname="ThundBalance", refresh_hours=REFRESH_HOURS)
 
@@ -257,6 +261,71 @@ def register_calendar_feed_routes(app, require_admin, require_client, own_user_i
         finally:
             cursor.close()
             conn.close()
+
+    def _download(body, filename):
+        return Response(
+            content=body,
+            media_type="text/calendar; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Cache-Control": "private, no-store",
+                "X-Robots-Tag": "noindex, nofollow",
+            },
+        )
+
+    @app.get("/me/sessions/{session_id}/ics")
+    def my_session_ics(session_id: int, claims=Depends(require_client)):
+        """One .ics file with ONE of the signed-in client's own sessions. Another
+        client's session (or an unknown id) answers the same 404."""
+        user_id = own_user_id(claims)
+        if not user_id:
+            raise HTTPException(status_code=404, detail="Session not found")
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT s.id, s.session_date, s.session_time, s.status, s.feed_sequence, t.nome, s.session_number
+                FROM sessions s LEFT JOIN trainers t ON t.id = s.trainer_id
+                WHERE s.id = %s AND s.user_id = %s
+                """,
+                (session_id, user_id),
+            )
+            row = cursor.fetchone()
+        finally:
+            cursor.close()
+            conn.close()
+        if not row:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return _download(build_ics([session_event(*row)]), f"thundbalance-sesion-{session_id}.ics")
+
+    @app.get("/me/sessions.ics")
+    def my_sessions_ics(claims=Depends(require_client)):
+        """One .ics file with every upcoming (not cancelled) session of the signed-in
+        client, plus a confirmed upcoming trial session."""
+        user_id = own_user_id(claims)
+        if not user_id:
+            raise HTTPException(status_code=404, detail="Client not found")
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            today = date.today()
+            cursor.execute(
+                """
+                SELECT s.id, s.session_date, s.session_time, s.status, s.feed_sequence, t.nome, s.session_number
+                FROM sessions s LEFT JOIN trainers t ON t.id = s.trainer_id
+                WHERE s.user_id = %s AND s.session_date >= %s AND LOWER(s.status) <> 'cancelled'
+                ORDER BY s.session_date, s.session_time, s.id
+                """,
+                (user_id, today),
+            )
+            events = [session_event(*row) for row in cursor.fetchall()]
+            events += [event for event in trial_feed_events(cursor, user_id, today) if event["status"] == "CONFIRMED"]
+        finally:
+            cursor.close()
+            conn.close()
+        events.sort(key=lambda event: event["start"])
+        return _download(build_ics(events, calname="ThundBalance"), "thundbalance-mis-sesiones.ics")
 
     @app.get("/me/calendar-feed")
     def my_calendar_feed(claims=Depends(require_client)):
