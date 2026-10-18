@@ -263,6 +263,12 @@ export default function BroadcastComposer({ draft, setDraft, onSent }) {
                 <TextArea rows={4} value={draft.translations[code].body} onChange={event => patchTranslation(code, { body: event.target.value })} />
                 <Counter value={draft.translations[code].body.length} max={BODY_MAX} />
               </Field>
+              {draft.button && (
+                <Field label={t('bx_button_label')}>
+                  <TextInput value={draft.translations[code].label || ''} onChange={event => patchTranslation(code, { label: event.target.value })} />
+                  <Counter value={(draft.translations[code].label || '').length} max={LABEL_MAX} />
+                </Field>
+              )}
               <FieldError id={`bx-t-${code}`} text={problems[`t_${code}`] ? t(problems[`t_${code}`]) : ''} />
             </fieldset>
           ))}

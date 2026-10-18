@@ -18,7 +18,7 @@ export const TARGETS = [
 
 export const emptyDraft = (mainLang = 'es') => ({
   audience: 'all', person: null,
-  mainLang, title: '', body: '', translations: { en: { title: '', body: '' }, es: { title: '', body: '' }, ca: { title: '', body: '' } },
+  mainLang, title: '', body: '', translations: { en: { title: '', body: '', label: '' }, es: { title: '', body: '', label: '' }, ca: { title: '', body: '', label: '' } },
   showTranslations: false,
   button: false, label: '', target: '/my-sessions', url: '',
   when: 'now', sendAt: '', expires: false, expiresAt: ''
@@ -28,7 +28,7 @@ export const emptyDraft = (mainLang = 'es') => ({
 export function isDirty(draft) {
   return Boolean(
     draft.title.trim() || draft.body.trim() || draft.person || draft.label.trim() || draft.url.trim() ||
-    LANGS.some(code => draft.translations[code].title.trim() || draft.translations[code].body.trim())
+    LANGS.some(code => draft.translations[code].title.trim() || draft.translations[code].body.trim() || (draft.translations[code].label || '').trim())
   )
 }
 
@@ -68,8 +68,9 @@ export function validateDraft(draft, nowWall) {
   for (const code of LANGS) {
     if (code === draft.mainLang) continue
     const part = draft.translations[code]
-    if (part.title.length > TITLE_MAX || part.body.length > BODY_MAX) problems[`t_${code}`] = 'bx_v_too_long'
-    else if (hasHtml(part.title) || hasHtml(part.body)) problems[`t_${code}`] = 'bx_v_html'
+    const label = draft.button ? (part.label || '') : ''          // the translated button text only counts when there is a button
+    if (part.title.length > TITLE_MAX || part.body.length > BODY_MAX || label.length > LABEL_MAX) problems[`t_${code}`] = 'bx_v_too_long'
+    else if (hasHtml(part.title) || hasHtml(part.body) || hasHtml(label)) problems[`t_${code}`] = 'bx_v_html'
   }
   if (draft.button) {
     if (!draft.label.trim()) problems.label = 'bx_v_label'
@@ -98,7 +99,8 @@ export function toPayload(draft, idempotencyKey) {
     const part = draft.translations[code]
     const title = part.title.trim()
     const body = part.body.trim()
-    if (title || body) translations[code] = { ...(title ? { title } : {}), ...(body ? { body } : {}) }
+    const label = draft.button ? (part.label || '').trim() : ''
+    if (title || body || label) translations[code] = { ...(title ? { title } : {}), ...(body ? { body } : {}), ...(label ? { action_label: label } : {}) }
   }
   return {
     audience: draft.audience,
@@ -119,8 +121,9 @@ export function toPayload(draft, idempotencyKey) {
 export function previewItem(draft, lang, nowWall) {
   const own = lang === draft.mainLang ? {} : draft.translations[lang]
   const target = draft.target === 'external' ? draft.url.trim() : draft.target
-  const actions = draft.button && draft.label.trim() && target
-    ? [{ type: 'link', label: draft.label.trim(), target, state: 'available' }]
+  const label = own.label?.trim() || draft.label.trim()                  // the button text of that language, or the written one
+  const actions = draft.button && label && draft.label.trim() && target
+    ? [{ type: 'link', label, target, state: 'available' }]
     : []
   return {
     id: 0, kind: 'admin', type: draft.audience === 'user' ? 'direct' : 'broadcast',
@@ -142,9 +145,3 @@ export const serverErrorKey = (code) => SERVER[code] || 'bx_err_generic'
 // The audience as the history says it
 export const AUDIENCE_KEY = { all: 'bx_to_all', active_pack: 'bx_to_pack', user: 'bx_to_user' }
 export const STATUS_TONE = { scheduled: 'sky', sent: 'emerald', expired: 'neutral' }
-
-// The list of the history after the search by title and the filter by status (the server has neither yet).
-export function filterHistory(items, { q = '', status = 'all' } = {}) {
-  const needle = q.trim().toLowerCase()
-  return items.filter(item => (status === 'all' || item.status === status) && (!needle || String(item.title || '').toLowerCase().includes(needle)))
-}

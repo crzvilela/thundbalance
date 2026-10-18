@@ -1,7 +1,7 @@
 // node --test src/admin/
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { addDays, emptyDraft, filterHistory, hasHtml, isDirty, isHttpUrl, previewItem, serverErrorKey, toPayload, validateDraft } from './broadcast.js'
+import { addDays, emptyDraft, hasHtml, isDirty, isHttpUrl, previewItem, serverErrorKey, toPayload, validateDraft } from './broadcast.js'
 
 const NOW = '2026-10-18T12:00'
 const valid = (extra = {}) => ({ ...emptyDraft('es'), title: 'Hola', body: 'Cuerpo', ...extra })
@@ -82,9 +82,25 @@ test('html, addresses, server errors and the history filters', () => {
   assert.equal(isHttpUrl('data:text/html,x'), false)
   assert.equal(serverErrorKey('date_in_past'), 'bx_err_date_in_past')
   assert.equal(serverErrorKey('whatever'), 'bx_err_generic')
-  const items = [{ title: 'Cierre del estudio', status: 'sent' }, { title: 'Oferta', status: 'scheduled' }, { title: 'Antigua', status: 'expired' }]
-  assert.equal(filterHistory(items, { q: 'CIERRE' }).length, 1)
-  assert.equal(filterHistory(items, { status: 'scheduled' })[0].title, 'Oferta')
-  assert.equal(filterHistory(items, { q: 'a', status: 'expired' }).length, 1)
-  assert.equal(filterHistory(items).length, 3)
+})
+
+test('the button text of each language: sent, shown in the preview and checked', () => {
+  const draft = valid({ button: true, label: 'Ver sesiones', target: '/my-sessions' })
+  draft.translations.en = { title: '', body: '', label: ' View sessions ' }
+  draft.translations.ca = { title: 'Hola', body: '', label: '' }
+  assert.deepEqual(toPayload(draft, 'k').translations, { en: { action_label: 'View sessions' }, ca: { title: 'Hola' } })
+  assert.equal(previewItem(draft, 'en', NOW).actions[0].label, 'View sessions')
+  assert.equal(previewItem(draft, 'ca', NOW).actions[0].label, 'Ver sesiones')             // no translation: the written one
+  assert.equal(previewItem(draft, 'es', NOW).actions[0].label, 'Ver sesiones')
+  assert.deepEqual(validateDraft(draft, NOW), {})
+  draft.translations.en.label = 'x'.repeat(41)
+  assert.equal(validateDraft(draft, NOW).t_en, 'bx_v_too_long')
+  draft.translations.en.label = '<b>Go</b>'
+  assert.equal(validateDraft(draft, NOW).t_en, 'bx_v_html')
+  // no button: a translated button text is ignored (not sent, not checked)
+  draft.button = false
+  assert.equal(validateDraft(draft, NOW).t_en, undefined)
+  assert.deepEqual(toPayload(draft, 'k').translations, { ca: { title: 'Hola' } })
+  const dirty = emptyDraft(); dirty.translations.ca.label = 'Hola'
+  assert.equal(isDirty(dirty), true)
 })

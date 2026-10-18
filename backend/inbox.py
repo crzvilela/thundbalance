@@ -312,6 +312,11 @@ def render_admin(title, body, translations, lang):
     return (own.get("title") or title or ""), (own.get("body") or body or "")
 
 
+def render_label(label, translations, lang):
+    """The button's text in the reader's language: its translation if there is one, else the written one."""
+    return ((translations or {}).get(lang) or {}).get("action_label") or label
+
+
 def _trial_state(row):
     status = str(row[0] or "").lower()
     if status in ("confirmed", "declined"):
@@ -329,32 +334,40 @@ def _live_states(cursor, entries):
     if trials:
         cursor.execute("SELECT id, status, session_date, session_time FROM trial_sessions WHERE id = ANY(%s)", (trials,))
         for row in cursor.fetchall():
-            states[("trial", row[0])] = _trial_state(row[1:])
+            # (state, result): once it is done, `result` says WHAT was answered, read from the real session
+            states[("trial", row[0])] = (_trial_state(row[1:]), {"confirmed": "confirmed", "declined": "declined"}.get(str(row[1] or "").lower()))
     if requests:
         import reschedule_requests
         reschedule_requests.expire_stale(cursor)               # a proposal that ran out of time says so
         cursor.execute("SELECT id, status FROM reschedule_requests WHERE id = ANY(%s)", (requests,))
         for request_id, status in cursor.fetchall():
-            states[("request", request_id)] = "available" if status == "counter_proposed" else ("done" if status in ("accepted", "declined") else "expired")
+            states[("request", request_id)] = (
+                "available" if status == "counter_proposed" else ("done" if status in ("accepted", "declined") else "expired"),
+                status if status in ("accepted", "declined") else None)
     return states
 
 
 def _actions(entry, lang, states):
-    """The buttons of one message with their live state."""
-    result = []
+    """The buttons of one message with their live state. Once an answer button is "done", `result` says what was
+    answered (confirmed | declined for a trial session, accepted | declined for a proposal), always read from the
+    real object, so the e-mail link and the inbox say the same."""
+    buttons = []
     if entry["kind"] == "admin":
         if entry["action_target"] and entry["action_label"]:
-            result.append({"type": "link", "label": entry["action_label"], "target": entry["action_target"], "state": "available"})
-        return result
+            buttons.append({"type": "link", "label": render_label(entry["action_label"], entry["translations"], lang),
+                            "target": entry["action_target"], "state": "available", "result": None})
+        return buttons
     for action_type, label_key, target in SYSTEM_ACTIONS.get(entry["type"], []):
+        result = None
         if action_type in ("trial_confirm", "trial_decline"):
-            state = states.get(("trial", entry["refs"].get("trial_id")), "expired")
+            state, result = states.get(("trial", entry["refs"].get("trial_id")), ("expired", None))
         elif action_type in ("reschedule_accept", "reschedule_reject"):
-            state = states.get(("request", entry["refs"].get("request_id")), "expired")
+            state, result = states.get(("request", entry["refs"].get("request_id")), ("expired", None))
         else:
             state = "available"
-        result.append({"type": action_type, "label": ACTION_LABELS[lang][label_key], "target": target, "state": state})
-    return result
+        buttons.append({"type": action_type, "label": ACTION_LABELS[lang][label_key], "target": target, "state": state,
+                        "result": result if state == "done" else None})
+    return buttons
 
 
 SELECT_ITEMS = """
@@ -630,7 +643,8 @@ def _clean_message(data):
         if code not in LANGUAGES:
             raise fail(422, "invalid_language", "Translations can only be en, es or ca.")
         part = part or {}
-        clean = {"title": _check_text(part.get("title"), TITLE_MAX, "The title"), "body": _check_text(part.get("body"), BODY_MAX, "The text")}
+        clean = {"title": _check_text(part.get("title"), TITLE_MAX, "The title"), "body": _check_text(part.get("body"), BODY_MAX, "The text"),
+                 "action_label": _check_text(part.get("action_label"), LABEL_MAX, "The button's label")}
         clean = {key: value for key, value in clean.items() if value}
         if clean:
             translations[code] = clean
@@ -639,6 +653,11 @@ def _clean_message(data):
     if bool(label) != bool(target):
         raise fail(422, "button_incomplete", "A button needs both a label and a destination.")
     target = check_target(target) if target else ""
+    if not target:                                     # no button: a translated button text means nothing
+        for code in list(translations):
+            translations[code].pop("action_label", None)
+            if not translations[code]:
+                del translations[code]
     now = _now()
     visible_from = now
     if data.visible_from:
@@ -740,6 +759,11 @@ def send_admin_message(data, admin=""):
         conn.close()
 
 
+def _like(text):
+    """%, _ and \\ typed by the admin are searched literally."""
+    return "%" + re.sub(r"([\\%_])", r"\\\1", str(text).strip().lower()) + "%"
+
+
 def _status(visible_from, expires_at, now):
     if visible_from > now:
         return "scheduled"
@@ -756,30 +780,52 @@ def _summary(cursor, message_id):
     return {"recipients": recipients, "status": _status(visible_from, expires_at, _now())}
 
 
-def list_admin(page=1, size=20):
-    """The studio's own messages (never the automatic ones): audience, status, recipients and how many read."""
+STATUS_SQL = {
+    "scheduled": "m.visible_from > %(now)s",
+    "sent": "m.visible_from <= %(now)s AND (m.expires_at IS NULL OR m.expires_at > %(now)s)",
+    "expired": "m.visible_from <= %(now)s AND m.expires_at IS NOT NULL AND m.expires_at <= %(now)s",
+}
+
+
+def list_admin(page=1, size=20, q="", status=""):
+    """The studio's own messages (never the automatic ones), newest first: audience, status, recipients, how many
+    read and, for a message to one person, who it went to. `q` searches the title (letters, % and _ are literal);
+    `status` is scheduled | sent | expired. `total` counts what matches, so the pages follow the filters."""
     ensure_tables_once()
+    status = str(status or "").strip().lower()
+    if status and status not in STATUS_SQL:
+        raise fail(422, "invalid_status", "Unknown status.")
     size = max(1, min(int(size or 20), 100))
     page = max(1, int(page or 1))
+    needle = str(q or "").strip()
+    where = "m.kind = 'admin' AND m.deleted_at IS NULL"
+    params = {"now": _now(), "limit": size, "offset": (page - 1) * size}
+    if needle:
+        where += " AND LOWER(m.title) LIKE %(like)s"
+        params["like"] = _like(needle)
+    if status:
+        where += f" AND {STATUS_SQL[status]}"
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT COUNT(*) FROM inbox_messages WHERE kind = 'admin' AND deleted_at IS NULL")
+        cursor.execute(f"SELECT COUNT(*) FROM inbox_messages m WHERE {where}", params)
         total = cursor.fetchone()[0]
         cursor.execute(
-            """
+            f"""
             SELECT m.id, m.title, m.audience, m.main_lang, m.visible_from, m.expires_at, m.created_at, m.created_by,
                    (SELECT COUNT(*) FROM inbox_recipients r WHERE r.message_id = m.id),
-                   (SELECT COUNT(*) FROM inbox_recipients r WHERE r.message_id = m.id AND r.read_at IS NOT NULL)
-            FROM inbox_messages m WHERE m.kind = 'admin' AND m.deleted_at IS NULL
-            ORDER BY m.id DESC LIMIT %s OFFSET %s
+                   (SELECT COUNT(*) FROM inbox_recipients r WHERE r.message_id = m.id AND r.read_at IS NOT NULL),
+                   CASE WHEN m.audience = 'user' THEN (SELECT r.recipient_email FROM inbox_recipients r WHERE r.message_id = m.id LIMIT 1) END
+            FROM inbox_messages m WHERE {where}
+            ORDER BY m.id DESC LIMIT %(limit)s OFFSET %(offset)s
             """,
-            (size, (page - 1) * size),
+            params,
         )
-        now = _now()
+        now = params["now"]
         items = [
             {"id": r[0], "title": r[1], "audience": r[2], "main_lang": r[3], "visible_from": _iso(r[4]), "expires_at": _iso(r[5]),
-             "created_at": _iso(r[6]), "created_by": r[7], "status": _status(r[4], r[5], now), "recipients": r[8], "read": r[9]}
+             "created_at": _iso(r[6]), "created_by": r[7], "status": _status(r[4], r[5], now), "recipients": r[8], "read": r[9],
+             "person": r[10]}
             for r in cursor.fetchall()
         ]
     finally:
@@ -813,8 +859,8 @@ def get_admin(message_id):
             "created_at": _iso(row[10]), "created_by": row[11], "status": summary["status"], "recipients": summary["recipients"], "read": read,
         }
         if row[5] == "user":
-            cursor.execute("SELECT recipient_email, read_at IS NOT NULL, deleted_at IS NOT NULL FROM inbox_recipients WHERE message_id = %s", (message_id,))
-            detail["people"] = [{"email": r[0], "read": r[1], "deleted_by_client": r[2]} for r in cursor.fetchall()]
+            cursor.execute("SELECT recipient_email, read_at, deleted_at IS NOT NULL FROM inbox_recipients WHERE message_id = %s", (message_id,))
+            detail["people"] = [{"email": r[0], "read": r[1] is not None, "read_at": _iso(r[1]), "deleted_by_client": r[2]} for r in cursor.fetchall()]
         return detail
     finally:
         cursor.close()
@@ -925,8 +971,8 @@ def register_inbox_routes(app, require_admin, require_client, own_user_id, admin
         return send_admin_message(data, str(claims.get("email", "")))
 
     @app.get("/admin/messages", dependencies=admin)
-    def admin_list(page: int = 1, size: int = 20):
-        return list_admin(page, size)
+    def admin_list(page: int = 1, size: int = 20, q: str = "", status: str = ""):
+        return list_admin(page, size, q, status)
 
     @app.get("/admin/messages/{message_id}", dependencies=admin)
     def admin_detail(message_id: int):

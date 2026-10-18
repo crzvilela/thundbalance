@@ -32,7 +32,8 @@ no message (the client did it).
 ## Buttons inside a message
 `trial_approved` (confirm, decline), `reschedule_counter` (accept, reject), `pack_approved` (link to /my-sessions), and the
 optional link of a studio message. The state is read LIVE from the trial session / the request: `available`, `done`
-(answered by any channel, e-mail link included) or `expired`. A message with an `available` answer can not be deleted by the
+(answered by any channel, e-mail link included) or `expired`. Once an answer button is `done`, `action.result` says WHAT was answered (confirmed | declined for a trial session,
+accepted | declined for a proposal), read from the real object. A message with an `available` answer can not be deleted by the
 client. Trial buttons need the VERIFIED sign-in e-mail to be the booking's e-mail (403 `use_booking_email`).
 
 ## Linking messages to a later sign-up
@@ -44,7 +45,10 @@ Client (ID token): `GET /inbox?lang=&page=&filter=all|unread&size=`, `GET /inbox
 `POST /inbox/read-all`, `DELETE /inbox/{id}`, `POST /inbox/{id}/actions/{trial_confirm|trial_decline|reschedule_accept|reschedule_reject}`.
 `{id}` is the recipient row's id. Pages are capped (50) and every route is rate limited per person (429).
 Admin (ID token + administrator): `POST /admin/messages/preview`, `POST /admin/messages`, `GET /admin/messages`,
-`GET /admin/messages/{id}`, `DELETE /admin/messages/{id}` (soft delete, idempotent). Title up to 120, text up to 2000,
+`GET /admin/messages/{id}`, `DELETE /admin/messages/{id}` (soft delete, idempotent).
+`GET /admin/messages` takes `page`, `size`, `q` (title, % and _ literal) and `status` (scheduled | sent | expired); each item has
+`person` (the e-mail, only for a message to one person) and the detail lists `read_at` of that person. The button's text
+can be translated: `translations.<lang>.action_label` (the written `action_label` is the fallback; ignored without a button). Title up to 120, text up to 2000,
 plain text (HTML refused), button destination = one of `/my-sessions /profile /dashboard /trial-session /training-request
 /training-tips` or an http(s) address.
 

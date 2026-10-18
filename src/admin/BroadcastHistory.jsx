@@ -4,11 +4,10 @@ import { useAdminText } from './useAdminText'
 import { useAdminResource } from './useAdminResource'
 import { useToast } from './toastContext'
 import { wallClock } from './calendar/calendarConfig'
-import { AUDIENCE_KEY, STATUS_TONE, filterHistory } from './broadcast'
+import { AUDIENCE_KEY, STATUS_TONE } from './broadcast'
 import { Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Icon, SelectInput, Skeleton, TextInput } from './ui'
 
 const PAGE_SIZE = 20
-const SERVER_SIZE = 100          // the most the server gives at once; the search and the filter work on these
 const fill = (text, values) => Object.entries(values).reduce((result, [key, value]) => result.replace(`{${key}}`, value), text)
 const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400'
 
@@ -27,8 +26,8 @@ function Info({ label, children }) {
   )
 }
 
-// One message in full: every language it was written in, the button, the dates and the numbers. Who read it is
-// listed ONLY for a message to one person; for the others there are totals.
+// One message in full: every language it was written in (with the button text of each), the button, the dates and
+// the numbers. Who read it is listed ONLY for a message to one person (and when); for the others there are totals.
 function Detail({ id, onClose, onDelete, busy }) {
   const { t, language } = useAdminText()
   const detail = useAdminResource(`/admin/messages/${id}`)
@@ -63,12 +62,17 @@ function Detail({ id, onClose, onDelete, busy }) {
           <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">{t('bx_d_content')}</h3>
           <div className="mb-8 space-y-4">
             {languages.map(code => {
-              const own = code === data.main_lang ? { title: data.title, body: data.body } : { title: data.translations[code].title || data.title, body: data.translations[code].body || data.body }
+              const mine = code === data.main_lang
+              const own = mine ? { title: data.title, body: data.body, label: data.action_label } : {
+                title: data.translations[code].title || data.title, body: data.translations[code].body || data.body,
+                label: data.translations[code].action_label || data.action_label
+              }
               return (
                 <section key={code} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.25em] text-emerald-300">{code.toUpperCase()}{code === data.main_lang ? ` · ${t('bx_d_main')}` : ''}</p>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.25em] text-emerald-300">{code.toUpperCase()}{mine ? ` · ${t('bx_d_main')}` : ''}</p>
                   <p className="text-lg font-semibold text-white [overflow-wrap:anywhere]">{own.title}</p>
                   <p className="mt-2 whitespace-pre-wrap text-gray-200 [overflow-wrap:anywhere]">{own.body}</p>
+                  {own.label && <p className="mt-3 inline-flex rounded-lg border border-white/20 px-3 py-1.5 text-sm font-semibold text-white">{own.label}</p>}
                 </section>
               )
             })}
@@ -77,7 +81,7 @@ function Detail({ id, onClose, onDelete, busy }) {
           {data.action_label && (
             <div className="mb-8">
               <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">{t('bx_d_button')}</h3>
-              <p className="text-base text-white">{data.action_label} <span className="text-gray-400 [overflow-wrap:anywhere]">→ {data.action_target}</span></p>
+              <p className="text-base text-gray-300 [overflow-wrap:anywhere]">{t('bx_d_goes_to')} {data.action_target}</p>
             </div>
           )}
 
@@ -88,6 +92,7 @@ function Detail({ id, onClose, onDelete, busy }) {
                 <li key={person.email} className="flex flex-wrap items-center gap-3 text-base">
                   <span className="[overflow-wrap:anywhere]">{person.email}</span>
                   <Badge tone={person.read ? 'emerald' : 'neutral'}><Icon name={person.read ? 'check' : 'clock'} className="h-3.5 w-3.5" />{t(person.read ? 'bx_d_read_yes' : 'bx_d_read_no')}</Badge>
+                  {person.read && person.read_at && <span className="text-sm text-gray-400">{fill(t('bx_d_read_at'), { when: when(person.read_at) })}</span>}
                   {person.deleted_by_client && <span className="text-sm text-gray-400">{t('bx_d_removed')}</span>}
                 </li>
               ))}
@@ -100,13 +105,14 @@ function Detail({ id, onClose, onDelete, busy }) {
   )
 }
 
-// The history: newest first, searched by title, filtered by state, one row each. A click opens the detail.
+// The history: newest first, one row each. The search by title, the filter by state and the pages are done by the
+// server, so they work on every message, not only on the ones already loaded. A click opens the detail.
 export default function BroadcastHistory({ highlight }) {
   const { t, language } = useAdminText()
   const toast = useToast()
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
-  const resource = useAdminResource(`/admin/messages?page=1&size=${SERVER_SIZE}`)
-  const [q, setQ] = useState('')
+  const [search, setSearch] = useState('')          // what is typed
+  const [q, setQ] = useState('')                    // what is asked, a moment after the typing stops
   const [status, setStatus] = useState('all')
   const [page, setPage] = useState(1)
   const [openId, setOpenId] = useState(null)
@@ -114,11 +120,22 @@ export default function BroadcastHistory({ highlight }) {
   const [busy, setBusy] = useState(false)
   const scrolled = useRef(false)
 
+  useEffect(() => {
+    if (search.trim() === q) return undefined
+    const timer = window.setTimeout(() => { setQ(search.trim()); setPage(1) }, 350)
+    return () => window.clearTimeout(timer)
+  }, [search, q])
+
+  const path = useMemo(() => {
+    const query = new URLSearchParams({ page: String(page), size: String(PAGE_SIZE) })
+    if (q) query.set('q', q)
+    if (status !== 'all') query.set('status', status)
+    return `/admin/messages?${query}`
+  }, [page, q, status])
+  const resource = useAdminResource(path)
   const items = useMemo(() => resource.data?.items || [], [resource.data])
-  const visible = useMemo(() => filterHistory(items, { q, status }), [items, q, status])
-  const pages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
-  const rows = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-  const filtered = !!(q.trim() || status !== 'all')
+  const pages = resource.data?.pages || 1
+  const filtered = !!(q || status !== 'all')
 
   useEffect(() => {
     if (!highlight || scrolled.current || !items.some(item => item.id === highlight)) return
@@ -134,7 +151,8 @@ export default function BroadcastHistory({ highlight }) {
       await adminRequest('DELETE', `/admin/messages/${deleting}`)
       toast.push(t('bx_deleted'))
       setDeleting(null); setOpenId(null)
-      resource.reload()
+      if (items.length <= 1 && page > 1) setPage(page - 1)
+      else resource.reload()
     } catch (error) {
       toast.push(error.message || t('action_error'), 'error')
       setDeleting(null)
@@ -148,7 +166,7 @@ export default function BroadcastHistory({ highlight }) {
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <div className="relative w-full sm:w-80">
           <Icon name="search" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-          <TextInput type="search" value={q} onChange={event => { setQ(event.target.value); setPage(1) }} placeholder={t('bx_h_search')} aria-label={t('bx_h_search')} className="!pl-10" />
+          <TextInput type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder={t('bx_h_search')} aria-label={t('bx_h_search')} className="!pl-10" />
         </div>
         <label className="flex items-center gap-3 text-sm text-gray-300">
           <span>{t('bx_h_status')}</span>
@@ -163,12 +181,12 @@ export default function BroadcastHistory({ highlight }) {
         <Card><ErrorState message={`${t('load_error')} (${resource.error})`} retryLabel={t('retry')} onRetry={resource.reload} /></Card>
       ) : resource.loading && !resource.data ? (
         <div className="space-y-3" role="status" aria-label="…"><Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" /></div>
-      ) : visible.length === 0 ? (
+      ) : items.length === 0 ? (
         <Card><EmptyState icon="send" title={t(filtered ? 'bx_h_empty_filtered' : 'bx_h_empty')} /></Card>
       ) : (
         <>
           <ul className="space-y-3">
-            {rows.map(item => (
+            {items.map(item => (
               <li key={item.id} id={`sent-${item.id}`}>
                 <button type="button" onClick={() => setOpenId(item.id)} aria-label={fill(t('bx_h_open'), { title: item.title })}
                   className={`block w-full rounded-2xl border bg-white/[0.03] p-5 text-left transition hover:border-white/25 hover:bg-white/[0.05] ${FOCUS} ${item.id === highlight ? 'border-emerald-400/60 ring-2 ring-emerald-400/30' : 'border-white/[0.08]'}`}>
@@ -177,7 +195,7 @@ export default function BroadcastHistory({ highlight }) {
                     <StatusBadge status={item.status} />
                   </span>
                   <span className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-gray-400">
-                    <span>{t(AUDIENCE_KEY[item.audience])}</span>
+                    <span className="[overflow-wrap:anywhere]">{t(AUDIENCE_KEY[item.audience])}{item.person ? ` · ${item.person}` : ''}</span>
                     <span>{t('bx_h_sends')}: {when(item.visible_from)}</span>
                     <span>{t('bx_h_expires')}: {item.expires_at ? when(item.expires_at) : t('bx_h_no_expiry')}</span>
                   </span>
@@ -193,12 +211,9 @@ export default function BroadcastHistory({ highlight }) {
           {pages > 1 && (
             <nav className="mt-6 flex flex-wrap items-center justify-between gap-3" aria-label={t('bx_h_pages')}>
               <Button variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t('sch_prev')}</Button>
-              <span className="text-sm text-gray-400">{fill(t('sch_page'), { page, pages })}</span>
+              <span className="text-sm text-gray-400">{fill(t('sch_page'), { page, pages })} · {resource.data.total}</span>
               <Button variant="secondary" disabled={page >= pages} onClick={() => setPage(page + 1)}>{t('sch_next')}</Button>
             </nav>
-          )}
-          {(resource.data?.total || 0) > items.length && (
-            <p className="mt-4 text-center text-sm text-gray-500">{fill(t('bx_h_latest'), { shown: items.length, total: resource.data.total })}</p>
           )}
         </>
       )}

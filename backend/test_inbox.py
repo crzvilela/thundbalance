@@ -304,6 +304,7 @@ class Inbox(unittest.TestCase):
         self.assertEqual(tc.answer_trial(token, "confirmed")["outcome"], "confirmed")       # the e-mail page
         item = [i for i in self.items()["items"] if i["type"] == "trial_approved"][0]
         self.assertEqual((self.action_state(item, "trial_confirm"), self.action_state(item, "trial_decline")), ("done", "done"))
+        self.assertEqual([action["result"] for action in item["actions"]], ["confirmed", "confirmed"])     # WHAT was answered, from the real session
         self.assertTrue(item["can_delete"])
         self.assertIn("Your trial session is confirmed", self.titles())            # and the confirmation message exists, once
         tc.answer_trial(token, "confirmed")
@@ -344,7 +345,10 @@ class Inbox(unittest.TestCase):
         trial_id = self.trial()
         tc.approve_trial(trial_id, self.trainer_id)
         item = [i for i in self.items()["items"] if i["type"] == "trial_approved"][0]
+        self.assertEqual([action["result"] for action in item["actions"]], [None, None])                    # nothing answered yet
         self.assertEqual(inbox.do_action(self.ana, claims_of("ana"), item["id"], "trial_decline")["outcome"], "declined")
+        again = [i for i in self.items()["items"] if i["type"] == "trial_approved"][0]
+        self.assertEqual([action["result"] for action in again["actions"]], ["declined", "declined"])      # also on a later visit
         self.assertIn("We have noted that you can't come", self.titles())
         # a session that already happened: the buttons are expired
         late = self.trial(days=14)
@@ -455,6 +459,7 @@ class Inbox(unittest.TestCase):
         again = [i for i in self.items()["items"] if i["type"] == "reschedule_counter"][0]
         self.assertEqual((self.action_state(again, "reschedule_accept"), self.action_state(again, "reschedule_reject")), ("done", "done"))
         self.assertTrue(again["can_delete"])
+        self.assertEqual([action["result"] for action in again["actions"]], ["declined", "declined"])
         # only the owner of the session can answer
         stranger = self.user("eve", "Eve")
         with self.assertRaises(HTTPException) as caught:
@@ -513,6 +518,64 @@ class Inbox(unittest.TestCase):
         self.assertIn("3/8", shown[0]["body"])
         self.assertIn("11:00", shown[0]["body"])
 
+    def test_the_buttons_text_can_be_translated_and_falls_back_on_the_written_one(self):
+        inbox.send_admin_message(Payload(
+            audience="user", email=f"ana{DOMAIN}", main_lang="es", action_label="Ver sesiones", action_target="/my-sessions",
+            translations={"en": {"title": "Hello", "action_label": "View sessions"}, "ca": {"action_label": "Veure sessions"}}), ADMIN)
+        labels = {lang: self.items(lang=lang)["items"][0]["actions"][0]["label"] for lang in ("en", "es", "ca", "xx")}
+        self.assertEqual(labels, {"en": "View sessions", "es": "Ver sesiones", "ca": "Veure sessions", "xx": "View sessions"})
+        # a translation with only the button text is kept; the title and text fall back
+        ca = self.items(lang="ca")["items"][0]
+        self.assertEqual((ca["title"], ca["actions"][0]["target"]), ("Aviso", "/my-sessions"))
+        for bad, code in (("x" * (inbox.LABEL_MAX + 1), "too_long"), ("<b>Ver</b>", "html_not_allowed")):
+            with self.assertRaises(HTTPException) as caught:
+                inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", action_label="Ver", action_target="/profile",
+                                                 translations={"en": {"action_label": bad}}), ADMIN)
+            self.assertEqual(code_of(caught), code)
+        # without a button a translated button text means nothing and is not stored
+        sent = inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", title="Sin boton", translations={"en": {"action_label": "Go"}}), ADMIN)
+        self.assertEqual(inbox.get_admin(sent["id"])["translations"], {})
+        self.assertEqual([i for i in self.items()["items"] if i["title"] == "Sin boton"][0]["actions"], [])
+
+    def test_the_history_searches_and_filters_in_the_server_and_names_the_person(self):
+        bia = self.user("bia", "Bia")
+        one = inbox.send_admin_message(Payload(audience="user", email=f"bia{DOMAIN}", title="Cierre de Navidad"), ADMIN)["id"]
+        two = inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", title="Oferta 100% real"), ADMIN)["id"]
+        soon = (now_madrid().replace(tzinfo=None) + timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M")
+        three = inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", title="Programado de Navidad", visible_from=soon), ADMIN)["id"]
+        four = inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", title="Vieja noticia"), ADMIN)["id"]
+        self.sql("UPDATE inbox_messages SET expires_at = %s WHERE id = %s", (datetime.now() - timedelta(days=1), four))
+        mine = {one, two, three, four}
+
+        def ids(**kwargs):
+            return [item["id"] for item in inbox.list_admin(size=100, **kwargs)["items"] if item["id"] in mine]
+
+        self.assertEqual(sorted(ids(q="navidad")), sorted([one, three]))                  # the title, any capitals
+        self.assertEqual(ids(q="100%"), [two])                                            # % is literal
+        self.assertEqual(ids(q="_"), [])                                                  # so is _
+        self.assertEqual(ids(status="scheduled"), [three])
+        self.assertEqual(ids(status="expired"), [four])
+        self.assertEqual(sorted(ids(status="sent")), sorted([one, two]))
+        self.assertEqual(ids(q="navidad", status="scheduled"), [three])
+        self.assertEqual(inbox.list_admin(status="expired", q="vieja")["total"], 1)       # total follows the filters
+        page = inbox.list_admin(page=1, size=1, q="navidad")
+        self.assertEqual((len(page["items"]), page["total"] >= 2, page["pages"] >= 2), (1, True, True))
+        with self.assertRaises(HTTPException) as caught:
+            inbox.list_admin(status="nonsense")
+        self.assertEqual(code_of(caught), "invalid_status")
+        by_id = {item["id"]: item for item in inbox.list_admin(size=100)["items"]}
+        self.assertEqual(by_id[one]["person"], f"bia{DOMAIN}")                            # who it went to, in the list
+        broadcast = inbox.send_admin_message(Payload(audience="all", title="Para todos", idempotency_key="hist-person"), ADMIN)["id"]
+        self.assertIsNone({item["id"]: item for item in inbox.list_admin(size=100)["items"]}[broadcast]["person"])   # never for a general one
+        self.assertEqual(bia and inbox.get_admin(one)["people"][0]["read_at"], None)       # not read yet: no date
+
+    def test_http_history_accepts_q_and_status(self):
+        main.app.dependency_overrides[main.require_admin] = lambda: {"email": ADMIN, "sub": "uid-boss"}
+        inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", title="Zebra unica"), ADMIN)
+        found = self.client.get("/admin/messages", params={"q": "zebra unica", "status": "sent"}).json()
+        self.assertEqual([item["title"] for item in found["items"]], ["Zebra unica"])
+        self.assertEqual(self.client.get("/admin/messages", params={"status": "bogus"}).status_code, 422)
+
     # ----- the studio's history
     def test_history_detail_and_soft_delete_of_the_studios_messages_only(self):
         broadcast = inbox.send_admin_message(Payload(audience="all", title="Para todos", idempotency_key="hist-all"), ADMIN)
@@ -525,7 +588,7 @@ class Inbox(unittest.TestCase):
         self.assertEqual((by_id[direct["id"]]["recipients"], by_id[direct["id"]]["read"], by_id[direct["id"]]["status"]), (1, 1, "sent"))
         self.assertGreaterEqual(by_id[broadcast["id"]]["recipients"], 1)
         detail = inbox.get_admin(direct["id"])
-        self.assertEqual(detail["people"], [{"email": f"ana{DOMAIN}", "read": True, "deleted_by_client": False}])   # who read: one person only
+        self.assertEqual([(p["email"], p["read"], p["deleted_by_client"], bool(p["read_at"])) for p in detail["people"]], [(f"ana{DOMAIN}", True, False, True)])   # who read, and when: one person only
         self.assertNotIn("people", inbox.get_admin(broadcast["id"]))                  # the others: only counts
         # delete: gone for everybody, idempotent, with an audit row without personal data
         self.assertEqual(inbox.delete_admin(direct["id"], ADMIN), {"ok": True})

@@ -82,9 +82,9 @@ export function resultKey(type, outcome) {
   return 'in_res_done_before'
 }
 
-// The badge that replaces the buttons once the answer is given. The server only says "done"; when the page
-// knows what was answered (the outcome of this visit, or an `action.result` if the server ever sends one) it says it,
-// otherwise a plain "Answered".
+// The badge that replaces the buttons once the answer is given. The server says what was answered in `action.result`
+// (read from the real session / request, so it is right on any visit); the outcome of this visit is only a fallback,
+// and without either a plain "Answered".
 export function doneLabelKey(type, outcome) {
   const answer = String(outcome || '')
   if (type === 'trial_confirm' || type === 'trial_decline') {
