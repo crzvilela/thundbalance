@@ -28,6 +28,7 @@ account and the caller's own account. Every action is written to
 admin_audit_log: who (the admin's Firebase uid), what, which client id, when,
 the outcome. No names, emails or documents are ever logged or stored there.
 """
+import inbox
 import logging
 import os
 import threading
@@ -80,6 +81,7 @@ def ensure_columns():
     finally:
         cursor.close()
         conn.close()
+    inbox.ensure_tables()      # the delete below also removes the client's inbox rows
 
 
 def audit(claims, action, client_id, outcome, detail=None):
@@ -359,6 +361,7 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
             cursor.execute("DELETE FROM user_plans WHERE user_id = %s", (client_id,))
             cursor.execute("DELETE FROM client_requests WHERE user_id = %s", (client_id,))
             cursor.execute("DELETE FROM trial_sessions WHERE LOWER(email) = LOWER(%s)", (email,))
+            cursor.execute("DELETE FROM inbox_recipients WHERE recipient_email = LOWER(%s)", (email,))   # also the ones still waiting for an account
             cursor.execute(
                 """
                 DELETE FROM email_log

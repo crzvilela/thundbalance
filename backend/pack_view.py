@@ -79,3 +79,19 @@ def user_packs(cursor, user_id, today=None):
         pack["end_date"] = pack["end_date"] or (max(dates) if dates else None)
         pack["shown"] = pack["active"] or pack["remaining"] > 0
     return packs, assignment
+
+
+# ---------------------------------------------------------------- "has an active pack"
+# ONE definition of "active account", the one the dashboard and the panel use for a pack that is
+# "shown": the pack is active (user_plans.active) or it still has sessions to come.
+def active_pack_sql(user_column="u.id"):
+    """A SQL condition (no parameters) true for the users that have an active pack."""
+    return (
+        f"EXISTS (SELECT 1 FROM user_plans up WHERE up.user_id = {user_column} AND (up.active OR EXISTS ("
+        "SELECT 1 FROM sessions s WHERE s.user_plan_id = up.id AND s.status <> 'Cancelled' AND s.session_date >= CURRENT_DATE)))"
+    )
+
+
+def has_active_pack(cursor, user_id):
+    cursor.execute(f"SELECT {active_pack_sql('%s')}", (user_id,))
+    return bool(cursor.fetchone()[0])

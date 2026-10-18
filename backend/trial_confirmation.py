@@ -33,6 +33,7 @@ from database import get_connection
 from emails import log as email_log
 from emails.dates import now_madrid, parse_madrid
 import calendar_sync
+import inbox
 from google_calendar import (
     create_trial_session_event, delete_calendar_event, describe_error, update_trial_session_event,
 )
@@ -142,6 +143,70 @@ def _state(row):
     return {"approved": "pending_confirmation", "confirmed": "confirmed", "declined": "declined"}.get(status, "unavailable")
 
 
+def answer_trial(token, wanted):
+    """THE way a client confirms or declines an approved trial session: the e-mail page and the inbox call
+    this very function. wanted: 'confirmed' or 'declined'. The row is locked, so two quick presses (or a
+    double click) can not repeat emails, events or inbox messages."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        row = _load(cursor, token, lock=True) if 20 <= len(token) <= 100 else None
+        if not row:
+            conn.rollback()
+            raise HTTPException(status_code=404, detail="not_found")
+        state = _state(row)
+        view = _public_view(row)
+
+        if state == "expired":
+            conn.rollback()
+            return {"outcome": "expired", **view}
+        if state == "unavailable":
+            conn.rollback()
+            return {"outcome": "unavailable", **view}
+        if state == wanted:                       # already done: nothing is repeated
+            conn.rollback()
+            return {"outcome": f"already_{wanted}", **view}
+        # A confirmed session can still be declined (the event is deleted);
+        # a declined one can not be confirmed again from the same link.
+        changing_mind = state == "confirmed" and wanted == "declined"
+        if state != "pending_confirmation" and not changing_mind:
+            conn.rollback()
+            return {"outcome": f"already_{state}", **view}
+
+        column = "confirmed_at" if wanted == "confirmed" else "declined_at"
+        # a confirmed session that is declined leaves the client's calendar: its SEQUENCE grows
+        bump = ", feed_sequence = feed_sequence + 1" if changing_mind else ""
+        cursor.execute(
+            f"UPDATE trial_sessions SET status = %s, {column} = NOW(){bump} WHERE id = %s",
+            ("Confirmed" if wanted == "confirmed" else "Declined", row[0]),
+        )
+        conn.commit()                             # the answer is saved before anything else
+
+        trial = _trial_dict(row)
+        if wanted == "confirmed":
+            calendar_ok = sync_calendar_event(trial["id"])
+            trial_notifications.notify_trial_confirmed(trial, calendar_ok)
+            mailer.send_trial_confirmed(
+                trial["email"], _first_name(trial["full_name"]), trial["session_date"],
+                trial["session_time"], trial["trainer"], trial["id"], trial["lang"],
+                reference=trial["id"],
+            )
+        else:
+            _remove_event(row)
+            trial_notifications.notify_trial_declined(trial)
+        inbox.on_trial_answered(trial, wanted)         # the inbox message (never raises, never repeated)
+        return {"outcome": wanted, **view}
+    except HTTPException:
+        raise
+    except Exception as error:  # noqa: BLE001
+        conn.rollback()
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Could not save your answer. Please try again.") from error
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def register_trial_confirmation_routes(app):
 
     @app.get("/trial-sessions/confirmation/{token}")
@@ -158,74 +223,13 @@ def register_trial_confirmation_routes(app):
             cursor.close()
             conn.close()
 
-    def _answer(token, wanted):
-        """wanted: 'confirmed' or 'declined'. The row is locked, so two quick
-        presses (or a double click) can not repeat emails or events."""
-        conn = get_connection()
-        cursor = conn.cursor()
-        try:
-            row = _load(cursor, token, lock=True) if 20 <= len(token) <= 100 else None
-            if not row:
-                conn.rollback()
-                raise HTTPException(status_code=404, detail="not_found")
-            state = _state(row)
-            view = _public_view(row)
-
-            if state == "expired":
-                conn.rollback()
-                return {"outcome": "expired", **view}
-            if state == "unavailable":
-                conn.rollback()
-                return {"outcome": "unavailable", **view}
-            if state == wanted:                       # already done: nothing is repeated
-                conn.rollback()
-                return {"outcome": f"already_{wanted}", **view}
-            # A confirmed session can still be declined (the event is deleted);
-            # a declined one can not be confirmed again from the same link.
-            changing_mind = state == "confirmed" and wanted == "declined"
-            if state != "pending_confirmation" and not changing_mind:
-                conn.rollback()
-                return {"outcome": f"already_{state}", **view}
-
-            column = "confirmed_at" if wanted == "confirmed" else "declined_at"
-            # a confirmed session that is declined leaves the client's calendar: its SEQUENCE grows
-            bump = ", feed_sequence = feed_sequence + 1" if changing_mind else ""
-            cursor.execute(
-                f"UPDATE trial_sessions SET status = %s, {column} = NOW(){bump} WHERE id = %s",
-                ("Confirmed" if wanted == "confirmed" else "Declined", row[0]),
-            )
-            conn.commit()                             # the answer is saved before anything else
-
-            trial = _trial_dict(row)
-            if wanted == "confirmed":
-                calendar_ok = sync_calendar_event(trial["id"])
-                trial_notifications.notify_trial_confirmed(trial, calendar_ok)
-                mailer.send_trial_confirmed(
-                    trial["email"], _first_name(trial["full_name"]), trial["session_date"],
-                    trial["session_time"], trial["trainer"], trial["id"], trial["lang"],
-                    reference=trial["id"],
-                )
-            else:
-                _remove_event(row)
-                trial_notifications.notify_trial_declined(trial)
-            return {"outcome": wanted, **view}
-        except HTTPException:
-            raise
-        except Exception as error:  # noqa: BLE001
-            conn.rollback()
-            traceback.print_exc()
-            raise HTTPException(status_code=500, detail="Could not save your answer. Please try again.") from error
-        finally:
-            cursor.close()
-            conn.close()
-
     @app.post("/trial-sessions/confirmation/{token}/confirm")
     def trial_confirm(token: str):
-        return _answer(token, "confirmed")
+        return answer_trial(token, "confirmed")
 
     @app.post("/trial-sessions/confirmation/{token}/decline")
     def trial_decline(token: str):
-        return _answer(token, "declined")
+        return answer_trial(token, "declined")
 
 
 def _is_gone(error):
@@ -376,6 +380,7 @@ def approve_trial(trial_id, trainer_id):
 
     # From here on the session IS approved, whatever happens to the email or the calendar.
     full_name, email, day, time, lang = trial
+    inbox.on_trial_approved(trial_id, email, day, time)         # the inbox message: parallel to the e-mail, never raises
     try:
         future = mailer.send_trial_approved(
             email, _first_name(full_name), str(day)[:10], str(time)[:5], trainer[0], token, lang,

@@ -7,6 +7,7 @@ import RequireAdmin from '../components/admin/RequireAdmin'
 const Register = lazy(() => import('../pages/Register'))
 const Dashboard = lazy(() => import('../pages/Dashboard'))
 const MySessions = lazy(() => import('../pages/MySessions'))
+const ClientMessages = lazy(() => import('../pages/ClientMessages'))
 const Profile = lazy(() => import('../pages/Profile'))
 const LandingPageEditor = lazy(() => import('../pages/admin/LandingPageEditor'))
 const AdminLayout = lazy(() => import('../admin/AdminLayout'))
@@ -16,6 +17,7 @@ const Clients = lazy(() => import('../admin/pages/Clients'))
 const TrialSessions = lazy(() => import('../admin/pages/TrialSessions'))
 const Calendar = lazy(() => import('../admin/pages/Calendar'))
 const Schedule = lazy(() => import('../admin/pages/Schedule'))
+const SentMessages = lazy(() => import('../admin/pages/SentMessages'))
 const Trainers = lazy(() => import('../admin/pages/Trainers'))
 const Plans = lazy(() => import('../admin/pages/Plans'))
 const Videos = lazy(() => import('../admin/pages/Videos'))
@@ -46,6 +48,8 @@ function AppRoutes() {
         
         <Route path="/my-sessions" element={<MySessions />} />
 
+        <Route path="/messages" element={<ClientMessages />} />
+
         
         <Route path="/profile" element={<Profile />} />
       
@@ -58,6 +62,7 @@ function AppRoutes() {
           <Route path="clients" element={<Clients />} />
           <Route path="calendar" element={<Calendar />} />
           <Route path="schedule" element={<Schedule />} />
+          <Route path="sent-messages" element={<SentMessages />} />
           <Route path="trainers" element={<Trainers />} />
           <Route path="sessions" element={<Navigate to="/admin/calendar" replace />} />
           <Route path="plans" element={<Plans />} />

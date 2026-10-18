@@ -2,7 +2,8 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase/auth'
-import { Icon } from './ui'
+import { ConfirmDialog, Icon } from './ui'
+import { LeaveGuardContext } from './leaveGuard'
 import AdminErrorBoundary from './AdminErrorBoundary'
 import { ToastContext } from './toastContext'
 import { useAdminText } from './useAdminText'
@@ -23,6 +24,7 @@ const NAV = [
   { to: '/admin/requests', icon: 'requests', label: 'nav_requests', badge: 'requests' },
   { to: '/admin/trials', icon: 'whistle', label: 'nav_trials', badge: 'trials' },
   { to: '/admin/messages', icon: 'inbox', label: 'nav_messages', badge: 'messages' },
+  { to: '/admin/sent-messages', icon: 'send', label: 'nav_broadcast' },
   { to: '/admin/clients', icon: 'clients', label: 'nav_clients' },
   { to: '/admin/calendar', icon: 'calendar', label: 'nav_sessions' },
   { to: '/admin/schedule', icon: 'refresh', label: 'nav_schedule', badge: 'schedule' },
@@ -65,6 +67,17 @@ export default function AdminLayout() {
   }
   const nextToastId = useRef(0)
 
+  // A screen with something unsent registers here; leaving through the menu then asks first.
+  const guard = useRef(null)
+  const [leaving, setLeaving] = useState(null)                 // where the person wanted to go: a path or 'logout'
+  const guardValue = useMemo(() => ({
+    register: (isDirty) => { guard.current = isDirty; return () => { if (guard.current === isDirty) guard.current = null } }
+  }), [])
+  const guarded = (target) => (event) => {
+    setMenuOpen(false)
+    if (guard.current?.()) { event.preventDefault(); setLeaving(target) }
+  }
+
   // Requests are loaded once here: the sidebar badge, the overview and the
   // requests screen all read the same data.
   const requestsResource = useAdminResource('/admin/client-requests')
@@ -94,6 +107,13 @@ export default function AdminLayout() {
     await signOut(auth)
     navigate('/admin/login')
   }
+  const confirmLeave = () => {
+    const target = leaving
+    guard.current = null
+    setLeaving(null)
+    if (target === 'logout') logout()
+    else navigate(target)
+  }
 
   const email = auth.currentUser?.email || ''
 
@@ -109,7 +129,7 @@ export default function AdminLayout() {
 
       <nav className="flex-1 space-y-1 px-3" aria-label="Admin">
         {NAV.map(item => (
-          <NavLink key={item.to} to={item.to} end={item.end} className={linkClass} onClick={() => setMenuOpen(false)}>
+          <NavLink key={item.to} to={item.to} end={item.end} className={linkClass} onClick={guarded(item.to)}>
             <Icon name={item.icon} className="h-[18px] w-[18px]" />
             <span className="flex-1">{t(item.label)}</span>
             {item.badge && badges[item.badge] > 0 && (
@@ -117,7 +137,7 @@ export default function AdminLayout() {
             )}
           </NavLink>
         ))}
-        <NavLink to="/admin/landing-editor" className={linkClass}>
+        <NavLink to="/admin/landing-editor" className={linkClass} onClick={guarded('/admin/landing-editor')}>
           <Icon name="landing" className="h-[18px] w-[18px]" />
           <span className="flex-1">{t('nav_landing')}</span>
           <Icon name="arrow" className="h-4 w-4 opacity-0 transition group-hover:opacity-60" />
@@ -147,10 +167,10 @@ export default function AdminLayout() {
             ))}
           </div>
         </div>
-        <NavLink to="/" className="flex items-center gap-3 rounded-xl px-3.5 py-2 text-sm text-gray-400 transition hover:bg-white/5 hover:text-white">
+        <NavLink to="/" onClick={guarded('/')} className="flex items-center gap-3 rounded-xl px-3.5 py-2 text-sm text-gray-400 transition hover:bg-white/5 hover:text-white">
           <Icon name="globe" className="h-[18px] w-[18px]" />{t('nav_site')}
         </NavLink>
-        <button type="button" onClick={logout} className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2 text-sm text-gray-400 transition hover:bg-red-500/10 hover:text-red-300">
+        <button type="button" onClick={() => { if (guard.current?.()) setLeaving('logout'); else logout() }} className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2 text-sm text-gray-400 transition hover:bg-red-500/10 hover:text-red-300">
           <Icon name="logout" className="h-[18px] w-[18px]" />{t('nav_logout')}
         </button>
         {email && <p className="truncate px-3.5 text-xs text-gray-600" title={email}>{email}</p>}
@@ -160,6 +180,7 @@ export default function AdminLayout() {
 
   return (
     <ToastContext.Provider value={toastValue}>
+      <LeaveGuardContext.Provider value={guardValue}>
       <div className={`admin-shell min-h-screen text-white ${theme === 'light' ? 'admin-light' : ''}`}>
         <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-white/[0.07] bg-[#080b0a]/90 backdrop-blur lg:block">
           {sidebar}
@@ -187,6 +208,13 @@ export default function AdminLayout() {
         </main>
       </div>
       <ToastHost toasts={toasts} />
+      <ConfirmDialog
+        open={!!leaving} tone="neutral" icon="send"
+        title={t('bx_leave_title')} text={t('bx_leave_text')}
+        confirmLabel={t('bx_leave_yes')} cancelLabel={t('bx_leave_stay')}
+        onConfirm={confirmLeave} onCancel={() => setLeaving(null)}
+      />
+      </LeaveGuardContext.Provider>
     </ToastContext.Provider>
   )
 }

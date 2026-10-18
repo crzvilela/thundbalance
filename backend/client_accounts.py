@@ -17,6 +17,7 @@ from fastapi import Depends, HTTPException
 from pydantic import BaseModel
 
 import calendar_feed
+import inbox
 import firebase_accounts as accounts
 import tax_id
 import validators
@@ -284,6 +285,8 @@ def register_client_account_routes(app, require_admin, require_client):
             cursor.close()
             conn.close()
 
+        if pack_info:           # the inbox message of the new client's pack (never raises)
+            inbox.on_pack_created(user_id, created["pack_id"], created["plan_name"])
         email_result = send_welcome(name, email, password, pack_summary)
         del password
         return {"id": user_id, "email": email_result, "pack": pack_info}

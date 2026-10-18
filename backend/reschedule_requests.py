@@ -35,6 +35,7 @@ from fastapi import Depends, HTTPException
 from pydantic import BaseModel
 
 import calendar_sync
+import inbox
 import reschedule_notifications as notify
 from availability import hhmm, slot_problem
 from database import get_connection
@@ -584,6 +585,29 @@ def _decide(request_id, admin, allowed, action):
         conn.close()
 
 
+def _inbox(kind, request_id, state=""):
+    """The inbox message of a decision (the e-mail is separate). Never raises."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            context = _context(cursor, request_id)
+            cursor.execute("SELECT user_id, session_id FROM reschedule_requests WHERE id = %s", (request_id,))
+            owner = cursor.fetchone()
+        finally:
+            cursor.close()
+            conn.close()
+        if not context or not owner:
+            return
+        params = {"number": context["number"] or "", "old_at": inbox.at(context["original_date"], context["original_time"]),
+                  "new_at": inbox.at(context["requested_date"], context["requested_time"]), "note": context["admin_note"] or ""}
+        if kind == "reschedule_counter":
+            params["new_at"] = inbox.at(context["counter_date"], context["counter_time"])
+        inbox.create_system_message(kind, user_id=owner[0], refs={"request_id": request_id, "session_id": owner[1]}, params=params, state=state)
+    except Exception as error:  # noqa: BLE001
+        logger.error("inbox message of request %s could not be written (%s)", request_id, type(error).__name__)
+
+
 def approve(request_id, admin=""):
     """Moves the session to the requested day and hour (after checking conflicts again)."""
     def action(cursor, req):
@@ -591,6 +615,8 @@ def approve(request_id, admin=""):
         cursor.execute("UPDATE reschedule_requests SET status = 'approved', decided_by = %s, decided_at = NOW() WHERE id = %s", (admin, req["id"]))
 
     request_id, repeated = _decide(request_id, admin, {"from": ("pending",), "repeat": ("approved",)}, action)
+    if not repeated:
+        _inbox("reschedule_approved", request_id)
     return {**_after(request_id, None if repeated else notify.client_approved), "repeated": repeated}
 
 
@@ -603,6 +629,8 @@ def reject(request_id, note=None, admin=""):
             (note, admin, req["id"]))
 
     request_id, repeated = _decide(request_id, admin, {"from": ("pending",), "repeat": ("rejected",)}, action)
+    if not repeated:
+        _inbox("reschedule_rejected", request_id)
     return {**_after(request_id, None if repeated else notify.client_rejected), "repeated": repeated}
 
 
@@ -625,6 +653,8 @@ def counter(request_id, day, time, note=None, admin=""):
             (day, time, note, admin, req["id"]))
 
     request_id, repeated = _decide(request_id, admin, {"from": ("pending",), "repeat": ()}, action)
+    if not repeated:
+        _inbox("reschedule_counter", request_id)
     return {**_after(request_id, notify.client_counter), "repeated": repeated}
 
 
@@ -689,8 +719,26 @@ def admin_reschedule(session_id, day, time, note=None, admin=""):
     finally:
         cursor.close()
         conn.close()
+    try:
+        inbox.create_system_message(
+            "session_rescheduled", user_id=req["user_id"], refs={"session_id": session_id}, state=inbox.at(day, time),
+            params={"number": _session_number(session_id), "old_at": inbox.at(old[0], old[1]), "new_at": inbox.at(day, time)})
+    except Exception as error:  # noqa: BLE001
+        logger.error("inbox message of session %s could not be written (%s)", session_id, type(error).__name__)
     return {"session_id": session_id, "old": {"date": old[0], "time": old[1]}, "new": {"date": day, "time": time},
             "request_id": request_id, "email": notify.wait(notify.session_moved(_moved_context(session_id, old, note, request_id)))}
+
+
+def _session_number(session_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT session_number FROM sessions WHERE id = %s", (session_id,))
+        row = cursor.fetchone()
+        return (row[0] if row else "") or ""
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def _moved_context(session_id, old, note, request_id):

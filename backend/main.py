@@ -29,6 +29,7 @@ from admin_api import register_admin_routes
 from client_lifecycle import ensure_columns as ensure_lifecycle_columns, register_client_lifecycle_routes
 import admin_calendar
 import logging
+import inbox
 import reschedule_requests
 from features import client_calendar_enabled
 from contact_messages import register_contact_routes
@@ -245,6 +246,7 @@ def assert_session_owner(claims, session_id):
 
 calendar_feed.register_calendar_feed_routes(app, require_admin, require_client, _own_user_id)
 reschedule_requests.register_reschedule_routes(app, require_admin, require_client, _own_user_id)
+inbox.register_inbox_routes(app, require_admin, require_client, _own_user_id, ADMIN_EMAIL)
 
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
@@ -929,7 +931,7 @@ def cancel_session(session_id: int, claims=Depends(require_client)):
 
         cursor.execute(
             """
-            SELECT google_event_id
+            SELECT google_event_id, user_id, session_number, session_date, session_time, status
             FROM sessions
             WHERE id = %s
             """,
@@ -945,6 +947,7 @@ def cancel_session(session_id: int, claims=Depends(require_client)):
             }
 
         google_event_id = result[0]
+        cancelled_by_studio = _is_admin(claims) and str(result[5]).lower() != "cancelled"
 
         cursor.execute(
             """
@@ -960,6 +963,12 @@ def cancel_session(session_id: int, claims=Depends(require_client)):
         calendar_sync.sync_session_to_google(session_id, cursor=cursor)
 
         conn.commit()
+
+        if cancelled_by_studio:         # the inbox message of the client (parallel to everything else, never raises)
+            inbox.create_system_message(
+                "session_cancelled", user_id=result[1], refs={"session_id": session_id},
+                params={"number": result[2] or "", "old_at": inbox.at(result[3], result[4])},
+            )
 
         return {
             "message": "Session cancelled successfully"
@@ -1704,6 +1713,17 @@ def admin_assign_plan(
 
         conn.commit()
 
+        # the client's inbox: "your pack has been approved" (one per pack and plan, never raises)
+        try:
+            cursor.execute(
+                "SELECT up.id, p.nome FROM user_plans up JOIN plans p ON p.id = up.plan_id "
+                "WHERE up.user_id = %s AND up.active ORDER BY up.id DESC LIMIT 1", (data.user_id,))
+            assigned = cursor.fetchone()
+            if assigned:
+                inbox.on_pack_created(data.user_id, assigned[0], assigned[1], state=f"plan{data.plan_id}")
+        except Exception:  # noqa: BLE001 - the inbox never breaks the assignment
+            pass
+
         # The pack name is part of every event description: bring the client's
         # future events to the new pack. A calendar failure never undoes the
         # change; it is reported (and "Sincronizar con calendario" retries it).
@@ -2046,6 +2066,7 @@ def approve_request(
 
         conn.commit()
         remove_replaced_events(created)     # only now: the cancelled sessions are saved
+        inbox.on_pack_created(user_id, created["pack_id"], created["plan_name"])
 
         email = email_pack(
             created, client_name=client_name, client_email=client_email,
@@ -2120,6 +2141,7 @@ def admin_renew_pack(client_id: int, data: RenewPack):
 
         conn.commit()
         remove_replaced_events(created)     # only now: the cancelled sessions are saved
+        inbox.on_pack_created(client_id, created["pack_id"], created["plan_name"])
 
         email = email_pack(
             created, client_name=client_name, client_email=client_email, days=days,

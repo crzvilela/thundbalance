@@ -1,13 +1,16 @@
 import { auth } from '../firebase/auth'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { BsEnvelope } from 'react-icons/bs'
 import { EditableText, EditableImage, useSectionSelection, SectionEditOverlay } from './editor/Editable'
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
 import { useLandingContent, LandingContentProvider } from '../content/LandingContentContext'
 import { useI18n } from '../i18n/I18nContext'
 import LanguageSwitcher from './LanguageSwitcher'
+import InboxBell, { UnreadBadge } from './InboxBell'
+import { useUnreadCount, useUnreadPolling } from '../hooks/useUnreadCount'
 // Bundled white vector logo, inlined into the JS so it is there on the very
 // first render: no network request, no wait for the API.
 import logo from '../assets/images/thundbalance-logo.svg?inline'
@@ -46,6 +49,7 @@ function PublicLogoFrame({ section, children }) {
 function NavbarInner() {
 
   const navigate = useNavigate()
+  const { pathname } = useLocation()
 
   const [user, setUser] = useState(auth.currentUser)
   const [profilePhoto, setProfilePhoto] = useState(auth.currentUser?.photoURL)
@@ -73,6 +77,11 @@ function NavbarInner() {
   const { t } = useI18n()
 
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection('navbar')
+
+  // The inbox number: only for a signed-in visitor (never in the editor). One light request when the menu appears,
+  // on every change of page and every minute while the browser tab is visible.
+  const unread = useUnreadCount()
+  useUnreadPolling(Boolean(user) && !isEditMode, pathname)
 
   const storedLogo = section.logoImage || ''
   const uploadedLogo = storedLogo && !BUNDLED_LOGOS.includes(storedLogo) ? resolveImageUrl(storedLogo) : null
@@ -250,8 +259,9 @@ function NavbarInner() {
               }}
               aria-label={mobileMenuOpen ? t('nav_aria_close_menu') : t('nav_aria_open_menu')}
               aria-expanded={mobileMenuOpen}
-              className="md:hidden w-11 h-11 flex items-center justify-center rounded-lg hover:bg-white/10 transition shrink-0"
+              className="relative md:hidden w-11 h-11 flex items-center justify-center rounded-lg hover:bg-white/10 transition shrink-0"
             >
+              {user && unread > 0 && <span aria-hidden="true" className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-emerald-400" />}
               <div className="w-6 h-5 relative flex flex-col justify-between">
                 <motion.span
                   animate={mobileMenuOpen ? { rotate: 45, y: 8.5 } : { rotate: 0, y: 0 }}
@@ -273,6 +283,12 @@ function NavbarInner() {
           )}
 
           {!isEditMode && <LanguageSwitcher className="hidden md:block" />}
+
+          {user && !isEditMode && (
+            <div className="hidden md:block">
+              <InboxBell unread={unread} />
+            </div>
+          )}
 
           {!user ? (
 
@@ -400,6 +416,20 @@ function NavbarInner() {
                     {renderNavLink(link, () => setMobileMenuOpen(false), 'block px-6 py-4 hover:bg-white/10 transition duration-200')}
                   </li>
                 ))}
+                {user && (
+                  <li>
+                    <Link
+                      to="/messages"
+                      onClick={() => setMobileMenuOpen(false)}
+                      aria-label={unread > 0 ? t('in_aria_bell', { n: unread }) : t('in_aria_bell_zero')}
+                      className="flex items-center gap-3 px-6 py-4 hover:bg-white/10 transition duration-200"
+                    >
+                      <BsEnvelope className="h-5 w-5" aria-hidden="true" />
+                      <span>{t('in_menu_label')}</span>
+                      <UnreadBadge count={unread} />
+                    </Link>
+                  </li>
+                )}
               </ul>
 
               <div className="px-6 py-4 border-t border-white/10 flex items-center justify-between">
