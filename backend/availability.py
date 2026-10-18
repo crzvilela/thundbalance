@@ -336,6 +336,11 @@ def create_trainer(cursor, name, specialty=None):
     )
     columns = {row[0] for row in cursor.fetchall()}
     fields, values = ["nome", "especialidade"], [name, specialty or "Personal Training"]
+    if "color" in columns:
+        # the next palette colour no trainer uses yet (the calendar's colour of this trainer)
+        from admin_calendar import next_free_color
+        fields.append("color")
+        values.append(next_free_color(cursor))
     if "email" in columns:
         fields.append("email")
         values.append(f"{name.lower().replace(' ', '.')}@thundbalance.com")

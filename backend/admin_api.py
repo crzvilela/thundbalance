@@ -33,6 +33,7 @@ import validators
 from emails import log as email_log
 from emails import health as email_health
 from emails.dates import to_madrid
+from admin_calendar import ensure_columns_once as ensure_calendar_columns
 from trial_confirmation import (
     approve_trial, panel_status, remove_trial_event, resend_approval, resend_received, sync_calendar_event,
 )
@@ -777,7 +778,8 @@ def register_admin_routes(app, require_admin):
         conn = get_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT id, nome, especialidade FROM trainers WHERE active ORDER BY id")
+            ensure_calendar_columns()
+            cursor.execute("SELECT id, nome, especialidade, color FROM trainers WHERE active ORDER BY id")
             trainers = cursor.fetchall()
             cursor.execute(
                 "SELECT trainer_id, day_of_week, start_time, end_time FROM trainer_availability"
@@ -793,7 +795,7 @@ def register_admin_routes(app, require_admin):
                 entry[day] = {"start": hhmm(start), "end": hhmm(end)}
             return [
                 {
-                    "id": row[0], "name": row[1], "specialty": row[2],
+                    "id": row[0], "name": row[1], "specialty": row[2], "color": row[3],
                     "hours": {day: hours.get(row[0], {}).get(day) for day in WEEKDAYS},
                 }
                 for row in trainers

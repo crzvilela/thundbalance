@@ -4,6 +4,7 @@ import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { WEEKDAYS } from '../availability'
+import { NEUTRAL_COLOR, TRAINER_PALETTE } from '../calendar/calendarConfig'
 import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon,
   PageHeader, SelectInput, Skeleton, TextInput
@@ -15,6 +16,49 @@ const DEFAULT_WINDOW = { start: '07:00', end: '14:00' }
 
 // Monday to Friday 07:00-14:00 as a starting point for a new trainer.
 const starterHours = () => Object.fromEntries(WEEKDAYS.map((day, index) => [day, index < 5 ? { ...DEFAULT_WINDOW } : null]))
+
+// The colour of the trainer in the admin calendar: 12 colours, saved as soon as one is clicked.
+function ColorPicker({ trainer, onSaved }) {
+  const { t } = useAdminText()
+  const toast = useToast()
+  const [color, setColor] = useState((trainer.color || TRAINER_PALETTE[0]).toLowerCase())
+  const [saving, setSaving] = useState(false)
+
+  const choose = async (next) => {
+    if (next === color || saving) return
+    const previous = color
+    setColor(next)
+    setSaving(true)
+    try {
+      await adminRequest('PUT', `/admin/trainers/${trainer.id}/color`, { color: next })
+      toast.push(t('ac_color_saved'))
+      onSaved()
+    } catch (error) {
+      setColor(previous)
+      toast.push(error.message, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <p className="mb-3 text-xs font-medium uppercase tracking-wider text-gray-400">{t('ac_color')}</p>
+      <div role="radiogroup" aria-label={t('ac_color_pick')} className="flex flex-wrap gap-2">
+        {TRAINER_PALETTE.map(option => (
+          <button key={option} type="button" role="radio" aria-checked={color === option} aria-label={option} disabled={saving} onClick={() => choose(option)}
+            className={`h-9 w-9 rounded-full border-2 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 disabled:opacity-60 ${color === option ? 'scale-110 border-white' : 'border-transparent hover:scale-105'}`}
+            style={{ background: option }} />
+        ))}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-3 text-xs">
+        <span className="text-gray-500">{t('ac_color_preview')}</span>
+        <span className="rounded-lg px-2.5 py-1 font-semibold" style={{ background: color, color: '#06100c' }}>2/8 - client@email.com</span>
+        <span className="rounded-lg border-2 border-dashed px-2.5 py-1 font-semibold text-gray-200" style={{ borderColor: color || NEUTRAL_COLOR, background: `${color}38` }}>Trial - client@email.com</span>
+      </div>
+    </div>
+  )
+}
 
 // Weekly working hours: one row per weekday (tick = works, with from/until).
 function HoursEditor({ hours, setHours }) {
@@ -117,6 +161,8 @@ function TrainerCard({ trainer, onChanged }) {
         </div>
         {dirty && <Badge tone="amber">{t('tn_unsaved')}</Badge>}
       </div>
+
+      <ColorPicker trainer={trainer} onSaved={onChanged} />
 
       <HoursEditor hours={hours} setHours={setHours} />
 

@@ -27,6 +27,7 @@ from google_calendar import (
 from landing_page_default import DEFAULT_LANDING_CONTENT
 from admin_api import register_admin_routes
 from client_lifecycle import ensure_columns as ensure_lifecycle_columns, register_client_lifecycle_routes
+import admin_calendar
 from contact_messages import register_contact_routes
 from trial_notifications import notify_trial_requested
 import mailer
@@ -142,10 +143,20 @@ def require_client(authorization: str | None = Header(default=None)):
 
 
 register_admin_routes(app, require_admin)
+admin_calendar.register_admin_calendar_routes(app, require_admin)
 register_client_lifecycle_routes(
     app, require_admin, ADMIN_EMAIL,
     upload_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads"),
 )
+
+
+@app.on_event("startup")
+def ensure_admin_calendar_columns():
+    # trainers.color (+ a colour for each trainer) and the calendar's indexes (admin_calendar.py)
+    try:
+        admin_calendar.ensure_columns()
+    except Exception as error:  # noqa: BLE001
+        print(f"admin calendar columns could not be created: {type(error).__name__}")
 
 
 @app.on_event("startup")

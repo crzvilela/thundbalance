@@ -1,0 +1,99 @@
+/* FullCalendar inside the admin panel: dark by default, light under .admin-light.
+   FullCalendar reads these --fc-* variables. */
+.admin-fc {
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: rgba(255, 255, 255, 0.04);
+  --fc-neutral-text-color: #9ca3af;
+  --fc-border-color: rgba(255, 255, 255, 0.08);
+  --fc-today-bg-color: rgba(52, 211, 153, 0.06);
+  --fc-now-indicator-color: #34d399;
+  --fc-non-business-color: rgba(255, 255, 255, 0.02);
+  --fc-more-link-bg-color: rgba(255, 255, 255, 0.08);
+  --fc-button-text-color: #e5e7eb;
+  --fc-button-bg-color: transparent;
+  --fc-button-border-color: rgba(255, 255, 255, 0.16);
+  --fc-button-hover-bg-color: rgba(255, 255, 255, 0.08);
+  --fc-button-hover-border-color: rgba(255, 255, 255, 0.32);
+  --fc-button-active-bg-color: rgba(52, 211, 153, 0.2);
+  --fc-button-active-border-color: rgba(52, 211, 153, 0.55);
+  --ac-ink: #06100c;                 /* text on a coloured event */
+  --ac-soft-text: #e5e7eb;           /* text on a dashed (trial) event */
+  --ac-today-ring: rgba(52, 211, 153, 0.7);
+}
+
+.admin-light .admin-fc {
+  --fc-neutral-bg-color: rgba(15, 23, 42, 0.04);
+  --fc-neutral-text-color: #5b6677;
+  --fc-border-color: rgba(15, 23, 42, 0.12);
+  --fc-today-bg-color: rgba(16, 185, 129, 0.08);
+  --fc-now-indicator-color: #059669;
+  --fc-more-link-bg-color: rgba(15, 23, 42, 0.08);
+  --fc-button-text-color: #1e293b;
+  --fc-button-border-color: rgba(15, 23, 42, 0.2);
+  --fc-button-hover-bg-color: rgba(15, 23, 42, 0.07);
+  --fc-button-hover-border-color: rgba(15, 23, 42, 0.35);
+  --fc-button-active-bg-color: rgba(16, 185, 129, 0.18);
+  --fc-button-active-border-color: rgba(5, 150, 105, 0.6);
+  --ac-soft-text: #0f172a;
+  --ac-today-ring: rgba(5, 150, 105, 0.75);
+}
+
+/* the calendar takes the height of the screen; the hours scroll inside it */
+.admin-fc .ac-frame { height: max(520px, calc(100vh - 21rem)); }
+.admin-fc .fc { font-family: inherit; font-size: 0.875rem; color: inherit; }
+.admin-fc .fc-toolbar { gap: 0.75rem; flex-wrap: wrap; }
+.admin-fc .fc-toolbar-title { font-family: 'Bebas Neue', Inter, sans-serif; font-size: 1.9rem; letter-spacing: 0.03em; text-transform: capitalize; font-weight: 400; }
+.admin-fc .fc-button { border-radius: 0.75rem; font-weight: 600; text-transform: capitalize; padding: 0.5rem 0.9rem; box-shadow: none !important; min-height: 40px; }
+.admin-fc .fc-button-primary:disabled { opacity: 0.45; }
+.admin-fc .fc-button-group > .fc-button:not(:first-child) { margin-left: -1px; }
+.admin-fc .fc-col-header-cell-cushion, .admin-fc .fc-timegrid-slot-label-cushion { color: var(--fc-neutral-text-color); text-transform: capitalize; font-weight: 500; }
+.admin-fc .fc-theme-standard td, .admin-fc .fc-theme-standard th, .admin-fc .fc-theme-standard .fc-scrollgrid { border-color: var(--fc-border-color); }
+.admin-fc .fc-timegrid-slot { height: 2.6rem; }
+.admin-fc .fc-timegrid-slot-minor { border-top-style: dotted; }
+.admin-fc .fc-timegrid-now-indicator-line { border-width: 2px 0 0; }
+
+/* today: green outline in the month grid, a tinted column in week and day views */
+.admin-fc .fc-daygrid-day.fc-day-today { box-shadow: inset 0 0 0 2px var(--ac-today-ring); }
+.admin-fc .fc-day-today .fc-daygrid-day-number { font-weight: 700; }
+.admin-fc .fc-timegrid-col.fc-day-today { box-shadow: inset 2px 0 0 var(--ac-today-ring), inset -2px 0 0 var(--ac-today-ring); }
+
+/* events: the colour of the trainer */
+.admin-fc .fc-event.ac-ev {
+  --ev: #9ca3af;
+  border-radius: 0.5rem;
+  border: 1px solid var(--ev);
+  background: var(--ev);
+  color: var(--ac-ink);
+  cursor: pointer;
+  box-shadow: none;
+  font-weight: 600;
+}
+.admin-fc .fc-event.ac-ev:focus-visible, .admin-fc .fc-event.ac-ev:hover { outline: 2px solid #fff; outline-offset: 1px; }
+.admin-light .admin-fc .fc-event.ac-ev:focus-visible, .admin-light .admin-fc .fc-event.ac-ev:hover { outline-color: #0f172a; }
+.admin-fc .ac-ev-inner { padding: 1px 4px; overflow: hidden; line-height: 1.25; }
+.admin-fc .ac-ev-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-fc .ac-ev-time { margin-right: 0.35em; opacity: 0.8; font-weight: 700; }
+.admin-fc .ac-ev-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.72rem; font-weight: 500; opacity: 0.9; }
+
+/* trial sessions: dashed border, a light fill of the trainer's colour (grey when unassigned) */
+.admin-fc .fc-event.ac-trial {
+  background: color-mix(in srgb, var(--ev) 22%, transparent);
+  border: 2px dashed var(--ev);
+  color: var(--ac-soft-text);
+}
+.admin-fc .fc-event.ac-trial.ac-pending, .admin-fc .fc-event.ac-trial.ac-approved { opacity: 0.6; }   /* not confirmed yet */
+.admin-fc .fc-event.ac-trial.ac-declined, .admin-fc .fc-event.ac-trial.ac-rejected, .admin-fc .fc-event.ac-trial.ac-cancelled { opacity: 0.4; text-decoration: line-through; }
+
+/* sessions: finished ones calmer, cancelled ones faded and struck through */
+.admin-fc .fc-event.ac-session.ac-completed { opacity: 0.7; }
+.admin-fc .fc-event.ac-session.ac-cancelled { opacity: 0.4; text-decoration: line-through; }
+
+/* phones: compact header and readable events */
+@media (max-width: 767px) {
+  .admin-fc .ac-frame { height: max(480px, calc(100vh - 18rem)); }
+  .admin-fc .fc-toolbar-title { font-size: 1.35rem; }
+  .admin-fc .fc-toolbar.fc-header-toolbar { margin-bottom: 0.75rem; }
+  .admin-fc .fc-toolbar.fc-footer-toolbar { margin-top: 0.75rem; justify-content: center; }
+  .admin-fc .fc-button { padding: 0.45rem 0.7rem; }
+  .admin-fc .ac-ev-title { white-space: normal; }
+}
