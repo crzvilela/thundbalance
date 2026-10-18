@@ -20,6 +20,7 @@ import admin_api
 import calendar_sync
 import google_calendar as gc
 import main
+import reschedule_requests
 from database import get_connection
 
 DOMAIN = "@test-sync.example"
@@ -317,8 +318,7 @@ class Sync(unittest.TestCase):
         event_id = self.row(sid)[1]
         new_day = self.day(20)
         self.fake.fail = 503
-        result = main.update_session(sid, main.UpdateSession(session_date=new_day.isoformat(), session_time="12:00"), self.claims())
-        self.assertEqual(result, {"message": "Session updated successfully"})
+        reschedule_requests.admin_reschedule(sid, new_day.isoformat(), "12:00", None, "test")
         status, _, sync, error, saved_day, saved_time = self.row(sid)
         self.assertEqual((str(saved_day), str(saved_time)[:5], sync), (new_day.isoformat(), "12:00", "failed"))
         # the event is still at the old time; the sync button moves it

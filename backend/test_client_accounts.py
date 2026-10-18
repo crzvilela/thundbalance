@@ -7,6 +7,7 @@ created); Google Mail is a local fake server. The local database is used and
 cleaned up. Passwords must never appear in the database, logs or responses.
 """
 import base64
+import os
 import io
 import json
 import logging
@@ -21,8 +22,11 @@ from fastapi import HTTPException
 import client_accounts
 import firebase_accounts as accounts
 import main
+import google_fakes
 import packs
 from database import get_connection
+
+os.environ["CLIENT_CALENDAR_ENABLED"] = "true"      # these tests look at the calendar parts of the emails
 
 RECEIVED = []
 DOMAIN = "@test-clients.example"
@@ -109,6 +113,7 @@ class Accounts(unittest.TestCase):
         self.deleted_logins, self.deleted_events, self.set_calls = [], [], []
         self.firebase_lock = threading.Lock()
         self.events = []
+        self._restore_gc = google_fakes.delegate_to_packs()
         self._orig = (accounts.create_login, accounts.set_password, accounts.delete_login,
                       packs.create_calendar_event, packs.delete_calendar_event)
 
@@ -141,6 +146,7 @@ class Accounts(unittest.TestCase):
     def tearDown(self):
         (accounts.create_login, accounts.set_password, accounts.delete_login,
          packs.create_calendar_event, packs.delete_calendar_event) = self._orig
+        self._restore_gc()
         logging.getLogger().removeHandler(self.logs)
         self.cleanup()
 

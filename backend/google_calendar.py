@@ -15,17 +15,26 @@ Event titles and descriptions are built in event_format.py.
 """
 import base64
 import json
+import logging
 import os
+import threading
 
+import google_auth_httplib2
+import httplib2
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 import event_format
 
+logger = logging.getLogger("thundbalance.calendar")
+
 SCOPES = [
     "https://www.googleapis.com/auth/calendar"
 ]
+
+# Every request to Google gives up after this many seconds (a slow Google must not hang the app).
+TIMEOUT_SECONDS = 8
 
 CALENDAR_ENV = "GOOGLE_CALENDAR_ID"
 
@@ -144,15 +153,40 @@ def load_credentials():
     )
 
 
+_local = threading.local()          # the Google client of each thread
+_credentials = {"raw": None, "value": None}
+_credentials_lock = threading.Lock()
+
+
+def _shared_credentials():
+    """The service-account credentials, loaded once and refreshed by Google's library
+    when the token expires (nothing authenticates again for every event). A changed
+    GOOGLE_CREDENTIALS_JSON is noticed and reloaded."""
+    raw = _read_env("GOOGLE_CREDENTIALS_JSON")
+    with _credentials_lock:
+        if _credentials["value"] is None or _credentials["raw"] != raw:
+            _credentials["value"] = load_credentials()
+            _credentials["raw"] = raw
+        return _credentials["value"]
+
+
+def reset_service():
+    """Forgets the cached credentials and clients (tests, or after the key changed)."""
+    with _credentials_lock:
+        _credentials["value"] = None
+        _credentials["raw"] = None
+    _local.__dict__.clear()
+
+
 def get_calendar_service():
-
-    credentials = load_credentials()
-
-    return build(
-        "calendar",
-        "v3",
-        credentials=credentials
-    )
+    """The Google Calendar client of this thread, built once. Requests time out after
+    TIMEOUT_SECONDS; the token is reused until it expires."""
+    credentials = _shared_credentials()
+    if getattr(_local, "credentials", None) is not credentials or getattr(_local, "service", None) is None:
+        http = google_auth_httplib2.AuthorizedHttp(credentials, http=httplib2.Http(timeout=TIMEOUT_SECONDS))
+        _local.service = build("calendar", "v3", http=http, cache_discovery=False)
+        _local.credentials = credentials
+    return _local.service
 
 
 def status_line():
@@ -198,12 +232,12 @@ def _insert(service, body, event_id):
                 service.events().update(
                     calendarId=calendar_id, eventId=event_id, body={**body, "status": "confirmed"}
                 ).execute()
-                print("EVENT RESTORED:", event_id)
+                logger.info("calendar event restored (%s)", event_id)
                 return event_id, True
-            print("EVENT ALREADY EXISTED:", event_id)
+            logger.info("calendar event already existed (%s)", event_id)
             return event_id, False
         raise
-    print("EVENT CREATED:", created_event["id"])
+    logger.info("calendar event created (%s)", created_event["id"])
     return created_event["id"], True
 
 
@@ -254,7 +288,7 @@ def delete_calendar_event(
         eventId=event_id
     ).execute()
 
-    print("EVENT DELETED:", event_id)
+    logger.info("calendar event deleted (%s)", event_id)
 
 
 def update_calendar_event(
@@ -281,16 +315,13 @@ def update_calendar_event(
         start, end = event_format.event_times(session_date, session_time)
         body = {"start": start, "end": end}
 
-    print("EVENT ID:", event_id)
-    print("UPDATING EVENT...")
-
     service.events().patch(
         calendarId=get_calendar_id(),
         eventId=event_id,
         body=body
     ).execute()
 
-    print("EVENT UPDATED:", event_id)
+    logger.info("calendar event updated (%s)", event_id)
 
 
 def patch_calendar_event(event_id, body):
@@ -298,7 +329,7 @@ def patch_calendar_event(event_id, body):
     get_calendar_service().events().patch(
         calendarId=get_calendar_id(), eventId=event_id, body=body
     ).execute()
-    print("EVENT UPDATED:", event_id)
+    logger.info("calendar event updated (%s)", event_id)
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +425,7 @@ def clear_calendar():
         if not page_token:
             break
 
-    print("GOOGLE CALENDAR CLEARED (events created by the app):", deleted)
+    logger.info("calendar cleared: %s events created by the app deleted", deleted)
     return deleted
 
 

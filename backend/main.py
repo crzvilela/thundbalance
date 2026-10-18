@@ -28,6 +28,9 @@ from landing_page_default import DEFAULT_LANDING_CONTENT
 from admin_api import register_admin_routes
 from client_lifecycle import ensure_columns as ensure_lifecycle_columns, register_client_lifecycle_routes
 import admin_calendar
+import logging
+import reschedule_requests
+from features import client_calendar_enabled
 from contact_messages import register_contact_routes
 from trial_notifications import notify_trial_requested
 import mailer
@@ -64,6 +67,9 @@ from google.oauth2 import id_token
 
 
 
+
+# Application logs go to the console at INFO (ids and outcomes, never names or e-mails).
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper(), format="%(levelname)s %(name)s: %(message)s")
 
 app = FastAPI()
 
@@ -151,6 +157,15 @@ register_client_lifecycle_routes(
 
 
 @app.on_event("startup")
+def ensure_reschedule_tables():
+    # reschedule_requests (reschedule_requests.py). Idempotent.
+    try:
+        reschedule_requests.ensure_tables()
+    except Exception as error:  # noqa: BLE001
+        print(f"reschedule tables could not be created: {type(error).__name__}")
+
+
+@app.on_event("startup")
 def ensure_admin_calendar_columns():
     # trainers.color (+ a colour for each trainer) and the calendar's indexes (admin_calendar.py)
     try:
@@ -229,6 +244,7 @@ def assert_session_owner(claims, session_id):
 
 
 calendar_feed.register_calendar_feed_routes(app, require_admin, require_client, _own_user_id)
+reschedule_requests.register_reschedule_routes(app, require_admin, require_client, _own_user_id)
 
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
@@ -939,18 +955,9 @@ def cancel_session(session_id: int, claims=Depends(require_client)):
             (session_id,)
         )
 
-        # The session is cancelled whatever Google answers; the outcome is recorded.
-        if google_event_id:
-            try:
-                delete_calendar_event(google_event_id)
-                calendar_sync.record(cursor, session_id, True)
-            except Exception as calendar_error:  # noqa: BLE001
-                if google_calendar.http_status(calendar_error) in (404, 410):
-                    calendar_sync.record(cursor, session_id, True)          # already gone
-                else:
-                    reason = google_calendar.describe_error(calendar_error)
-                    print(f"Calendar event of session {session_id} could not be deleted: {reason}")
-                    calendar_sync.record(cursor, session_id, False, reason)
+        # The session is cancelled whatever Google answers: the central rule deletes its
+        # event ("it does not exist" counts as done) and records the outcome.
+        calendar_sync.sync_session_to_google(session_id, cursor=cursor)
 
         conn.commit()
 
@@ -1043,131 +1050,24 @@ def update_session(
     session: UpdateSession,
     claims=Depends(require_client)
 ):
+    """Clients no longer move a session by themselves: they ask (POST /me/sessions/{id}/reschedule-request)
+    and the studio decides. The studio itself should use POST /admin/sessions/{id}/reschedule; a call
+    from the administrator here is forwarded to it."""
 
     assert_session_owner(claims, session_id)
 
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    try:
-
-        cursor.execute(
-            """
-            SELECT
-                trainer_id,
-                google_event_id,
-                rescheduled
-            FROM sessions
-            WHERE id = %s
-            """,
-            (session_id,)
+    if not _is_admin(claims):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "use_reschedule_request",
+                "message": "Sessions are no longer moved directly. Send a change request instead.",
+            },
         )
-
-        result = cursor.fetchone()
-
-        if not result:
-
-            return {
-                "error": "Session not found"
-            }
-
-        trainer_id = result[0]
-        google_event_id = result[1]
-        rescheduled = result[2]
-
-        if rescheduled:
-
-            return {
-                "error": "This session has already been rescheduled"
-            }
-
-        cursor.execute(
-            """
-            SELECT id
-            FROM sessions
-            WHERE trainer_id = %s
-            AND session_date = %s
-            AND session_time = %s
-            AND status = 'Booked'
-            AND id != %s
-            """,
-            (
-                trainer_id,
-                session.session_date,
-                session.session_time,
-                session_id
-            )
-        )
-
-        conflict = cursor.fetchone()
-
-        if conflict:
-
-            return {
-                "error": "Trainer already booked at this time"
-            }
-
-        problem = slot_problem(
-            cursor,
-            trainer_id,
-            session.session_date,
-            session.session_time,
-            ignore_session_id=session_id
-        )
-
-        if problem:
-
-            return {
-                "error": problem
-            }
-
-        cursor.execute(
-            """
-            UPDATE sessions
-            SET
-                session_date = %s,
-                session_time = %s,
-                rescheduled = TRUE,
-                feed_sequence = feed_sequence + 1
-            WHERE id = %s
-            """,
-            (
-                session.session_date,
-                session.session_time,
-                session_id
-            )
-        )
-
-        # The new date is saved whatever Google answers; if the event could not be
-        # moved this is recorded (and "Sincronizar con calendario" retries it).
-        if google_event_id:
-            try:
-                # New day and hour plus the rewritten description (Día / Horario)
-                calendar_sync.push_session(cursor, session_id)
-                calendar_sync.record(cursor, session_id, True)
-            except Exception as calendar_error:  # noqa: BLE001
-                reason = google_calendar.describe_error(calendar_error)
-                print(f"Calendar event of session {session_id} could not be moved: {reason}")
-                calendar_sync.record(cursor, session_id, False, reason)
-
-        conn.commit()
-
-        return {
-            "message": "Session updated successfully"
-        }
-
-    except Exception as e:
-
-        conn.rollback()
-
-        return {
-            "error": str(e)
-        }
-
-    finally:
-
-        cursor.close()
-        conn.close()
+    reschedule_requests.admin_reschedule(
+        session_id, str(session.session_date), str(session.session_time)[:5], None, str(claims.get("email", ""))[:80]
+    )
+    return {"message": "Session updated successfully"}
 
 
 @app.get("/admin/stats", dependencies=[Depends(require_admin)])
@@ -1409,6 +1309,10 @@ def update_profile(
         cursor.execute(f"UPDATE users SET {assignments} WHERE id = %s", (*fields.values(), user_id))
 
         conn.commit()
+
+        # The name, e-mail or phone are in the title / description of the future events.
+        if {"nome", "email", "telefone", "codigo_pais"} & set(fields):
+            threading.Thread(target=calendar_sync.sync_client_sessions_to_google, args=(user_id,), daemon=True).start()
 
         return {
             "message": "Profile updated successfully"
@@ -2466,13 +2370,34 @@ def get_available_times(
         conn.close()
 
 
+@app.get("/features")
+def public_features():
+    """What the site is allowed to show; the frontend asks once. client_calendar is the
+    CLIENT_CALENDAR_ENABLED switch (calendar buttons, feed and .ics for clients)."""
+    return {"client_calendar": client_calendar_enabled()}
+
+
+CLEAR_CALENDAR_CONFIRMATION = "CLEAR CALENDAR"
+
+
+class ClearCalendarPayload(BaseModel):
+    confirm: str = ""
+
+
 @app.delete("/admin/clear-calendar", dependencies=[Depends(require_admin)])
-def clear_google_calendar():
-
-    clear_calendar()
-
+def clear_google_calendar(data: ClearCalendarPayload):
+    """Deletes from the calendar ONLY the events this app created (private tag
+    app=thundbalance), every page of them; events made by people are never touched.
+    Needs the administrator's Firebase token and {"confirm": "CLEAR CALENDAR"}."""
+    if data.confirm != CLEAR_CALENDAR_CONFIRMATION:
+        raise HTTPException(
+            status_code=422,
+            detail=f'Send {{"confirm": "{CLEAR_CALENDAR_CONFIRMATION}"}} to confirm.',
+        )
+    deleted = clear_calendar()
     return {
-        "message": "Google Calendar cleared successfully"
+        "message": "Events created by the app were deleted from the calendar",
+        "deleted": deleted,
     }
 
 

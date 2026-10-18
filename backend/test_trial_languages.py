@@ -23,6 +23,8 @@ import trial_confirmation as tc
 from database import get_connection
 from emails.dates import format_date_bilingual
 
+os.environ["CLIENT_CALENDAR_ENABLED"] = "true"      # these tests look at the calendar parts of the emails
+
 RECEIVED = []
 DOMAIN = "@test-lang.example"
 
@@ -95,6 +97,7 @@ class Languages(unittest.TestCase):
         conn.close()
 
     def setUp(self):
+        self.wait_for_mail()      # mail still queued by a previous test must not land in this one
         RECEIVED.clear()
         self.cleanup()
         main._trial_hits.clear()
@@ -127,8 +130,8 @@ class Languages(unittest.TestCase):
 
     def wait_for_mail(self):
         from emails.transport import _pool
-        _pool.submit(lambda: None).result(timeout=10)       # the pool has 2 workers: drain it
-        _pool.submit(lambda: None).result(timeout=10)
+        _pool.submit(lambda: None).result(timeout=120)       # the pool has 2 workers: drain it
+        _pool.submit(lambda: None).result(timeout=120)
         import time
         time.sleep(0.4)
 

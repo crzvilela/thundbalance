@@ -1,3 +1,4 @@
+import { useFeatures } from '../api/features'
 import { useEffect, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import Navbar from '../components/Navbar'
@@ -13,6 +14,7 @@ function TrialConfirm() {
   const { token } = useParams()
   const [searchParams] = useSearchParams()
   const { t, locale } = useI18n()
+  const { clientCalendar } = useFeatures()      // CLIENT_CALENDAR_ENABLED: no sentence about the calendar when it is off
   const [view, setView] = useState(null)        // { state, first_name, date, time } | { state: 'not_found' | 'error' }
   const [mode, setMode] = useState(searchParams.get('action') === 'decline' ? 'decline' : 'confirm')
   const [busy, setBusy] = useState(false)
@@ -56,7 +58,7 @@ function TrialConfirm() {
       if (!response.ok) throw new Error('server')
       const { outcome } = await response.json()
       const sameAnswer = (action === 'confirm' && outcome === 'already_confirmed') || (action === 'decline' && outcome === 'already_declined')
-      if (outcome === 'confirmed') setDone({ title: 'tc_confirmed_title', text: 'tc_confirmed_text', good: true })
+      if (outcome === 'confirmed') setDone({ title: 'tc_confirmed_title', text: clientCalendar ? 'tc_confirmed_text' : 'tc_confirmed_plain', good: true })
       else if (outcome === 'declined') setDone({ title: 'tc_declined_title', text: 'tc_declined_text', retry: true })
       else if (sameAnswer) setDone({ title: action === 'confirm' ? 'tc_confirmed_title' : 'tc_declined_title', text: action === 'confirm' ? 'tc_already_confirmed' : 'tc_already_declined', good: action === 'confirm', retry: action === 'decline' })
       else if (outcome === 'already_confirmed') setDone({ title: 'tc_confirmed_title', text: 'tc_conflict_confirmed', good: true })

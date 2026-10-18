@@ -2,7 +2,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  addMinutes, clientSessionTitle, formatDay, formatShortDay, formatTime, googleCalendarUrl, madridNow, sessionStatus, weekdayNames
+  addMinutes, canRequestChange, clientSessionTitle, formatDay, formatShortDay, formatTime, googleCalendarUrl, madridNow, minutesUntil, sessionStatus, weekdayNames
 } from './sessionDates.js'
 
 const norm = (text) => text.replaceAll('’', "'").replaceAll(',', '')
@@ -64,4 +64,17 @@ test('Madrid time is used to decide what is completed (summer UTC+2, winter UTC+
   assert.equal(sessionStatus({ date: '2026-10-20', time: '09:00', status: 'Booked', rescheduled: true }, at), 'rescheduled')
   assert.equal(sessionStatus({ date: '2026-10-20', time: '09:00', status: 'Cancelled' }, at), 'cancelled')
   assert.equal(sessionStatus({ date: '2026-10-10', time: '09:00', status: 'Cancelled' }, at), 'cancelled')  // cancelled wins
+})
+
+test('a change can be requested up to 8 hours before the session (Madrid clock)', () => {
+  const now = new Date(Date.UTC(2026, 9, 19, 6, 0))                       // 08:00 in Madrid (summer time)
+  assert.equal(minutesUntil({ date: '2026-10-19', time: '16:00' }, now), 480)
+  assert.equal(canRequestChange({ date: '2026-10-19', time: '16:00' }, now), true)    // exactly 8 hours: still allowed
+  assert.equal(canRequestChange({ date: '2026-10-19', time: '15:59' }, now), false)   // 7 h 59 min
+  assert.equal(canRequestChange({ date: '2026-10-19', time: '07:00' }, now), false)   // already started
+  assert.equal(minutesUntil({ date: '2026-10-19', time: '07:00' }, now), -60)
+  assert.equal(canRequestChange({ date: '2026-10-20', time: '09:00:00' }, now), true)
+  // winter time (UTC+1): 06:00Z is 07:00 in Madrid
+  assert.equal(minutesUntil({ date: '2026-12-19', time: '15:00' }, new Date(Date.UTC(2026, 11, 19, 6, 0))), 480)
+  assert.equal(canRequestChange({ date: '2026-10-19', time: '15:00' }, now, 6), true)  // the number of hours is a parameter
 })

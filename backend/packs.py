@@ -300,34 +300,26 @@ def create_pack(
         )
         pending.append((cursor.fetchone()[0], session_date, session_number))
 
-    # A calendar failure never stops the sessions from existing: it is recorded
-    # on each session (calendar_sync_status / calendar_sync_error), shown in the
-    # panel, and "Sincronizar con calendario" creates what is missing.
-    key = calendar_sync.instance_key(cursor)
+    # Every event is made by the one central rule (calendar_sync.sync_sessions_to_google),
+    # in parallel but never more than a few at a time. A calendar failure never stops the
+    # sessions from existing: it is recorded on each session (calendar_sync_status /
+    # calendar_sync_error), shown in the panel, and "Sincronizar con Google" retries it.
+    results = calendar_sync.sync_sessions_to_google(cursor, [session_id for session_id, _, _ in pending])
     calendar_errors = []
-    sessions = []
-    for session_id, session_date, session_number in pending:
-        try:
-            event_id = create_calendar_event(
-                trainer_name, event_name or client_name, event_email or client_email, session_date,
-                preferred_time, session_number,
-                event_id=calendar_sync.event_id_for(key, session_id), session_id=session_id,
-                client_phone=event_phone, pack_name=plan_name,
-            )
-            created_event_ids.append(event_id)
-            calendar_sync.record(cursor, session_id, True, event_id=event_id)
-        except Exception as error:  # noqa: BLE001
-            reason = describe_error(error)
-            print(f"Calendar event for session {session_id} could not be created: {reason}")
-            traceback.print_exc()
-            calendar_sync.record(cursor, session_id, False, reason)
-            calendar_errors.append(reason)
-        sessions.append({
+    for item in results:
+        if item["action"] == "failed":
+            calendar_errors.append(item["error"])
+        elif item["event_id"]:
+            created_event_ids.append(item["event_id"])
+    sessions = [
+        {
             "id": session_id,
             "start": parse_madrid(session_date, str(preferred_time)[:5]),
             "trainer": trainer_name,
             "number": session_number,
-        })
+        }
+        for session_id, session_date, session_number in pending
+    ]
 
     return {
         "pack_id": pack_id,
@@ -357,20 +349,12 @@ def remove_replaced_events(created):
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        for session_id, event_id in events:
-            try:
-                delete_calendar_event(event_id)
-                calendar_sync.record(cursor, session_id, True)
-            except Exception as error:  # noqa: BLE001
-                if http_status(error) in (404, 410):
-                    calendar_sync.record(cursor, session_id, True)       # already gone
-                    continue
-                reason = describe_error(error)
-                print(f"Calendar event of replaced session {session_id} could not be deleted: {reason}")
-                calendar_sync.record(cursor, session_id, False, reason)
+        # the replaced sessions are Cancelled in the database: the central rule deletes their events
+        for item in calendar_sync.sync_sessions_to_google(cursor, [session_id for session_id, _ in events]):
+            if item["action"] == "failed":
                 created["calendar_failed"] += 1
-                if reason not in created["calendar_errors"]:
-                    created["calendar_errors"].append(reason)
+                if item["error"] not in created["calendar_errors"]:
+                    created["calendar_errors"].append(item["error"])
         conn.commit()
     finally:
         cursor.close()

@@ -25,8 +25,10 @@ def send_trial_approved(to, name, date_text, time_text, trainer, token, lang=Non
 
 def send_trial_confirmed(to, name, date_text, time_text, trainer, trial_id, lang=None, reference=None):
     built = client_trial_confirmed(name, parse_madrid(date_text, time_text), trainer, trial_id, lang)
-    attachment = {"filename": "thundbalance-sesion-de-prueba.ics", "content_type": "text/calendar", "data": built[3].encode("utf-8")}
-    return _send(to, built, "trial_confirmed", lang, reference, attachments=[attachment])
+    options = {}
+    if built[3]:           # None when the client calendar is off
+        options["attachments"] = [{"filename": "thundbalance-sesion-de-prueba.ics", "content_type": "text/calendar", "data": built[3].encode("utf-8")}]
+    return _send(to, built, "trial_confirmed", lang, reference, **options)
 
 
 def send_trial_cancelled(to, name, date_text, time_text, lang=None, reference=None,

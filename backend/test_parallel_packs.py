@@ -10,6 +10,7 @@ Google Mail is a local fake server, the Google Calendar is faked. The local
 database is used and cleaned up.
 """
 import base64
+import os
 import json
 import threading
 import unittest
@@ -20,8 +21,11 @@ from fastapi import HTTPException
 
 import admin_api
 import main
+import google_fakes
 import packs
 from database import get_connection
+
+os.environ["CLIENT_CALENDAR_ENABLED"] = "true"      # these tests look at the calendar parts of the emails
 
 DOMAIN = "@test-packs.example"
 RECEIVED = []
@@ -106,6 +110,7 @@ class Parallel(unittest.TestCase):          # "Parallel" is the old name; see th
         self.cleanup()
         self.events = []
         self.deleted = []
+        self._restore_gc = google_fakes.delegate_to_packs()
         self._orig = (packs.create_calendar_event, packs.delete_calendar_event)
         packs.create_calendar_event = lambda *a, **k: (self.events.append((a, k)), k.get("event_id") or "evt")[1]
         packs.delete_calendar_event = lambda event_id: self.deleted.append(event_id)
@@ -118,6 +123,7 @@ class Parallel(unittest.TestCase):          # "Parallel" is the old name; see th
 
     def tearDown(self):
         packs.create_calendar_event, packs.delete_calendar_event = self._orig
+        self._restore_gc()
         self.cleanup()
 
     # ----- helpers

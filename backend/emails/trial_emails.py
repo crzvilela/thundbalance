@@ -8,6 +8,7 @@ cancelled.
 from .dates import format_date_bilingual, parse_madrid
 from .ics import build_ics
 from calendar_titles import client_trial_title
+from features import client_calendar_enabled
 from .template import (
     STUDIO_PLACE, button, heading, key_value, link_line, notice, paragraph, sessions_table, site_url,
 )
@@ -162,12 +163,15 @@ def client_trial_confirmed(name, start, trainer, trial_id, lang=None):
         return [
             heading(tr(l, "trial_confirmed_title")),
             paragraph(tr(l, "greeting", name=name)),
-            paragraph(tr(l, "trial_confirmed_body")),
+            # the sentence that mentions the attached event only exists with the client calendar on
+            paragraph(tr(l, "trial_confirmed_body" if client_calendar_enabled() else "trial_confirmed_body_plain")),
             sessions_table([{"start": start, "trainer": trainer}], l),
             key_value([(tr(l, "lbl_place"), STUDIO_PLACE)]),
             paragraph(tr(l, "trial_confirmed_note"), muted=True),
         ]
     subject, html, text = localized_email(lang, "trial_confirmed_subject", build, title_key="trial_confirmed_title")
+    if not client_calendar_enabled():
+        return subject, html, text, None
     ics = build_ics([{
         "id": f"trial-{trial_id}",
         "start": start,
@@ -195,7 +199,7 @@ def client_trial_cancelled(name, start, lang=None, trial_id=None, trainer=None, 
         ]
     subject, html, text = localized_email(lang, "trial_cancelled_subject", build, title_key="trial_cancelled_title")
     ics = None
-    if trial_id is not None:
+    if trial_id is not None and client_calendar_enabled():
         ics = build_ics([{
             "id": f"trial-{trial_id}",
             "start": start,

@@ -55,6 +55,10 @@ def ensure_columns():
     cursor = conn.cursor()
     try:
         cursor.execute("ALTER TABLE trainers ADD COLUMN IF NOT EXISTS color TEXT")
+        # the calendar shows the Google sync state of each session / trial (also created by calendar_sync)
+        for table in ("sessions", "trial_sessions"):
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS calendar_sync_status TEXT")
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS calendar_sync_error TEXT")
         cursor.execute("SELECT id FROM trainers WHERE color IS NULL ORDER BY id")
         for (trainer_id,) in cursor.fetchall():
             cursor.execute("UPDATE trainers SET color = %s WHERE id = %s", (next_free_color(cursor), trainer_id))
@@ -127,7 +131,7 @@ def _iso(day, moment):
 
 def session_event(row, now):
     (session_id, day, moment, status, rescheduled, number, user_id, name, email, phone, code,
-     trainer_id, trainer, color, pack) = row
+     trainer_id, trainer, color, pack, sync_status, sync_error) = row
     start, end = _iso(day, moment)
     number = str(number or "").strip()
     email = str(email or "").strip()
@@ -141,13 +145,13 @@ def session_event(row, now):
             "kind": "session", "sessionId": session_id, "status": session_status(day, moment, status, rescheduled, now),
             "number": number, "pack": pack or "", "clientId": user_id, "clientName": name or "", "email": email,
             "phone": _phone(phone, code), "trainerId": trainer_id, "trainer": trainer or "", "color": color or "",
-            "rescheduled": bool(rescheduled),
+            "rescheduled": bool(rescheduled), "syncStatus": sync_status, "syncError": sync_error,
         },
     }
 
 
 def trial_event(row):
-    trial_id, day, moment, status, token, name, email, phone, trainer_id, trainer, color, goal = row
+    trial_id, day, moment, status, token, name, email, phone, trainer_id, trainer, color, goal, sync_status, sync_error = row
     start, end = _iso(day, moment)
     email = str(email or "").strip()
     return {
@@ -159,6 +163,7 @@ def trial_event(row):
             "kind": "trial", "trialId": trial_id, "status": trial_status(status, token),
             "clientName": name or "", "email": email, "phone": str(phone or ""),
             "trainerId": trainer_id, "trainer": trainer or "", "color": color or "", "goal": goal or "",
+            "syncStatus": sync_status, "syncError": sync_error,
         },
     }
 
@@ -183,7 +188,8 @@ def calendar_events(cursor, first, last, email=None, trainer_ids=None, kind="all
             f"""
             SELECT s.id, s.session_date, s.session_time, s.status, s.rescheduled, s.session_number,
                    s.user_id, u.nome, u.email, u.telefone, u.codigo_pais,
-                   s.trainer_id, t.nome, t.color, COALESCE(p1.nome, p2.nome)
+                   s.trainer_id, t.nome, t.color, COALESCE(p1.nome, p2.nome),
+                   s.calendar_sync_status, s.calendar_sync_error
             FROM sessions s
             LEFT JOIN users u ON u.id = s.user_id
             LEFT JOIN trainers t ON t.id = s.trainer_id
@@ -213,7 +219,8 @@ def calendar_events(cursor, first, last, email=None, trainer_ids=None, kind="all
         cursor.execute(
             f"""
             SELECT ts.id, ts.session_date, ts.session_time, ts.status, ts.confirmation_token,
-                   ts.full_name, ts.email, ts.phone, ts.trainer_id, t.nome, t.color, ts.goal
+                   ts.full_name, ts.email, ts.phone, ts.trainer_id, t.nome, t.color, ts.goal,
+                   ts.calendar_sync_status, ts.calendar_sync_error
             FROM trial_sessions ts
             LEFT JOIN trainers t ON t.id = ts.trainer_id
             WHERE {' AND '.join(where)}

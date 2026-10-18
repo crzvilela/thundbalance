@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from .dates import WEEKDAYS_EN, WEEKDAYS_ES, format_date_bilingual
 from .ics import build_ics
 from calendar_titles import client_session_title, session_sequence
+from features import client_calendar_enabled
 from .recipients import clean_recipients
 from .template import Block, STUDIO_PLACE, button, heading, highlight_box, key_value, link_line, paragraph, sessions_table
 from .texts import bilingual_email, tr
@@ -33,7 +34,10 @@ ICS_CONTENT_TYPE = "text/calendar"   # METHOD:PUBLISH is inside the file; Gmail 
 
 
 def pack_ics_attachment(summary):
-    """The attachment dict send_email() expects, for a pack summary."""
+    """The attachment dict send_email() expects, for a pack summary; None when the
+    client calendar is switched off (CLIENT_CALENDAR_ENABLED)."""
+    if not client_calendar_enabled():
+        return None
     return {
         "filename": ICS_FILENAME,
         "content_type": ICS_CONTENT_TYPE,
@@ -115,18 +119,20 @@ def build_pack_email(summary, team_subject=False):
     the subject also carries the client's name (and the copy has no calendar
     subscription link: that link belongs to the client).
     summary["calendar_links"] (optional) adds the calendar buttons."""
-    links = None if team_subject else summary.get("calendar_links")
+    calendar_on = client_calendar_enabled()
+    links = None if team_subject or not calendar_on else summary.get("calendar_links")
 
     def build(lang):
-        return [
+        blocks = [
             heading(tr(lang, "pack_title")),
             paragraph(tr(lang, "greeting", name=_one_line(summary.get("client_name")))),
             paragraph(tr(lang, "pack_intro")),
             render_pack_summary_block(summary, lang),
             key_value([(tr(lang, "lbl_place"), STUDIO_PLACE)]),
-            paragraph(tr(lang, "pack_ics_note")),
-            render_calendar_links_block(links, lang),
         ]
+        if calendar_on:          # nothing about calendars when the client calendar is off
+            blocks += [paragraph(tr(lang, "pack_ics_note")), render_calendar_links_block(links, lang)]
+        return blocks
     subject, html, text = bilingual_email("pack_subject", build, title_key="pack_title")
     if team_subject:
         subject = f"{subject} — {_one_line(summary.get('client_name'))}"
@@ -160,13 +166,14 @@ def send_pack_summary_email(summary, to_client=True, extra_recipients=()):
         extras = clean_recipients(extra_recipients, exclude=[client_email] if client_email else [])
 
         attachment = pack_ics_attachment(summary)
+        attachments = [attachment] if attachment else None
         jobs = []   # (addresses, future)
         if client_email:
             subject, html, text = build_pack_email(summary)
-            jobs.append(([client_email], send_email_async(client_email, subject, html, text, attachments=[attachment])))
+            jobs.append(([client_email], send_email_async(client_email, subject, html, text, attachments=attachments)))
         if extras:
             subject, html, text = build_pack_email(summary, team_subject=True)
-            jobs.append((extras, send_email_async(extras, subject, html, text, attachments=[attachment])))
+            jobs.append((extras, send_email_async(extras, subject, html, text, attachments=attachments)))
         if not jobs and not result.problem:
             result.problem = "no_recipients"
 

@@ -20,6 +20,8 @@ from emails.trial_emails import (
     staff_trial_declined, staff_trial_requested,
 )
 
+os.environ["CLIENT_CALENDAR_ENABLED"] = "true"      # these tests look at the calendar parts of the emails
+
 RECEIVED = []
 
 

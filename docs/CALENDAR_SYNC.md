@@ -41,3 +41,19 @@ Todo título y descripción sale de una sola función (`backend/event_format.py`
 - La fecha de inicio es libre (hoy, dentro del pack actual o pasada; en el panel la pasada pide confirmación).
 - Cada sesión nueva guarda su pack (`sessions.user_plan_id`). Las sesiones antiguas no se tocan: se asocian al pack cuyo periodo contiene su fecha al leerlas.
 - Antes de crear, el modal pide `POST /admin/packs/preview` y lista las sesiones que chocan (cliente ocupado, entrenador ocupado o fuera de horario). Las sesiones que se van a sustituir no cuentan como choque. Se puede "Crear igualmente" (envía `allow_conflicts`).
+
+
+## Google Calendar del estudio: una sola regla (`calendar_sync.sync_session_to_google`)
+La app manda; Google solo se escribe, nunca se lee para decidir nada. Dado el estado ACTUAL de una sesión en la base de datos, `sync_sessions_to_google` crea, actualiza o borra su evento y guarda el resultado en `calendar_sync_status` (`ok` | `failed`) y `calendar_sync_error` (sin datos personales). Todos los caminos graban primero y llaman después: nuevo pack, aprobar solicitud, "Asignar plan", "Nuevo cliente", reagendar, cancelar, archivar con cancelación y los botones "Sincronizar con Google". Si Google falla, la operación de la app queda hecha y el panel avisa.
+- Los eventos llevan un id determinista y la propiedad privada `app=thundbalance`; nunca llevan invitados (`attendees`).
+- Las peticiones a Google usan un cliente autenticado que se reutiliza (uno por hilo), con timeout de 8 s, y los packs grandes envían como máximo 4 a la vez.
+- Trial session: el evento se crea cuando el CLIENTE confirma (no al pedirla ni al aprobarla) y se borra si se declina o el admin la cancela.
+- `DELETE /admin/clear-calendar` exige el token del admin y `{"confirm": "CLEAR CALENDAR"}` y borra solo los eventos con `app=thundbalance`.
+
+## Calendario del cliente: `CLIENT_CALENDAR_ENABLED` (por defecto desactivado)
+Variable de entorno del backend (`true`, `1`, `yes` u `on` para activarla). Desactivada:
+- `/calendar/feed/{token}.ics`, `/me/calendar-feed`, `/me/calendar-feed/regenerate`, `/me/sessions.ics`, `/me/sessions/{id}/ics` y `/admin/clients/{id}/calendar-feed` responden 404;
+- los emails de pack, bienvenida y confirmación de trial no llevan el .ics, ni el botón "Añadir a Google Calendar", ni el enlace de suscripción, ni las frases que hablan de ello;
+- "Mis sesiones", el panel del cliente y la confirmación de trial no muestran nada de calendario;
+- el admin no ve el estado "Calendario del cliente" ni el botón "Copiar enlace del calendario".
+El frontend lo pregunta una vez a `GET /features`. El código sigue en su sitio: activar la variable lo devuelve todo.

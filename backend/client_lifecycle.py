@@ -223,14 +223,17 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
             #    from an earlier attempt that failed (so repeating the action finishes it)
             cursor.execute(
                 """
-                SELECT id, google_event_id FROM sessions
+                SELECT id FROM sessions
                 WHERE user_id = %s AND google_event_id IS NOT NULL
                   AND (id = ANY(%s::int[]) OR (status = 'Cancelled' AND calendar_sync_status = 'failed'))
                 """,
                 (client_id, cancelled_ids),
             )
-            pending = [(row[0], row[1]) for row in cursor.fetchall()]
-            deleted, failures = _delete_events(cursor, pending) if pending else (0, [])
+            pending = [row[0] for row in cursor.fetchall()]
+            # the central rule: a Cancelled session has no event ("not found" is success)
+            results = calendar_sync.sync_sessions_to_google(cursor, pending) if pending else []
+            deleted = sum(1 for item in results if item["action"] == "deleted")
+            failures = [item["error"] for item in results if item["action"] == "failed"]
             conn.commit()
 
             audit(claims, "archive", client_id, "ok" if not failures else "partial",

@@ -36,6 +36,7 @@ from database import get_connection
 from emails.dates import parse_madrid
 from calendar_titles import client_session_title, client_trial_title, session_sequence
 from emails.ics import build_ics
+from features import client_calendar_enabled
 
 logger = logging.getLogger("thundbalance.calendar")
 
@@ -109,7 +110,10 @@ def feed_urls(token, base_url=None):
 
 def links_for_email(client_email):
     """Links for the pack email, or None. Opens its own connection, commits,
-    and never raises: an email must not fail because of the calendar link."""
+    and never raises: an email must not fail because of the calendar link.
+    None as well when the client calendar is switched off (CLIENT_CALENDAR_ENABLED)."""
+    if not client_calendar_enabled():
+        return None
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -216,11 +220,18 @@ def register_calendar_feed_routes(app, require_admin, require_client, own_user_i
     """own_user_id(claims) -> users.id of the signed-in account (or None)."""
 
     def _not_found():
-        # same answer for "malformed", "unknown" and "regenerated": no hints
+        # same answer for "malformed", "unknown", "regenerated" and "switched off": no hints
         return Response(status_code=404, content="Not found", media_type="text/plain")
+
+    def _require_enabled():
+        """Every endpoint of the client calendar answers 404 while it is switched off."""
+        if not client_calendar_enabled():
+            raise HTTPException(status_code=404, detail="Not found")
 
     @app.api_route("/calendar/feed/{filename}", methods=["GET", "HEAD"], include_in_schema=False)
     def public_feed(filename: str):
+        if not client_calendar_enabled():
+            return _not_found()
         token = filename[:-4] if filename.endswith(".ics") else ""
         if not _TOKEN.match(token):
             return _not_found()
@@ -273,7 +284,7 @@ def register_calendar_feed_routes(app, require_admin, require_client, own_user_i
             },
         )
 
-    @app.get("/me/sessions/{session_id}/ics")
+    @app.get("/me/sessions/{session_id}/ics", dependencies=[Depends(_require_enabled)])
     def my_session_ics(session_id: int, claims=Depends(require_client)):
         """One .ics file with ONE of the signed-in client's own sessions. Another
         client's session (or an unknown id) answers the same 404."""
@@ -299,7 +310,7 @@ def register_calendar_feed_routes(app, require_admin, require_client, own_user_i
             raise HTTPException(status_code=404, detail="Session not found")
         return _download(build_ics([session_event(*row)]), f"thundbalance-sesion-{session_id}.ics")
 
-    @app.get("/me/sessions.ics")
+    @app.get("/me/sessions.ics", dependencies=[Depends(_require_enabled)])
     def my_sessions_ics(claims=Depends(require_client)):
         """One .ics file with every upcoming (not cancelled) session of the signed-in
         client, plus a confirmed upcoming trial session."""
@@ -327,21 +338,21 @@ def register_calendar_feed_routes(app, require_admin, require_client, own_user_i
         events.sort(key=lambda event: event["start"])
         return _download(build_ics(events, calname="ThundBalance"), "thundbalance-mis-sesiones.ics")
 
-    @app.get("/me/calendar-feed")
+    @app.get("/me/calendar-feed", dependencies=[Depends(_require_enabled)])
     def my_calendar_feed(claims=Depends(require_client)):
         user_id = own_user_id(claims)
         if not user_id:
             raise HTTPException(status_code=404, detail="Client not found")
         return _links(user_id)
 
-    @app.post("/me/calendar-feed/regenerate")
+    @app.post("/me/calendar-feed/regenerate", dependencies=[Depends(_require_enabled)])
     def regenerate_my_calendar_feed(claims=Depends(require_client)):
         user_id = own_user_id(claims)
         if not user_id:
             raise HTTPException(status_code=404, detail="Client not found")
         return _links(user_id, regenerate=True)
 
-    @app.get("/admin/clients/{client_id}/calendar-feed", dependencies=[Depends(require_admin)])
+    @app.get("/admin/clients/{client_id}/calendar-feed", dependencies=[Depends(_require_enabled), Depends(require_admin)])
     def admin_calendar_feed(client_id: int):
         """The client's link (created now if it did not exist), for the admin to copy."""
         return _links(client_id)

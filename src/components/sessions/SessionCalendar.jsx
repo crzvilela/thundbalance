@@ -7,7 +7,7 @@ const keyOf = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad
 const parseKey = (key) => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d) }
 const addDays = (key, amount) => { const date = parseKey(key); date.setDate(date.getDate() + amount); return keyOf(date) }
 
-const DOT = { upcoming: 'bg-emerald-400', completed: 'bg-gray-400', cancelled: 'bg-red-400', rescheduled: 'bg-amber-400', trial: 'bg-violet-400' }
+const DOT = { change_pending: 'bg-amber-400', upcoming: 'bg-emerald-400', completed: 'bg-gray-400', cancelled: 'bg-red-400', rescheduled: 'bg-amber-400', trial: 'bg-violet-400' }
 const LEGEND = ['upcoming', 'rescheduled', 'completed', 'cancelled']
 
 // Month grid (Monday first, language of the site). Arrow keys move between days,

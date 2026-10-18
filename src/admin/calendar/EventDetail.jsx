@@ -19,7 +19,8 @@ function Row({ label, children }) {
 }
 
 // What the admin sees when an event is clicked. Reschedule / cancel use the very same
-// endpoints (and rules) as the client's page: PUT / DELETE /sessions/{id}.
+// endpoint as the client's page (DELETE /sessions/{id}); the studio moves a session DIRECTLY with
+// POST /admin/sessions/{id}/reschedule: no request, no limit, same conflict checks.
 export default function EventDetail({ event, onClose, onChanged }) {
   const { t, language } = useAdminText()
   const toast = useToast()
@@ -32,6 +33,7 @@ export default function EventDetail({ event, onClose, onChanged }) {
   const [message, setMessage] = useState('')
   const [saving, setSaving] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
+  const [syncing, setSyncing] = useState(false)
   const panel = useRef(null)
 
   const props = event.extendedProps
@@ -41,6 +43,9 @@ export default function EventDetail({ event, onClose, onChanged }) {
   const end = event.endStr.slice(0, 19)
   const changeable = !isTrial && (props.status === 'booked' || props.status === 'rescheduled')
   const statusLabel = isTrial ? t(`ac_tr_${props.status}`) : t(`ac_st_${props.status}`)
+  // the studio's Google Calendar follows the app; this button makes it match when it does not
+  const canSync = !isTrial || props.status === 'confirmed'
+  const syncFailed = props.syncStatus === 'failed'
 
   useEffect(() => {
     panel.current?.focus()
@@ -69,10 +74,28 @@ export default function EventDetail({ event, onClose, onChanged }) {
     }
   }
 
+  const syncGoogle = async () => {
+    setSyncing(true); setMessage('')
+    try {
+      const result = isTrial
+        ? await adminRequest('POST', `/admin/trial-sessions/${props.trialId}/calendar-event`)
+        : await adminRequest('POST', `/admin/sessions/${props.sessionId}/sync-calendar`)
+      const ok = isTrial ? result.calendar?.ok : result.ok
+      if (ok) toast.push(t('ac_sync_ok'))
+      else setMessage(t('ac_sync_failed'))
+      onChanged()
+      if (ok) onClose()
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   const move = async () => {
     setSaving(true); setMessage('')
     try {
-      await adminRequest('PUT', `/sessions/${props.sessionId}`, { session_date: newDate, session_time: newTime })
+      await adminRequest('POST', `/admin/sessions/${props.sessionId}/reschedule`, { session_date: newDate, session_time: newTime })
       toast.push(t('ac_moved'))
       onChanged()
       onClose()
@@ -157,18 +180,22 @@ export default function EventDetail({ event, onClose, onChanged }) {
               </div>
             )}
 
+            {syncFailed && (
+              <p role="alert" className="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">{t('ac_sync_warning')}{props.syncError ? ` (${props.syncError})` : ''}</p>
+            )}
+
             {message && <p role="alert" className="mt-4 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{message}</p>}
-            {changeable && props.rescheduled && mode === 'view' && <p className="mt-4 text-sm text-gray-400">{t('ac_used')}</p>}
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-white/[0.02] px-6 py-4">
             <div className="flex flex-wrap gap-3">
               {props.clientId && <Link to={`/admin/clients?client=${props.clientId}`} className="inline-flex min-h-[44px] items-center rounded-xl border border-white/15 px-4 text-sm font-semibold text-gray-100 transition hover:bg-white/10">{t('ac_client_file')}</Link>}
+              {canSync && <Button variant="secondary" onClick={syncGoogle} loading={syncing} disabled={saving}><Icon name="refresh" className="h-4 w-4" />{syncing ? t('ac_syncing') : t('ac_sync_google')}</Button>}
               {isTrial && <Link to="/admin/trials" className="inline-flex min-h-[44px] items-center rounded-xl border border-white/15 px-4 text-sm font-semibold text-gray-100 transition hover:bg-white/10">{t('ac_trials_page')}</Link>}
             </div>
             <div className="flex flex-wrap gap-3">
               {changeable && mode === 'view' && <>
-                <Button variant="secondary" onClick={() => { setMode('reschedule'); setMessage('') }} disabled={props.rescheduled} title={props.rescheduled ? t('ac_used') : undefined}>{t('ac_reschedule')}</Button>
+                <Button variant="secondary" onClick={() => { setMode('reschedule'); setMessage('') }}>{t('ac_reschedule')}</Button>
                 <Button variant="danger" onClick={() => setConfirmCancel(true)}>{t('ac_cancel_session')}</Button>
               </>}
               {changeable && mode === 'reschedule' && <>

@@ -16,11 +16,14 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from fastapi import HTTPException
 
 import main
+import google_fakes
 import packs
 from database import get_connection
 from emails import (
     build_pack_ics, clean_recipients, render_pack_summary_block, send_pack_summary_email, team_emails,
 )
+
+os.environ["CLIENT_CALENDAR_ENABLED"] = "true"      # these tests look at the calendar parts of the emails
 
 RECEIVED = []
 
@@ -186,12 +189,14 @@ class PackFlow(unittest.TestCase):
         os.environ["TRIAL_EMAIL_WEBHOOK_URL"] = f"http://127.0.0.1:{self.server.server_port}/exec"
         os.environ["TRIAL_EMAIL_WEBHOOK_SECRET"] = "right-secret"
         self.events, self.deleted = [], []
+        self._restore_gc = google_fakes.delegate_to_packs()
         self._orig = (packs.create_calendar_event, packs.delete_calendar_event)
         packs.create_calendar_event = lambda *a, **k: (self.events.append(a), f"evt-{len(self.events)}")[1]
         packs.delete_calendar_event = lambda event_id: self.deleted.append(event_id)
 
     def tearDown(self):
         packs.create_calendar_event, packs.delete_calendar_event = self._orig
+        self._restore_gc()
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("DELETE FROM sessions WHERE user_id = %s", (self.user_id,))

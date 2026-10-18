@@ -3,6 +3,7 @@
 The client email contains the generated password (that is its purpose); the
 studio copy never does.
 """
+from features import client_calendar_enabled
 from .pack_emails import build_pack_ics, render_calendar_links_block, render_pack_summary_block
 from .template import button, heading, highlight_box, key_value, notice, paragraph, site_url
 from .texts import bilingual_email, spanish_email, tr
@@ -29,16 +30,16 @@ def build_welcome_email(name, email, password, pack_summary=None):
             notice(tr(lang, "welcome_password_note")),
         ]
         if pack_summary:
-            blocks += [
-                paragraph(tr(lang, "welcome_pack_intro")),
-                render_pack_summary_block(pack_summary, lang),
-                paragraph(tr(lang, "pack_ics_note")),
-                render_calendar_links_block(pack_summary.get("calendar_links"), lang),
-            ]
+            blocks += [paragraph(tr(lang, "welcome_pack_intro")), render_pack_summary_block(pack_summary, lang)]
+            if client_calendar_enabled():      # nothing about calendars when the client calendar is off
+                blocks += [
+                    paragraph(tr(lang, "pack_ics_note")),
+                    render_calendar_links_block(pack_summary.get("calendar_links"), lang),
+                ]
         return blocks
 
     subject, html, text = bilingual_email("welcome_subject", build, title_key="welcome_title")
-    return subject, html, text, (build_pack_ics(pack_summary) if pack_summary else None)
+    return subject, html, text, (build_pack_ics(pack_summary) if pack_summary and client_calendar_enabled() else None)
 
 
 def build_staff_client_created(name, email, pack_summary=None):

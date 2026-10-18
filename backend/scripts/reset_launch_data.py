@@ -48,7 +48,7 @@ CONFIRM_TEXT = "RESET THUNDBALANCE"
 DEFAULT_BACKUP_ROOT = r"C:\Segredos\backups"
 
 # Filhos primeiro, para que as chaves estrangeiras nunca bloqueiem.
-DELETE_TABLES = ["sessions", "client_requests", "user_plans", "trial_sessions", "email_log", "admin_audit_log"]
+DELETE_TABLES = ["reschedule_requests", "sessions", "client_requests", "user_plans", "trial_sessions", "email_log", "admin_audit_log"]
 KEEP_TABLES = ["trainers", "trainer_availability", "plans", "landing_page_content", "training_videos", "app_settings"]
 OPTIONAL_TABLES = ["contact_messages"]
 # O que identifica as linhas "ligadas a clientes" nas tabelas parcialmente apagadas.

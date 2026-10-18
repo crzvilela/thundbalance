@@ -22,6 +22,7 @@ const Messages = lazy(() => import('../admin/pages/Messages'))
 const TrainingTips = lazy(() => import('../pages/TrainingTips'))
 const TrialSession = lazy(() => import('../pages/Trialsession'))
 const TrialConfirm = lazy(() => import('../pages/TrialConfirm'))
+const RescheduleResponse = lazy(() => import('../pages/RescheduleResponse'))
 const TrainingRequest = lazy(() => import('../pages/TrainingRequest'))
 const AdminLogin = lazy(() => import('../pages/admin/AdminLogin'))
 
@@ -73,6 +74,7 @@ function AppRoutes() {
         <Route path="/trial-session" element={<TrialSession />}/>
 
         <Route path="/trial-session/confirm/:token" element={<TrialConfirm />}/>
+        <Route path="/reschedule-response/:token" element={<RescheduleResponse />}/>
 
         <Route path="/training-request" element={<TrainingRequest />}/>
       

@@ -10,7 +10,10 @@ import SessionModal from '../components/sessions/SessionModal'
 import { NextSessionCard, SessionRow, Spinner } from '../components/sessions/SessionParts'
 import { API_URL } from '../config'
 import { authFetch } from '../api/authFetch'
+import { useFeatures } from '../api/features'
+import { answerMyProposal, createRescheduleRequest, loadMyRequests } from '../api/reschedule'
 import { useI18n } from '../i18n/I18nContext'
+import { bySession, changeState } from '../utils/changeRequest'
 import { formatDay, formatTime, madridNow, sessionStatus } from '../utils/sessionDates'
 
 // Sessions come as rows: [id, 'YYYY-MM-DD', 'HH:MM:SS', trainerName, status, rescheduled, number]
@@ -27,18 +30,16 @@ const card = 'rounded-3xl border border-white/10 bg-white/[0.025]'
 const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400'
 
 // The server speaks in technical sentences: the visitor only ever sees our own translated ones.
-function friendly(problem, kind, status) {
+function friendlyCancel(problem) {
   if (problem instanceof TypeError) return 'ms_err_network'                       // fetch could not reach the server
-  const text = String(problem?.message || '')
-  if (/already.*resched|resched.*already|only.*once/i.test(text)) return 'ms_err_rule'
-  if (/past|started|ended/i.test(text)) return 'ms_err_past'
-  if (kind === 'move' && (status === 409 || /available|taken|booked|busy|occupied|conflict/i.test(text))) return 'ms_err_taken'
-  return kind === 'move' ? 'ms_err_move' : 'ms_err_cancel'
+  if (/past|started|ended/i.test(String(problem?.message || ''))) return 'ms_err_past'
+  return 'ms_err_cancel'
 }
 
 function MySessions() {
   const navigate = useNavigate()
-  const { t, locale } = useI18n()
+  const { t, locale, language } = useI18n()
+  const { clientCalendar } = useFeatures()      // CLIENT_CALENDAR_ENABLED: no calendar buttons or menus when off
   const [now, setNow] = useState(() => new Date())
   const today = madridNow(now).date
 
@@ -51,6 +52,8 @@ function MySessions() {
   const [month, setMonth] = useState(() => { const date = new Date(); return new Date(date.getFullYear(), date.getMonth(), 1) })
   const [selectedDay, setSelectedDay] = useState(null)
   const [open, setOpen] = useState(null)     // { id, mode }
+  const [requestInfo, setRequestInfo] = useState({ items: [], max_per_session: 1, notice_hours: 8, note_max: 300 })
+  const [answering, setAnswering] = useState(null)      // id of the proposal being answered (no double clicks)
 
   // the "completed" state follows the clock: look again every minute
   useEffect(() => {
@@ -79,6 +82,14 @@ function MySessions() {
       const rows = await sessionsResponse.json()
       setSessions(Array.isArray(rows) ? rows.map(toSession) : [])
 
+      // The change requests of this client and the rules the page shows (the server owns the numbers).
+      try {
+        const info = await loadMyRequests()
+        setRequestInfo(previous => ({ ...previous, ...info, items: Array.isArray(info.items) ? info.items : [] }))
+      } catch {
+        // the sessions are still shown; the change button simply keeps what it knew
+      }
+
       // The open trial session of this login email (not part of the sessions list).
       try {
         const trialResponse = await authFetch(`${API_URL}/client/trial`)
@@ -104,7 +115,19 @@ function MySessions() {
     load(user.email)
   }), [navigate, load])
 
-  const statusOf = useCallback((session) => sessionStatus(session, now), [now])
+  const requestsBySession = useMemo(() => bySession(requestInfo.items), [requestInfo])
+  const rules = useMemo(() => ({ limit: requestInfo.max_per_session, hours: requestInfo.notice_hours }), [requestInfo])
+  const changeOf = useCallback((session) => changeState(session, requestsBySession.get(session.id) || [], rules, now), [requestsBySession, rules, now])
+
+  // the state shown for a session: with a change waiting for the studio (or for the client) it is "change pending"
+  const statusOf = useCallback((session) => {
+    const base = sessionStatus(session, now)
+    if (base === 'upcoming' || base === 'rescheduled') {
+      const state = changeOf(session).state
+      if (state === 'pending' || state === 'proposal') return 'change_pending'
+    }
+    return base
+  }, [now, changeOf])
 
   const groups = useMemo(() => {
     const byTime = (a, b) => (a.date + a.time).localeCompare(b.date + b.time)
@@ -156,28 +179,54 @@ function MySessions() {
     return list.map(item => String(item).slice(0, 5)).filter(time => value !== current.date || time > current.time)
   }
 
-  // The server answers 200 with {error} for business rules, so check both.
-  const send = async (session, method, body, kind, doneText) => {
-    let status = 0
-    try {
-      const response = await authFetch(`${API_URL}/sessions/${session.id}`, {
-        method,
-        ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {})
-      })
-      status = response.status
-      const result = await response.json().catch(() => ({}))
-      if (!response.ok || result.error) throw new Error(result.error || (typeof result.detail === 'string' ? result.detail : '') || 'failed')
-    } catch (problem) {
-      throw new Error(friendly(problem, kind, status), { cause: problem })
-    }
-    setOpen(null)
-    showToast('success', t(doneText))
+  const refresh = async () => {
     setLoading(true)
     await load(auth.currentUser.email)
   }
 
-  const reschedule = (session, date, time) => send(session, 'PUT', { session_date: date, session_time: time }, 'move', 'ms_moved')
-  const cancel = (session) => send(session, 'DELETE', null, 'cancel', 'ms_cancelled_ok')
+  // Cancelling stays immediate. The server answers 200 with {error} for business rules, so check both.
+  const cancel = async (session) => {
+    try {
+      const response = await authFetch(`${API_URL}/sessions/${session.id}`, { method: 'DELETE' })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || result.error) throw new Error(result.error || 'failed')
+    } catch (problem) {
+      throw new Error(friendlyCancel(problem), { cause: problem })
+    }
+    setOpen(null)
+    showToast('success', t('ms_cancelled_ok'))
+    await refresh()
+  }
+
+  // The client no longer moves a session by themselves: they send ONE request and the studio decides.
+  const requestChange = async (session, date, time, note) => {
+    await createRescheduleRequest(session.id, { date, time, note, lang: language })
+    setOpen(null)
+    showToast('success', t('ms_request_sent'))
+    await refresh()
+  }
+
+  const respondTo = async (request, accept) => {
+    if (answering) return
+    setAnswering(request.id)
+    try {
+      await answerMyProposal(request.id, accept)
+      setOpen(null)
+      showToast('success', t(accept ? 'ms_proposal_accepted' : 'ms_proposal_declined'))
+      await refresh()
+    } catch (problem) {
+      showToast('error', t(problem.message))
+      await refresh()
+    } finally {
+      setAnswering(null)
+    }
+  }
+
+  // proposals from the studio that wait for an answer (only for sessions that still exist)
+  const proposals = requestInfo.items
+    .filter(request => request.status === 'counter_proposed')
+    .map(request => ({ request, session: sessions.find(item => item.id === request.session_id) }))
+    .filter(item => item.session && statusOf(item.session) !== 'cancelled' && statusOf(item.session) !== 'completed')
 
   const trialCard = trial && (
     <section aria-label={t('tt_title')} className="mb-6 rounded-3xl border border-violet-400/30 bg-violet-400/[0.06] p-5 sm:p-7">
@@ -246,6 +295,19 @@ function MySessions() {
           <div role="status" className={`${card} flex items-center gap-3 p-10 text-gray-300`}><Spinner /> {t('ms_loading')}</div>
         ) : (
           <>
+            {proposals.map(({ request, session }) => (
+              <section key={request.id} role="alert" aria-label={t('ms_proposal_title')} className="mb-6 rounded-3xl border border-amber-400/40 bg-amber-400/[0.07] p-5 sm:p-7">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-amber-300">{t('ms_proposal_title')}</p>
+                <p className="max-w-2xl text-base text-gray-100">{t('ms_proposal_text', { date: formatDay(request.counter_date, locale), time: formatTime(request.counter_time) })}</p>
+                <p className="mt-1 text-sm text-gray-300">{session.number ? `${t('ms_session_n', { n: session.number })} · ` : ''}{formatDay(session.date, locale)}, {formatTime(session.time)}</p>
+                {request.admin_note && <p className="mt-2 text-sm text-gray-300">{t('ms_proposal_note', { note: request.admin_note })}</p>}
+                <div className="mt-5 grid gap-3 sm:flex">
+                  <button type="button" disabled={!!answering} onClick={() => respondTo(request, true)} className={`inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-emerald-400 px-6 py-2.5 text-sm font-semibold text-black transition hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-60 ${FOCUS}`}>{answering === request.id && <Spinner />}{t('ms_proposal_accept')}</button>
+                  <button type="button" disabled={!!answering} onClick={() => respondTo(request, false)} className={`inline-flex min-h-[44px] items-center justify-center rounded-xl border border-white/25 px-6 py-2.5 text-sm font-semibold transition hover:bg-white/10 disabled:cursor-wait disabled:opacity-60 ${FOCUS}`}>{t('ms_proposal_decline')}</button>
+                </div>
+              </section>
+            ))}
+
             {trialCard}
 
             {!hasAnything ? (
@@ -260,9 +322,9 @@ function MySessions() {
                 <div className="space-y-6">
                   {next ? (
                     <NextSessionCard
-                      session={next} status={statusOf(next)}
+                      session={next} status={statusOf(next)} showCalendar={clientCalendar} change={changeOf(next)} hours={rules.hours}
                       onOpen={(session) => setOpen({ id: session.id, mode: 'view' })}
-                      onReschedule={(session) => setOpen({ id: session.id, mode: 'reschedule' })}
+                      onRequest={(session) => setOpen({ id: session.id, mode: 'request' })}
                       onCancel={(session) => setOpen({ id: session.id, mode: 'cancel' })}
                     />
                   ) : (
@@ -307,7 +369,7 @@ function MySessions() {
                 <div className="space-y-5 lg:sticky lg:top-28 lg:self-start">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h2 className="text-xs font-semibold uppercase tracking-[0.3em] text-gray-300">{t('ms_view_calendar')}</h2>
-                    <AddAllMenu onError={(text) => showToast('error', text)} />
+                    {clientCalendar && <AddAllMenu onError={(text) => showToast('error', text)} />}
                   </div>
                   <div className={`${card} p-4 sm:p-6`}>
                     <SessionCalendar
@@ -342,8 +404,9 @@ function MySessions() {
       {opened && (
         <SessionModal
           key={`${opened.id}-${open.mode}`}
-          session={opened} status={statusOf(opened)} initialMode={open.mode} todayKey={today}
-          onClose={() => setOpen(null)} onLoadTimes={loadTimes} onReschedule={reschedule} onCancel={cancel}
+          session={opened} status={statusOf(opened)} initialMode={open.mode} todayKey={today} showCalendar={clientCalendar}
+          change={changeOf(opened)} hours={rules.hours} noteMax={requestInfo.note_max} answering={answering}
+          onClose={() => setOpen(null)} onLoadTimes={loadTimes} onRequest={requestChange} onCancel={cancel} onRespond={respondTo}
         />
       )}
     </div>

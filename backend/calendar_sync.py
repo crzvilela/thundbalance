@@ -8,12 +8,19 @@
   stay NULL (unknown): nothing is inferred.
 - A calendar failure never stops the session from being created, moved or
   cancelled: it is recorded and shown in the panel, and "Sincronizar con
-  calendario" creates what is missing and rewrites title and description of
+  Google" creates what is missing and rewrites title and description of
   the future events to the current format (event_format.py).
+
+THE RULE LIVES IN ONE PLACE: sync_session_to_google / sync_sessions_to_google.
+Given the CURRENT state of a session in the database they create, update or delete
+its Google event. Every path (new pack, approving a request, moving, cancelling,
+archiving a client, editing a client, the "Sincronizar con Google" buttons) saves
+first and then calls them. The app is the boss: Google is never read to decide
+anything about a session, only written to.
 """
 import logging
 import secrets
-import traceback
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 
 import event_format
@@ -24,6 +31,7 @@ from database import get_connection
 logger = logging.getLogger("thundbalance.calendar")
 
 OK, FAILED, PENDING = "ok", "failed", "pending"
+MAX_PARALLEL = 4                     # at most this many requests to Google at the same time
 BASE32HEX = "0123456789abcdefghijklmnopqrstuv"      # the only characters Google accepts in an event id
 KEY_SETTING = "calendar_instance_key"
 EVENT_FIELDS = ("summary", "description", "start", "end", "extendedProperties")
@@ -36,6 +44,9 @@ def ensure_columns():
     try:
         cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS calendar_sync_status TEXT")
         cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS calendar_sync_error TEXT")
+        # trial sessions get the same two columns (rows from before stay NULL = unknown)
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS calendar_sync_status TEXT")
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS calendar_sync_error TEXT")
         cursor.execute("CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         conn.commit()
         instance_key(cursor)        # created once, in its own committed transaction
@@ -132,8 +143,9 @@ def event_body(session):
 
 def push_session(cursor, session_id):
     """Writes the session's CURRENT date, hour, title and description to its
-    existing Google event (used after a session is moved). Raises the Google
-    error; the caller records it."""
+    existing Google event. Raises the Google error; the caller records it.
+    (Kept for callers that want the raw error; the paths of the app use
+    sync_session_to_google.)"""
     cursor.execute("SELECT user_id, google_event_id FROM sessions WHERE id = %s", (session_id,))
     row = cursor.fetchone()
     if not row or not row[1]:
@@ -143,6 +155,158 @@ def push_session(cursor, session_id):
         return
     body = event_body(sessions[0])
     gc.patch_calendar_event(row[1], {key: body[key] for key in EVENT_FIELDS})
+
+
+# ---------------------------------------------------------------------------
+# The central rule: make Google match the session as it is in the database.
+# ---------------------------------------------------------------------------
+
+def load_states(cursor, session_ids):
+    """{session_id: state} with everything an event needs, cancelled sessions included.
+    One query, plus one pack lookup per distinct client."""
+    ids = [int(item) for item in session_ids]
+    if not ids:
+        return {}
+    cursor.execute(
+        """
+        SELECT s.id, s.user_id, s.status, s.session_date, s.session_time, s.session_number, s.google_event_id,
+               s.calendar_sync_status, u.nome, u.email, u.telefone, t.nome
+        FROM sessions s
+        JOIN users u ON u.id = s.user_id
+        LEFT JOIN trainers t ON t.id = s.trainer_id
+        WHERE s.id = ANY(%s::int[])
+        """,
+        (ids,),
+    )
+    rows = cursor.fetchall()
+    packs_of = {}
+    for user_id in {row[1] for row in rows}:
+        packs, assignment = pack_view.user_packs(cursor, user_id)
+        packs_of[user_id] = ({pack["id"]: pack["name"] for pack in packs}, assignment)
+    states = {}
+    for row in rows:
+        names, assignment = packs_of[row[1]]
+        states[row[0]] = {
+            "id": row[0], "user_id": row[1], "status": str(row[2]), "date": str(row[3])[:10], "time": str(row[4])[:5],
+            "number": row[5], "event_id": row[6], "sync_status": row[7], "client_name": row[8], "client_email": row[9],
+            "client_phone": row[10], "trainer": row[11], "pack_name": names.get(assignment.get(row[0])),
+        }
+    return states
+
+
+def _google_step(state, key):
+    """The Google calls for ONE session (no database access: it may run in a thread).
+    Returns {"action": created | updated | deleted | skipped | failed, "event_id", "error"}."""
+    session_id = state["id"]
+    stored = state["event_id"]
+    wanted = event_id_for(key, session_id)
+    try:
+        if state["status"].lower() == "cancelled":
+            # nothing to delete for a session that never reached Google
+            if not stored and not state["sync_status"]:
+                return {"action": "skipped", "event_id": None}
+            try:
+                gc.delete_calendar_event(stored or wanted)
+            except Exception as error:  # noqa: BLE001
+                if gc.http_status(error) not in (404, 410):    # "it does not exist" is success
+                    raise
+            return {"action": "deleted", "event_id": stored}
+
+        body = event_body(state)
+        if stored:
+            try:
+                gc.patch_calendar_event(stored, {field: body[field] for field in EVENT_FIELDS})
+                return {"action": "updated", "event_id": stored}
+            except Exception as error:  # noqa: BLE001
+                if gc.http_status(error) not in (404, 410):
+                    raise
+                # the event is gone from Google: it is created again below
+        new_id, created = gc.create_calendar_event_status(
+            state["trainer"], state["client_name"], state["client_email"], state["date"], state["time"],
+            state["number"], event_id=wanted, session_id=session_id,
+            client_phone=state["client_phone"], pack_name=state["pack_name"],
+        )
+        return {"action": "created" if created else "updated", "event_id": new_id}
+    except Exception as error:  # noqa: BLE001 - a Google failure never stops the operation in the app
+        reason = gc.describe_error(error)
+        logger.error("calendar sync of session %s failed: %s", session_id, reason)
+        return {"action": "failed", "event_id": stored, "error": reason}
+
+
+def sync_sessions_to_google(cursor, session_ids, workers=MAX_PARALLEL):
+    """Creates, updates or deletes the Google event of every session so it matches the
+    database NOW, and records the outcome (calendar_sync_status / calendar_sync_error).
+
+    - Booked session: its event is created (a 409 means "already there"), or the existing
+      one is patched with the current date, hour, title and description; if the event
+      vanished from Google it is created again.
+    - Cancelled session: its event is deleted ("not found" is success).
+    - Requests to Google run in parallel (at most `workers` at once) and never read the
+      database; the outcomes are written afterwards with `cursor`. The caller commits.
+
+    Returns [{"id", "action", "event_id", "error"?}] in the order given."""
+    ids = [int(item) for item in session_ids]
+    states = load_states(cursor, ids)
+    if not states:
+        return []
+    key = instance_key(cursor)
+    ordered = [states[item] for item in ids if item in states]
+    if len(ordered) > 1 and workers > 1:
+        with ThreadPoolExecutor(max_workers=min(workers, len(ordered))) as pool:
+            steps = list(pool.map(lambda state: _google_step(state, key), ordered))
+    else:
+        steps = [_google_step(state, key) for state in ordered]
+
+    results = []
+    for state, step in zip(ordered, steps):
+        action = step["action"]
+        if action == "failed":
+            record(cursor, state["id"], False, step["error"])
+        elif action in ("created", "updated"):
+            record(cursor, state["id"], True, event_id=step["event_id"])
+        elif action == "deleted":
+            record(cursor, state["id"], True)
+        results.append({"id": state["id"], **step})
+    return results
+
+
+def sync_session_to_google(session_id, cursor=None):
+    """sync_sessions_to_google for one session. Without a cursor it opens (and commits) its
+    own connection. Returns the result dict of that session, or None if it does not exist."""
+    if cursor is not None:
+        results = sync_sessions_to_google(cursor, [session_id])
+        return results[0] if results else None
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        results = sync_sessions_to_google(cur, [session_id])
+        conn.commit()
+        return results[0] if results else None
+    finally:
+        cur.close()
+        conn.close()
+
+
+def sync_client_sessions_to_google(user_id):
+    """After something about a CLIENT changed (name, e-mail, phone): rewrites title and
+    description of every session they still have to come. Best effort: it never raises,
+    a failure is recorded on the session and the "Sincronizar con Google" button retries."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT id FROM sessions WHERE user_id = %s AND status = 'Booked' AND session_date >= CURRENT_DATE "
+                "AND google_event_id IS NOT NULL ORDER BY session_date, session_time, id", (user_id,))
+            ids = [row[0] for row in cursor.fetchall()]
+            if ids:
+                sync_sessions_to_google(cursor, ids)
+                conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception as error:  # noqa: BLE001
+        logger.error("calendar update after a client change failed (%s)", type(error).__name__)
 
 
 def sync_client(client_id):
@@ -226,8 +390,7 @@ def sync_client(client_id):
                     result["created" if created else "already_ok"] += 1
             except Exception as error:  # noqa: BLE001
                 reason = gc.describe_error(error)
-                print(f"Calendar sync of session {session_id} failed: {reason}")
-                traceback.print_exc()
+                logger.error("calendar sync of session %s failed: %s", session_id, reason)
                 record(cursor, session_id, False, reason)
                 result["failed"] += 1
                 if reason not in result["errors"]:

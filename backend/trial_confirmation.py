@@ -22,6 +22,7 @@ event).
 
 The public endpoints accept only the token and return the least possible data.
 """
+import logging
 import secrets
 import traceback
 
@@ -37,6 +38,8 @@ from google_calendar import (
 )
 import mailer
 import trial_notifications
+
+logger = logging.getLogger("thundbalance.calendar")
 
 RESEND_INTERVAL_SECONDS = 60
 EMAIL_WAIT_SECONDS = 25
@@ -59,6 +62,9 @@ def ensure_confirmation_fields():
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMP")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS declined_at TIMESTAMP")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS calendar_error TEXT")
+        # ok | failed (NULL = unknown, for rows from before): the same pair sessions have
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS calendar_sync_status TEXT")
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS calendar_sync_error TEXT")
         # SEQUENCE of the client's calendar event: bumped when a confirmed session is declined or cancelled
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS feed_sequence INTEGER NOT NULL DEFAULT 0")
         # Language of the site when the visit asked for the session (en | es | ca).
@@ -278,7 +284,8 @@ def sync_calendar_event(trial_id):
                     event_id=wanted_id, trial_id=trial_id,
                 )
             cursor.execute(
-                "UPDATE trial_sessions SET google_event_id = %s, calendar_error = NULL WHERE id = %s",
+                "UPDATE trial_sessions SET google_event_id = %s, calendar_error = NULL, "
+                "calendar_sync_status = 'ok', calendar_sync_error = NULL WHERE id = %s",
                 (event_id, trial_id),
             )
             conn.commit()
@@ -286,11 +293,11 @@ def sync_calendar_event(trial_id):
         except Exception as error:  # noqa: BLE001
             conn.rollback()
             reason = describe_error(error)
-            print(f"Calendar event for trial {trial_id} could not be created or updated: {reason}")
-            traceback.print_exc()
+            logger.error("calendar event of trial %s could not be created or updated: %s", trial_id, reason)
             cursor.execute(
-                "UPDATE trial_sessions SET calendar_error = %s WHERE id = %s",
-                (reason[:200], trial_id),
+                "UPDATE trial_sessions SET calendar_error = %s, calendar_sync_status = 'failed', "
+                "calendar_sync_error = %s WHERE id = %s",
+                (reason[:200], reason[:200], trial_id),
             )
             conn.commit()
             return False
@@ -375,7 +382,7 @@ def approve_trial(trial_id, trainer_id):
             reference=trial_id,
         )
     except Exception as error:  # noqa: BLE001 - building the email failed
-        print(f"Approval email for trial {trial_id} could not be built: {type(error).__name__}")
+        logger.error("approval email of trial %s could not be built (%s)", trial_id, type(error).__name__)
         email_log.record("trial_approved", trial_id, email, False, "error")
         future = None
 
@@ -482,7 +489,8 @@ def remove_trial_event(trial_id, event_id):
         cursor = conn.cursor()
         try:
             cursor.execute(
-                "UPDATE trial_sessions SET google_event_id = NULL, calendar_error = NULL WHERE id = %s", (row[0],)
+                "UPDATE trial_sessions SET google_event_id = NULL, calendar_error = NULL, "
+                "calendar_sync_status = 'ok', calendar_sync_error = NULL WHERE id = %s", (row[0],)
             )
             conn.commit()
         finally:
@@ -490,14 +498,14 @@ def remove_trial_event(trial_id, event_id):
             conn.close()
     except Exception as error:  # noqa: BLE001
         reason = describe_error(error)
-        print(f"Calendar event for trial {row[0]} could not be deleted: {reason}")
-        traceback.print_exc()
+        logger.error("calendar event of trial %s could not be deleted: %s", row[0], reason)
         conn = get_connection()
         cursor = conn.cursor()
         try:
             cursor.execute(
-                "UPDATE trial_sessions SET calendar_error = %s WHERE id = %s",
-                (f"No se pudo borrar el evento: {reason}"[:200], row[0]),
+                "UPDATE trial_sessions SET calendar_error = %s, calendar_sync_status = 'failed', "
+                "calendar_sync_error = %s WHERE id = %s",
+                (f"No se pudo borrar el evento: {reason}"[:200], reason[:200], row[0]),
             )
             conn.commit()
         finally:

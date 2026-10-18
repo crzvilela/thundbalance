@@ -1,6 +1,6 @@
 import { useI18n } from '../../i18n/I18nContext'
 import { formatDay, formatShortDay, formatTime, googleCalendarUrl } from '../../utils/sessionDates'
-import { eventDetails } from './sessionText'
+import { changeReason, eventDetails } from './sessionText'
 
 // Small pieces of the My Sessions page: status badge, list row, "next session" card.
 
@@ -8,7 +8,8 @@ const BADGE = {
   upcoming: 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300',
   completed: 'border-white/20 bg-white/5 text-gray-300',
   cancelled: 'border-red-400/40 bg-red-400/10 text-red-300',
-  rescheduled: 'border-amber-400/40 bg-amber-400/10 text-amber-300'
+  rescheduled: 'border-amber-400/40 bg-amber-400/10 text-amber-300',
+  change_pending: 'border-amber-400/40 bg-amber-400/10 text-amber-300'
 }
 
 export function StatusBadge({ status, className = '' }) {
@@ -50,9 +51,9 @@ export function SessionRow({ session, status, onOpen }) {
 
 const BUTTON = `inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition ${FOCUS}`
 
-export function NextSessionCard({ session, status, onOpen, onReschedule, onCancel }) {
+export function NextSessionCard({ session, status, onOpen, onRequest, onCancel, showCalendar = false, change, hours = 8 }) {
   const { t, locale } = useI18n()
-  const used = session.rescheduled
+  const canRequest = change?.state === 'available'
   return (
     <section aria-labelledby="next-session-title" className="rounded-3xl border border-emerald-400/25 bg-emerald-400/[0.06] p-5 sm:p-7">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -65,14 +66,16 @@ export function NextSessionCard({ session, status, onOpen, onReschedule, onCance
         {session.number && <span className="ml-2 rounded-full border border-white/20 px-2.5 py-0.5 text-sm text-gray-300">{session.number}</span>}
       </p>
       <div className="mt-6 grid gap-3 sm:flex sm:flex-wrap">
-        <a href={googleCalendarUrl(session, eventDetails(t, session, locale))} target="_blank" rel="noopener noreferrer"
-          className={`${BUTTON} bg-emerald-400 text-black hover:bg-emerald-300`}>{t('ms_add_google')}</a>
-        <button type="button" onClick={() => onReschedule(session)} disabled={used}
-          className={`${BUTTON} border border-white/25 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50`}>{t('ms_reschedule')}</button>
+        {showCalendar && (
+          <a href={googleCalendarUrl(session, eventDetails(t, session, locale))} target="_blank" rel="noopener noreferrer"
+            className={`${BUTTON} bg-emerald-400 text-black hover:bg-emerald-300`}>{t('ms_add_google')}</a>
+        )}
+        <button type="button" onClick={() => onRequest(session)} disabled={!canRequest}
+          className={`${BUTTON} border border-white/25 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50`}>{t('ms_request_change')}</button>
         <button type="button" onClick={() => onCancel(session)}
           className={`${BUTTON} border border-red-400/50 text-red-300 hover:bg-red-500 hover:text-white`}>{t('ms_cancel_session')}</button>
       </div>
-      <p className="mt-3 text-sm text-gray-400">{used ? t('ms_reschedule_used') : t('ms_reschedule_rule')}</p>
+      <p className="mt-3 text-sm text-gray-400">{changeReason(t, change, hours)}</p>
       <button type="button" onClick={() => onOpen(session)} className={`mt-2 rounded text-sm text-gray-300 underline underline-offset-4 hover:text-white ${FOCUS}`}>{t('ms_details')}</button>
     </section>
   )

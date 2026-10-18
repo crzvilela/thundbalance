@@ -24,6 +24,7 @@ import admin_api
 import client_accounts
 import firebase_accounts as accounts
 import main
+import google_fakes
 import packs
 import tax_id
 from database import get_connection
@@ -149,6 +150,7 @@ class Endpoints(unittest.TestCase):
         RECEIVED.clear()
         self.cleanup()
         self.firebase = {}
+        self._restore_gc = google_fakes.delegate_to_packs()
         self._orig = (accounts.create_login, accounts.set_password, accounts.delete_login,
                       packs.create_calendar_event, packs.delete_calendar_event)
         accounts.create_login = lambda email, password, name: self.firebase.setdefault(email, f"uid-{len(self.firebase) + 1}")
@@ -163,6 +165,7 @@ class Endpoints(unittest.TestCase):
     def tearDown(self):
         (accounts.create_login, accounts.set_password, accounts.delete_login,
          packs.create_calendar_event, packs.delete_calendar_event) = self._orig
+        self._restore_gc()
         logging.getLogger().removeHandler(self.logs)
         self.cleanup()
 

@@ -86,3 +86,17 @@ export function googleCalendarUrl(session, details = '') {
     + `&details=${encodeURIComponent(details)}`
     + `&location=${encodeURIComponent(STUDIO_PLACE)}`
 }
+// Minutes from now (Madrid clock) until the session starts; negative once it has started.
+export function minutesUntil(session, now = new Date()) {
+  const current = madridNow(now)
+  const toMs = (day, time) => {
+    const [year, month, date] = String(day).slice(0, 10).split('-').map(Number)
+    const [hour, minute] = formatTime(time).split(':').map(Number)
+    return Date.UTC(year, month - 1, date, hour, minute)
+  }
+  return (toMs(session.date, session.time) - toMs(current.date, current.time)) / 60000
+}
+
+// A change can be requested up to `hours` before the session (the server decides; this only
+// decides whether the button is on).
+export const canRequestChange = (session, now = new Date(), hours = 8) => minutesUntil(session, now) >= hours * 60

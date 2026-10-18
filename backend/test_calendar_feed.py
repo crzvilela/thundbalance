@@ -5,11 +5,14 @@
 No database needed: the feed builder is fed through a fake cursor.
 """
 import re
+import os
 import unittest
 from datetime import date, time
 
 from emails import build_pack_email
 import calendar_feed
+
+os.environ["CLIENT_CALENDAR_ENABLED"] = "true"      # these tests look at the calendar parts of the emails
 
 
 class FakeCursor:

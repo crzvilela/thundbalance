@@ -6,6 +6,7 @@ No database needed for the title/ics tests; the last group uses the local databa
 (trial session lifecycle) with the Google calendar faked.
 """
 import re
+import os
 import unittest
 from datetime import date, datetime, time
 
@@ -15,6 +16,8 @@ from emails.ics import build_ics
 from emails.pack_emails import build_pack_ics
 from emails.trial_emails import client_trial_cancelled, client_trial_confirmed
 from event_format import session_title, trial_title
+
+os.environ["CLIENT_CALENDAR_ENABLED"] = "true"      # these tests look at the calendar parts of the emails
 
 
 def unfold(ics):

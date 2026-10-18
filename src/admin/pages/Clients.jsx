@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { adminRequest } from '../api'
 import { resolveImageUrl } from '../../api/landingPage'
 import { useAdminText } from '../useAdminText'
+import { useFeatures } from '../../api/features'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { dateKey, parseDateKey } from '../requests'
@@ -66,6 +67,7 @@ function Detail({ label, children, wide = false }) {
 function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
   const { t, language } = useAdminText()
   const toast = useToast()
+  const { clientCalendar } = useFeatures()      // CLIENT_CALENDAR_ENABLED: the client's calendar link and state
   const [searchParams, setSearchParams] = useSearchParams()
   const detail = useAdminResource(`/admin/clients/${clientId}`)
   const [planChoice, setPlanChoice] = useState('')
@@ -112,7 +114,7 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
   const pendingSync = sessions.filter(session => session.calendar_sync_status === 'pending').length
 
   // ---------------------------------------------------------------- tabs
-  const hasActivity = !!client && (client.calendar_feed_generated || client.must_change_password || failedSync + okSync + pendingSync > 0)
+  const hasActivity = !!client && ((clientCalendar && client.calendar_feed_generated) || client.must_change_password || failedSync + okSync + pendingSync > 0)
   const tabs = useMemo(() => {
     const list = [
       { id: 'resumen', label: t('fx_tab_summary'), icon: 'overview' },
@@ -297,7 +299,7 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
     { label: t('fx_edit_data'), icon: 'clients', onClick: () => goTab('datos') },
     { label: t('cc_resend'), icon: 'refresh', onClick: resend, disabled: resending, hidden: !client.must_change_password },
     { label: syncing ? t('cs_syncing') : t('cs_button'), icon: 'calendar', onClick: syncCalendar, disabled: syncing },
-    { label: t('cal_copy'), icon: 'copy', onClick: copyCalendarLink, disabled: copyingLink },
+    { label: t('cal_copy'), icon: 'copy', onClick: copyCalendarLink, disabled: copyingLink, hidden: !clientCalendar },
     { label: t('lc_archive_menu'), icon: 'archive', onClick: () => setLifecycle('archive'), hidden: archivedClient || protectedClient },
     { label: t('lc_unarchive'), icon: 'refresh', onClick: restore, disabled: restoring, hidden: !archivedClient || protectedClient },
     { label: t('lc_delete_menu'), icon: 'alert', onClick: () => setLifecycle('delete'), danger: true, hidden: protectedClient },
@@ -532,7 +534,7 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
               <TabPanel id="actividad" idPrefix={TAB_PREFIX} active={activeTab === 'actividad'}>
                 <SectionCard title={t('fx_tab_activity')}>
                   <ul className="space-y-3 text-base">
-                    <li className="flex items-center gap-3"><Icon name="calendar" className="h-4 w-4 text-gray-500" />{client.calendar_feed_generated ? t('fx_act_calendar_on') : t('fx_act_calendar_off')}</li>
+                    {clientCalendar && <li className="flex items-center gap-3"><Icon name="calendar" className="h-4 w-4 text-gray-500" />{client.calendar_feed_generated ? t('fx_act_calendar_on') : t('fx_act_calendar_off')}</li>}
                     {okSync > 0 && <li className="flex items-center gap-3 text-emerald-300"><Icon name="check" className="h-4 w-4" />{okSync} {t('fx_act_synced')}</li>}
                     {pendingSync > 0 && <li className="flex items-center gap-3 text-gray-300"><Icon name="clock" className="h-4 w-4" />{pendingSync} {t('fx_act_pending')}</li>}
                     {failedSync > 0 && <li className="flex items-center gap-3 text-amber-300"><Icon name="alert" className="h-4 w-4" />{failedSync} {t('fx_act_failed')}</li>}

@@ -25,6 +25,7 @@ TEXTS_ES = {
     "trial_confirmed_subject": "Sesión de prueba confirmada",
     "trial_confirmed_title": "Sesión de prueba confirmada",
     "trial_confirmed_body": "¡Todo listo! Tu sesión de prueba está confirmada. Adjuntamos el evento para que lo añadas a tu calendario.",
+    "trial_confirmed_body_plain": "¡Todo listo! Tu sesión de prueba está confirmada.",
     "trial_confirmed_note": "Si cambia algo, responde a este email.",
     "trial_cancelled_subject": "Tu sesión de prueba ha sido cancelada",
     "trial_cancelled_title": "Sesión de prueba cancelada",
@@ -104,6 +105,7 @@ TEXTS_EN = {
     "trial_confirmed_subject": "Trial session confirmed",
     "trial_confirmed_title": "Trial session confirmed",
     "trial_confirmed_body": "All set! Your trial session is confirmed. The event is attached so you can add it to your calendar.",
+    "trial_confirmed_body_plain": "All set! Your trial session is confirmed.",
     "trial_confirmed_note": "If anything changes, reply to this email.",
     "trial_cancelled_subject": "Your trial session was cancelled",
     "trial_cancelled_title": "Trial session cancelled",
@@ -154,6 +156,7 @@ TEXTS_CA = {
     "trial_confirmed_subject": "Sessió de prova confirmada",
     "trial_confirmed_title": "Sessió de prova confirmada",
     "trial_confirmed_body": "Tot a punt! La teva sessió de prova està confirmada. T'adjuntem l'esdeveniment perquè l'afegeixis al teu calendari.",
+    "trial_confirmed_body_plain": "Tot a punt! La teva sessió de prova està confirmada.",
     "trial_confirmed_note": "Si canvia alguna cosa, respon a aquest email.",
     "trial_cancelled_subject": "La teva sessió de prova ha estat cancel·lada",
     "trial_cancelled_title": "Sessió de prova cancel·lada",
@@ -162,6 +165,12 @@ TEXTS_CA = {
 }
 
 TEXTS = {"es": TEXTS_ES, "en": TEXTS_EN, "ca": TEXTS_CA}
+
+# reschedule-request emails (their texts live in their own file)
+from . import reschedule_texts as _rs  # noqa: E402
+TEXTS_ES.update(_rs.ES)
+TEXTS_EN.update(_rs.EN)
+TEXTS_CA.update(_rs.CA)
 LANGUAGES = ("en", "es", "ca")
 
 

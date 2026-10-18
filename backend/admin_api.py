@@ -344,6 +344,19 @@ def register_admin_routes(app, require_admin):
                 detail=f"Could not synchronise the calendar: {type(error).__name__}",
             ) from error
 
+    @app.post("/admin/sessions/{session_id}/sync-calendar", dependencies=admin)
+    def admin_sync_session_calendar(session_id: int):
+        """Makes the Google event of ONE session match the database (creates it if missing,
+        updates it, or deletes it when the session is cancelled). Never duplicates."""
+        result = calendar_sync.sync_session_to_google(session_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return {
+            "action": result["action"],
+            "ok": result["action"] != "failed",
+            "error": result.get("error"),
+        }
+
     @app.get("/admin/calendar-status", dependencies=admin)
     def admin_calendar_status():
         """Which calendar this server writes to (masked) and where that comes from."""
@@ -369,17 +382,9 @@ def register_admin_routes(app, require_admin):
                 "UPDATE sessions SET status = 'Cancelled', feed_sequence = feed_sequence + 1 WHERE id = %s",
                 (session_id,),
             )
-            # The session is cancelled whatever Google answers; the outcome is recorded.
-            if event_id:
-                try:
-                    delete_calendar_event(event_id)
-                    calendar_sync.record(cursor, session_id, True)
-                except Exception as calendar_error:
-                    if google_calendar.http_status(calendar_error) in (404, 410):
-                        calendar_sync.record(cursor, session_id, True)       # already gone
-                    else:
-                        traceback.print_exc()
-                        calendar_sync.record(cursor, session_id, False, google_calendar.describe_error(calendar_error))
+            # The session is cancelled whatever Google answers: the central rule deletes its
+            # event ("it does not exist" counts as done) and records the outcome.
+            calendar_sync.sync_session_to_google(session_id, cursor=cursor)
             conn.commit()
             return {"message": "Session cancelled"}
         except HTTPException:
