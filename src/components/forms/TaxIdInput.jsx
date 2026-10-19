@@ -26,7 +26,7 @@ export default function TaxIdInput({
           <select
             aria-label={formText(language, 'tax_type_label')} value={kind} disabled={disabled}
             onChange={(event) => { onTypeChange?.(event.target.value); setTouched(Boolean(value)) }}
-            className={`${INPUT_CLASS} ${inputBorder(false)} w-auto shrink-0 bg-black pr-8`}
+            className={`${INPUT_CLASS} ${inputBorder(false)} w-auto! shrink-0 bg-black pr-8`}
           >
             {TAX_ID_TYPES.map((item) => <option key={item} value={item}>{formText(language, `tax_type_${item}`)}</option>)}
           </select>
