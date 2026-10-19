@@ -11,6 +11,7 @@ import json
 import os
 import re
 import threading
+import time
 import unittest
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -85,6 +86,12 @@ class Approval(unittest.TestCase):
         conn.close()
 
     def setUp(self):
+        # e-mails queued by the previous test go out through 2 background workers: let them finish BEFORE clearing what the
+        # fake server received, or a late one lands in this test's list (the suite is faster since connections are reused)
+        from emails.transport import _pool
+        _pool.submit(lambda: None).result(timeout=120)
+        _pool.submit(lambda: None).result(timeout=120)
+        time.sleep(0.4)
         RECEIVED.clear()
         self.cleanup()
         os.environ["TRIAL_EMAIL_WEBHOOK_URL"] = self.url

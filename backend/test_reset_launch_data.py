@@ -98,6 +98,7 @@ class ResetLaunchData(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        database._drop_idle()                 # connections kept open on the COPY must not outlive it (nor be reused by later tests)
         database.DATABASE_URL = cls._url
         os.environ.pop("DATABASE_URL", None)
         shutil.rmtree(cls.tmp, ignore_errors=True)

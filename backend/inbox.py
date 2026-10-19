@@ -24,8 +24,10 @@ reschedule request): available | done | expired. So the e-mail link and the inbo
 Opening or listing never decides anything; only the POST of an action does, through the SAME functions
 the e-mail pages use.
 
-Cleanup: lazy and light. Reading the inbox deletes, at most once an hour per process, the messages that
-expired more than CLEANUP_DAYS ago. (No cron.)
+Nothing is ever deleted by a person. The client ARCHIVES a message (inbox_recipients.archived_at) and can bring it
+back; the studio ARCHIVES a message it sent (inbox_messages.archived_at / archived_by): it leaves every client's inbox
+and archive, stays in the studio's history under "Archived" and can be restored. The old deleted_at columns stay in the
+tables but nothing reads or writes them any more; rows that had a deleted_at became archived (see ensure_tables).
 """
 import logging
 import re
@@ -56,7 +58,6 @@ TARGET_MAX = 500
 PAGE_SIZE = 20
 PAGE_SIZE_MAX = 50
 MAX_SCHEDULE_DAYS = 366
-CLEANUP_DAYS = 90
 # the only internal paths a button of the studio may open (anything else must be an http(s) address)
 INTERNAL_TARGETS = ("/my-sessions", "/profile", "/dashboard", "/trial-session", "/training-request", "/training-tips")
 AUDIENCES = ("all", "active_pack", "user")
@@ -73,7 +74,6 @@ ADMIN_EMAIL = ""           # set by register_inbox_routes (the account that neve
 
 _ready = threading.Event()
 _lock = threading.Lock()
-_cleanup_at = 0.0
 _hits = defaultdict(deque)
 _hits_lock = threading.Lock()
 RATE = {"list": (60, 60), "count": (60, 60), "act": (30, 60)}      # name -> (requests, seconds) per person
@@ -172,6 +172,14 @@ def ensure_tables():
             )
             """
         )
+        # archive instead of delete (idempotent). What used to be "deleted" is now archived, at the same moment.
+        cursor.execute("ALTER TABLE inbox_recipients ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP")
+        cursor.execute("ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP")
+        cursor.execute("ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS archived_by TEXT")
+        cursor.execute("UPDATE inbox_recipients SET archived_at = deleted_at WHERE deleted_at IS NOT NULL AND archived_at IS NULL")
+        cursor.execute("UPDATE inbox_messages SET archived_at = deleted_at WHERE deleted_at IS NOT NULL AND archived_at IS NULL")
+        cursor.execute("CREATE INDEX IF NOT EXISTS inbox_recipients_user_archived_idx ON inbox_recipients (user_id, archived_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS inbox_messages_archived_idx ON inbox_messages (kind, archived_at)")
         cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS inbox_messages_dedupe_key ON inbox_messages (dedupe_key)")
         cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS inbox_messages_idempotency_key ON inbox_messages (idempotency_key)")
         cursor.execute("CREATE INDEX IF NOT EXISTS inbox_messages_kind_visible_idx ON inbox_messages (kind, visible_from)")
@@ -372,17 +380,20 @@ def _actions(entry, lang, states):
 
 SELECT_ITEMS = """
     SELECT r.id, m.kind, m.type, m.title, m.body, m.translations, m.params, m.refs, m.action_label, m.action_target,
-           m.visible_from, r.read_at
+           m.visible_from, r.read_at, r.archived_at
     FROM inbox_recipients r JOIN inbox_messages m ON m.id = r.message_id
 """
-VISIBLE = ("r.deleted_at IS NULL AND m.deleted_at IS NULL AND m.visible_from <= %(now)s "
+# A message the studio archived is in nobody's inbox or archive; one past its expiry neither.
+VISIBLE = ("m.archived_at IS NULL AND m.visible_from <= %(now)s "
            "AND (m.expires_at IS NULL OR m.expires_at > %(now)s)")
+IN_INBOX = "r.archived_at IS NULL"
+IN_ARCHIVE = "r.archived_at IS NOT NULL"
 
 
 def _entry(row):
     return {"id": row[0], "kind": row[1], "type": row[2], "title": row[3], "body": row[4], "translations": row[5],
             "params": row[6] or {}, "refs": row[7] or {}, "action_label": row[8], "action_target": row[9],
-            "visible_from": row[10], "read_at": row[11]}
+            "visible_from": row[10], "read_at": row[11], "archived_at": row[12]}
 
 
 def _item(entry, lang, states):
@@ -394,8 +405,9 @@ def _item(entry, lang, states):
     return {
         "id": entry["id"], "kind": entry["kind"], "type": entry["type"], "title": title, "body": body,
         "date": _iso(entry["visible_from"]), "read": entry["read_at"] is not None, "actions": actions,
-        # a message that still waits for an answer can not be deleted; a plain link does not count
-        "can_delete": not any(action["type"] != "link" and action["state"] == "available" for action in actions),
+        "archived": entry["archived_at"] is not None,
+        # a message that still waits for an answer can not be archived; a plain link does not count
+        "can_archive": not any(action["type"] != "link" and action["state"] == "available" for action in actions),
     }
 
 
@@ -409,49 +421,43 @@ def link_by_email(cursor, user_id, claims):
     return cursor.rowcount
 
 
-def cleanup_expired(cursor):
-    """Lazy: at most once an hour, remove the messages that expired more than CLEANUP_DAYS ago."""
-    global _cleanup_at
-    if time.time() - _cleanup_at < 3600:
-        return
-    _cleanup_at = time.time()
-    cursor.execute("DELETE FROM inbox_messages WHERE expires_at IS NOT NULL AND expires_at < %s", (_now() - timedelta(days=CLEANUP_DAYS),))
-
-
 def _lang(value):
     return normalize_language(value) or DEFAULT_LANGUAGE
 
 
 def list_inbox(user_id, claims, lang=None, page=1, filter_="all", size=PAGE_SIZE):
+    """filter_: all (the inbox, WITHOUT the archived ones) | unread (the unread of the inbox) | archived.
+    `counts` is {inbox, unread, archived} for the tabs; `unread` (the menu's number) never includes archived ones."""
     ensure_tables_once()
     lang = _lang(lang)
     size = max(1, min(int(size or PAGE_SIZE), PAGE_SIZE_MAX))
     page = max(1, int(page or 1))
-    unread_only = filter_ == "unread"
+    where = IN_ARCHIVE if filter_ == "archived" else IN_INBOX + (" AND r.read_at IS NULL" if filter_ == "unread" else "")
     conn = get_connection()
     cursor = conn.cursor()
     try:
         link_by_email(cursor, user_id, claims)
-        cleanup_expired(cursor)
         conn.commit()
         params = {"user": user_id, "now": _now(), "limit": size, "offset": (page - 1) * size}
-        extra = " AND r.read_at IS NULL" if unread_only else ""
         cursor.execute(f"SELECT COUNT(*) FROM inbox_recipients r JOIN inbox_messages m ON m.id = r.message_id "
-                       f"WHERE r.user_id = %(user)s AND {VISIBLE}{extra}", params)
+                       f"WHERE r.user_id = %(user)s AND {VISIBLE} AND {where}", params)
         total = cursor.fetchone()[0]
-        cursor.execute(f"{SELECT_ITEMS} WHERE r.user_id = %(user)s AND {VISIBLE}{extra} "
+        cursor.execute(f"{SELECT_ITEMS} WHERE r.user_id = %(user)s AND {VISIBLE} AND {where} "
                        "ORDER BY m.visible_from DESC, r.id DESC LIMIT %(limit)s OFFSET %(offset)s", params)
         entries = [_entry(row) for row in cursor.fetchall()]
         states = _live_states(cursor, entries)
         conn.commit()                                          # keeps the expiry the live check may have recorded
-        cursor.execute(f"SELECT COUNT(*) FROM inbox_recipients r JOIN inbox_messages m ON m.id = r.message_id "
-                       f"WHERE r.user_id = %(user)s AND {VISIBLE} AND r.read_at IS NULL", params)
-        unread = cursor.fetchone()[0]
+        cursor.execute(
+            f"SELECT COUNT(*) FILTER (WHERE {IN_INBOX}), COUNT(*) FILTER (WHERE {IN_INBOX} AND r.read_at IS NULL), "
+            f"COUNT(*) FILTER (WHERE {IN_ARCHIVE}) FROM inbox_recipients r JOIN inbox_messages m ON m.id = r.message_id "
+            f"WHERE r.user_id = %(user)s AND {VISIBLE}", params)
+        inbox_count, unread, archived = cursor.fetchone()
     finally:
         cursor.close()
         conn.close()
     return {"items": [_item(entry, lang, states) for entry in entries], "total": total, "page": page,
-            "pages": max(1, -(-total // size)), "unread": unread}
+            "pages": max(1, -(-total // size)), "unread": unread,
+            "counts": {"inbox": inbox_count, "unread": unread, "archived": archived}}
 
 
 def unread_count(user_id, claims):
@@ -463,7 +469,7 @@ def unread_count(user_id, claims):
             conn.commit()
         cursor.execute(
             f"SELECT COUNT(*) FROM inbox_recipients r JOIN inbox_messages m ON m.id = r.message_id "
-            f"WHERE r.user_id = %(user)s AND r.read_at IS NULL AND {VISIBLE}", {"user": user_id, "now": _now()})
+            f"WHERE r.user_id = %(user)s AND r.read_at IS NULL AND {IN_INBOX} AND {VISIBLE}", {"user": user_id, "now": _now()})
         return {"unread": cursor.fetchone()[0]}
     finally:
         cursor.close()
@@ -500,7 +506,7 @@ def mark_all_read(user_id):
     try:
         cursor.execute(
             f"UPDATE inbox_recipients r SET read_at = %(now)s FROM inbox_messages m WHERE m.id = r.message_id "
-            f"AND r.user_id = %(user)s AND r.read_at IS NULL AND {VISIBLE}", {"user": user_id, "now": _now()})
+            f"AND r.user_id = %(user)s AND r.read_at IS NULL AND {IN_INBOX} AND {VISIBLE}", {"user": user_id, "now": _now()})
         updated = cursor.rowcount
         conn.commit()
         return {"ok": True, "updated": updated}
@@ -509,14 +515,19 @@ def mark_all_read(user_id):
         conn.close()
 
 
-def delete_own(user_id, recipient_id):
-    """The client removes a message from their own inbox. Idempotent. Refused (409) while the message has a
-    button that still waits for an answer; after done / expired it can go."""
+def _waits_for_an_answer(item):
+    return not item["can_archive"]
+
+
+def archive_own(user_id, recipient_id):
+    """The client archives a message: it leaves the inbox and the unread number, and is marked as read. Idempotent.
+    Refused (409) while the message has a button that still waits for an answer (a trial to confirm, a proposal to
+    answer); once it is done or expired it can be archived. Nothing is deleted."""
     ensure_tables_once()
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT deleted_at FROM inbox_recipients WHERE id = %s AND user_id = %s FOR UPDATE", (recipient_id, user_id))
+        cursor.execute("SELECT archived_at FROM inbox_recipients WHERE id = %s AND user_id = %s FOR UPDATE", (recipient_id, user_id))
         row = cursor.fetchone()
         if not row:
             raise fail(404, "not_found", "Message not found.")
@@ -524,17 +535,56 @@ def delete_own(user_id, recipient_id):
             conn.rollback()
             return {"ok": True}
         entry = _own_recipient(cursor, user_id, recipient_id)
-        states = _live_states(cursor, [entry])
-        item = _item(entry, "en", states)
-        if not item["can_delete"]:
+        if _waits_for_an_answer(_item(entry, "en", _live_states(cursor, [entry]))):
             conn.rollback()
             raise fail(409, "action_pending", "Answer this message first: it still waits for your reply.")
-        cursor.execute("UPDATE inbox_recipients SET deleted_at = %s WHERE id = %s", (_now(), recipient_id))
+        now = _now()
+        cursor.execute("UPDATE inbox_recipients SET archived_at = %s, read_at = COALESCE(read_at, %s) WHERE id = %s", (now, now, recipient_id))
         conn.commit()
         return {"ok": True}
     except HTTPException:
         conn.rollback()
         raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def unarchive_own(user_id, recipient_id):
+    """Back to the inbox. Idempotent."""
+    ensure_tables_once()
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE inbox_recipients SET archived_at = NULL WHERE id = %s AND user_id = %s RETURNING id", (recipient_id, user_id))
+        if not cursor.fetchone():
+            raise fail(404, "not_found", "Message not found.")
+        conn.commit()
+        return {"ok": True}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+ARCHIVE_READ_MAX = 500
+
+
+def archive_read(user_id):
+    """Archives, at once, every message of the inbox that is already read and has no answer waiting."""
+    ensure_tables_once()
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            f"{SELECT_ITEMS} WHERE r.user_id = %(user)s AND {VISIBLE} AND {IN_INBOX} AND r.read_at IS NOT NULL "
+            "ORDER BY r.id DESC LIMIT %(limit)s", {"user": user_id, "now": _now(), "limit": ARCHIVE_READ_MAX})
+        entries = [_entry(row) for row in cursor.fetchall()]
+        states = _live_states(cursor, entries)
+        ids = [entry["id"] for entry in entries if not _waits_for_an_answer(_item(entry, "en", states))]
+        if ids:
+            cursor.execute("UPDATE inbox_recipients SET archived_at = %s WHERE id = ANY(%s) AND archived_at IS NULL", (_now(), ids))
+        conn.commit()
+        return {"ok": True, "archived": len(ids)}
     finally:
         cursor.close()
         conn.close()
@@ -787,10 +837,11 @@ STATUS_SQL = {
 }
 
 
-def list_admin(page=1, size=20, q="", status=""):
+def list_admin(page=1, size=20, q="", status="", archived=False):
     """The studio's own messages (never the automatic ones), newest first: audience, status, recipients, how many
     read and, for a message to one person, who it went to. `q` searches the title (letters, % and _ are literal);
-    `status` is scheduled | sent | expired. `total` counts what matches, so the pages follow the filters."""
+    `status` is scheduled | sent | expired. `archived` picks the history ("Sent") or the archive ("Archived").
+    `total` counts what matches, so the pages follow the filters; `counts` is {active, archived} for the tabs."""
     ensure_tables_once()
     status = str(status or "").strip().lower()
     if status and status not in STATUS_SQL:
@@ -798,7 +849,7 @@ def list_admin(page=1, size=20, q="", status=""):
     size = max(1, min(int(size or 20), 100))
     page = max(1, int(page or 1))
     needle = str(q or "").strip()
-    where = "m.kind = 'admin' AND m.deleted_at IS NULL"
+    where = "m.kind = 'admin' AND m.archived_at IS " + ("NOT NULL" if archived else "NULL")
     params = {"now": _now(), "limit": size, "offset": (page - 1) * size}
     if needle:
         where += " AND LOWER(m.title) LIKE %(like)s"
@@ -828,10 +879,14 @@ def list_admin(page=1, size=20, q="", status=""):
              "person": r[10]}
             for r in cursor.fetchall()
         ]
+        cursor.execute("SELECT COUNT(*) FILTER (WHERE archived_at IS NULL), COUNT(*) FILTER (WHERE archived_at IS NOT NULL) "
+                       "FROM inbox_messages WHERE kind = 'admin'")
+        active, archived_total = cursor.fetchone()
     finally:
         cursor.close()
         conn.close()
-    return {"items": items, "total": total, "page": page, "pages": max(1, -(-total // size))}
+    return {"items": items, "total": total, "page": page, "pages": max(1, -(-total // size)),
+            "counts": {"active": active, "archived": archived_total}}
 
 
 def get_admin(message_id):
@@ -844,8 +899,8 @@ def get_admin(message_id):
         cursor.execute(
             """
             SELECT m.id, m.title, m.body, m.translations, m.main_lang, m.audience, m.action_label, m.action_target,
-                   m.visible_from, m.expires_at, m.created_at, m.created_by
-            FROM inbox_messages m WHERE m.id = %s AND m.kind = 'admin' AND m.deleted_at IS NULL
+                   m.visible_from, m.expires_at, m.created_at, m.created_by, m.archived_at, m.archived_by
+            FROM inbox_messages m WHERE m.id = %s AND m.kind = 'admin'
             """, (message_id,))
         row = cursor.fetchone()
         if not row:
@@ -857,31 +912,39 @@ def get_admin(message_id):
             "id": row[0], "title": row[1], "body": row[2], "translations": row[3] or {}, "main_lang": row[4], "audience": row[5],
             "action_label": row[6], "action_target": row[7], "visible_from": _iso(row[8]), "expires_at": _iso(row[9]),
             "created_at": _iso(row[10]), "created_by": row[11], "status": summary["status"], "recipients": summary["recipients"], "read": read,
+            "archived": row[12] is not None, "archived_at": _iso(row[12]), "archived_by": row[13],
         }
         if row[5] == "user":
-            cursor.execute("SELECT recipient_email, read_at, deleted_at IS NOT NULL FROM inbox_recipients WHERE message_id = %s", (message_id,))
-            detail["people"] = [{"email": r[0], "read": r[1] is not None, "read_at": _iso(r[1]), "deleted_by_client": r[2]} for r in cursor.fetchall()]
+            cursor.execute("SELECT recipient_email, read_at, archived_at IS NOT NULL FROM inbox_recipients WHERE message_id = %s", (message_id,))
+            detail["people"] = [{"email": r[0], "read": r[1] is not None, "read_at": _iso(r[1]), "archived_by_client": r[2]} for r in cursor.fetchall()]
         return detail
     finally:
         cursor.close()
         conn.close()
 
 
-def delete_admin(message_id, admin=""):
-    """Soft delete: the message disappears from everybody's inbox. Idempotent. Leaves a simple audit row
-    (who, when, which message): no personal data."""
+def _set_archived(message_id, archived, admin=""):
+    """Archives or restores a message of the studio. Idempotent: repeating it changes nothing and writes no second audit
+    row. Archived: it leaves the inbox AND the archive of every client and their numbers, stays in the studio's history
+    under "Archived" with everything it had; restored: it is back for everybody who had it (their own archive state is
+    untouched). One audit row (who, when, which message): no personal data."""
     ensure_tables_once()
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT deleted_at FROM inbox_messages WHERE id = %s AND kind = 'admin' FOR UPDATE", (message_id,))
+        cursor.execute("SELECT archived_at FROM inbox_messages WHERE id = %s AND kind = 'admin' FOR UPDATE", (message_id,))
         row = cursor.fetchone()
         if not row:
             raise fail(404, "not_found", "Message not found.")
-        if row[0] is None:
-            cursor.execute("UPDATE inbox_messages SET deleted_at = %s WHERE id = %s", (_now(), message_id))
-            cursor.execute("INSERT INTO inbox_audit (action, message_id, admin_email) VALUES ('delete', %s, %s)", (message_id, str(admin)[:120] or None))
-            logger.info("inbox message deleted: %s", message_id)
+        if (row[0] is not None) != archived:
+            if archived:
+                cursor.execute("UPDATE inbox_messages SET archived_at = %s, archived_by = %s WHERE id = %s",
+                               (_now(), str(admin)[:120] or None, message_id))
+            else:
+                cursor.execute("UPDATE inbox_messages SET archived_at = NULL, archived_by = NULL WHERE id = %s", (message_id,))
+            cursor.execute("INSERT INTO inbox_audit (action, message_id, admin_email) VALUES (%s, %s, %s)",
+                           ("archive" if archived else "restore", message_id, str(admin)[:120] or None))
+            logger.info("inbox message %s: %s", "archived" if archived else "restored", message_id)
         conn.commit()
         return {"ok": True}
     except HTTPException:
@@ -890,6 +953,14 @@ def delete_admin(message_id, admin=""):
     finally:
         cursor.close()
         conn.close()
+
+
+def archive_admin(message_id, admin=""):
+    return _set_archived(message_id, True, admin)
+
+
+def restore_admin(message_id, admin=""):
+    return _set_archived(message_id, False, admin)
 
 
 # ----------------------------------------------------------------------------- HTTP
@@ -951,10 +1022,26 @@ def register_inbox_routes(app, require_admin, require_client, own_user_id, admin
         _throttle("act", claims)
         return mark_read(me(claims), recipient_id)
 
-    @app.delete("/inbox/{recipient_id}")
-    def client_delete(recipient_id: int, claims=Depends(require_client)):
+    @app.post("/inbox/archive-read")
+    def client_archive_read(claims=Depends(require_client)):
         _throttle("act", claims)
-        return delete_own(me(claims), recipient_id)
+        return archive_read(me(claims))
+
+    @app.post("/inbox/{recipient_id}/archive")
+    def client_archive(recipient_id: int, claims=Depends(require_client)):
+        _throttle("act", claims)
+        return archive_own(me(claims), recipient_id)
+
+    @app.post("/inbox/{recipient_id}/unarchive")
+    def client_unarchive(recipient_id: int, claims=Depends(require_client)):
+        _throttle("act", claims)
+        return unarchive_own(me(claims), recipient_id)
+
+    @app.delete("/inbox/{recipient_id}")
+    def client_delete_gone(recipient_id: int, claims=Depends(require_client)):
+        """Messages can no longer be deleted: they are archived. (The route answers instead of vanishing, so an old
+        page gets a clear message.)"""
+        raise fail(410, "gone", "Messages can no longer be deleted: archive them instead (POST /inbox/{id}/archive).")
 
     @app.post("/inbox/{recipient_id}/actions/{action_type}")
     def client_action(recipient_id: int, action_type: str, lang: str = "en", claims=Depends(require_client)):
@@ -971,13 +1058,22 @@ def register_inbox_routes(app, require_admin, require_client, own_user_id, admin
         return send_admin_message(data, str(claims.get("email", "")))
 
     @app.get("/admin/messages", dependencies=admin)
-    def admin_list(page: int = 1, size: int = 20, q: str = "", status: str = ""):
-        return list_admin(page, size, q, status)
+    def admin_list(page: int = 1, size: int = 20, q: str = "", status: str = "", archived: bool = False):
+        return list_admin(page, size, q, status, archived)
 
     @app.get("/admin/messages/{message_id}", dependencies=admin)
     def admin_detail(message_id: int):
         return get_admin(message_id)
 
-    @app.delete("/admin/messages/{message_id}")
-    def admin_delete(message_id: int, claims=Depends(require_admin)):
-        return delete_admin(message_id, str(claims.get("email", "")))
+    @app.post("/admin/messages/{message_id}/archive")
+    def admin_archive(message_id: int, claims=Depends(require_admin)):
+        return archive_admin(message_id, str(claims.get("email", "")))
+
+    @app.post("/admin/messages/{message_id}/restore")
+    def admin_restore(message_id: int, claims=Depends(require_admin)):
+        return restore_admin(message_id, str(claims.get("email", "")))
+
+    @app.delete("/admin/messages/{message_id}", dependencies=admin)
+    def admin_delete_gone(message_id: int):
+        """Sent messages can no longer be deleted: they are archived (and can be restored)."""
+        raise fail(410, "gone", "Messages can no longer be deleted: archive them instead (POST /admin/messages/{id}/archive).")

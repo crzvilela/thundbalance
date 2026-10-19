@@ -251,16 +251,6 @@ class Inbox(unittest.TestCase):
         self.assertEqual(inbox.unread_count(self.ana, claims_of("ana"))["unread"], 0)
         self.assertEqual(inbox.get_admin(sent["id"])["status"], "expired")
 
-    def test_lazy_cleanup_removes_only_long_expired_messages(self):
-        old = inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", title="Vieja"), ADMIN)["id"]
-        recent = inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", title="Reciente"), ADMIN)["id"]
-        self.sql("UPDATE inbox_messages SET expires_at = %s WHERE id = %s", (datetime.now() - timedelta(days=inbox.CLEANUP_DAYS + 5), old))
-        self.sql("UPDATE inbox_messages SET expires_at = %s WHERE id = %s", (datetime.now() - timedelta(days=5), recent))
-        inbox._cleanup_at = 0
-        self.items()
-        left = {row[0] for row in self.sql("SELECT id FROM inbox_messages WHERE id = ANY(%s)", ([old, recent],))}
-        self.assertEqual(left, {recent})
-
     # ----- the language it is drawn in
     def test_texts_are_drawn_in_the_requested_language(self):
         inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", main_lang="es", title="Hola", body="Cuerpo",
@@ -291,7 +281,7 @@ class Inbox(unittest.TestCase):
         approved = [i for i in self.items()["items"] if i["type"] == "trial_approved"]
         self.assertEqual(len(approved), 1)
         self.assertEqual([(a["type"], a["state"]) for a in approved[0]["actions"]], [("trial_confirm", "available"), ("trial_decline", "available")])
-        self.assertFalse(approved[0]["can_delete"])
+        self.assertFalse(approved[0]["can_archive"])
         inbox.on_trial_approved(trial_id, f"ana{DOMAIN}", date.today(), "10:00")    # the same step twice: nothing new
         self.assertEqual(len([i for i in self.items()["items"] if i["type"] == "trial_approved"]), 1)
 
@@ -305,7 +295,7 @@ class Inbox(unittest.TestCase):
         item = [i for i in self.items()["items"] if i["type"] == "trial_approved"][0]
         self.assertEqual((self.action_state(item, "trial_confirm"), self.action_state(item, "trial_decline")), ("done", "done"))
         self.assertEqual([action["result"] for action in item["actions"]], ["confirmed", "confirmed"])     # WHAT was answered, from the real session
-        self.assertTrue(item["can_delete"])
+        self.assertTrue(item["can_archive"])
         self.assertIn("Your trial session is confirmed", self.titles())            # and the confirmation message exists, once
         tc.answer_trial(token, "confirmed")
         self.assertEqual(self.titles().count("Your trial session is confirmed"), 1)
@@ -356,7 +346,7 @@ class Inbox(unittest.TestCase):
         self.sql("UPDATE trial_sessions SET session_date = CURRENT_DATE - 2 WHERE id = %s", (late,))
         item = [i for i in self.items()["items"] if i["type"] == "trial_approved" and i["actions"][0]["state"] == "expired"]
         self.assertEqual(len(item), 1)
-        self.assertTrue(item[0]["can_delete"])
+        self.assertTrue(item[0]["can_archive"])
 
     def test_a_failure_writing_the_message_never_breaks_the_approval(self):
         trial_id = self.trial()
@@ -419,22 +409,86 @@ class Inbox(unittest.TestCase):
         self.assertEqual(inbox.unread_count(self.ana, claims_of("ana"))["unread"], 0)
         self.assertEqual(inbox.unread_count(bia, claims_of("bia"))["unread"], 1)
 
-    def test_the_client_can_delete_only_when_no_action_waits_for_an_answer(self):
+    def test_the_client_archives_only_when_no_action_waits_for_an_answer(self):
         plain = inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", action_label="Ver", action_target="/my-sessions"), ADMIN)
         trial_id = self.trial()
         tc.approve_trial(trial_id, self.trainer_id)
         items = {i["type"]: i for i in self.items()["items"]}
-        self.assertTrue(items["direct"]["can_delete"])                                 # a plain link does not block
+        self.assertTrue(items["direct"]["can_archive"])                                # a plain link does not block
         with self.assertRaises(HTTPException) as caught:
-            inbox.delete_own(self.ana, items["trial_approved"]["id"])
+            inbox.archive_own(self.ana, items["trial_approved"]["id"])
         self.assertEqual((caught.exception.status_code, code_of(caught)), (409, "action_pending"))
-        self.assertEqual(inbox.delete_own(self.ana, items["direct"]["id"]), {"ok": True})
-        self.assertEqual(inbox.delete_own(self.ana, items["direct"]["id"]), {"ok": True})   # twice: fine
+        self.assertEqual(inbox.archive_own(self.ana, items["direct"]["id"]), {"ok": True})
+        self.assertEqual(inbox.archive_own(self.ana, items["direct"]["id"]), {"ok": True})   # twice: fine
         self.assertNotIn("direct", [i["type"] for i in self.items()["items"]])
         tc.answer_trial(self.token_of(trial_id), "declined")                           # done, by whatever channel
-        self.assertEqual(inbox.delete_own(self.ana, items["trial_approved"]["id"]), {"ok": True})
-        # the studio still sees the message it sent (the client only hid their copy)
+        self.assertEqual(inbox.archive_own(self.ana, items["trial_approved"]["id"]), {"ok": True})
+        # the studio still sees the message it sent, and NOTHING was deleted from the database
         self.assertEqual(inbox.get_admin(plain["id"])["recipients"], 1)
+        self.assertEqual(self.sql("SELECT COUNT(*) FROM inbox_recipients WHERE user_id = %s", (self.ana,))[0][0] >= 2, True)
+
+    def test_archived_messages_leave_the_inbox_the_numbers_and_read_all_and_come_back(self):
+        ids = [inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", title=f"Mensaje {n}"), ADMIN)["id"] for n in range(4)]
+        first, second, third, fourth = [[i for i in self.items(size=50)["items"] if i["title"] == f"Mensaje {n}"][0]["id"] for n in range(4)]
+        self.assertEqual(inbox.unread_count(self.ana, claims_of("ana")), {"unread": 4})
+        inbox.archive_own(self.ana, first)                                             # archiving also reads it
+        page = self.items(size=50)
+        self.assertEqual((page["counts"], page["unread"]), ({"inbox": 3, "unread": 3, "archived": 1}, 3))
+        self.assertNotIn("Mensaje 0", [i["title"] for i in page["items"]])             # "all" does NOT include the archived
+        self.assertEqual(self.titles(filter_="unread").count("Mensaje 0"), 0)
+        archived = self.items(filter_="archived")
+        self.assertEqual([(i["title"], i["archived"], i["read"]) for i in archived["items"]], [("Mensaje 0", True, True)])
+        self.assertEqual(inbox.unread_count(self.ana, claims_of("ana"))["unread"], 3)
+        self.assertEqual(inbox.mark_all_read(self.ana)["updated"], 3)                  # read-all leaves the archived ones alone
+        self.assertEqual(self.sql("SELECT COUNT(*) FROM inbox_recipients WHERE id = %s AND read_at IS NOT NULL", (first,))[0][0], 1)
+        self.sql("UPDATE inbox_recipients SET read_at = NULL WHERE id = %s", (first,))   # an archived message that is unread...
+        self.assertEqual(inbox.mark_all_read(self.ana)["updated"], 0)                   # ...stays as it was
+        # back to the inbox, twice is fine
+        self.assertEqual(inbox.unarchive_own(self.ana, first), {"ok": True})
+        self.assertEqual(inbox.unarchive_own(self.ana, first), {"ok": True})
+        self.assertEqual(self.items()["counts"]["archived"], 0)
+        self.assertIn("Mensaje 0", self.titles(size=50))
+        # "archive the read ones": every read message without an answer waiting, not the unread ones
+        self.sql("UPDATE inbox_recipients SET read_at = NULL WHERE id = %s", (fourth,))
+        self.assertEqual(inbox.archive_read(self.ana), {"ok": True, "archived": 2})     # the two that are read (Mensaje 1 and 2)
+        self.assertEqual([i["title"] for i in self.items()["items"]], ["Mensaje 3", "Mensaje 0"])   # the unread ones stay
+        self.assertEqual(inbox.archive_read(self.ana)["archived"], 0)                   # nothing left to archive
+        self.assertEqual(sorted(i["id"] for i in self.items(filter_="archived")["items"]), sorted([second, third]))
+
+    def test_archive_read_leaves_the_messages_that_wait_for_an_answer(self):
+        trial_id = self.trial()
+        tc.approve_trial(trial_id, self.trainer_id)
+        inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", title="Informativo"), ADMIN)
+        inbox.mark_all_read(self.ana)                                                  # both read now
+        self.assertEqual(inbox.archive_read(self.ana)["archived"], 1)                  # only the informative one
+        left = [i for i in self.items()["items"] if i["type"] == "trial_approved"]
+        self.assertEqual((len(left), left[0]["actions"][0]["state"]), (1, "available"))
+
+    def test_a_client_can_not_archive_or_bring_back_the_messages_of_another(self):
+        bia = self.user("bia", "Bia")
+        inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", title="De Ana"), ADMIN)
+        mine = self.items()["items"][0]["id"]
+        for action in (inbox.archive_own, inbox.unarchive_own):
+            with self.assertRaises(HTTPException) as caught:
+                action(bia, mine)
+            self.assertEqual(caught.exception.status_code, 404)
+        self.assertEqual(self.items()["counts"]["inbox"], 1)
+
+    def test_the_old_deleted_rows_become_archived_and_the_migration_can_run_again(self):
+        sent = inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", title="Borrado antes"), ADMIN)["id"]
+        other = inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", title="Eliminado por el estudio"), ADMIN)["id"]
+        moment = datetime.now() - timedelta(days=3)
+        self.sql("UPDATE inbox_recipients SET deleted_at = %s WHERE message_id = %s", (moment, sent))       # how the old code "deleted"
+        self.sql("UPDATE inbox_messages SET deleted_at = %s WHERE id = %s", (moment, other))
+        inbox.ensure_tables()
+        inbox.ensure_tables()                                                                            # twice: nothing changes
+        mine = self.sql("SELECT archived_at FROM inbox_recipients WHERE message_id = %s", (sent,))
+        self.assertEqual(mine, [(moment,)])                                                              # archived at the same moment
+        self.assertEqual(self.sql("SELECT archived_at FROM inbox_messages WHERE id = %s", (other,)), [(moment,)])
+        self.assertEqual(self.items()["counts"], {"inbox": 0, "unread": 0, "archived": 1})              # the client's copy is in their archive
+        self.assertEqual(self.titles(filter_="archived"), ["Borrado antes"])
+        self.assertIn(other, [i["id"] for i in inbox.list_admin(size=100, archived=True)["items"]])      # the studio's, in "Archived"
+        self.assertEqual(self.sql("SELECT COUNT(*) FROM inbox_messages WHERE id = ANY(%s)", ([sent, other],))[0][0], 2)   # nothing was removed
 
     # ----- reschedule proposals
     def test_a_counter_proposal_message_has_live_buttons_and_the_client_answers_from_the_inbox(self):
@@ -454,11 +508,11 @@ class Inbox(unittest.TestCase):
         self.assertIn("3/8", item["body"])
         self.assertIn("No puedo a esa hora", item["body"])
         self.assertEqual([(a["type"], a["state"]) for a in item["actions"]], [("reschedule_accept", "available"), ("reschedule_reject", "available")])
-        self.assertFalse(item["can_delete"])
+        self.assertFalse(item["can_archive"])
         self.assertEqual(inbox.do_action(self.ana, claims_of("ana"), item["id"], "reschedule_reject")["outcome"], "declined")
         again = [i for i in self.items()["items"] if i["type"] == "reschedule_counter"][0]
         self.assertEqual((self.action_state(again, "reschedule_accept"), self.action_state(again, "reschedule_reject")), ("done", "done"))
-        self.assertTrue(again["can_delete"])
+        self.assertTrue(again["can_archive"])
         self.assertEqual([action["result"] for action in again["actions"]], ["declined", "declined"])
         # only the owner of the session can answer
         stranger = self.user("eve", "Eve")
@@ -577,7 +631,7 @@ class Inbox(unittest.TestCase):
         self.assertEqual(self.client.get("/admin/messages", params={"status": "bogus"}).status_code, 422)
 
     # ----- the studio's history
-    def test_history_detail_and_soft_delete_of_the_studios_messages_only(self):
+    def test_history_and_detail_of_the_studios_messages_only(self):
         broadcast = inbox.send_admin_message(Payload(audience="all", title="Para todos", idempotency_key="hist-all"), ADMIN)
         direct = inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", title="Solo Ana", idempotency_key="hist-one"), ADMIN)
         tc.approve_trial(self.trial(), self.trainer_id)                                # an automatic message exists too
@@ -588,23 +642,63 @@ class Inbox(unittest.TestCase):
         self.assertEqual((by_id[direct["id"]]["recipients"], by_id[direct["id"]]["read"], by_id[direct["id"]]["status"]), (1, 1, "sent"))
         self.assertGreaterEqual(by_id[broadcast["id"]]["recipients"], 1)
         detail = inbox.get_admin(direct["id"])
-        self.assertEqual([(p["email"], p["read"], p["deleted_by_client"], bool(p["read_at"])) for p in detail["people"]], [(f"ana{DOMAIN}", True, False, True)])   # who read, and when: one person only
+        self.assertEqual([(p["email"], p["read"], p["archived_by_client"], bool(p["read_at"])) for p in detail["people"]], [(f"ana{DOMAIN}", True, False, True)])   # who read, and when: one person only
         self.assertNotIn("people", inbox.get_admin(broadcast["id"]))                  # the others: only counts
-        # delete: gone for everybody, idempotent, with an audit row without personal data
-        self.assertEqual(inbox.delete_admin(direct["id"], ADMIN), {"ok": True})
-        self.assertEqual(inbox.delete_admin(direct["id"], ADMIN), {"ok": True})
-        self.assertNotIn("Solo Ana", self.titles())
-        self.assertNotIn(direct["id"], [i["id"] for i in inbox.list_admin(size=100)["items"]])
-        audit = self.sql("SELECT action, message_id, admin_email FROM inbox_audit WHERE admin_email = %s", (ADMIN,))
-        self.assertEqual(audit, [("delete", direct["id"], ADMIN)])                      # one row, not two
+        self.assertEqual((detail["archived"], detail["archived_by"]), (False, None))
+
+    def test_the_studio_archives_a_message_for_everybody_and_can_restore_it(self):
+        bia = self.user("bia", "Bia")
+        sent = inbox.send_admin_message(Payload(audience="all", title="Para todos los clientes", idempotency_key="arch-all"), ADMIN)["id"]
+        self.assertIn("Para todos los clientes", self.titles())
+        self.assertIn("Para todos los clientes", self.titles("bia", user_id=bia))
+        inbox.archive_own(self.ana, [i for i in self.items()["items"] if i["title"] == "Para todos los clientes"][0]["id"])   # one client had archived it too
+        unread_before = inbox.unread_count(bia, claims_of("bia"))["unread"]
+        self.assertEqual(inbox.archive_admin(sent, ADMIN), {"ok": True})
+        self.assertEqual(inbox.archive_admin(sent, ADMIN), {"ok": True})                 # twice: fine
+        # gone from everybody: inbox, archive and numbers
+        self.assertNotIn("Para todos los clientes", self.titles())
+        self.assertNotIn("Para todos los clientes", self.titles(filter_="archived"))
+        self.assertNotIn("Para todos los clientes", self.titles("bia", user_id=bia))
+        self.assertEqual(inbox.unread_count(bia, claims_of("bia"))["unread"], unread_before - 1)
+        self.assertEqual(self.items("bia", user_id=bia)["counts"]["inbox"], 0)
+        # kept in the studio's history, under "Archived", with everything it had
+        self.assertNotIn(sent, [i["id"] for i in inbox.list_admin(size=100)["items"]])
+        archived = inbox.list_admin(size=100, archived=True)
+        self.assertIn(sent, [i["id"] for i in archived["items"]])
+        self.assertGreaterEqual(archived["counts"]["archived"], 1)
+        detail = inbox.get_admin(sent)
+        self.assertEqual((detail["archived"], detail["archived_by"], detail["title"]), (True, ADMIN, "Para todos los clientes"))
+        self.assertGreaterEqual(detail["recipients"], 2)
+        # restored: back for everybody who had it, each client's own archive state untouched
+        self.assertEqual(inbox.restore_admin(sent, ADMIN), {"ok": True})
+        self.assertEqual(inbox.restore_admin(sent, ADMIN), {"ok": True})
+        self.assertIn("Para todos los clientes", self.titles("bia", user_id=bia))
+        self.assertNotIn("Para todos los clientes", self.titles())                       # Ana had archived it herself
+        self.assertIn("Para todos los clientes", self.titles(filter_="archived"))
+        self.assertIn(sent, [i["id"] for i in inbox.list_admin(size=100)["items"]])
+        # one audit row for each real change (who, which message, when): nothing personal
+        audit = self.sql("SELECT action, message_id, admin_email FROM inbox_audit WHERE admin_email = %s ORDER BY id", (ADMIN,))
+        self.assertEqual(audit, [("archive", sent, ADMIN), ("restore", sent, ADMIN)])
         columns = [row[0] for row in self.sql("SELECT column_name FROM information_schema.columns WHERE table_name = 'inbox_audit' ORDER BY 1")]
         self.assertEqual(columns, ["action", "admin_email", "created_at", "id", "message_id"])
-        with self.assertRaises(HTTPException) as caught:
-            inbox.delete_admin(99999999, ADMIN)
-        self.assertEqual(caught.exception.status_code, 404)
+        for action in (inbox.archive_admin, inbox.restore_admin):
+            with self.assertRaises(HTTPException) as caught:
+                action(99999999, ADMIN)
+            self.assertEqual(caught.exception.status_code, 404)
         auto = self.sql("SELECT id FROM inbox_messages WHERE kind = 'system' ORDER BY id DESC LIMIT 1")[0][0]
         with self.assertRaises(HTTPException):
-            inbox.delete_admin(auto, ADMIN)                                              # automatic messages are not the studio's to delete
+            inbox.archive_admin(auto, ADMIN)                                              # automatic messages are not the studio's
+        self.assertEqual(self.sql("SELECT COUNT(*) FROM inbox_messages WHERE id = %s", (sent,))[0][0], 1)   # nothing was deleted
+
+    def test_the_history_tabs_search_and_filter_inside_the_archive_too(self):
+        one = inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", title="Cierre archivable"), ADMIN)["id"]
+        two = inbox.send_admin_message(Payload(audience="user", email=f"ana{DOMAIN}", title="Cierre que sigue"), ADMIN)["id"]
+        inbox.archive_admin(one, ADMIN)
+        sent_tab = [i["id"] for i in inbox.list_admin(size=100, q="cierre")["items"]]
+        archive_tab = [i["id"] for i in inbox.list_admin(size=100, q="cierre", archived=True)["items"]]
+        self.assertEqual(([two] if two in sent_tab else []) + [x for x in sent_tab if x == one], [two])
+        self.assertEqual([x for x in archive_tab if x in (one, two)], [one])
+        self.assertEqual(inbox.list_admin(archived=True, status="sent", q="archivable")["total"], 1)
 
     # ----- HTTP
     def test_http_flow_and_every_route_is_guarded(self):
@@ -625,12 +719,27 @@ class Inbox(unittest.TestCase):
         self.assertEqual(self.client.get(f"/admin/messages/{sent.json()['id']}").json()["read"], 1)
         self.assertEqual(self.client.get("/admin/messages").status_code, 200)
         self.assertEqual(self.client.post(f"/inbox/{recipient}/actions/link").status_code, 404)   # a link is not an action
-        self.assertEqual(self.client.delete(f"/inbox/{recipient}").status_code, 200)
-        self.assertEqual(self.client.delete(f"/admin/messages/{sent.json()['id']}").status_code, 200)
+        # nobody deletes any more: the old routes answer 410 with a clear message, and archiving takes their place
+        gone = self.client.delete(f"/inbox/{recipient}")
+        self.assertEqual((gone.status_code, gone.json()["detail"]["code"]), (410, "gone"))
+        self.assertEqual(self.client.delete(f"/admin/messages/{sent.json()['id']}").status_code, 410)
+        self.assertEqual(self.client.post(f"/inbox/{recipient}/archive").status_code, 200)
+        self.assertEqual(self.client.get("/inbox/unread-count").json(), {"unread": 0})
+        self.assertEqual(self.client.get("/inbox?filter=archived").json()["total"], 1)
+        self.assertEqual(self.client.get("/inbox").json()["total"], 0)
+        self.assertEqual(self.client.post(f"/inbox/{recipient}/unarchive").status_code, 200)
+        self.assertEqual(self.client.post("/inbox/archive-read").json()["archived"], 1)
+        self.assertEqual(self.client.post(f"/admin/messages/{sent.json()['id']}/archive").status_code, 200)
+        self.assertEqual(self.client.get("/admin/messages", params={"archived": "true"}).json()["counts"]["archived"] >= 1, True)
+        self.assertEqual(self.client.get("/inbox?filter=archived").json()["total"], 0)           # hidden from the client too
+        self.assertEqual(self.client.post(f"/admin/messages/{sent.json()['id']}/restore").status_code, 200)
+        self.assertEqual(self.client.get("/inbox?filter=archived").json()["total"], 1)
         main.app.dependency_overrides.clear()
         for method, path in (("get", "/inbox"), ("get", "/inbox/unread-count"), ("post", "/inbox/read-all"), ("post", "/inbox/1/read"),
+                             ("post", "/inbox/1/archive"), ("post", "/inbox/1/unarchive"), ("post", "/inbox/archive-read"),
                              ("delete", "/inbox/1"), ("post", "/inbox/1/actions/trial_confirm"), ("get", "/admin/messages"),
-                             ("get", "/admin/messages/1"), ("delete", "/admin/messages/1"), ("post", "/admin/messages/preview"),
+                             ("get", "/admin/messages/1"), ("delete", "/admin/messages/1"), ("post", "/admin/messages/1/archive"),
+                             ("post", "/admin/messages/1/restore"), ("post", "/admin/messages/preview"),
                              ("post", "/admin/messages")):
             kwargs = {"json": {"audience": "all", "title": "t", "body": "b"}} if method == "post" and path.startswith("/admin/messages") else {}
             self.assertEqual(getattr(self.client, method)(path, **kwargs).status_code, 401, path)

@@ -12,6 +12,7 @@ import io
 import json
 import logging
 import threading
+import time
 import unittest
 from contextlib import redirect_stdout
 from datetime import date, timedelta
@@ -60,6 +61,14 @@ class LogCatcher(logging.Handler):
         self.lines.append(record.getMessage())
 
 
+def settle():
+    """Waits until the e-mails queued in the background (2 workers) have been sent to the fake server."""
+    from emails.transport import _pool
+    _pool.submit(lambda: None).result(timeout=120)
+    _pool.submit(lambda: None).result(timeout=120)
+    time.sleep(0.3)
+
+
 class Accounts(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -105,6 +114,7 @@ class Accounts(unittest.TestCase):
 
     def setUp(self):
         import os
+        settle()                            # e-mails of the previous test must not land in this test's list
         RECEIVED.clear()
         os.environ["TRIAL_EMAIL_WEBHOOK_SECRET"] = "right-secret"
         self.cleanup()
@@ -160,9 +170,11 @@ class Accounts(unittest.TestCase):
             pack_data = client_accounts.ClientPack(
                 plan_id=self.plan_id, sessions_per_week=2, preferred_days="Monday,Wednesday",
                 preferred_time="09:00", trainer_id=self.trainer_id, start_date=start.isoformat())
-        return endpoint("/admin/clients", "POST")(client_accounts.CreateClient(
+        result = endpoint("/admin/clients", "POST")(client_accounts.CreateClient(
             name="Ana García", email=email, phone="600123456", country_code="+34",
             city="Barcelona", address="Carrer X 1", postal_code="08005", pack=pack_data, **extra))
+        settle()                           # the e-mail to the studio goes out in the background: wait for it
+        return result
 
     def db_user(self, email):
         conn = get_connection()

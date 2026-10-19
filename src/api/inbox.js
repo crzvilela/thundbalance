@@ -13,7 +13,8 @@ const CODES = {
   session_not_open: 'in_err_closed',
   too_many_requests: 'in_err_busy',
   not_found: 'in_err_gone',
-  no_token: 'in_err_closed'
+  no_token: 'in_err_closed',
+  gone: 'in_err_generic'
 }
 
 async function call(path, options) {
@@ -34,7 +35,7 @@ async function call(path, options) {
 
 const json = (method, data) => ({ method, headers: { 'Content-Type': 'application/json' }, ...(data ? { body: JSON.stringify(data) } : {}) })
 
-// { items, total, page, pages, unread }
+// filter: all (the inbox, without the archived ones) | unread | archived.  -> { items, total, page, pages, unread, counts: { inbox, unread, archived } }
 export const loadInbox = ({ lang, page = 1, filter = 'all', size = 20 }) => call(
   `/inbox?${new URLSearchParams({ lang, page: String(page), filter, size: String(size) })}`
 )
@@ -44,7 +45,10 @@ export const loadUnreadCount = () => call('/inbox/unread-count')
 
 export const markRead = (id) => call(`/inbox/${id}/read`, json('POST'))
 export const markAllRead = () => call('/inbox/read-all', json('POST'))
-export const deleteMessage = (id) => call(`/inbox/${id}`, json('DELETE'))
+// Nothing is deleted: a message is archived (it leaves the inbox and the number) and can be brought back.
+export const archiveMessage = (id) => call(`/inbox/${id}/archive`, json('POST'))
+export const unarchiveMessage = (id) => call(`/inbox/${id}/unarchive`, json('POST'))
+export const archiveRead = () => call('/inbox/archive-read', json('POST'))          // { archived: n }
 
 // A button inside a message. { outcome, item }: the item comes back with its new live state.
 export const runAction = (id, type, lang) => call(`/inbox/${id}/actions/${type}?${new URLSearchParams({ lang })}`, json('POST'))

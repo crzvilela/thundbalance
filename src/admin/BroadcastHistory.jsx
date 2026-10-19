@@ -28,7 +28,7 @@ function Info({ label, children }) {
 
 // One message in full: every language it was written in (with the button text of each), the button, the dates and
 // the numbers. Who read it is listed ONLY for a message to one person (and when); for the others there are totals.
-function Detail({ id, onClose, onDelete, busy }) {
+function Detail({ id, onClose, onArchive, onRestore, busy }) {
   const { t, language } = useAdminText()
   const detail = useAdminResource(`/admin/messages/${id}`)
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
@@ -41,7 +41,9 @@ function Detail({ id, onClose, onDelete, busy }) {
       open onClose={onClose} busy={busy} title={data?.title || '…'} subtitle={data ? t(`bx_st_${data.status}`) : ''}
       footer={<>
         <Button variant="secondary" className="flex-1" onClick={onClose} disabled={busy}>{t('bx_close')}</Button>
-        {data && <Button variant="danger" className="flex-1" onClick={() => onDelete(id)} disabled={busy}>{t('bx_delete')}</Button>}
+        {data && (data.archived
+          ? <Button variant="primary" className="flex-1" onClick={() => onRestore(id)} disabled={busy}>{t('bx_restore')}</Button>
+          : <Button variant="secondary" className="flex-1" onClick={() => onArchive(id)} disabled={busy}><Icon name="archive" className="h-4 w-4" />{t('bx_archive')}</Button>)}
       </>}
     >
       {detail.error ? (
@@ -55,6 +57,7 @@ function Detail({ id, onClose, onDelete, busy }) {
             <Info label={t('bx_h_status')}><StatusBadge status={data.status} /></Info>
             <Info label={t('bx_h_sends')}>{when(data.visible_from)}</Info>
             <Info label={t('bx_h_expires')}>{data.expires_at ? when(data.expires_at) : t('bx_h_no_expiry')}</Info>
+            {data.archived && <Info label={t('bx_tab_archived')}>{fill(t('bx_d_archived_on'), { who: data.archived_by || '—', when: when(data.archived_at) })}</Info>}
             <Info label={t('bx_d_recipients')}>{data.recipients}</Info>
             <Info label={t('bx_d_reads')}>{fill(t(data.recipients === 1 ? 'bx_h_read_one' : 'bx_h_read'), { read: data.read, total: data.recipients })}</Info>
           </dl>
@@ -93,7 +96,7 @@ function Detail({ id, onClose, onDelete, busy }) {
                   <span className="[overflow-wrap:anywhere]">{person.email}</span>
                   <Badge tone={person.read ? 'emerald' : 'neutral'}><Icon name={person.read ? 'check' : 'clock'} className="h-3.5 w-3.5" />{t(person.read ? 'bx_d_read_yes' : 'bx_d_read_no')}</Badge>
                   {person.read && person.read_at && <span className="text-sm text-gray-400">{fill(t('bx_d_read_at'), { when: when(person.read_at) })}</span>}
-                  {person.deleted_by_client && <span className="text-sm text-gray-400">{t('bx_d_removed')}</span>}
+                  {person.archived_by_client && <span className="text-sm text-gray-400">{t('bx_d_removed')}</span>}
                 </li>
               ))}
             </ul>
@@ -115,8 +118,9 @@ export default function BroadcastHistory({ highlight }) {
   const [q, setQ] = useState('')                    // what is asked, a moment after the typing stops
   const [status, setStatus] = useState('all')
   const [page, setPage] = useState(1)
+  const [archivedTab, setArchivedTab] = useState(false)     // false: the history ("Sent"); true: the archive ("Archived")
   const [openId, setOpenId] = useState(null)
-  const [deleting, setDeleting] = useState(null)
+  const [archiving, setArchiving] = useState(null)
   const [busy, setBusy] = useState(false)
   const scrolled = useRef(false)
 
@@ -130,8 +134,9 @@ export default function BroadcastHistory({ highlight }) {
     const query = new URLSearchParams({ page: String(page), size: String(PAGE_SIZE) })
     if (q) query.set('q', q)
     if (status !== 'all') query.set('status', status)
+    if (archivedTab) query.set('archived', 'true')
     return `/admin/messages?${query}`
-  }, [page, q, status])
+  }, [page, q, status, archivedTab])
   const resource = useAdminResource(path)
   const items = useMemo(() => resource.data?.items || [], [resource.data])
   const pages = resource.data?.pages || 1
@@ -145,24 +150,38 @@ export default function BroadcastHistory({ highlight }) {
 
   const when = (iso) => (iso ? new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }).format(wallClock(iso)) : '')
 
-  const remove = async () => {
+  // Nothing is deleted: the message is archived (it leaves every client's inbox, stays here under "Archived") or restored.
+  const change = async (idToChange, path, done) => {
     setBusy(true)
     try {
-      await adminRequest('DELETE', `/admin/messages/${deleting}`)
-      toast.push(t('bx_deleted'))
-      setDeleting(null); setOpenId(null)
+      await adminRequest('POST', `/admin/messages/${idToChange}/${path}`)
+      toast.push(t(done))
+      setArchiving(null); setOpenId(null)
       if (items.length <= 1 && page > 1) setPage(page - 1)
       else resource.reload()
     } catch (error) {
       toast.push(error.message || t('action_error'), 'error')
-      setDeleting(null)
+      setArchiving(null)
     } finally {
       setBusy(false)
     }
   }
+  const counts = resource.data?.counts
+
+  const tabs = [[false, 'bx_h_tab_sent', counts?.active], [true, 'bx_h_tab_archived', counts?.archived]]
 
   return (
     <div>
+      <div className="mb-5 flex flex-wrap gap-2" role="tablist" aria-label={t('bx_h_pages')}>
+        {tabs.map(([value, label, count]) => (
+          <button key={label} type="button" role="tab" aria-selected={archivedTab === value} onClick={() => { setArchivedTab(value); setPage(1) }}
+            className={`flex min-h-[44px] items-center gap-2 rounded-full border px-5 text-sm transition ${FOCUS} ${archivedTab === value ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300' : 'border-white/10 text-gray-400 hover:border-white/25 hover:text-white'}`}>
+            {t(label)}
+            <span className={`rounded-full px-1.5 text-xs tabular-nums ${archivedTab === value ? 'bg-emerald-400/20' : 'bg-white/10'}`}>{count ?? '–'}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <div className="relative w-full sm:w-80">
           <Icon name="search" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
@@ -182,7 +201,7 @@ export default function BroadcastHistory({ highlight }) {
       ) : resource.loading && !resource.data ? (
         <div className="space-y-3" role="status" aria-label="…"><Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" /></div>
       ) : items.length === 0 ? (
-        <Card><EmptyState icon="send" title={t(filtered ? 'bx_h_empty_filtered' : 'bx_h_empty')} /></Card>
+        <Card><EmptyState icon={archivedTab ? 'archive' : 'send'} title={t(filtered ? 'bx_h_empty_filtered' : archivedTab ? 'bx_h_empty_archived' : 'bx_h_empty')} /></Card>
       ) : (
         <>
           <ul className="space-y-3">
@@ -218,13 +237,13 @@ export default function BroadcastHistory({ highlight }) {
         </>
       )}
 
-      {openId && <Detail key={openId} id={openId} busy={busy} onClose={() => setOpenId(null)} onDelete={setDeleting} />}
+      {openId && <Detail key={openId} id={openId} busy={busy} onClose={() => setOpenId(null)} onArchive={setArchiving} onRestore={(target) => change(target, 'restore', 'bx_restored')} />}
 
       <ConfirmDialog
-        open={!!deleting} busy={busy} icon="alert"
-        title={t('bx_delete_title')} text={t('bx_delete_text')}
-        confirmLabel={t('bx_delete')} cancelLabel={t('cancel')}
-        onConfirm={remove} onCancel={() => setDeleting(null)}
+        open={!!archiving} busy={busy} tone="neutral" icon="archive"
+        title={t('bx_archive_title')} text={t('bx_archive_text')}
+        confirmLabel={t('bx_archive')} cancelLabel={t('cancel')}
+        onConfirm={() => change(archiving, 'archive', 'bx_archived')} onCancel={() => setArchiving(null)}
       />
     </div>
   )

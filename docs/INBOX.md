@@ -33,7 +33,7 @@ no message (the client did it).
 `trial_approved` (confirm, decline), `reschedule_counter` (accept, reject), `pack_approved` (link to /my-sessions), and the
 optional link of a studio message. The state is read LIVE from the trial session / the request: `available`, `done`
 (answered by any channel, e-mail link included) or `expired`. Once an answer button is `done`, `action.result` says WHAT was answered (confirmed | declined for a trial session,
-accepted | declined for a proposal), read from the real object. A message with an `available` answer can not be deleted by the
+accepted | declined for a proposal), read from the real object. A message with an `available` answer can not be archived by the
 client. Trial buttons need the VERIFIED sign-in e-mail to be the booking's e-mail (403 `use_booking_email`).
 
 ## Linking messages to a later sign-up
@@ -42,16 +42,24 @@ when Firebase says `email_verified`.
 
 ## Endpoints
 Client (ID token): `GET /inbox?lang=&page=&filter=all|unread&size=`, `GET /inbox/unread-count`, `POST /inbox/{id}/read`,
-`POST /inbox/read-all`, `DELETE /inbox/{id}`, `POST /inbox/{id}/actions/{trial_confirm|trial_decline|reschedule_accept|reschedule_reject}`.
+`POST /inbox/read-all`, `POST /inbox/{id}/archive`, `POST /inbox/{id}/unarchive`, `POST /inbox/archive-read`, `POST /inbox/{id}/actions/{trial_confirm|trial_decline|reschedule_accept|reschedule_reject}`.
 `{id}` is the recipient row's id. Pages are capped (50) and every route is rate limited per person (429).
 Admin (ID token + administrator): `POST /admin/messages/preview`, `POST /admin/messages`, `GET /admin/messages`,
-`GET /admin/messages/{id}`, `DELETE /admin/messages/{id}` (soft delete, idempotent).
+`GET /admin/messages/{id}`, `POST /admin/messages/{id}/archive`, `POST /admin/messages/{id}/restore` (idempotent, audited).
 `GET /admin/messages` takes `page`, `size`, `q` (title, % and _ literal) and `status` (scheduled | sent | expired); each item has
 `person` (the e-mail, only for a message to one person) and the detail lists `read_at` of that person. The button's text
 can be translated: `translations.<lang>.action_label` (the written `action_label` is the fallback; ignored without a button). Title up to 120, text up to 2000,
 plain text (HTML refused), button destination = one of `/my-sessions /profile /dashboard /trial-session /training-request
 /training-tips` or an http(s) address.
 
-## Cleanup
-Lazy: reading the inbox removes, at most once an hour per process, the messages that expired more than 90 days ago.
-Deleting a client also removes the inbox rows for their e-mail.
+## Nothing is deleted
+Nobody deletes messages any more: `DELETE /inbox/{id}` and `DELETE /admin/messages/{id}` answer 410. The client ARCHIVES
+(`inbox_recipients.archived_at`; marks it read; refused with 409 `action_pending` while an answer button is `available`;
+`GET /inbox?filter=archived` lists them; `all` and `unread` and the menu number never include them; `read-all` leaves them
+alone; `archive-read` archives every read message without an answer waiting). The studio ARCHIVES a message it sent
+(`inbox_messages.archived_at / archived_by`): it leaves EVERY client's inbox and archive and the numbers, stays in the
+studio's history under "Archived" (`GET /admin/messages?archived=true`, `counts` = {active, archived}) and
+`/restore` gives it back to everybody who had it (each client's own archive state is untouched). One audit row per
+real change in `inbox_audit` (who, when, which message). The old `deleted_at` columns are kept but unused; at startup the
+rows that had one get `archived_at = deleted_at` (idempotent). The lazy 90-day cleanup of expired messages was removed.
+Only deleting a CLIENT's account (the existing lifecycle flow) still removes that client's inbox rows.

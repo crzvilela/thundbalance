@@ -128,7 +128,7 @@ export function previewItem(draft, lang, nowWall) {
   return {
     id: 0, kind: 'admin', type: draft.audience === 'user' ? 'direct' : 'broadcast',
     title: own.title?.trim() || draft.title.trim(), body: own.body?.trim() || draft.body.trim(),
-    date: nowWall, read: false, actions, can_delete: true
+    date: nowWall, read: false, actions, can_archive: true, archived: false
   }
 }
 

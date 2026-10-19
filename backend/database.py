@@ -14,7 +14,9 @@ CONNECT_TIMEOUT = 10
 
 def _connect():
     if DATABASE_URL:
-        return psycopg2.connect(DATABASE_URL, connect_timeout=CONNECT_TIMEOUT)
+        # keepalives: an idle socket is probed, so a connection the server dropped is noticed instead of hanging
+        return psycopg2.connect(DATABASE_URL, connect_timeout=CONNECT_TIMEOUT, keepalives=1, keepalives_idle=30,
+                                keepalives_interval=10, keepalives_count=3)
 
     return psycopg2.connect(
         host="localhost",
@@ -26,7 +28,11 @@ def _connect():
 
 
 def get_connection():
-    return _connect()
+    """A connection for the caller to use and close() as always. Opening one to a remote database costs about a second
+    (TCP + TLS + login), and most requests open several, so close() hands the connection back to a small pool and the
+    next call reuses it. See PooledConnection."""
+    raw = _checkout()
+    return PooledConnection(raw if raw is not None else _connect())
 
 
 # ---------------------------------------------------------------------------
@@ -36,8 +42,9 @@ def get_connection():
 # idle connections are kept and handed out again. Everything that writes keeps
 # using get_connection() above, exactly as before.
 # ---------------------------------------------------------------------------
-IDLE_MAX = 3
+IDLE_MAX = 4
 IDLE_SECONDS = 240   # older idle connections are dropped: the server may have closed them
+CHECK_AFTER = 15     # a connection idle for longer than this is tested with SELECT 1 before it is handed out
 
 _idle = []           # [(connection, last_used)]
 _idle_lock = threading.Lock()
@@ -56,6 +63,83 @@ def _drop_idle():
         _idle.clear()
     for connection, _ in items:
         _discard(connection)
+
+
+def _checkout():
+    """An idle connection that still works, or None. One idle for a while is tested first (a managed database closes
+    quiet connections); a dead one is thrown away."""
+    while True:
+        with _idle_lock:
+            if not _idle:
+                return None
+            candidate, used = _idle.pop()
+        now = time.time()
+        if candidate.closed or now - used > IDLE_SECONDS:
+            _discard(candidate)
+            continue
+        if now - used > CHECK_AFTER:
+            try:
+                cursor = candidate.cursor()
+                try:
+                    cursor.execute("SELECT 1")
+                finally:
+                    cursor.close()
+                candidate.rollback()
+            except Exception:  # noqa: BLE001
+                _discard(candidate)
+                continue
+        return candidate
+
+
+def _release(connection):
+    """Back to the pool (after ending whatever transaction was open), or closed when the pool is full or it is broken."""
+    keep = False
+    if not connection.closed:
+        try:
+            connection.rollback()
+            with _idle_lock:
+                if len(_idle) < IDLE_MAX:
+                    _idle.append((connection, time.time()))
+                    keep = True
+        except Exception:  # noqa: BLE001
+            keep = False
+    if not keep:
+        _discard(connection)
+
+
+class PooledConnection:
+    """What get_connection() returns. It behaves like the psycopg2 connection (cursor, commit, rollback, `with`...), but
+    close() gives the connection back to the pool instead of closing it. Closing twice does nothing, and a connection
+    that was handed back can not be used any more (it may already belong to somebody else)."""
+
+    def __init__(self, raw):
+        object.__setattr__(self, "_raw", raw)
+        object.__setattr__(self, "_open", True)
+
+    def __getattr__(self, name):
+        if not object.__getattribute__(self, "_open"):
+            raise psycopg2.InterfaceError("connection already closed")
+        return getattr(object.__getattribute__(self, "_raw"), name)
+
+    def __setattr__(self, name, value):
+        setattr(object.__getattribute__(self, "_raw"), name, value)
+
+    @property
+    def closed(self):
+        return (not object.__getattribute__(self, "_open")) or bool(object.__getattribute__(self, "_raw").closed)
+
+    def close(self):
+        if not object.__getattribute__(self, "_open"):
+            return
+        object.__setattr__(self, "_open", False)
+        _release(object.__getattribute__(self, "_raw"))
+
+    def __enter__(self):
+        object.__getattribute__(self, "_raw").__enter__()
+        return self
+
+    def __exit__(self, *exc):
+        return object.__getattribute__(self, "_raw").__exit__(*exc)
 
 
 @contextmanager

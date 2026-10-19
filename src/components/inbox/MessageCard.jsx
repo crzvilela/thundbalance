@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import { Link } from 'react-router-dom'
-import { BsCheckCircleFill, BsClockHistory, BsEnvelope, BsTrash } from 'react-icons/bs'
+import { BsArchive, BsCheckCircleFill, BsClockHistory, BsEnvelope, BsInbox } from 'react-icons/bs'
 import { useI18n } from '../../i18n/I18nContext'
 import { doneLabelKey, fullDate, isLong, relativeTime } from '../../utils/inboxFormat'
 import { linkify } from '../../utils/linkify'
@@ -32,7 +32,7 @@ function LinkButton({ action, onRead }) {
 
 // One message. It knows nothing about the server: the page gives it the item (with the live state of each button),
 // what happened after the last press (`outcome`, `result`, `error`) and the functions to call.
-function MessageCard({ item, now, expanded, busy, outcome, result, error, onToggle, onRead, onAction, onDelete, translate, localeOverride }) {
+function MessageCard({ item, now, expanded, busy, outcome, result, error, onToggle, onRead, onAction, onArchive, onUnarchive, translate, localeOverride }) {
   const i18n = useI18n()
   // the studio's preview draws the card in the language it is asked for, not in the language of the panel
   const t = translate || i18n.t
@@ -127,14 +127,25 @@ function MessageCard({ item, now, expanded, busy, outcome, result, error, onTogg
           <BsEnvelope aria-hidden="true" className="h-4 w-4" />{t('in_contact')}
         </a>
         <div className="flex items-center gap-3">
-          {!item.can_delete && <span id={`blocked-${item.id}`} className="max-w-[16rem] text-right text-xs text-gray-400">{t('in_delete_blocked')}</span>}
-          <button
-            type="button" disabled={!item.can_delete || busy} onClick={() => onDelete(item)}
-            aria-describedby={item.can_delete ? undefined : `blocked-${item.id}`}
-            className={`inline-flex min-h-[44px] items-center gap-2 rounded-lg px-3 text-sm text-gray-300 transition hover:bg-red-500/15 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-300 ${FOCUS}`}
-          >
-            <BsTrash aria-hidden="true" className="h-4 w-4" />{t('in_delete')}
-          </button>
+          {item.archived ? (
+            <button
+              type="button" disabled={busy} onClick={() => onUnarchive(item)}
+              className={`inline-flex min-h-[44px] items-center gap-2 rounded-lg border border-white/20 px-3 text-sm text-white transition hover:bg-white/10 disabled:opacity-50 ${FOCUS}`}
+            >
+              <BsInbox aria-hidden="true" className="h-4 w-4" />{t('in_unarchive')}
+            </button>
+          ) : (
+            <>
+              {!item.can_archive && <span id={`blocked-${item.id}`} className="max-w-[16rem] text-right text-xs text-gray-400">{t('in_archive_blocked')}</span>}
+              <button
+                type="button" disabled={!item.can_archive || busy} onClick={() => onArchive(item)}
+                aria-describedby={item.can_archive ? undefined : `blocked-${item.id}`}
+                className={`inline-flex min-h-[44px] items-center gap-2 rounded-lg px-3 text-sm text-gray-300 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-300 ${FOCUS}`}
+              >
+                <BsArchive aria-hidden="true" className="h-4 w-4" />{t('in_archive')}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </article>
