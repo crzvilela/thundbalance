@@ -12,7 +12,7 @@ import { useAdminResource } from '../useAdminResource'
 import { Button, Card, Icon, PageHeader } from '../ui'
 import CalendarFilters from '../calendar/CalendarFilters'
 import EventDetail from '../calendar/EventDetail'
-import { MOBILE_QUERY, NEUTRAL_COLOR, OPENING_HOURS, dayKey, madridWallClock } from '../calendar/calendarConfig'
+import { MOBILE_QUERY, NEUTRAL_COLOR, dayKey, madridWallClock, slotDurationFor, studioHours } from '../calendar/calendarConfig'
 import { useCalendarFilters } from '../calendar/useCalendarFilters'
 import '../calendar/calendar.css'
 
@@ -30,6 +30,28 @@ function useMobile() {
   return mobile
 }
 
+// Day and week views on a computer: the calendar takes all the height that is left on the screen (so every hour of the
+// studio fits with no scrolling, inside or outside it) and follows the window when it is resized. `null` = not used
+// (phones, the month view): the CSS height applies.
+function useFitHeight(frame, enabled) {
+  const [height, setHeight] = useState(null)
+  useEffect(() => {
+    const element = frame.current
+    if (!enabled || !element) return undefined
+    const compute = () => {
+      const top = element.getBoundingClientRect().top + window.scrollY
+      const padding = (node) => (node ? parseFloat(window.getComputedStyle(node).paddingBottom) || 0 : 0)
+      setHeight(Math.max(240, Math.floor(window.innerHeight - top - padding(element.parentElement) - padding(element.closest('main')) - 2)))
+    }
+    const first = window.setTimeout(compute, 0)            // the first size, as soon as the page has been laid out
+    const observer = new ResizeObserver(compute)          // and any later change of the page above the calendar
+    observer.observe(document.documentElement)
+    window.addEventListener('resize', compute)
+    return () => { window.clearTimeout(first); observer.disconnect(); window.removeEventListener('resize', compute) }
+  }, [frame, enabled])
+  return enabled ? height : null
+}
+
 export default function Calendar() {
   const { t, language } = useAdminText()
   const calendar = useRef(null)
@@ -37,6 +59,8 @@ export default function Calendar() {
   const trainers = useMemo(() => (Array.isArray(trainersResource.data) ? trainersResource.data : []), [trainersResource.data])
   const { filters, setFilters, clear, active, view, date, setPosition } = useCalendarFilters()
   const mobile = useMobile()
+  const studio = useMemo(() => studioHours(trainers), [trainers])      // first start to last end of all trainers
+  const frame = useRef(null)
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -75,8 +99,11 @@ export default function Calendar() {
   const reload = () => calendar.current?.getApi().refetchEvents()
 
   const initialView = VIEWS.includes(view) ? view : (mobile ? 'timeGridDay' : 'timeGridWeek')
-  const wall = madridWallClock()
-  const scrollHour = Math.max(Number(OPENING_HOURS.start.slice(0, 2)), wall.getUTCHours() - 1)
+  const timeView = (VIEWS.includes(view) ? view : initialView) !== 'dayGridMonth'
+  const fitHeight = useFitHeight(frame, !mobile && timeView)
+  // 30-minute rows while they stay readable, hourly rows on a short screen (a session is one hour, on the hour)
+  const slotDuration = mobile ? '00:30:00' : slotDurationFor(fitHeight ?? 10000, studio)
+  useEffect(() => { calendar.current?.getApi().updateSize() }, [fitHeight, slotDuration])
 
   const headerToolbar = mobile
     ? { left: 'prev,next', center: 'title', right: 'today' }
@@ -111,7 +138,7 @@ export default function Calendar() {
   }
 
   return (
-    <div className="admin-fade">
+    <div className="admin-fade ac-page">
       <PageHeader
         title={t('ac_title')} subtitle={t('ac_sub')}
         actions={<Button variant="secondary" onClick={reload}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>}
@@ -137,7 +164,7 @@ export default function Calendar() {
           </div>
         )}
         {loading && !error && <p role="status" className="absolute right-4 top-4 z-10 rounded-full bg-black/60 px-3 py-1 text-xs text-gray-300">{t('ac_loading')}</p>}
-        <div className="ac-frame">
+        <div ref={frame} className="ac-frame" style={fitHeight ? { height: fitHeight } : undefined}>
           <FullCalendar
             ref={calendar}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
@@ -155,10 +182,12 @@ export default function Calendar() {
             expandRows
             nowIndicator
             allDaySlot={false}
-            slotMinTime={OPENING_HOURS.start}
-            slotMaxTime={OPENING_HOURS.end}
-            scrollTime={`${String(scrollHour).padStart(2, '0')}:00:00`}
-            slotDuration="00:30:00"
+            slotMinTime={studio.start}
+            slotMaxTime={studio.end}
+            scrollTime={studio.start}
+            slotDuration={slotDuration}
+            slotLabelInterval="01:00:00"
+            slotEventOverlap={false}
             slotLabelFormat={TIME_FORMAT}
             eventTimeFormat={TIME_FORMAT}
             dayMaxEvents={4}

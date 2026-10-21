@@ -97,3 +97,25 @@
   .admin-fc .fc-button { padding: 0.45rem 0.7rem; }
   .admin-fc .ac-ev-title { white-space: normal; }
 }
+
+/* ---- Day and week views on a computer (>= 768px): every hour of the studio on ONE screen, nothing to scroll.
+   The frame's height is set from the window by Calendar.jsx (useFitHeight) and expandRows stretches the rows to
+   fill it; these are the smallest sizes. Phones keep the roomier layout above (they may scroll). ---- */
+@media (min-width: 768px) {
+  .admin-fc .fc-timegrid-slot { height: 1rem; line-height: 1.1; }       /* a row may shrink to ~16px (the line-height stops its text making it 21px); the grid goes hourly before 30-minute rows would be under 20px */
+  .admin-fc .fc-toolbar { gap: 0.5rem; margin-bottom: 0.5rem !important; }
+  .admin-fc .fc-toolbar-title { font-size: 1.4rem; }
+  .admin-fc .fc-button { min-height: 32px; padding: 0.2rem 0.75rem; font-size: 0.8rem; }
+  .admin-fc .fc-timegrid .fc-col-header-cell-cushion { padding: 2px 4px; font-size: 0.78rem; }
+  .admin-fc .fc-timegrid-slot-label-cushion, .admin-fc .fc-timegrid-axis-cushion { font-size: 0.7rem; line-height: 1.1; padding: 0 0.3rem; }
+  .admin-fc .fc-timegrid-event .ac-ev-inner { padding: 0 3px; font-size: 0.72rem; line-height: 1.15; }
+  .admin-fc .fc-timegrid-event .ac-ev-sub { display: none; }            /* the title already says "Trial" */
+  .admin-fc .fc-timegrid-event { border-radius: 0.35rem; }
+  .admin-fc .fc-timegrid-event .ac-ev-title { white-space: nowrap; }
+}
+/* a short window: the title block above the calendar gives its space to the calendar */
+@media (min-width: 768px) and (max-height: 860px) {
+  .ac-page > header { margin-bottom: 0.75rem; }
+  .ac-page > header h1 { font-size: 2.25rem; }
+  .ac-page > header p { display: none; }
+}

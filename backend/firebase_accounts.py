@@ -151,6 +151,20 @@ def create_login(email, password, display_name):
         raise AccountError(type(error).__name__) from error
 
 
+def get_user_by_email(email):
+    """{"uid", "email_verified", "disabled"} of the Firebase account with this email, or
+    None when there is none. Raises AccountsUnavailable / AccountError otherwise."""
+    auth = _auth()
+    try:
+        user = auth.get_user_by_email(email)
+        return {"uid": user.uid, "email_verified": bool(user.email_verified), "disabled": bool(user.disabled)}
+    except auth.UserNotFoundError:
+        return None
+    except Exception as error:  # noqa: BLE001
+        logger.error("Firebase account could not be looked up (%s)", type(error).__name__)
+        raise AccountError(type(error).__name__) from error
+
+
 def set_password(uid, password):
     auth = _auth()
     try:

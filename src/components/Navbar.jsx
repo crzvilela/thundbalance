@@ -11,6 +11,7 @@ import { useI18n } from '../i18n/I18nContext'
 import LanguageSwitcher from './LanguageSwitcher'
 import InboxBell, { UnreadBadge } from './InboxBell'
 import { useUnreadCount, useUnreadPolling } from '../hooks/useUnreadCount'
+import { useRoles } from '../roles/rolesContext'
 // Bundled white vector logo, inlined into the JS so it is there on the very
 // first render: no network request, no wait for the API.
 import logo from '../assets/images/thundbalance-logo.svg?inline'
@@ -68,6 +69,8 @@ function NavbarInner() {
   }, [])
 
   const isAdmin = Boolean(user && user.email?.trim().toLowerCase() === ADMIN_EMAIL)
+  // A trainer has their own, smaller menu: nothing of the client area (sessions, packs, trial).
+  const { isTrainer } = useRoles()
 
   const [openMenu, setOpenMenu] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -184,7 +187,12 @@ function NavbarInner() {
     { href: `#${contactId}`, labelPath: 'contact', label: t('nav_contact') }
   ]
 
-  const userLinks = [
+  const userLinks = isTrainer ? [
+    { to: '/', labelPath: 'home', label: t('nav_home') },
+    { to: '/profile', labelPath: 'profile', label: t('nav_profile') },
+    { to: '/trainer', label: t('trainer.menuLabel') },
+    { to: '/training-tips', label: t('training_tips_title') }
+  ] : [
     { to: '/', labelPath: 'home', label: t('nav_home') },
     { to: '/dashboard', labelPath: 'dashboard', label: t('nav_dashboard') },
     { to: '/profile', labelPath: 'profile', label: t('nav_profile') },
@@ -341,26 +349,39 @@ function NavbarInner() {
 
                   </div>
 
-                  <Link
-                    to="/dashboard"
-                    className="block px-4 py-3 hover:bg-white/10 transition duration-300"
-                  >
-                    {t('nav_dashboard')}
-                  </Link>
+                  {!isTrainer && (
+                    <Link
+                      to="/dashboard"
+                      className="block px-4 py-3 hover:bg-white/10 transition duration-300"
+                    >
+                      {t('nav_dashboard')}
+                    </Link>
+                  )}
 
                   <Link
                     to="/profile"
+                    onClick={() => setOpenMenu(false)}
                     className="block px-4 py-3 hover:bg-white/10 transition duration-300"
                   >
                     {t('nav_profile')}
                   </Link>
 
-                  <Link
-                    to="/my-sessions"
-                    className="block px-4 py-3 hover:bg-white/10 transition duration-300"
-                  >
-                    {t('nav_my_sessions')}
-                  </Link>
+                  {isTrainer ? (
+                    <Link
+                      to="/trainer"
+                      onClick={() => setOpenMenu(false)}
+                      className="block px-4 py-3 hover:bg-white/10 transition duration-300"
+                    >
+                      {t('trainer.menuLabel')}
+                    </Link>
+                  ) : (
+                    <Link
+                      to="/my-sessions"
+                      className="block px-4 py-3 hover:bg-white/10 transition duration-300"
+                    >
+                      {t('nav_my_sessions')}
+                    </Link>
+                  )}
 
                   <Link
                     to="/training-tips"

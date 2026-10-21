@@ -9,6 +9,7 @@ import ImageTextSection from './ImageTextSection'
 import VideoBlockSection from './VideoBlockSection'
 import { useLandingContent } from '../content/LandingContentContext'
 import { defaultContent } from '../content/defaultContent'
+import { useRoles } from '../roles/rolesContext'
 
 // Maps a dynamic section's `type` to the component that renders it. Hero is
 // NOT here — it's fixed/structural and always rendered first, outside this
@@ -30,7 +31,8 @@ const SECTION_COMPONENTS = {
 // dynamic section IDs (not fixed names) — each ID's `type` picks the
 // component to render.
 export default function LandingSections() {
-  const { content } = useLandingContent()
+  const { content, isEditMode } = useLandingContent()
+  const { isTrainer } = useRoles()
   const order = (content.sectionOrder && content.sectionOrder.length)
     ? content.sectionOrder
     : defaultContent.sectionOrder
@@ -42,6 +44,8 @@ export default function LandingSections() {
       {order.map((id) => {
         const section = content.sections[id]
         if (!section) return null
+        // a trainer is not offered packs: the prices section is left out of their home page (never in the editor)
+        if (section.type === 'pricing' && isTrainer && !isEditMode) return null
         const SectionComponent = SECTION_COMPONENTS[section.type]
         return SectionComponent ? <SectionComponent key={id} sectionId={id} /> : null
       })}

@@ -4,6 +4,7 @@ import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { WEEKDAYS } from '../availability'
+import TrainerAccess from '../TrainerAccess'
 import { NEUTRAL_COLOR, TRAINER_PALETTE } from '../calendar/calendarConfig'
 import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon,
@@ -250,6 +251,8 @@ export default function Trainers() {
       <p className="mb-6 flex items-center gap-2 rounded-xl border border-sky-400/20 bg-sky-400/5 px-4 py-3 text-sm text-sky-100">
         <Icon name="clock" className="h-4 w-4 shrink-0" />{t('tn_note')}
       </p>
+
+      <TrainerAccess />
 
       {resource.error ? (
         <Card><ErrorState message={`${t('load_error')} (${resource.error})`} retryLabel={t('retry')} onRetry={resource.reload} /></Card>

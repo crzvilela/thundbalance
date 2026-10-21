@@ -9,7 +9,7 @@ import { translations } from '../i18n/translations'
 import { madridWallClock, wallClock } from './calendar/calendarConfig'
 import {
   BODY_MAX, LABEL_MAX, LANGS, MAX_AHEAD_DAYS, TARGETS, TITLE_MAX,
-  addDays, emptyDraft, previewItem, serverErrorKey, toPayload, validateDraft
+  AUDIENCE_OPTIONS, addDays, emptyDraft, previewItem, serverErrorKey, toPayload, validateDraft
 } from './broadcast'
 import { Button, ConfirmDialog, Field, Icon, SelectInput, TextArea, TextInput } from './ui'
 
@@ -138,26 +138,29 @@ export default function BroadcastComposer({ draft, setDraft, onSent }) {
   const shown = (name) => (touched[name] && problems[name] ? t(problems[name]) : '')
 
   // ---- how many will receive it (the server counts; a short pause while typing)
-  const countKey = draft.audience === 'user' ? (draft.person ? `user|${draft.person.email}` : '') : draft.audience
+  const wantsPerson = draft.audiences.includes('user')
+  const audienceKey = AUDIENCE_OPTIONS.filter(option => draft.audiences.includes(option))
+  const countKey = draft.audiences.length === 0 || (wantsPerson && !draft.person) ? '' : `${audienceKey.join('+')}|${wantsPerson ? draft.person.email : ''}`
   useEffect(() => {
     if (!countKey) return undefined
     let active = true
     const timer = window.setTimeout(() => {
-      adminRequest('POST', '/admin/messages/preview', { audience: draft.audience, ...(draft.audience === 'user' ? { email: draft.person.email } : {}) })
+      adminRequest('POST', '/admin/messages/preview', { audiences: audienceKey, ...(wantsPerson ? { email: draft.person.email } : {}) })
         .then(data => { if (active) setCounter({ key: countKey, data, failed: false }) },
           () => { if (active) setCounter({ key: countKey, data: null, failed: true }) })
     }, 350)
     return () => { active = false; window.clearTimeout(timer) }
-  }, [countKey, draft.audience, draft.person])
+  }, [countKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const counting = !!countKey && counter.key !== countKey
   const data = counter.key === countKey ? counter.data : null
   const recipients = data ? data.count : 0
   let countText = ''
-  if (draft.audience === 'user' && !draft.person) countText = t('bx_count_pick')
+  if (draft.audiences.length === 0) countText = t('bx_count_choose')
+  else if (wantsPerson && !draft.person) countText = t('bx_count_pick')
   else if (counting) countText = t('bx_count_loading')
   else if (counter.failed && counter.key === countKey) countText = t('bx_count_error')
-  else if (data && draft.audience === 'user' && data.found === false) countText = t('bx_count_not_found')
+  else if (data && wantsPerson && data.found === false) countText = t('bx_count_not_found')
   else if (data && data.archived) countText = t('bx_count_archived')
   else if (data) countText = recipients === 0 ? t('bx_count_zero') : recipients === 1 ? t('bx_count_one') : fill(t('bx_count_n'), { n: recipients })
 
@@ -199,7 +202,7 @@ export default function BroadcastComposer({ draft, setDraft, onSent }) {
       return vars ? value.replace(/\{(\w+)\}/g, (match, name) => (name in vars ? String(vars[name]) : match)) : value
     }
   }, [previewLang])
-  const confirmText = draft.audience === 'user'
+  const confirmText = draft.audiences.length === 1 && wantsPerson
     ? fill(t('bx_confirm_user'), { email: draft.person?.email || '' })
     : recipients === 1 ? t('bx_confirm_one') : fill(t('bx_confirm_n'), { n: recipients })
 
@@ -209,16 +212,25 @@ export default function BroadcastComposer({ draft, setDraft, onSent }) {
         <SectionCard title={t('bx_to')} className="mb-5">
           <fieldset>
             <legend className="sr-only">{t('bx_to')}</legend>
+            <p className="mb-3 text-sm text-gray-400">{t('bx_to_help')}</p>
             <div className="space-y-3">
-              {[['all', 'bx_aud_all', 'bx_aud_all_help'], ['active_pack', 'bx_aud_pack', 'bx_aud_pack_help'], ['user', 'bx_aud_user', 'bx_aud_user_help']].map(([value, label, help]) => (
-                <label key={value} className={`flex min-h-[44px] cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition ${draft.audience === value ? 'border-emerald-400/50 bg-emerald-400/[0.06]' : 'border-white/10 hover:border-white/25'}`}>
-                  <input type="radio" name="bx-audience" value={value} checked={draft.audience === value} onChange={() => patch({ audience: value, person: null })} className="mt-1 h-5 w-5 shrink-0 accent-emerald-400" />
-                  <span><span className="block text-base font-semibold text-white">{t(label)}</span><span className="block text-sm text-gray-400">{t(help)}</span></span>
-                </label>
-              ))}
+              {[['all', 'bx_aud_all', 'bx_aud_all_help'], ['active_pack', 'bx_aud_pack', 'bx_aud_pack_help'], ['trainers', 'bx_aud_trainers', 'bx_aud_trainers_help'], ['user', 'bx_aud_user', 'bx_aud_user_help']].map(([value, label, help]) => {
+                const checked = draft.audiences.includes(value)
+                return (
+                  <label key={value} className={`flex min-h-[44px] cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition ${checked ? 'border-emerald-400/50 bg-emerald-400/[0.06]' : 'border-white/10 hover:border-white/25'}`}>
+                    <input type="checkbox" name="bx-audience" value={value} checked={checked} className="mt-1 h-5 w-5 shrink-0 accent-emerald-400"
+                      onChange={event => patch({
+                        audiences: event.target.checked ? [...draft.audiences, value] : draft.audiences.filter(item => item !== value),
+                        ...(value === 'user' && !event.target.checked ? { person: null } : {})
+                      })} />
+                    <span><span className="block text-base font-semibold text-white">{t(label)}</span><span className="block text-sm text-gray-400">{t(help)}</span></span>
+                  </label>
+                )
+              })}
             </div>
           </fieldset>
-          {draft.audience === 'user' && (
+          <FieldError id="bx-audiences-error" text={problems.audiences ? t(problems.audiences) : ''} />
+          {wantsPerson && (
             <PersonPicker person={draft.person} onPick={person => patch({ person })} problem={touched.person ? problems.person : ''} onBlur={() => touch('person')} />
           )}
           <p role="status" aria-live="polite" className={`mt-4 flex items-center gap-2 text-sm font-medium ${data && recipients > 0 ? 'text-emerald-300' : 'text-gray-300'}`}>

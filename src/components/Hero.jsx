@@ -6,9 +6,11 @@ import {
   SectionEditOverlay
 } from './editor/Editable'
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
+import { useRoles } from '../roles/rolesContext'
 
 function Hero() {
   const navigate = useNavigate()
+  const { isTrainer } = useRoles()
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection('hero')
 
   if (!visible && !isEditMode) return null
@@ -57,14 +59,17 @@ function Hero() {
           className="text-gray-300 mt-8 max-w-2xl text-base md:text-lg mx-auto block"
         />
 
-        <div className="mt-10 flex justify-center">
-          <EditableCtaButton
-            path="sections.hero.button"
-            style={{ fontFamily: theme.typography.accentFont }}
-            className="px-10 py-4 uppercase text-sm tracking-[3px] hover:scale-105 hover:tracking-[5px]"
-            onNavigate={(link) => navigate(link || '/trial-session')}
-          />
-        </div>
+        {/* the "book a trial session" button is for visitors and clients, not for a trainer (never hidden in the editor) */}
+        {(!isTrainer || isEditMode) && (
+          <div className="mt-10 flex justify-center">
+            <EditableCtaButton
+              path="sections.hero.button"
+              style={{ fontFamily: theme.typography.accentFont }}
+              className="px-10 py-4 uppercase text-sm tracking-[3px] hover:scale-105 hover:tracking-[5px]"
+              onNavigate={(link) => navigate(link || '/trial-session')}
+            />
+          </div>
+        )}
       </div>
     </section>
   )

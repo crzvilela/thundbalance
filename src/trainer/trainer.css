@@ -1,0 +1,21 @@
+/* The trainer's calendar reuses the admin calendar's look (calendar.css, class .admin-fc): the same dark
+   variables and the same event colours. These are the few differences. */
+
+/* free hours: a quiet dashed block, never louder than a session */
+.tr-fc .fc-event.tr-free {
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.28);
+  color: #9ca3af;
+  font-weight: 500;
+  box-shadow: none;
+  cursor: default;
+  pointer-events: none;
+}
+.tr-fc .tr-free-inner { padding: 1px 4px; overflow: hidden; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; }
+
+/* never a sideways scroll on a phone */
+.tr-fc .fc, .tr-fc .fc-view-harness { max-width: 100%; }
+.tr-fc .fc-toolbar-title { text-transform: capitalize; }
+@media (max-width: 767px) {
+  .tr-fc .ac-frame { height: max(480px, calc(100vh - 20rem)); }
+}
