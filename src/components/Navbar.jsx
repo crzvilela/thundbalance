@@ -70,7 +70,8 @@ function NavbarInner() {
 
   const isAdmin = Boolean(user && user.email?.trim().toLowerCase() === ADMIN_EMAIL)
   // A trainer has their own, smaller menu: nothing of the client area (sessions, packs, trial).
-  const { isTrainer } = useRoles()
+  // (the administrator can be a trainer too: they keep the whole menu and get the trainer panel added to it)
+  const { isTrainer, isTrainerOnly } = useRoles()
 
   const [openMenu, setOpenMenu] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -187,7 +188,7 @@ function NavbarInner() {
     { href: `#${contactId}`, labelPath: 'contact', label: t('nav_contact') }
   ]
 
-  const userLinks = isTrainer ? [
+  const userLinks = isTrainerOnly ? [
     { to: '/', labelPath: 'home', label: t('nav_home') },
     { to: '/profile', labelPath: 'profile', label: t('nav_profile') },
     { to: '/trainer', label: t('trainer.menuLabel') },
@@ -198,6 +199,7 @@ function NavbarInner() {
     { to: '/profile', labelPath: 'profile', label: t('nav_profile') },
     { to: '/my-sessions', labelPath: 'sessions', label: t('nav_sessions') },
     { to: '/training-tips', label: t('training_tips_title') },
+    ...(isTrainer ? [{ to: '/trainer', label: t('trainer.menuLabel') }] : []),
     ...(isAdmin ? [{ to: '/admin', label: 'Admin' }] : [])
   ]
 
@@ -349,7 +351,7 @@ function NavbarInner() {
 
                   </div>
 
-                  {!isTrainer && (
+                  {!isTrainerOnly && (
                     <Link
                       to="/dashboard"
                       className="block px-4 py-3 hover:bg-white/10 transition duration-300"
@@ -366,7 +368,7 @@ function NavbarInner() {
                     {t('nav_profile')}
                   </Link>
 
-                  {isTrainer ? (
+                  {isTrainer && (
                     <Link
                       to="/trainer"
                       onClick={() => setOpenMenu(false)}
@@ -374,7 +376,8 @@ function NavbarInner() {
                     >
                       {t('trainer.menuLabel')}
                     </Link>
-                  ) : (
+                  )}
+                  {!isTrainerOnly && (
                     <Link
                       to="/my-sessions"
                       className="block px-4 py-3 hover:bg-white/10 transition duration-300"

@@ -28,9 +28,10 @@ Fechas: `from <= to`, máximo 366 días, 422 si no. Día, semana (empieza el lun
 Solo sus sesiones: `{session_id, client_display_name ("Nombre Apellido"), session_number ("3/12"), pack_name, date, time, status booked|completed|cancelled, is_trial}`. Incluye las pruebas **confirmadas**. Nunca email, teléfono, dirección, documento ni id interno del cliente.
 
 ## Dar acceso (`check` y `grant`)
-`can_grant = false` con `reason`: `no_account`, `is_admin`, `already_assigned_to_other_trainer`, `already_granted`, `trainer_has_access`, `is_client_with_activity` (pack activo o sesiones futuras) o `email_not_verified`. El servidor repite todas las comprobaciones en `POST /admin/trainer-access`, que además exige `confirm: true`.
+`can_grant = false` con `reason`: `no_account`, `already_assigned_to_other_trainer`, `already_granted`, `trainer_has_access`, `is_client_with_activity` (pack activo o sesiones futuras) o `email_not_verified`. El servidor repite todas las comprobaciones en `POST /admin/trainer-access`, que además exige `confirm: true`.
 
 ## Notas
+- **La cuenta de administrador también puede ser entrenador** (por ahora hay una cuenta de admin y otra de entrenador; al final habrá una sola con acceso a todo). El admin se da de alta como cualquier entrenador; no se le exige email verificado ni se le aplica la regla «cliente con actividad». Conserva todo el menú y la web de cliente, y se le añade «Panel de entrenador»; `/me/roles` devuelve `is_admin` e `is_trainer` a la vez y recibe los mensajes dirigidos a `trainers`.
 - `sessions_rescheduled` cuenta las sesiones con la marca `rescheduled` (la web guarda un sí/no, no un historial de cambios).
 - Los colores de evento de Google (`event_format.trainer_color_id`) salen ahora de `trainers.color`; el mapa por nombre queda solo como reserva.
 

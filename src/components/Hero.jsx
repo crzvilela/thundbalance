@@ -10,7 +10,7 @@ import { useRoles } from '../roles/rolesContext'
 
 function Hero() {
   const navigate = useNavigate()
-  const { isTrainer } = useRoles()
+  const { isTrainerOnly } = useRoles()
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection('hero')
 
   if (!visible && !isEditMode) return null
@@ -60,7 +60,7 @@ function Hero() {
         />
 
         {/* the "book a trial session" button is for visitors and clients, not for a trainer (never hidden in the editor) */}
-        {(!isTrainer || isEditMode) && (
+        {(!isTrainerOnly || isEditMode) && (
           <div className="mt-10 flex justify-center">
             <EditableCtaButton
               path="sections.hero.button"

@@ -776,7 +776,7 @@ def _recipient_rows_sql(audiences):
     if "trainers" in audiences:
         parts.append(
             "SELECT u.id AS user_id, ta.email AS email, 'trainer' AS src FROM trainer_access ta LEFT JOIN users u ON LOWER(u.email) = ta.email "
-            "WHERE ta.revoked_at IS NULL AND ta.email <> %(admin)s AND (u.id IS NULL OR u.archived_at IS NULL)")
+            "WHERE ta.revoked_at IS NULL AND (u.id IS NULL OR u.archived_at IS NULL)")
     if "user" in audiences:
         # one person: a client (not archived) or an active trainer; a trainer with no profile yet waits by e-mail
         parts.append("SELECT u.id AS user_id, LOWER(u.email) AS email, 'user' AS src FROM users u WHERE LOWER(u.email) = %(email)s AND u.archived_at IS NULL")

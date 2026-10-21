@@ -421,7 +421,7 @@ def _account_unavailable(error):
 
 def evaluate_grant(cursor, trainer_id, email, admin_email, today=None):
     """Everything the admin needs to know before giving a trainer access to an email:
-    {account_exists, email_verified, is_admin, is_client_with_activity,
+    {account_exists, email_verified, is_admin (informative: the admin account CAN be a trainer), is_client_with_activity,
     already_assigned_to_other_trainer, can_grant, reason, firebase_uid}. The server runs
     it again on every grant: a previous check is never trusted."""
     today = today or now_madrid().date()
@@ -470,17 +470,15 @@ def evaluate_grant(cursor, trainer_id, email, admin_email, today=None):
     reason = None
     if not account_exists:
         reason = "no_account"
-    elif is_admin:
-        reason = "is_admin"
     elif assigned_to_other:
         reason = "already_assigned_to_other_trainer"
     elif already_this:
         reason = "already_granted"
     elif trainer_has_access:
         reason = "trainer_has_access"
-    elif with_activity:
+    elif with_activity and not is_admin:
         reason = "is_client_with_activity"
-    elif not email_verified:
+    elif not email_verified and not is_admin:           # the administrator is trusted by e-mail (as in require_admin)
         reason = "email_not_verified"
     return {
         "account_exists": account_exists,
@@ -512,7 +510,7 @@ def register_trainer_area_routes(app, require_admin, verify_token, admin_email):
 
     def require_trainer(authorization: str | None = Header(default=None)):
         claims = claims_of(authorization)
-        if claims.get("email_verified") is not True:
+        if not _trusted_email(claims):
             raise HTTPException(status_code=403, detail="Verify your email to use the trainer area")
         conn = get_connection()
         cursor = conn.cursor()
@@ -526,6 +524,11 @@ def register_trainer_area_routes(app, require_admin, verify_token, admin_email):
         return {"trainer_id": found[0], "trainer_name": found[1], "trainer_color": found[2]}
 
     admin = [Depends(require_admin)]
+
+    def _trusted_email(claims):
+        """The e-mail of the token counts when it is verified, or when it is the administrator's (who may also
+        be a trainer: the admin account is trusted by its e-mail everywhere else too)."""
+        return claims.get("email_verified") is True or _email(claims.get("email")) == _email(admin_email)
 
     def with_cursor(work):
         conn = get_connection()
@@ -563,7 +566,7 @@ def register_trainer_area_routes(app, require_admin, verify_token, admin_email):
         email = _email(claims.get("email"))
         is_admin = bool(email) and email == _email(admin_email)
         trainer = None
-        if claims.get("email_verified") is True and not is_admin:
+        if _trusted_email(claims):
             trainer = with_cursor(lambda cursor: find_active_access(cursor, email, claims.get("sub") or claims.get("user_id")))
         return {
             "is_admin": is_admin,

@@ -38,10 +38,11 @@ export default function RolesProvider({ children }) {
 
   // an answer belongs to the account that asked: another login never sees the previous one
   const value = useMemo(() => {
-    if (!authReady) return { status: 'loading', roles: null, isTrainer: false, reload }
-    if (!signedIn || !uid) return { status: 'signed-out', roles: null, isTrainer: false, reload }
-    if (state.uid !== uid) return { status: 'loading', roles: null, isTrainer: false, reload }
-    return { status: state.status, roles: state.roles, isTrainer: Boolean(state.roles?.is_trainer), reload }
+    if (!authReady) return { status: 'loading', roles: null, isTrainer: false, isTrainerOnly: false, reload }
+    if (!signedIn || !uid) return { status: 'signed-out', roles: null, isTrainer: false, isTrainerOnly: false, reload }
+    if (state.uid !== uid) return { status: 'loading', roles: null, isTrainer: false, isTrainerOnly: false, reload }
+    const isTrainer = Boolean(state.roles?.is_trainer)
+    return { status: state.status, roles: state.roles, isTrainer, isTrainerOnly: isTrainer && !state.roles?.is_admin, reload }
   }, [authReady, signedIn, uid, state, reload])
 
   return <RolesContext.Provider value={value}>{children}</RolesContext.Provider>

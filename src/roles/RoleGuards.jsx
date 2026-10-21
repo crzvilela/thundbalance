@@ -32,8 +32,8 @@ export function TrainerRoute({ children }) {
 // Everybody else, signed in or not, sees the page as before; while the answer of /me/roles is on its way for a
 // signed-in person the page waits a moment (so a trainer never sees a flash of the client page).
 export function NotForTrainers({ children }) {
-  const { status, isTrainer } = useRoles()
+  const { status, isTrainerOnly } = useRoles()
   if (status === 'loading') return <Waiting>{null}</Waiting>
-  if (isTrainer) return <Navigate to="/trainer" replace />
+  if (isTrainerOnly) return <Navigate to="/trainer" replace />
   return children
 }

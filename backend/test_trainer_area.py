@@ -301,7 +301,8 @@ class TrainerAreaTest(unittest.TestCase):
 
         self.assertEqual(check(f"nadie{DOMAIN}")["reason"], "no_account")
         self.assertFalse(check(f"nadie{DOMAIN}")["can_grant"])
-        self.assertEqual(check(ADMIN)["reason"], "is_admin")
+        admin = check(ADMIN)                                                  # the administrator CAN be a trainer
+        self.assertEqual((admin["can_grant"], admin["reason"], admin["is_admin"]), (True, None, True))
         self.assertEqual(check(f"pack{DOMAIN}")["reason"], "is_client_with_activity")
         self.assertTrue(check(f"pack{DOMAIN}")["is_client_with_activity"])
         self.assertEqual(check(f"sinverificar{DOMAIN}")["reason"], "email_not_verified")
@@ -315,6 +316,17 @@ class TrainerAreaTest(unittest.TestCase):
         self.assertEqual(self.call("POST", "/admin/trainer-access/check", "admin", json={"trainer_id": self.t1, "email": "not-an-email"}).status_code, 422)
         self.assertEqual(self.call("POST", "/admin/trainer-access/check", "admin", json={"trainer_id": 999999, "email": f"uno{DOMAIN}"}).status_code, 404)
 
+    def test_the_admin_account_can_also_be_a_trainer(self):
+        granted = self.call("POST", "/admin/trainer-access", "admin", json={"trainer_id": self.t2, "email": ADMIN, "confirm": True})
+        self.assertEqual(granted.status_code, 200, granted.text)
+        roles = self.call("GET", "/me/roles", "admin").json()
+        self.assertEqual((roles["is_admin"], roles["is_trainer"], roles["trainer_id"]), (True, True, self.t2))
+        self.assertEqual(self.call("GET", "/trainer-area/me/summary", "admin").status_code, 200)       # the trainer panel works for them
+        self.assertEqual(self.call("GET", "/admin/clients", "admin").status_code, 200)                  # and they stay the admin
+        self.assertEqual(self.call("GET", "/client/workflow", "admin").status_code in (200, 404), True)   # not turned away like a trainer
+        self.assertEqual(self.call("DELETE", f"/admin/trainer-access/{self.t2}", "admin").status_code, 200)
+        self.assertEqual(self.call("GET", "/trainer-area/me/summary", "admin").status_code, 403)
+
     def test_a_client_without_activity_can_become_a_trainer(self):
         self.firebase[f"beto{DOMAIN}"] = {"uid": "uid-beto", "email_verified": True, "disabled": False}
         response = self.call("POST", "/admin/trainer-access/check", "admin", json={"trainer_id": self.t1, "email": f"beto{DOMAIN}"})
@@ -326,7 +338,7 @@ class TrainerAreaTest(unittest.TestCase):
             self.assertEqual(self.call("POST", "/admin/trainer-access", "admin", json=payload).status_code, 422, payload)
         self.assertEqual(self.call("POST", "/admin/trainer-access", "client", json={**body, "confirm": True}).status_code, 403)
         # the server checks again: no account / admin / client with a pack are refused with 409
-        for email, code in ((f"nadie{DOMAIN}", "no_account"), (ADMIN, "is_admin"), (f"pack{DOMAIN}", "is_client_with_activity")):
+        for email, code in ((f"nadie{DOMAIN}", "no_account"), (f"pack{DOMAIN}", "is_client_with_activity")):
             response = self.call("POST", "/admin/trainer-access", "admin", json={"trainer_id": self.t1, "email": email, "confirm": True})
             self.assertEqual((response.status_code, response.json()["detail"]["code"]), (409, code))
         granted = self.call("POST", "/admin/trainer-access", "admin", json={**body, "confirm": True})
