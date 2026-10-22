@@ -354,7 +354,7 @@ class ClientCalendarSwitch(unittest.TestCase):
             self.assertIsNone(calendar_feed.links_for_email("ana@example.com"))
             answer = route("/calendar/feed/{filename}", "GET").endpoint("a" * 43 + ".ics")
             self.assertEqual(answer.status_code, 404)
-            self.assertEqual(main.public_features(), {"client_calendar": False})
+            self.assertEqual(main.public_features()["client_calendar"], False)
             for path, method in (("/me/calendar-feed", "GET"), ("/me/calendar-feed/regenerate", "POST"),
                                  ("/me/sessions.ics", "GET"), ("/me/sessions/{session_id}/ics", "GET"),
                                  ("/admin/clients/{client_id}/calendar-feed", "GET")):
@@ -364,7 +364,7 @@ class ClientCalendarSwitch(unittest.TestCase):
                     [d.call for d in route(path, method).dependant.dependencies if d.call.__name__ == "_require_enabled"][0]()
                 self.assertEqual(caught.exception.status_code, 404, path)
         with self.env("true"):
-            self.assertEqual(main.public_features(), {"client_calendar": True})
+            self.assertEqual(main.public_features()["client_calendar"], True)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ import { useToast } from '../toastContext'
 import { madridWallClock, NEUTRAL_COLOR } from '../calendar/calendarConfig'
 import { TABS, readParams, shortDate, statusesOf, tabByKey, tabCount, tabOfStatus } from '../scheduleRequests'
 import ScheduleCard from '../ScheduleCard'
-import { CounterDrawer, RejectDrawer } from '../ScheduleDialogs'
+import { CounterDrawer, LateProposalDialog, RejectDrawer } from '../ScheduleDialogs'
 import { Button, Card, ConfirmDialog, EmptyState, ErrorState, Icon, PageHeader, Skeleton, TextInput } from '../ui'
 
 const PAGE_SIZE = 25
@@ -118,6 +118,7 @@ export default function Schedule() {
   const [approving, setApproving] = useState(null)
   const [rejecting, setRejecting] = useState(null)
   const [countering, setCountering] = useState(null)
+  const [late, setLate] = useState(null)                  // a proposal the server refused for lack of notice: { item, date, time, note }
 
   const refresh = useCallback(() => {
     setPinned(null)
@@ -125,7 +126,7 @@ export default function Schedule() {
     scheduleResource.reload()
   }, [resource, scheduleResource])
 
-  const closeDialogs = () => { setApproving(null); setRejecting(null); setCountering(null); setDialogError('') }
+  const closeDialogs = () => { setApproving(null); setRejecting(null); setCountering(null); setLate(null); setDialogError('') }
 
   // Runs `work` for one request. A request somebody else already decided is not an error to puzzle over:
   // say so and show the list as it is now.
@@ -142,7 +143,7 @@ export default function Schedule() {
         closeDialogs()
         refresh()
       } else {
-        onError(clean(error.message) || t('action_error'))
+        onError(clean(error.message) || t('action_error'), error)
       }
     } finally {
       busyRef.current = false
@@ -180,14 +181,29 @@ export default function Schedule() {
     }, setDialogError)
   }
 
-  const counter = async (item, date, time, note) => {
+  // confirmLate: the studio accepted that the client will not have the full notice (the client then answers until the session starts)
+  const counter = async (item, date, time, note, confirmLate = false) => {
     await act(item, async () => {
-      const result = await adminRequest('POST', `/admin/reschedule-requests/${item.id}/counter`, { date, time, note })
+      const result = await adminRequest('POST', `/admin/reschedule-requests/${item.id}/counter`, { date, time, note, confirm_late: confirmLate })
       toast.push(t('sch_counter_ok'))
       afterEmail(item, result)
-      setCountering(null)
+      setCountering(null); setLate(null)
       refresh()
-    }, setDialogError)
+    }, (message, error) => {
+      if (error?.code === 'too_late_for_client') setLate({ item, date, time, note })        // ask: send anyway, or move the session directly
+      else { setLate(null); setDialogError(message) }
+    })
+  }
+
+  // The studio moves the session directly to the hour it had chosen: no notice period, the client is told by e-mail.
+  const moveDirectly = async () => {
+    const { item, date, time, note } = late
+    await act(item, async () => {
+      await adminRequest('POST', `/admin/sessions/${item.session_id}/reschedule`, { session_date: date, session_time: time, note: note || null })
+      toast.push(t('sch_moved').replace('{date}', shortDate(date)).replace('{time}', time))
+      setCountering(null); setLate(null)
+      refresh()
+    }, (message) => { setLate(null); setDialogError(message) })
   }
 
   const resend = async (item) => {
@@ -304,6 +320,7 @@ export default function Schedule() {
       />
       <RejectDrawer item={rejecting} busy={dialogBusy} error={dialogError} onClose={closeDialogs} onConfirm={(note) => reject(rejecting, note)} />
       <CounterDrawer item={countering} busy={dialogBusy} error={dialogError} onClose={closeDialogs} onConfirm={(date, time, note) => counter(countering, date, time, note)} />
+      <LateProposalDialog info={late} busy={dialogBusy} onSend={() => counter(late.item, late.date, late.time, late.note, true)} onMove={moveDirectly} onCancel={() => setLate(null)} />
     </div>
   )
 }

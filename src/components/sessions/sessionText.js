@@ -21,6 +21,6 @@ export function changeReason(t, change, hours) {
     case 'proposal': return t('ms_proposal_title')
     case 'used': return t('ms_already_requested')
     case 'too_late': return t('ms_too_late', { hours })
-    default: return t('ms_request_rule')
+    default: return t('ms_request_rule', { hours })
   }
 }

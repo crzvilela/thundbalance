@@ -98,7 +98,12 @@ export default function ScheduleCard({ item, now, busy, locked, highlight, error
         </p>
 
         {open && item.conflict && <Notice>{isCounter ? t('sch_conflict_counter') : t('sch_conflict')}</Notice>}
-        {isCounter && <p className="mt-4 text-sm text-sky-200">{t('sch_waiting')}</p>}
+        {isCounter && (
+          <p className="mt-4 text-sm text-sky-200">
+            {t('sch_waiting')}
+            {item.counter_deadline && <span className="mt-1 block font-semibold">{t('sch_deadline').replace('{when}', formatSlot(item.counter_deadline.slice(0, 10), item.counter_deadline.slice(11, 16), locale))}</span>}
+          </p>
+        )}
         {error && <Notice tone="red" role="alert">{error}</Notice>}
         {syncFailed && (
           <Notice role="alert">

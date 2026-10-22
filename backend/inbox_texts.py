@@ -20,7 +20,7 @@ TITLES_BODIES = {
         "reschedule_approved": ("Your date change was approved", "Your session {number} moved from {old_at} to {new_at}."),
         "reschedule_rejected": ("Your date change was not possible", "Your session {number} stays on {old_at}.{note_text}"),
         "reschedule_counter": ("New date proposed",
-                               "The studio proposes to move your session {number} from {old_at} to {new_at}. Do you accept?{note_text}"),
+                               "The studio proposes to move your session {number} from {old_at} to {new_at}. Do you accept?{deadline_text}{note_text}"),
         "session_cancelled": ("Session cancelled", "The studio has cancelled your session {number} on {old_at}."),
         "session_rescheduled": ("Session moved", "The studio moved your session {number} from {old_at} to {new_at}."),
     },
@@ -35,7 +35,7 @@ TITLES_BODIES = {
         "reschedule_approved": ("Tu cambio de fecha ha sido aprobado", "Tu sesión {number} pasa del {old_at} al {new_at}."),
         "reschedule_rejected": ("Tu cambio de fecha no ha sido posible", "Tu sesión {number} se mantiene el {old_at}.{note_text}"),
         "reschedule_counter": ("Propuesta de nueva fecha",
-                               "El estudio propone mover tu sesión {number} del {old_at} al {new_at}. ¿Aceptas?{note_text}"),
+                               "El estudio propone mover tu sesión {number} del {old_at} al {new_at}. ¿Aceptas?{deadline_text}{note_text}"),
         "session_cancelled": ("Sesión cancelada", "El estudio ha cancelado tu sesión {number} del {old_at}."),
         "session_rescheduled": ("Sesión cambiada de fecha", "El estudio ha movido tu sesión {number} del {old_at} al {new_at}."),
     },
@@ -50,11 +50,14 @@ TITLES_BODIES = {
         "reschedule_approved": ("El teu canvi de data ha estat aprovat", "La teva sessió {number} passa del {old_at} al {new_at}."),
         "reschedule_rejected": ("El teu canvi de data no ha estat possible", "La teva sessió {number} es manté el {old_at}.{note_text}"),
         "reschedule_counter": ("Proposta de nova data",
-                               "L'estudi proposa moure la teva sessió {number} del {old_at} al {new_at}. Ho acceptes?{note_text}"),
+                               "L'estudi proposa moure la teva sessió {number} del {old_at} al {new_at}. Ho acceptes?{deadline_text}{note_text}"),
         "session_cancelled": ("Sessió cancel·lada", "L'estudi ha cancel·lat la teva sessió {number} del {old_at}."),
         "session_rescheduled": ("Sessió canviada de data", "L'estudi ha mogut la teva sessió {number} del {old_at} al {new_at}."),
     },
 }
+
+# the time the client has to answer a proposal (the studio's notice rule; written when the message is read)
+DEADLINE_INTRO = {"en": " Please answer before {when}.", "es": " Responde antes del {when}.", "ca": " Respon abans del {when}."}
 
 NOTE_INTRO = {"en": " Note from the studio: “{note}”", "es": " Nota del estudio: «{note}»", "ca": " Nota de l'estudi: «{note}»"}
 

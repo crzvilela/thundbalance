@@ -39,7 +39,7 @@ function friendlyCancel(problem) {
 function MySessions() {
   const navigate = useNavigate()
   const { t, locale, language } = useI18n()
-  const { clientCalendar } = useFeatures()      // CLIENT_CALENDAR_ENABLED: no calendar buttons or menus when off
+  const { clientCalendar, rescheduleMinHours } = useFeatures()      // CLIENT_CALENDAR_ENABLED: no calendar buttons or menus when off; the notice hours
   const [now, setNow] = useState(() => new Date())
   const today = madridNow(now).date
 
@@ -52,7 +52,7 @@ function MySessions() {
   const [month, setMonth] = useState(() => { const date = new Date(); return new Date(date.getFullYear(), date.getMonth(), 1) })
   const [selectedDay, setSelectedDay] = useState(null)
   const [open, setOpen] = useState(null)     // { id, mode }
-  const [requestInfo, setRequestInfo] = useState({ items: [], max_per_session: 1, notice_hours: 8, note_max: 300 })
+  const [requestInfo, setRequestInfo] = useState({ items: [], max_per_session: 1, notice_hours: null, note_max: 300 })
   const [answering, setAnswering] = useState(null)      // id of the proposal being answered (no double clicks)
 
   // the "completed" state follows the clock: look again every minute
@@ -116,7 +116,8 @@ function MySessions() {
   }), [navigate, load])
 
   const requestsBySession = useMemo(() => bySession(requestInfo.items), [requestInfo])
-  const rules = useMemo(() => ({ limit: requestInfo.max_per_session, hours: requestInfo.notice_hours }), [requestInfo])
+  // the notice hours come from the server (the page never writes the number): with the requests, or from the public configuration
+  const rules = useMemo(() => ({ limit: requestInfo.max_per_session, hours: requestInfo.notice_hours ?? rescheduleMinHours }), [requestInfo, rescheduleMinHours])
   const changeOf = useCallback((session) => changeState(session, requestsBySession.get(session.id) || [], rules, now), [requestsBySession, rules, now])
 
   // the state shown for a session: with a change waiting for the studio (or for the client) it is "change pending"
@@ -300,6 +301,7 @@ function MySessions() {
                 <p className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-amber-300">{t('ms_proposal_title')}</p>
                 <p className="max-w-2xl text-base text-gray-100">{t('ms_proposal_text', { date: formatDay(request.counter_date, locale), time: formatTime(request.counter_time) })}</p>
                 <p className="mt-1 text-sm text-gray-300">{session.number ? `${t('ms_session_n', { n: session.number })} · ` : ''}{formatDay(session.date, locale)}, {formatTime(session.time)}</p>
+                {request.counter_deadline && <p className="mt-2 text-sm font-semibold text-amber-200">{t('ms_proposal_deadline', { date: formatDay(request.counter_deadline.slice(0, 10), locale), time: formatTime(request.counter_deadline.slice(11, 16)) })}</p>}
                 {request.admin_note && <p className="mt-2 text-sm text-gray-300">{t('ms_proposal_note', { note: request.admin_note })}</p>}
                 <div className="mt-5 grid gap-3 sm:flex">
                   <button type="button" disabled={!!answering} onClick={() => respondTo(request, true)} className={`inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-emerald-400 px-6 py-2.5 text-sm font-semibold text-black transition hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-60 ${FOCUS}`}>{answering === request.id && <Spinner />}{t('ms_proposal_accept')}</button>

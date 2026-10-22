@@ -29,9 +29,10 @@ from admin_api import register_admin_routes
 from client_lifecycle import ensure_columns as ensure_lifecycle_columns, register_client_lifecycle_routes
 import admin_calendar
 import logging
+import client_lang
 import inbox
 import reschedule_requests
-from features import client_calendar_enabled
+from features import client_calendar_enabled, reschedule_min_hours_before
 from contact_messages import register_contact_routes
 from trial_notifications import notify_trial_requested
 import mailer
@@ -247,6 +248,7 @@ def assert_session_owner(claims, session_id):
 calendar_feed.register_calendar_feed_routes(app, require_admin, require_client, _own_user_id)
 reschedule_requests.register_reschedule_routes(app, require_admin, require_client, _own_user_id)
 inbox.register_inbox_routes(app, require_admin, require_client, _own_user_id, ADMIN_EMAIL)
+client_lang.register_client_lang_routes(app, require_client, _own_user_id)
 
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
@@ -2396,7 +2398,7 @@ def get_available_times(
 def public_features():
     """What the site is allowed to show; the frontend asks once. client_calendar is the
     CLIENT_CALENDAR_ENABLED switch (calendar buttons, feed and .ics for clients)."""
-    return {"client_calendar": client_calendar_enabled()}
+    return {"client_calendar": client_calendar_enabled(), "reschedule_min_hours_before": reschedule_min_hours_before()}
 
 
 CLEAR_CALENDAR_CONFIRMATION = "CLEAR CALENDAR"

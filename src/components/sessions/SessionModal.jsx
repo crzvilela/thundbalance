@@ -14,7 +14,7 @@ const BUTTON = `inline-flex min-h-[44px] w-full items-center justify-center gap-
 // immediate). The page owns the requests; the modal only asks for them.
 export default function SessionModal({
   session, status, initialMode = 'view', todayKey, onClose, onLoadTimes, onRequest, onCancel, onRespond,
-  showCalendar = false, change, hours = 8, noteMax = 300, answering = null
+  showCalendar = false, change, hours, noteMax = 300, answering = null
 }) {
   const { t, locale } = useI18n()
   const [mode, setMode] = useState(initialMode)           // view | request | confirm | cancel
@@ -45,7 +45,7 @@ export default function SessionModal({
       setTimes(list)
       if (!list.length) setError(t('ms_err_no_times'))
     } catch (problem) {
-      setError(t(problem.message))
+      setError(t(problem.message, { hours }))
     } finally {
       setLoadingTimes(false)
     }
@@ -57,7 +57,7 @@ export default function SessionModal({
     try {
       await action()
     } catch (problem) {
-      setError(t(problem.message?.startsWith('ms_') ? problem.message : 'ms_err_generic'))
+      setError(t(problem.message?.startsWith('ms_') ? problem.message : 'ms_err_generic', { hours }))
       setWorking(false)
     }
   }
@@ -117,6 +117,7 @@ export default function SessionModal({
           <section aria-label={t('ms_proposal_title')} className="mt-5 rounded-2xl border border-amber-400/40 bg-amber-400/[0.07] p-4 sm:p-5">
             <p className="font-semibold text-amber-200">{t('ms_proposal_title')}</p>
             <p className="mt-2 text-sm text-gray-100">{t('ms_proposal_text', when(request.counter_date, request.counter_time))}</p>
+            {request.counter_deadline && <p className="mt-1 text-sm font-semibold text-amber-200">{t('ms_proposal_deadline', when(request.counter_deadline.slice(0, 10), request.counter_deadline.slice(11, 16)))}</p>}
             {request.admin_note && <p className="mt-2 break-words text-sm text-gray-300">{t('ms_proposal_note', { note: request.admin_note })}</p>}
             <div className="mt-4 grid gap-3 sm:flex">
               <button type="button" disabled={!!answering} onClick={() => onRespond(request, true)}
@@ -143,7 +144,7 @@ export default function SessionModal({
 
         {mode === 'request' && (
           <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">
-            <p className="mb-4 text-sm text-gray-300">{t('ms_request_rule')}</p>
+            <p className="mb-4 text-sm text-gray-300">{t('ms_request_rule', { hours })}</p>
             <label className="block">
               <span className="mb-2 block text-xs font-medium uppercase tracking-wider text-gray-400">{t('ms_new_date')}</span>
               <input type="date" min={todayKey} value={newDate} onChange={(event) => pickDate(event.target.value)} disabled={working}
@@ -187,7 +188,7 @@ export default function SessionModal({
             <p id="session-confirm-title" className="font-semibold text-amber-100">{t('ms_request_confirm_title')}</p>
             <p className="mt-2 text-sm text-gray-100 first-letter:uppercase">{t('ms_request_summary', when(newDate, newTime))}</p>
             {note.trim() && <p className="mt-1 break-words text-sm text-gray-300">{t('ms_pending_note', { note: note.trim() })}</p>}
-            <p className="mt-3 text-sm text-gray-200">{t('ms_request_confirm_text')}</p>
+            <p className="mt-3 text-sm text-gray-200">{t('ms_request_confirm_text', { hours })}</p>
           </div>
         )}
 

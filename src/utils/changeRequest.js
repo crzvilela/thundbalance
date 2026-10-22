@@ -17,7 +17,7 @@ export function bySession(items = []) {
 
 // state: 'pending' (waiting for the studio) | 'proposal' (the studio proposed another date: the client answers)
 //        | 'used' (nothing more can be requested, for ever) | 'too_late' (less than `hours` left) | 'available'
-export function changeState(session, requests = [], { limit = 1, hours = 8 } = {}, now = new Date()) {
+export function changeState(session, requests = [], { limit = 1, hours } = {}, now = new Date()) {
   const open = requests.find(request => OPEN.includes(request.status))
   if (open) return { state: open.status === 'pending' ? 'pending' : 'proposal', request: open }
   if (requests.length >= limit) return { state: 'used', request: requests[0] }

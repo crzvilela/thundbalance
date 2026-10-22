@@ -45,7 +45,7 @@ import pack_view
 from database import get_connection
 from emails.dates import format_date_bilingual, now_madrid, parse_madrid
 from emails.texts import normalize_language
-from inbox_texts import ACTION_LABELS, NOTE_INTRO, TITLES_BODIES
+from inbox_texts import ACTION_LABELS, DEADLINE_INTRO, NOTE_INTRO, TITLES_BODIES
 
 logger = logging.getLogger("thundbalance.inbox")
 
@@ -310,6 +310,8 @@ def render_system(message_type, params, lang):
         values[key] = _when(value, lang) if str(key).endswith("_at") else str(value)
     note = " ".join(str((params or {}).get("note") or "").split())
     values["note_text"] = NOTE_INTRO[lang].format(note=note) if note else ""
+    deadline = (params or {}).get("deadline_at")
+    values["deadline_text"] = DEADLINE_INTRO[lang].format(when=_when(deadline, lang)) if deadline else ""
     return title.format_map(values), body.format_map(values)
 
 

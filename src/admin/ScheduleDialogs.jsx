@@ -1,9 +1,39 @@
 import { useRef, useState } from 'react'
+import { useFeatures } from '../api/features'
+import { useFocusTrap } from './useFocusTrap'
 import { API_URL } from '../config'
 import { useAdminText } from './useAdminText'
 import { dayKey, madridWallClock } from './calendar/calendarConfig'
 import { NOTE_MAX } from './scheduleRequests'
-import { Button, Drawer, Field, TextArea, TextInput } from './ui'
+import { Button, Drawer, Field, Icon, TextArea, TextInput } from './ui'
+
+// "The client may not have time to answer": the server refused the proposal because there is less notice left than the client
+// needs. The studio can send it anyway (the client then answers until the session starts) or move the session directly,
+// which has no notice period at all.
+export function LateProposalDialog({ info, busy, onSend, onMove, onCancel }) {
+  const { t } = useAdminText()
+  const { rescheduleMinHours } = useFeatures()
+  const panel = useRef(null)
+  useFocusTrap(panel, !!info)
+  if (!info) return null
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => { if (!busy) onCancel() }} />
+      <div ref={panel} role="alertdialog" aria-modal="true" aria-label={t('sch_late_title')}
+        onKeyDown={event => { if (event.key === 'Escape' && !busy) onCancel() }}
+        className="admin-toast relative w-full max-w-lg rounded-3xl border border-amber-400/30 bg-[#0d1110] p-8 shadow-2xl">
+        <span className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border border-amber-400/25 bg-amber-400/10 text-amber-300"><Icon name="alert" /></span>
+        <h2 className="text-2xl font-semibold text-white">{t('sch_late_title')}</h2>
+        <p className="mt-2 text-base text-gray-300">{t('sch_late_text').replace('{hours}', String(rescheduleMinHours ?? ''))}</p>
+        <div className="mt-6 flex flex-col gap-3">
+          <Button variant="primary" onClick={onSend} loading={busy}>{t('sch_late_send')}</Button>
+          <Button variant="secondary" onClick={onMove} disabled={busy}>{t('sch_late_move')}</Button>
+          <Button variant="ghost" onClick={onCancel} disabled={busy}>{t('cancel')}</Button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 const subtitleOf = (item) => `${item.client_email} · ${item.number || ''}`.replace(/ · $/, '')
 
@@ -47,6 +77,7 @@ export function RejectDrawer({ item, ...rest }) {
 
 function CounterBody({ item, busy, error, onClose, onConfirm }) {
   const { t } = useAdminText()
+  const { rescheduleMinHours: hours } = useFeatures()
   const [date, setDate] = useState('')
   const [time, setTime] = useState('')
   const [times, setTimes] = useState([])
@@ -87,7 +118,7 @@ function CounterBody({ item, busy, error, onClose, onConfirm }) {
         </Button>
       </>}
     >
-      <p className="mb-6 text-sm text-gray-400">{t('sch_counter_sub').replace('{trainer}', item.trainer || '')}</p>
+      <p className="mb-6 text-sm text-gray-400">{t('sch_counter_sub').replace('{trainer}', item.trainer || '').replace('{hours}', String(hours ?? ''))}</p>
       <Field label={t('sch_pick_date')}>
         <TextInput type="date" min={dayKey(madridWallClock())} value={date} onChange={event => pickDate(event.target.value)} disabled={busy} autoFocus />
       </Field>

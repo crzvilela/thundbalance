@@ -27,7 +27,7 @@ ES = {
     "rs_counter_subject": "Te proponemos otra fecha para tu sesión", "rs_counter_title": "Propuesta de nueva fecha",
     "rs_counter_body": "No podemos mover tu sesión a la fecha que pediste, pero te proponemos esta otra. Tu sesión no cambia hasta que aceptes.",
     "rs_counter_accept": "Aceptar la nueva fecha", "rs_counter_decline": "Rechazar y mantener la fecha original",
-    "rs_counter_note": "Esta propuesta caduca 8 horas antes de la sesión original.",
+    "rs_counter_note": "Responde antes del {deadline}: después, esta propuesta caduca y tu sesión se mantiene en su fecha original.",
     "rs_moved_subject": "El estudio ha movido tu sesión", "rs_moved_title": "Tu sesión ha cambiado de fecha",
     "rs_moved_body": "El estudio ha cambiado la fecha de tu sesión. Estos son los nuevos datos.",
 }
@@ -42,7 +42,7 @@ EN = {
     "rs_counter_subject": "We suggest another date for your session", "rs_counter_title": "Proposal for a new date",
     "rs_counter_body": "We cannot move your session to the date you asked for, but we suggest this one instead. Your session does not change until you accept.",
     "rs_counter_accept": "Accept the new date", "rs_counter_decline": "Decline and keep the original date",
-    "rs_counter_note": "This proposal expires 8 hours before the original session.",
+    "rs_counter_note": "Please answer before {deadline}: after that this proposal expires and your session stays on its original date.",
     "rs_moved_subject": "The studio moved your session", "rs_moved_title": "Your session has a new date",
     "rs_moved_body": "The studio changed the date of your session. These are the new details.",
 }
@@ -57,7 +57,7 @@ CA = {
     "rs_counter_subject": "Et proposem una altra data per a la teva sessió", "rs_counter_title": "Proposta de data nova",
     "rs_counter_body": "No podem moure la teva sessió a la data que vas demanar, però et proposem aquesta altra. La teva sessió no canvia fins que acceptis.",
     "rs_counter_accept": "Acceptar la data nova", "rs_counter_decline": "Rebutjar i mantenir la data original",
-    "rs_counter_note": "Aquesta proposta caduca 8 hores abans de la sessió original.",
+    "rs_counter_note": "Respon abans del {deadline}: després, aquesta proposta caduca i la teva sessió es manté a la data original.",
     "rs_moved_subject": "L'estudi ha mogut la teva sessió", "rs_moved_title": "La teva sessió té una data nova",
     "rs_moved_body": "L'estudi ha canviat la data de la teva sessió. Aquestes són les dades noves.",
 }

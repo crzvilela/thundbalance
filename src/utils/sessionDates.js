@@ -1,3 +1,4 @@
+import { madridWallToInstant } from './inboxFormat.js'
 // Dates, statuses and Google Calendar links of the client's sessions (My Sessions).
 // Pure functions (no React), so they can be tested with `node --test`.
 
@@ -86,17 +87,15 @@ export function googleCalendarUrl(session, details = '') {
     + `&details=${encodeURIComponent(details)}`
     + `&location=${encodeURIComponent(STUDIO_PLACE)}`
 }
-// Minutes from now (Madrid clock) until the session starts; negative once it has started.
+// Minutes from now until the session starts, in REAL time (the Madrid clock change is counted: on the day the clocks go
+// back there are 25 hours); negative once it has started.
 export function minutesUntil(session, now = new Date()) {
-  const current = madridNow(now)
-  const toMs = (day, time) => {
-    const [year, month, date] = String(day).slice(0, 10).split('-').map(Number)
-    const [hour, minute] = formatTime(time).split(':').map(Number)
-    return Date.UTC(year, month - 1, date, hour, minute)
-  }
-  return (toMs(session.date, session.time) - toMs(current.date, current.time)) / 60000
+  const start = madridWallToInstant(`${String(session.date).slice(0, 10)}T${formatTime(session.time)}`)
+  return start ? (start.getTime() - now.getTime()) / 60000 : Number.NaN
 }
 
-// A change can be requested up to `hours` before the session (the server decides; this only
-// decides whether the button is on).
-export const canRequestChange = (session, now = new Date(), hours = 8) => minutesUntil(session, now) >= hours * 60
+// A change can be requested up to `hours` before the session (the number comes from the server: GET /features). The server
+// decides; this only decides whether the button is on. Without a number yet the button stays on and the server answers.
+export const canRequestChange = (session, now = new Date(), hours) => (
+  Number.isFinite(hours) ? minutesUntil(session, now) >= hours * 60 : minutesUntil(session, now) > 0
+)

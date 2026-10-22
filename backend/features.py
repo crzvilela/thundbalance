@@ -18,6 +18,26 @@ import os
 TRUE_VALUES = ("1", "true", "yes", "on")
 
 
+def _hours_from_environment(name, default, lowest=1, highest=24 * 14):
+    """A whole number of hours from the environment, or `default` when it is missing or not sensible."""
+    try:
+        value = int(os.getenv(name, "").strip())
+    except ValueError:
+        return default
+    return value if lowest <= value <= highest else default
+
+
+# How long before a session the client may still ask to change its date, and the time a client has to answer a proposal
+# of the studio (the proposal expires that many hours before the session). THE one place of this number: the backend, the
+# page (GET /features), the texts and the e-mails all follow it. RESCHEDULE_MIN_HOURS_BEFORE in the environment changes it.
+RESCHEDULE_MIN_HOURS_BEFORE = _hours_from_environment("RESCHEDULE_MIN_HOURS_BEFORE", 24)
+
+
+def reschedule_min_hours_before():
+    """Read at every call (so a test, or the environment at start-up, can change RESCHEDULE_MIN_HOURS_BEFORE)."""
+    return RESCHEDULE_MIN_HOURS_BEFORE
+
+
 def client_calendar_enabled():
     """Read at every call, so changing the variable needs no code change."""
     return os.getenv("CLIENT_CALENDAR_ENABLED", "").strip().lower() in TRUE_VALUES

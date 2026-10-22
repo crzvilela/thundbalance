@@ -51,7 +51,7 @@ export function SessionRow({ session, status, onOpen }) {
 
 const BUTTON = `inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition ${FOCUS}`
 
-export function NextSessionCard({ session, status, onOpen, onRequest, onCancel, showCalendar = false, change, hours = 8 }) {
+export function NextSessionCard({ session, status, onOpen, onRequest, onCancel, showCalendar = false, change, hours }) {
   const { t, locale } = useI18n()
   const canRequest = change?.state === 'available'
   return (

@@ -5,8 +5,10 @@ client answers a proposal.
 The rules live here, in one place:
   MAX_RESCHEDULE_REQUESTS_PER_SESSION  how many requests a client may EVER make for one session
                                        (counted by code; change the number, no migration needed)
-  MIN_NOTICE_HOURS                     a request must be made at least this many hours before the
-                                       session (Europe/Madrid)
+  features.RESCHEDULE_MIN_HOURS_BEFORE a request must be made at least this many hours before the session
+                                       (24; Europe/Madrid, REAL hours: the clock change does not shift it), and a
+                                       proposal of the studio expires that many hours before the session. ONE number
+                                       for the backend, the page (GET /features), the texts and the e-mails
   NOTE_MAX                             longest note (client's reason, studio's note)
 
 Statuses of reschedule_requests.status:
@@ -35,16 +37,16 @@ from fastapi import Depends, HTTPException
 from pydantic import BaseModel
 
 import calendar_sync
+import features
 import inbox
 import reschedule_notifications as notify
 from availability import hhmm, slot_problem
 from database import get_connection
-from emails.dates import now_madrid
+from emails.dates import madrid_to_utc, now_madrid, to_madrid
 
 logger = logging.getLogger("thundbalance.reschedule")
 
 MAX_RESCHEDULE_REQUESTS_PER_SESSION = 1
-MIN_NOTICE_HOURS = 8
 NOTE_MAX = 300
 OPEN_STATUSES = ("pending", "counter_proposed")
 CLOSED_STATUSES = ("approved", "rejected", "accepted", "declined", "expired")
@@ -85,6 +87,8 @@ def ensure_tables():
             """
         )
         cursor.execute("ALTER TABLE reschedule_requests ADD COLUMN IF NOT EXISTS lang TEXT")
+        # true: the studio proposed inside the notice period and confirmed it, so the client may answer until the session starts
+        cursor.execute("ALTER TABLE reschedule_requests ADD COLUMN IF NOT EXISTS counter_late BOOLEAN NOT NULL DEFAULT FALSE")
         cursor.execute("CREATE INDEX IF NOT EXISTS reschedule_requests_status_idx ON reschedule_requests (status)")
         cursor.execute("CREATE INDEX IF NOT EXISTS reschedule_requests_session_idx ON reschedule_requests (session_id)")
         cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS reschedule_requests_token_key ON reschedule_requests (token)")
@@ -121,6 +125,23 @@ def _now():
 
 def _start(day, moment):
     return datetime.strptime(f"{str(day)[:10]} {hhmm(moment)}", "%Y-%m-%d %H:%M")
+
+
+def _hours():
+    return features.reschedule_min_hours_before()
+
+
+def _enough_notice(start, now):
+    """True when there are at least the notice hours (REAL hours, so the clock change counts) between now and `start`."""
+    return madrid_to_utc(start) - madrid_to_utc(now) >= timedelta(hours=_hours())
+
+
+def _deadline(day, moment, late=False):
+    """When a proposal expires, as "YYYY-MM-DDTHH:MM" (Madrid): the notice hours before the session, or the session's start
+    for a proposal the studio sent late."""
+    start = _start(day, moment)
+    when = start if late else to_madrid(madrid_to_utc(start) - timedelta(hours=_hours()))
+    return when.strftime("%Y-%m-%dT%H:%M")
 
 
 def _clean_note(text):
@@ -166,21 +187,25 @@ def expire_stale(cursor, request_id=None):
     """Closes (status expired) the open requests whose time ran out. Done when listing and when
     deciding, so no background process is needed:
       - a pending request expires when the session starts (or if the session was cancelled);
-      - a counter proposal expires MIN_NOTICE_HOURS before the session (or if it was cancelled)."""
+      - a counter proposal expires the notice hours (features.RESCHEDULE_MIN_HOURS_BEFORE) before the session, counted in
+        real hours (or when the session starts, if the studio sent it late and confirmed it; or if it was cancelled)."""
     cursor.execute(
         """
         UPDATE reschedule_requests rr
         SET status = 'expired', decided_at = COALESCE(rr.decided_at, NOW())
         FROM sessions s
         WHERE s.id = rr.session_id
-          AND (%s::int IS NULL OR rr.id = %s::int)
+          AND (%(id)s::int IS NULL OR rr.id = %(id)s::int)
           AND (
-                (rr.status = 'pending' AND (s.session_date + s.session_time) <= %s)
-             OR (rr.status = 'counter_proposed' AND (s.session_date + s.session_time) - make_interval(hours => %s) <= %s)
+                (rr.status = 'pending' AND ((s.session_date + s.session_time) AT TIME ZONE 'Europe/Madrid') <= (%(now)s AT TIME ZONE 'Europe/Madrid'))
+             OR (rr.status = 'counter_proposed' AND
+                 ((s.session_date + s.session_time) AT TIME ZONE 'Europe/Madrid')
+                   - (CASE WHEN rr.counter_late THEN interval '0' ELSE make_interval(hours => %(hours)s) END)
+                   <= (%(now)s AT TIME ZONE 'Europe/Madrid'))
              OR (rr.status IN ('pending', 'counter_proposed') AND LOWER(s.status) = 'cancelled')
           )
         """,
-        (request_id, request_id, _now(), MIN_NOTICE_HOURS, _now()),
+        {"id": request_id, "now": _now(), "hours": _hours()},
     )
 
 
@@ -198,7 +223,7 @@ def _load(cursor, request_id=None, token=None, user_id=None, lock=False):
         SELECT rr.id, rr.session_id, rr.user_id, rr.status, rr.requested_date, rr.requested_time,
                rr.counter_date, rr.counter_time, rr.lang, rr.client_note, rr.admin_note,
                s.status, s.session_date, s.session_time, s.trainer_id, s.session_number,
-               rr.original_date, rr.original_time, rr.created_at, rr.decided_at
+               rr.original_date, rr.original_time, rr.created_at, rr.decided_at, rr.counter_late
         FROM reschedule_requests rr JOIN sessions s ON s.id = rr.session_id
         WHERE {' AND '.join(where)}
         {"FOR UPDATE OF rr, s" if lock else ""}
@@ -210,7 +235,7 @@ def _load(cursor, request_id=None, token=None, user_id=None, lock=False):
         return None
     keys = ("id", "session_id", "user_id", "status", "requested_date", "requested_time", "counter_date", "counter_time",
             "lang", "client_note", "admin_note", "session_status", "session_date", "session_time", "trainer_id",
-            "number", "original_date", "original_time", "created_at", "decided_at")
+            "number", "original_date", "original_time", "created_at", "decided_at", "counter_late")
     return dict(zip(keys, row))
 
 
@@ -223,6 +248,8 @@ def _public(req, with_counter=True):
         "client_note": req["client_note"], "admin_note": req["admin_note"],
         "counter_date": str(req["counter_date"])[:10] if req["counter_date"] else None,
         "counter_time": hhmm(req["counter_time"]) if req["counter_time"] else None,
+        # until when the client can answer a proposal (the studio's, only while it is open)
+        "counter_deadline": _deadline(req["session_date"], req["session_time"], req["counter_late"]) if req["status"] == "counter_proposed" else None,
         "created_at": req["created_at"].isoformat() if req["created_at"] else None,
         "decided_at": req["decided_at"].isoformat() if req["decided_at"] else None,
     }
@@ -234,7 +261,7 @@ def _context(cursor, request_id):
         """
         SELECT rr.id, rr.status, rr.lang, rr.client_note, rr.admin_note, rr.token,
                rr.original_date, rr.original_time, rr.requested_date, rr.requested_time, rr.counter_date, rr.counter_time,
-               u.nome, u.email, s.session_number, s.session_date, s.session_time, t.nome
+               u.nome, u.email, s.session_number, s.session_date, s.session_time, t.nome, rr.counter_late
         FROM reschedule_requests rr
         JOIN users u ON u.id = rr.user_id JOIN sessions s ON s.id = rr.session_id
         LEFT JOIN trainers t ON t.id = s.trainer_id
@@ -252,6 +279,7 @@ def _context(cursor, request_id):
         "counter_date": str(row[10])[:10] if row[10] else None, "counter_time": hhmm(row[11]) if row[11] else None,
         "client_name": row[12], "client_email": row[13], "number": row[14],
         "session_date": str(row[15])[:10], "session_time": hhmm(row[16]), "trainer": row[17],
+        "counter_deadline": _deadline(row[15], row[16], row[18]) if row[1] == "counter_proposed" else None,
     }
 
 
@@ -298,8 +326,8 @@ def create_request(user_id, session_id, requested_date, requested_time, note=Non
         cursor.execute("SELECT COUNT(*) FROM reschedule_requests WHERE session_id = %s", (session_id,))
         if cursor.fetchone()[0] >= MAX_RESCHEDULE_REQUESTS_PER_SESSION:
             raise fail(409, "limit_reached", "A change has already been requested for this session.")
-        if _start(row[2], row[3]) - _now() < timedelta(hours=MIN_NOTICE_HOURS):
-            raise fail(409, "too_late", f"Changes can only be requested up to {MIN_NOTICE_HOURS} hours before the session.")
+        if not _enough_notice(_start(row[2], row[3]), _now()):
+            raise fail(409, "too_late", f"Changes can only be requested up to {_hours()} hours before the session.")
         problem = _slot_error(cursor, user_id, row[4], session_id, requested_date, requested_time)
         if problem:
             raise fail(409, "slot_unavailable", problem)
@@ -518,7 +546,7 @@ def list_for_admin(status=None, trainer_id=None, email=None, limit=25, offset=0,
             SELECT rr.id, rr.session_id, rr.status, rr.original_date, rr.original_time, rr.requested_date, rr.requested_time,
                    rr.client_note, rr.admin_note, rr.counter_date, rr.counter_time, rr.created_at, rr.decided_at,
                    u.id, u.nome, u.email, s.session_number, s.trainer_id, t.nome, rr.lang,
-                   t.color, s.session_date, s.session_time, rr.decided_by, s.calendar_sync_status, s.calendar_sync_error, s.status
+                   t.color, s.session_date, s.session_time, rr.decided_by, s.calendar_sync_status, s.calendar_sync_error, s.status, rr.counter_late
             FROM reschedule_requests rr
             JOIN users u ON u.id = rr.user_id JOIN sessions s ON s.id = rr.session_id
             LEFT JOIN trainers t ON t.id = s.trainer_id
@@ -542,6 +570,7 @@ def list_for_admin(status=None, trainer_id=None, email=None, limit=25, offset=0,
                 "trainer_id": r[17], "trainer": r[18], "lang": r[19],
                 "color": r[20], "session_date": str(r[21])[:10], "session_time": hhmm(r[22]), "decided_by": r[23],
                 "sync_status": r[24], "sync_error": r[25], "session_status": r[26], "conflict": None,
+                "counter_deadline": _deadline(r[21], r[22], r[27]) if r[2] == "counter_proposed" else None,
             }
             for r in cursor.fetchall()
         ]
@@ -603,6 +632,7 @@ def _inbox(kind, request_id, state=""):
                   "new_at": inbox.at(context["requested_date"], context["requested_time"]), "note": context["admin_note"] or ""}
         if kind == "reschedule_counter":
             params["new_at"] = inbox.at(context["counter_date"], context["counter_time"])
+            params["deadline_at"] = (context["counter_deadline"] or "").replace("T", " ")
         inbox.create_system_message(kind, user_id=owner[0], refs={"request_id": request_id, "session_id": owner[1]}, params=params, state=state)
     except Exception as error:  # noqa: BLE001
         logger.error("inbox message of request %s could not be written (%s)", request_id, type(error).__name__)
@@ -634,23 +664,32 @@ def reject(request_id, note=None, admin=""):
     return {**_after(request_id, None if repeated else notify.client_rejected), "repeated": repeated}
 
 
-def counter(request_id, day, time, note=None, admin=""):
-    """Proposes another day and hour: valid slot, and still before the proposal would expire."""
+def counter(request_id, day, time, note=None, admin="", confirm_late=False):
+    """Proposes another day and hour: a free slot, and with time left for the client to answer (they answer until the
+    notice hours before the session). Inside that period the server refuses (409 too_late_for_client) unless the
+    studio confirms (confirm_late): then the client can answer until the session starts. The studio can also move
+    the session directly (admin_reschedule), which never has a notice period."""
     day, time = _clean_slot(day, time)
     note = _clean_note(note)
 
     def action(cursor, req):
         if str(req["session_status"]).lower() != "booked":
             raise fail(409, "session_not_open", "The session is no longer booked.")
-        if _start(req["session_date"], req["session_time"]) - _now() < timedelta(hours=MIN_NOTICE_HOURS):
-            raise fail(409, "too_late", f"A proposal needs at least {MIN_NOTICE_HOURS} hours before the session.")
+        start = _start(req["session_date"], req["session_time"])
+        if start <= _now():
+            raise fail(409, "expired", "The session has already started.")
+        late = not _enough_notice(start, _now())
+        if late and not confirm_late:
+            raise fail(409, "too_late_for_client",
+                       f"The client will not have time to answer: a proposal needs {_hours()} hours before the session. "
+                       "Send it anyway (the client can answer until the session starts) or move the session directly.")
         problem = _slot_error(cursor, req["user_id"], req["trainer_id"], req["session_id"], day, time)
         if problem:
             raise fail(409, "slot_unavailable", problem)
         cursor.execute(
             "UPDATE reschedule_requests SET status = 'counter_proposed', counter_date = %s, counter_time = %s, "
-            "admin_note = %s, decided_by = %s, decided_at = NOW() WHERE id = %s",
-            (day, time, note, admin, req["id"]))
+            "admin_note = %s, decided_by = %s, decided_at = NOW(), counter_late = %s WHERE id = %s",
+            (day, time, note, admin, late, req["id"]))
 
     request_id, repeated = _decide(request_id, admin, {"from": ("pending",), "repeat": ()}, action)
     if not repeated:
@@ -780,6 +819,7 @@ class CounterPayload(BaseModel):
     date: str
     time: str
     note: str | None = None
+    confirm_late: bool = False      # send it although the client will not have the full notice period to answer
 
 
 class DirectPayload(BaseModel):
@@ -813,7 +853,7 @@ def register_reschedule_routes(app, require_admin, require_client, own_user_id):
         return {
             "items": list_for_user(me(claims)),
             "max_per_session": MAX_RESCHEDULE_REQUESTS_PER_SESSION,
-            "notice_hours": MIN_NOTICE_HOURS,
+            "notice_hours": _hours(),
             "note_max": NOTE_MAX,
         }
 
@@ -883,7 +923,7 @@ def register_reschedule_routes(app, require_admin, require_client, own_user_id):
 
     @app.post("/admin/reschedule-requests/{request_id}/counter")
     def admin_counter(request_id: int, data: CounterPayload, claims=Depends(require_admin)):
-        return counter(request_id, data.date, data.time, data.note, admin_name(claims))
+        return counter(request_id, data.date, data.time, data.note, admin_name(claims), data.confirm_late)
 
     @app.post("/admin/reschedule-requests/{request_id}/resend-email", dependencies=admin)
     def admin_resend(request_id: int):

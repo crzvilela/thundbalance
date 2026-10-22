@@ -152,6 +152,12 @@ def client_reschedule_rejected(ctx):
     return localized_email(lang, "rs_no_subject", build, title_key="rs_no_title")
 
 
+def _deadline_text(lang, ctx):
+    """"lunes 19 de octubre de 2026, 18:00": until when the client can answer (the server worked it out from the notice hours)."""
+    day, _, moment = str(ctx.get("counter_deadline") or "").partition("T")
+    return _when(lang, day, moment) if day and moment else ""
+
+
 def client_reschedule_counter(ctx):
     """A proposal with two buttons. The buttons open the public page: the answer is decided there, by a click."""
     lang = language_of(ctx)
@@ -170,7 +176,7 @@ def client_reschedule_counter(ctx):
         blocks += [
             _button(l, "rs_counter_accept", response_url(ctx["token"], "accept", lang)),
             _button(l, "rs_counter_decline", response_url(ctx["token"], "decline", lang)),
-            paragraph(tr(l, "rs_counter_note"), muted=True),
+            paragraph(tr(l, "rs_counter_note", deadline=_deadline_text(l, ctx)), muted=True),
         ]
         return blocks
     return localized_email(lang, "rs_counter_subject", build, title_key="rs_counter_title")

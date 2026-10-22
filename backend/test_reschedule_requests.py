@@ -7,13 +7,14 @@ the rows it creates are removed.
 """
 import os
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from unittest import mock
 
 from fastapi import HTTPException
 
 import availability
 import calendar_sync
+import features
 import google_fakes
 import main
 import reschedule_notifications as notify
@@ -182,16 +183,63 @@ class Requests(unittest.TestCase):
         self.assertEqual((caught.exception.status_code, self.code_of(caught)), (422, "note_too_long"))
         self.assertEqual(self.request(note="x" * 300)["client_note"], "x" * 300)
 
-    def test_less_than_8_hours_before_the_session_is_refused_and_8_or_more_is_allowed(self):
-        now = rr._now()
-        soon = (now + timedelta(hours=3)).replace(minute=0, second=0, microsecond=0)
-        late = self.new_session(self.ana, soon.date(), soon.strftime("%H:%M"), "4/8", synced=False)
+    def at_clock(self, now, start, requested_time=None):
+        """A request made when the (Madrid) clock says `now` for a session that starts at `start`: the request, or the HTTPException."""
+        far = self.slot_day + timedelta(weeks=26)                      # a free day of the same weekday, far from `now`
+        session = self.new_session(self.ana, start.date(), start.strftime("%H:%M"), "7/8", synced=False)
+        try:
+            with mock.patch.object(rr, "_now", return_value=now):
+                return rr.create_request(self.ana, session, far.isoformat(), requested_time or self.free[1], None, "es")["request"]
+        finally:
+            self.sql("DELETE FROM reschedule_requests WHERE session_id = %s", (session,))
+            self.sql("DELETE FROM sessions WHERE id = %s", (session,))
+
+    def refused(self, now, start):
         with self.assertRaises(HTTPException) as caught:
-            self.request(session_id=late)
+            self.at_clock(now, start)
         self.assertEqual((caught.exception.status_code, self.code_of(caught)), (409, "too_late"))
-        ok_time = (now + timedelta(hours=10)).replace(minute=0, second=0, microsecond=0)
-        fine = self.new_session(self.ana, ok_time.date(), ok_time.strftime("%H:%M"), "5/8", synced=False)
-        self.assertEqual(self.request(session_id=fine)["status"], "pending")
+        return caught.exception.detail["message"]
+
+    def test_the_notice_period_is_24_hours_exactly_25_and_24_are_accepted_and_23_59_is_not(self):
+        self.assertEqual(features.reschedule_min_hours_before(), 24)
+        now = datetime(2026, 6, 10, 12, 0)                                                       # summer time
+        self.assertEqual(self.at_clock(now, now + timedelta(hours=25))["status"], "pending")
+        self.assertEqual(self.at_clock(now, now + timedelta(hours=24))["status"], "pending")      # exactly 24 hours: allowed
+        message = self.refused(now, now + timedelta(hours=23, minutes=59))
+        self.assertIn("24 hours", message)
+        self.refused(now, now + timedelta(hours=3))
+        winter = datetime(2026, 12, 10, 12, 0)                                                   # winter time
+        self.assertEqual(self.at_clock(winter, winter + timedelta(hours=25))["status"], "pending")
+        self.assertEqual(self.at_clock(winter, winter + timedelta(hours=24))["status"], "pending")
+        self.refused(winter, winter + timedelta(hours=23, minutes=59))
+
+    def test_the_notice_period_counts_real_hours_when_the_clocks_change(self):
+        # Clocks go BACK on Sunday 25 October 2026 (03:00 -> 02:00): that day has 25 hours.
+        now = datetime(2026, 10, 24, 12, 0)
+        self.assertEqual(self.at_clock(now, datetime(2026, 10, 25, 11, 0))["status"], "pending")   # 23 h on the wall, 24 real hours
+        self.refused(now, datetime(2026, 10, 25, 10, 59))                                          # 22 h 59 on the wall, 23 h 59 real
+        self.assertEqual(self.at_clock(now, datetime(2026, 10, 25, 12, 0))["status"], "pending")   # 24 h on the wall, 25 real
+        # Clocks go FORWARD on Sunday 29 March 2026 (02:00 -> 03:00): that day has 23 hours.
+        now = datetime(2026, 3, 28, 12, 0)
+        self.assertEqual(self.at_clock(now, datetime(2026, 3, 29, 13, 0))["status"], "pending")    # 25 h on the wall, 24 real hours
+        self.refused(now, datetime(2026, 3, 29, 12, 59))                                           # 24 h 59 on the wall, 23 h 59 real
+        self.refused(now, datetime(2026, 3, 29, 12, 0))                                            # 24 h on the wall, only 23 real hours
+
+    def test_changing_the_constant_changes_the_backend_the_rules_the_public_page_and_the_texts(self):
+        original = features.RESCHEDULE_MIN_HOURS_BEFORE
+        features.RESCHEDULE_MIN_HOURS_BEFORE = 12
+        try:
+            now = datetime(2026, 6, 10, 12, 0)
+            self.assertEqual(self.at_clock(now, now + timedelta(hours=12))["status"], "pending")
+            self.assertIn("12 hours", self.refused(now, now + timedelta(hours=11, minutes=59)))
+            self.assertEqual(route("/features", "GET").endpoint()["reschedule_min_hours_before"], 12)
+            self.assertEqual(route("/me/reschedule-requests", "GET").endpoint(claims_of("ana"))["notice_hours"], 12)
+            self.assertEqual(rr._deadline("2026-11-18", "11:00"), "2026-11-17T23:00")             # a proposal expires 12 hours before
+        finally:
+            features.RESCHEDULE_MIN_HOURS_BEFORE = original
+        self.assertEqual(route("/features", "GET").endpoint()["reschedule_min_hours_before"], 24)
+        self.assertEqual(rr._deadline("2026-11-18", "11:00"), "2026-11-17T11:00")
+        self.assertEqual(rr._deadline("2026-10-25", "11:00"), "2026-10-24T12:00")                  # real hours across the clock change
 
     def test_a_second_request_is_blocked_while_one_is_open_and_forever_after(self):
         first = self.request()
@@ -355,17 +403,53 @@ class Requests(unittest.TestCase):
         self.assertEqual(self.session_row(), before)
         self.assertEqual(self.status_of(created["id"]), "counter_proposed")
 
-    def test_a_proposal_must_be_a_free_slot_and_leave_time_to_answer(self):
+    def test_a_proposal_must_be_a_free_slot(self):
         created = self.request()
         self.new_session(self.bia, self.slot_day, self.free[2], "1/4", synced=False)
         with self.assertRaises(HTTPException) as busy:
             rr.counter(created["id"], self.slot_day.isoformat(), self.free[2])
         self.assertEqual(self.code_of(busy), "slot_unavailable")
+
+    def test_a_proposal_inside_the_notice_period_needs_the_studios_confirmation_and_then_lasts_until_the_session(self):
+        created = self.request()
         soon = (rr._now() + timedelta(hours=3)).replace(minute=0, second=0, microsecond=0)
         self.sql("UPDATE sessions SET session_date = %s, session_time = %s WHERE id = %s", (soon.date(), soon.strftime("%H:%M"), self.session))
         with self.assertRaises(HTTPException) as late:
             rr.counter(created["id"], self.slot_day.isoformat(), self.free[0])
-        self.assertEqual(self.code_of(late), "too_late")
+        self.assertEqual((late.exception.status_code, self.code_of(late)), (409, "too_late_for_client"))
+        self.assertIn("24 hours", late.exception.detail["message"])
+        self.assertEqual(self.status_of(created["id"]), "pending")                               # nothing happened
+        answer = rr.counter(created["id"], self.slot_day.isoformat(), self.free[0], "ok", "boss", confirm_late=True)
+        self.assertEqual(answer["request"]["status"], "counter_proposed")                        # not born expired
+        self.assertEqual(answer["request"]["counter_deadline"], soon.strftime("%Y-%m-%dT%H:%M"))   # the client can answer until the session starts
+        self.assertEqual(rr.list_for_user(self.ana)[0]["counter_deadline"], soon.strftime("%Y-%m-%dT%H:%M"))
+        self.assertEqual(rr.list_for_admin(status="counter_proposed")["items"][0]["counter_deadline"], soon.strftime("%Y-%m-%dT%H:%M"))
+        # a session that already started can not get a proposal at all
+        other = self.new_session(self.bia, rr._now().date(), "00:01", "1/4", synced=False)
+        request = rr.create_request(self.bia, self.new_session(self.bia, self.original, self.free[0], "2/4", synced=False), self.slot_day.isoformat(), self.free[1], None, "es")["request"]
+        self.sql("UPDATE sessions SET session_date = CURRENT_DATE - 1 WHERE id = (SELECT session_id FROM reschedule_requests WHERE id = %s)", (request["id"],))
+        with self.assertRaises(HTTPException) as started:
+            rr.counter(request["id"], self.slot_day.isoformat(), self.free[0], confirm_late=True)
+        self.assertIn(self.code_of(started), ("expired", "closed"))
+        self.assertTrue(other)
+
+    def test_a_proposal_shows_its_deadline_in_the_page_the_email_and_the_inbox(self):
+        created = self.request()
+        answer = rr.counter(created["id"], self.slot_day.isoformat(), self.free[2])
+        deadline = rr._deadline(self.original, self.free[0])                                    # the notice hours before the session
+        self.assertEqual(answer["request"]["counter_deadline"], deadline)
+        import inbox
+        from emails.reschedule_emails import client_reschedule_counter
+        ctx = {"id": created["id"], "client_name": "Ana", "client_email": f"ana{DOMAIN}", "number": "3/8", "trainer": "Matilda",
+               "original_date": str(self.original), "original_time": self.free[0], "requested_date": str(self.slot_day), "requested_time": self.free[1],
+               "session_date": str(self.original), "session_time": self.free[0], "counter_date": str(self.slot_day), "counter_time": self.free[2],
+               "token": "t" * 43, "lang": "es", "counter_deadline": deadline}
+        _, html, _ = client_reschedule_counter(ctx)
+        self.assertIn("Responde antes del", html)
+        self.assertNotIn(" 8 horas", html)
+        message = [i for i in inbox.list_inbox(self.ana, {"email": f"ana{DOMAIN}"}, "es")["items"] if i["type"] == "reschedule_counter"][0]
+        self.assertIn("Responde antes del", message["body"])
+        self.assertIn(str(int(deadline[8:10])), message["body"])                                 # the day of the deadline is in the text
 
     # ----- expiry
     def test_a_pending_request_expires_when_the_session_starts(self):
@@ -378,7 +462,7 @@ class Requests(unittest.TestCase):
             rr.approve(created["id"], "boss")
         self.assertEqual(self.code_of(caught), "closed")
 
-    def test_a_proposal_expires_8_hours_before_the_session_and_can_no_longer_be_accepted(self):
+    def test_a_proposal_expires_before_the_session_and_can_no_longer_be_accepted(self):
         created = self.request()
         rr.counter(created["id"], self.slot_day.isoformat(), self.free[2])
         soon = (rr._now() + timedelta(hours=5))
@@ -388,6 +472,31 @@ class Requests(unittest.TestCase):
         self.assertEqual(answer["outcome"], "expired")
         self.assertEqual(self.session_row(), before)
         self.assertEqual(self.status_of(created["id"]), "expired")
+
+    def test_a_proposal_expires_exactly_24_hours_before_the_session_in_real_hours(self):
+        created = self.request()
+        rr.counter(created["id"], self.slot_day.isoformat(), self.free[2])
+        for start, minus_minute, at_deadline in (
+            (datetime(2026, 6, 12, 18, 0), datetime(2026, 6, 11, 17, 59), datetime(2026, 6, 11, 18, 0)),        # summer
+            (datetime(2026, 12, 12, 18, 0), datetime(2026, 12, 11, 17, 59), datetime(2026, 12, 11, 18, 0)),     # winter
+            (datetime(2026, 10, 25, 12, 0), datetime(2026, 10, 24, 12, 59), datetime(2026, 10, 24, 13, 0)),     # the day clocks go back (25 real hours)
+            (datetime(2026, 3, 29, 12, 0), datetime(2026, 3, 28, 10, 59), datetime(2026, 3, 28, 11, 0)),        # the day clocks go forward (24 real hours = 25 on the wall)
+        ):
+            self.sql("UPDATE reschedule_requests SET status = 'counter_proposed' WHERE id = %s", (created["id"],))
+            self.sql("UPDATE sessions SET session_date = %s, session_time = %s WHERE id = %s", (start.date(), start.strftime("%H:%M"), self.session))
+            with mock.patch.object(rr, "_now", return_value=minus_minute):
+                self.assertEqual(rr.list_for_user(self.ana)[0]["status"], "counter_proposed", start)        # one minute before: still open
+            with mock.patch.object(rr, "_now", return_value=at_deadline):
+                self.assertEqual(rr.list_for_user(self.ana)[0]["status"], "expired", start)                 # at the deadline: expired
+
+    def test_a_pending_request_can_be_decided_until_the_session_starts_and_then_expires(self):
+        created = self.request()
+        start = datetime(2026, 6, 12, 18, 0)
+        self.sql("UPDATE sessions SET session_date = %s, session_time = %s WHERE id = %s", (start.date(), start.strftime("%H:%M"), self.session))
+        with mock.patch.object(rr, "_now", return_value=datetime(2026, 6, 12, 17, 59)):             # inside the notice period, before the start
+            self.assertEqual(rr.list_for_user(self.ana)[0]["status"], "pending")                    # the studio can still decide
+        with mock.patch.object(rr, "_now", return_value=datetime(2026, 6, 12, 18, 0)):
+            self.assertEqual(rr.list_for_user(self.ana)[0]["status"], "expired")
 
     def test_a_cancelled_session_closes_its_open_request(self):
         created = self.request()
@@ -438,7 +547,7 @@ class Requests(unittest.TestCase):
         self.assertEqual(listing(claims_of("bia"))["items"], [])
         mine = listing(claims_of("ana"))
         self.assertEqual([r["id"] for r in mine["items"]], [created["id"]])
-        self.assertEqual((mine["max_per_session"], mine["notice_hours"], mine["note_max"]), (1, 8, 300))   # the rules, for the page
+        self.assertEqual((mine["max_per_session"], mine["notice_hours"], mine["note_max"]), (1, features.reschedule_min_hours_before(), 300))   # the rules, for the page
         rr.MAX_RESCHEDULE_REQUESTS_PER_SESSION = 2
         self.assertEqual(listing(claims_of("ana"))["max_per_session"], 2)                                  # change the constant, the page follows
         rr.MAX_RESCHEDULE_REQUESTS_PER_SESSION = 1
