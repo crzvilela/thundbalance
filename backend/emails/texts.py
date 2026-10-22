@@ -1,10 +1,15 @@
-"""Email texts, one dictionary per language, and the helper that joins them.
+"""Email texts, one dictionary per language (English, Spanish, Catalan).
 
-Client emails: Spanish first, then English below a thin line.
-Staff emails (info@, pt@): Spanish only (TEXTS_ES).
+Client emails: ONE language each, the client's (see client_lang.resolve_client_lang): subject, title, body, buttons,
+notices, footer and dates all in it. Staff emails (info@, pt@): Spanish only (TEXTS_ES), once.
 {placeholders} are filled by tr(); the values are escaped later by the components.
+A text missing in a language falls back on English and writes a warning WITHOUT any personal data (tr / MISSING_HOOK).
 """
-from .template import bilingual_subject, render_email
+import logging
+
+from .template import render_email
+
+logger = logging.getLogger("thundbalance.emails")
 
 TEXTS_ES = {
     "greeting": "Hola {name},",
@@ -85,6 +90,7 @@ TEXTS_ES = {
     "test_credentials": "Datos de acceso (ejemplo)",
     "test_notice": "Este aviso es solo un ejemplo del componente.",
     "test_button": "Abrir ThundBalance",
+    "lbl_empty": "Vacío",
 }
 
 TEXTS_EN = {
@@ -137,6 +143,9 @@ TEXTS_EN = {
     "test_credentials": "Access details (example)",
     "test_notice": "This notice is just an example of the component.",
     "test_button": "Open ThundBalance",
+    "lbl_trainer": "Trainer",
+    "lbl_sessions": "Sessions",
+    "lbl_empty": "Empty",
 }
 
 TEXTS_CA = {
@@ -162,6 +171,39 @@ TEXTS_CA = {
     "trial_cancelled_title": "Sessió de prova cancel·lada",
     "trial_cancelled_body": "La teva sessió de prova del {when} ha estat cancel·lada. Pots sol·licitar-ne una de nova a la nostra web.",
     "trial_cancelled_button": "Demanar-ne una de nova",
+    "view_site": "Veure a la web",
+    "lbl_trainer": "Entrenador",
+    "lbl_sessions": "Sessions",
+    "lbl_empty": "Buit",
+    # pack summary
+    "pack_subject": "El teu pack d'entrenament",
+    "pack_title": "El teu pack està a punt",
+    "pack_intro": "Hem preparat el teu pack d'entrenament. Aquí tens el resum i totes les sessions.",
+    "pack_ics_note": "Obre el fitxer adjunt per afegir les sessions al teu calendari.",
+    "cal_add_google": "Afegir al meu Google Calendar",
+    "cal_download_ics": "Descarregar .ics",
+    "cal_other_apps": "Apple Calendar o Outlook: subscriu-te amb aquest enllaç",
+    "cal_delay_note": "Google pot trigar fins a 24 hores a mostrar els canvis d'un calendari subscrit. Per veure'ls ja, fes servir el fitxer adjunt.",
+    "pack_sessions_title": "Les teves sessions",
+    "lbl_plan": "Pla", "lbl_start": "Comença", "lbl_end": "Acaba (última sessió)",
+    "lbl_per_week": "Sessions per setmana", "lbl_days": "Dies d'entrenament", "lbl_total": "Total de sessions",
+    # welcome (new client created by the admin)
+    "welcome_subject": "El teu perfil a ThundBalance",
+    "welcome_title": "El teu perfil està creat",
+    "welcome_body": "Hem creat el teu perfil a ThundBalance. Aquestes són les teves dades d'accés:",
+    "welcome_access": "Dades d'accés",
+    "welcome_email_label": "Correu electrònic",
+    "welcome_password_label": "Contrasenya",
+    "welcome_login": "Iniciar sessió",
+    "welcome_password_note": "Per canviar la teva contrasenya, inicia sessió i ves a la secció Perfil, on la podràs canviar.",
+    "welcome_pack_intro": "Ja tens el teu pack preparat. Aquí tens el resum i totes les sessions:",
+    # test email
+    "test_subject": "Correu de prova",
+    "test_title": "Correu de prova",
+    "test_body": "Si veus aquest missatge amb fons negre, el logotip i el botó, la base de correus funciona.",
+    "test_credentials": "Dades d'accés (exemple)",
+    "test_notice": "Aquest avís és només un exemple del component.",
+    "test_button": "Obrir ThundBalance",
 }
 
 TEXTS = {"es": TEXTS_ES, "en": TEXTS_EN, "ca": TEXTS_CA}
@@ -174,6 +216,14 @@ TEXTS_CA.update(_rs.CA)
 LANGUAGES = ("en", "es", "ca")
 
 
+DEFAULT_LANGUAGE = "en"
+
+# Tests (and anything that wants to know) can set this to a function(key, lang) called when a text is missing in `lang`.
+MISSING_HOOK = None
+# Tests set this to a function(key) called for every text asked for (to know which texts a given email really uses).
+USED_HOOK = None
+
+
 def normalize_language(value):
     """'en' | 'es' | 'ca' for a known value, otherwise None (never guesses)."""
     code = str(value or "").strip().lower()[:2]
@@ -181,44 +231,30 @@ def normalize_language(value):
 
 
 def tr(lang, key, **values):
-    """Text for `key` in `lang`, with {placeholders} filled in. A missing key
-    in English falls back to Spanish."""
+    """Text for `key` in `lang`, with {placeholders} filled in. A key missing in `lang` is written in English (then Spanish)
+    and a warning goes to the log: the email still goes out."""
+    if USED_HOOK is not None:
+        USED_HOOK(key)
     text = TEXTS[lang].get(key)
     if text is None:
-        text = TEXTS_ES[key]
+        if MISSING_HOOK is not None:
+            MISSING_HOOK(key, lang)
+        logger.warning("Email text missing: key=%s lang=%s (English used)", key, lang)       # no personal data
+        text = TEXTS_EN.get(key)
+        if text is None:
+            text = TEXTS_ES[key]
     return text.format(**values) if values else text
 
 
 def localized_email(lang, subject_key, build, title_key=None, **values):
-    """A client email entirely in ONE language (subject, title, body, buttons,
-    dates, plain text, <html lang>). With lang=None (records saved before the
-    language was stored) it falls back to the older ES + EN layout.
+    """A client email entirely in ONE language (subject, title, body, buttons, dates, plain text, <html lang>).
+    An unknown or missing language is English (the language the site starts in), never two languages side by side.
 
     `build(l)` returns the blocks for language l (use tr(l, key))."""
-    lang = normalize_language(lang)
-    if lang is None:
-        return bilingual_email(subject_key, build, title_key=title_key, **values)
+    lang = normalize_language(lang) or DEFAULT_LANGUAGE
     subject = tr(lang, subject_key, **values)
     title = tr(lang, title_key) if title_key else subject
     html, text = render_email(title=title, blocks=build(lang), preheader=subject, lang=lang)
-    return subject, html, text
-
-
-def bilingual_email(subject_key, build, title_key=None, preheader=None, **values):
-    """Join the two languages into one client email.
-
-    `build(lang)` returns the list of blocks for that language (use tr(lang, key)
-    for the texts). Returns (subject, html, text); the subject is "ES / EN".
-    """
-    subject = bilingual_subject(tr("es", subject_key, **values), tr("en", subject_key, **values))
-    title = subject if not title_key else bilingual_subject(tr("es", title_key), tr("en", title_key))
-    html, text = render_email(
-        title=title,
-        blocks=build("es"),
-        blocks_after_separator=build("en"),
-        preheader=preheader or tr("es", subject_key, **values),
-        lang="es",
-    )
     return subject, html, text
 
 

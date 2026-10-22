@@ -6,15 +6,15 @@ studio copy never does.
 from features import client_calendar_enabled
 from .pack_emails import build_pack_ics, render_calendar_links_block, render_pack_summary_block
 from .template import button, heading, highlight_box, key_value, notice, paragraph, site_url
-from .texts import bilingual_email, spanish_email, tr
+from .texts import localized_email, spanish_email, tr
 
 
 def _one_line(value, limit=80):
     return " ".join(str(value or "").split())[:limit]
 
 
-def build_welcome_email(name, email, password, pack_summary=None):
-    """(subject, html, text, ics_text_or_None). Spanish first, English below.
+def build_welcome_email(name, email, password, pack_summary=None, lang=None):
+    """(subject, html, text, ics_text_or_None), entirely in ONE language: `lang` (en | es | ca; English when missing).
     With pack_summary (see pack_emails.py) the pack summary block is included
     and a .ics with every session is returned for attaching."""
     def build(lang):
@@ -26,7 +26,7 @@ def build_welcome_email(name, email, password, pack_summary=None):
                 f"{tr(lang, 'welcome_email_label')}: {email}\n{tr(lang, 'welcome_password_label')}: {password}",
                 label=tr(lang, "welcome_access"),
             ),
-            button(tr("es", "welcome_login"), tr("en", "welcome_login"), f"{site_url()}/login"),
+            button(None, None, f"{site_url()}/login", label=tr(lang, "welcome_login")),
             notice(tr(lang, "welcome_password_note")),
         ]
         if pack_summary:
@@ -38,8 +38,8 @@ def build_welcome_email(name, email, password, pack_summary=None):
                 ]
         return blocks
 
-    subject, html, text = bilingual_email("welcome_subject", build, title_key="welcome_title")
-    return subject, html, text, (build_pack_ics(pack_summary) if pack_summary and client_calendar_enabled() else None)
+    subject, html, text = localized_email(lang, "welcome_subject", build, title_key="welcome_title")
+    return subject, html, text, (build_pack_ics(pack_summary, lang) if pack_summary and client_calendar_enabled() else None)
 
 
 def build_staff_client_created(name, email, pack_summary=None):

@@ -176,6 +176,14 @@ class Accounts(unittest.TestCase):
         settle()                           # the e-mail to the studio goes out in the background: wait for it
         return result
 
+    def stored_lang(self, email):
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT lang FROM users WHERE email = %s", (email,))
+        row = cur.fetchone()
+        conn.close()
+        return row[0] if row else None
+
     def db_user(self, email):
         conn = get_connection()
         cur = conn.cursor()
@@ -225,13 +233,16 @@ class Accounts(unittest.TestCase):
         client = next(m for m in RECEIVED if m["to"] == "ana" + DOMAIN)
         team = next(m for m in RECEIVED if m["to"] == "info@thundbalance.com")
         password = self.passwords[0]
-        self.assertEqual(client["subject"], "Tu perfil en ThundBalance / Your ThundBalance profile")
+        self.assertEqual(client["subject"], "Your ThundBalance profile")      # no language chosen: English, only English
         self.assertIn(password, client["html"])
         self.assertIn(password, client["text"])
-        self.assertIn("Iniciar sesión / Log in", client["html"])
+        self.assertIn("Log in", client["html"])
         self.assertIn("/login", client["html"])
-        self.assertIn("Para cambiar tu contraseña, inicia sesión y ve a la sección Perfil, donde podrás cambiarla.", client["html"])
         self.assertIn("To change your password, log in and go to the Profile section, where you can change it.", client["html"])
+        self.assertNotIn("Para cambiar tu contraseña", client["html"])
+        self.assertNotIn("Iniciar sesión", client["html"])
+        self.assertIn('<html lang="en"', client["html"])
+        self.assertEqual(team["subject"].split(":")[0], "Nuevo cliente creado")   # the studio's copy: Spanish
         self.assertIn("monospace", client["html"].lower())
         self.assertEqual(client["attachments"], [])
         self.assertNotIn(password, json.dumps(team))               # the studio copy has no password
@@ -253,7 +264,7 @@ class Accounts(unittest.TestCase):
         conn.close()
         client = next(m for m in RECEIVED if m["to"] == "ana" + DOMAIN)
         self.assertIn("TEST accounts 2 weeks", client["html"])
-        self.assertIn("Tus sesiones", client["html"])
+        self.assertIn("Your sessions", client["html"])
         ics = base64.b64decode(client["attachments"][0]["data"]).decode()
         self.assertEqual(ics.count("BEGIN:VEVENT"), 4)
         self.assert_password_nowhere(result)
@@ -373,7 +384,7 @@ class Accounts(unittest.TestCase):
         self.assertNotEqual(new_password, self.passwords[0])
         client = next(m for m in RECEIVED if m["to"] == "ana" + DOMAIN)
         self.assertIn(new_password, client["html"])
-        self.assertIn("Tus sesiones", client["html"])               # the pack summary is repeated
+        self.assertIn("Your sessions", client["html"])              # the pack summary is repeated
         self.assertEqual(base64.b64decode(client["attachments"][0]["data"]).decode().count("BEGIN:VEVENT"), 4)
         self.assert_password_nowhere(result)
 
@@ -382,6 +393,73 @@ class Accounts(unittest.TestCase):
             resend(created["id"])
         self.assertEqual(caught.exception.status_code, 409)
         self.assertEqual(len(self.set_calls), 1)
+
+    def test_the_client_gets_everything_in_the_language_the_admin_chose(self):
+        expected = {
+            "ca": ("El teu perfil a ThundBalance", "Iniciar sessió", "Les teves sessions", "Dilluns"),
+            "es": ("Tu perfil en ThundBalance", "Iniciar sesión", "Tus sesiones", "Lunes"),
+            "en": ("Your ThundBalance profile", "Log in", "Your sessions", "Monday"),
+        }
+        for lang, (subject, button, sessions, weekday) in expected.items():
+            RECEIVED.clear()
+            self.cleanup()                    # the previous language's sessions must not collide with this pack
+            email = f"{lang}1" + DOMAIN
+            created = self.create(email=email, pack=True, lang=lang)
+            self.assertEqual(self.db_user(email)[0] is not None and self.stored_lang(email), lang)
+            client = next(m for m in RECEIVED if m["to"] == email)
+            team = next(m for m in RECEIVED if m["to"] == "info@thundbalance.com")
+            self.assertEqual(client["subject"], subject)
+            self.assertNotIn(" / ", client["subject"])
+            self.assertIn(f'<html lang="{lang}"', client["html"])
+            self.assertIn(button, client["html"])
+            self.assertIn(sessions, client["html"])
+            self.assertIn(weekday, client["html"])
+            for other, words in expected.items():
+                if other != lang:
+                    for word in (words[0], words[1], words[2]):
+                        self.assertNotIn(word, client["html"], (lang, other))
+            self.assertEqual(team["subject"].split(":")[0], "Nuevo cliente creado")     # the team: Spanish only, whatever the client's language
+            RECEIVED.clear()
+            endpoint("/admin/clients/{client_id}/resend-credentials", "POST")(created["id"])
+            settle()
+            again = next(m for m in RECEIVED if m["to"] == email)
+            self.assertEqual(again["subject"], subject)                               # the resend goes in the same language
+            self.assertIn(f'<html lang="{lang}"', again["html"])
+            self.assertIn(sessions, again["html"])
+
+    def test_unknown_language_in_the_panel_is_ignored(self):
+        self.create(email="fr1" + DOMAIN, lang="fr")
+        self.assertIsNone(self.stored_lang("fr1" + DOMAIN))
+        client = next(m for m in RECEIVED if m["to"] == "fr1" + DOMAIN)
+        self.assertEqual(client["subject"], "Your ThundBalance profile")             # nothing saved: English
+
+    def test_the_client_changes_only_their_own_language(self):
+        import client_lang
+        self.create(email="own1" + DOMAIN, lang="es")
+        self.create(email="own2" + DOMAIN, lang="es")
+        save = endpoint("/me/language", "PUT")
+        self.assertEqual(save(client_lang.LanguagePayload(lang="CA "), {"sub": "fake-uid-1", "email": "own1" + DOMAIN}), {"lang": "ca"})
+        self.assertEqual(self.stored_lang("own1" + DOMAIN), "ca")
+        self.assertEqual(self.stored_lang("own2" + DOMAIN), "es")                    # nobody else's
+        with self.assertRaises(HTTPException) as caught:
+            save(client_lang.LanguagePayload(lang="fr"), {"sub": "fake-uid-1", "email": "own1" + DOMAIN})
+        self.assertEqual(caught.exception.status_code, 422)
+        self.assertEqual(self.stored_lang("own1" + DOMAIN), "ca")
+        with self.assertRaises(HTTPException) as caught:
+            save(client_lang.LanguagePayload(lang="es"), {"sub": "nobody", "email": "nobody" + DOMAIN})
+        self.assertEqual(caught.exception.status_code, 404)
+
+    def test_language_order_booking_then_profile_then_english(self):
+        import client_lang
+        self.create(email="ord1" + DOMAIN, lang="ca")
+        self.create(email="ord2" + DOMAIN)
+        email = "ord1" + DOMAIN
+        self.assertEqual(client_lang.resolve_client_lang(booking_lang="es", email=email), "es")      # the booking's language wins
+        self.assertEqual(client_lang.resolve_client_lang(booking_lang=None, email=email), "ca")      # then the profile
+        self.assertEqual(client_lang.resolve_client_lang(booking_lang="xx", email=email), "ca")      # an invalid one counts as none
+        self.assertEqual(client_lang.resolve_client_lang(email="ord2" + DOMAIN), "en")               # profile without language
+        self.assertEqual(client_lang.resolve_client_lang(email="nobody" + DOMAIN), "en")             # unknown client
+        self.assertEqual(client_lang.resolve_client_lang(), "en")
 
     def test_password_changed_only_touches_the_caller(self):
         first = self.create(email="a1" + DOMAIN)

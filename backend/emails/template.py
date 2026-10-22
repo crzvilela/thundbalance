@@ -9,7 +9,7 @@ Typical use:
     blocks = [heading("Hola"), paragraph("..."), button("Confirmar", "Confirm", url)]
     html, text = render_email(title="...", blocks=blocks)
 
-or, for clients, bilingual_email(subject_es, subject_en, es_blocks, en_blocks).
+A client email is written in ONE language (texts.localized_email); the staff ones in Spanish (texts.spanish_email).
 """
 import os
 from dataclasses import dataclass
@@ -145,9 +145,9 @@ def sessions_table(sessions, lang="es"):
 
 
 def button(label_es, label_en, url, only=None, label=None):
-    """Main call to action: white button, black text. Bilingual label "ES / EN"
-    (only="es" for staff emails, which are Spanish only; label=... for a single
-    language chosen by the caller)."""
+    """Main call to action: white button, black text. The label of a CLIENT email is passed as label=... (one
+    language, the client's); staff emails use only="es" with the Spanish label. The two-language label "ES / EN"
+    is no longer used by any email."""
     label = label if label is not None else (label_es if only == "es" else f"{label_es} / {label_en}")
     link = (
         f'<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>'
@@ -159,8 +159,7 @@ def button(label_es, label_en, url, only=None, label=None):
 
 
 def link_line(label_es, label_en, url, only=None, label=None):
-    """Quiet secondary link under a button (bilingual label "ES / EN", or a
-    single-language label=...)."""
+    """Quiet secondary link under a button (a single-language label=...)."""
     label = label if label is not None else (label_es if only == "es" else f"{label_es} / {label_en}")
     link = f'<a href="{_e(url)}" target="_blank" style="font-family:{FONT};font-size:14px;line-height:1.5;color:{MUTED};text-decoration:underline;">{_e(label)}</a>'
     return Block(_row(link, "0 0 24px 0"), f"{label}: {url}"+chr(10))
@@ -176,8 +175,9 @@ def _separator():
 
 
 def render_email(title, blocks, blocks_after_separator=None, preheader="", lang="es", logo=None):
-    """(html, text). `blocks` is the first language; `blocks_after_separator`
-    (optional) is the second, set below a thin grey line."""
+    """(html, text). `blocks_after_separator` (optional, set below a thin grey line) is kept for the rare email that needs a
+    second part, but no email puts two languages in it any more. <html lang> and the Content-Language meta carry `lang`,
+    so the mail client does not offer to translate it."""
     logo = logo or logo_url()
     groups = [blocks] + ([blocks_after_separator] if blocks_after_separator else [])
     rows, texts = [], []
@@ -228,7 +228,3 @@ def render_email(title, blocks, blocks_after_separator=None, preheader="", lang=
 </html>"""
     text = "\n\n".join(texts) + f"\n\n--\n{FOOTER_ADDRESS}\n{FOOTER_EMAIL}\n"
     return html, text
-
-
-def bilingual_subject(es, en):
-    return f"{es} / {en}"

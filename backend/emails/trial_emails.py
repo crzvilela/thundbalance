@@ -106,25 +106,20 @@ def staff_trial_declined(trial):
 
 
 # ------------------------------------------------------------ to the client
-# Every function takes `lang` ("en" | "es" | "ca"): the email is then written
-# entirely in that language. lang=None (rows saved before the language was
-# stored) keeps the older Spanish + English layout.
+# Every function takes `lang` ("en" | "es" | "ca"): the email is written entirely in that language.
+# lang=None (nothing saved anywhere) is English: never two languages in one email.
 
 def _button(lang, key, url):
-    if lang:
-        return button("", "", url, label=tr(lang, key))
-    return button(tr("es", key), tr("en", key), url)
+    return button("", "", url, label=tr(lang, key))
 
 
 def _link(lang, key, url):
-    if lang:
-        return link_line("", "", url, label=tr(lang, key))
-    return link_line(tr("es", key), tr("en", key), url)
+    return link_line("", "", url, label=tr(lang, key))
 
 
 def client_trial_received(name, start, lang=None):
     """We got the request; the team will be in touch. Shows the day and time asked for."""
-    lang = normalize_language(lang)
+    lang = normalize_language(lang) or "en"
     day = format_date_bilingual(start)
 
     def build(l):
@@ -139,7 +134,7 @@ def client_trial_received(name, start, lang=None):
 
 def client_trial_approved(name, start, trainer, token, lang=None):
     """Approved by the admin: asks the client to confirm (primary) or say they can't come."""
-    lang = normalize_language(lang)
+    lang = normalize_language(lang) or "en"
 
     def build(l):
         return [
@@ -157,7 +152,7 @@ def client_trial_approved(name, start, trainer, token, lang=None):
 
 def client_trial_confirmed(name, start, trainer, trial_id, lang=None):
     """Confirmation with the calendar file. Returns (subject, html, text, ics_text)."""
-    lang = normalize_language(lang)
+    lang = normalize_language(lang) or "en"
 
     def build(l):
         return [
@@ -177,7 +172,7 @@ def client_trial_confirmed(name, start, trainer, trial_id, lang=None):
         "start": start,
         "summary": client_trial_title(trainer),
         "sequence": 0,
-        "description": (f"{ {'es': 'Entrenador', 'ca': 'Entrenador'}.get(lang, 'Trainer') if lang else 'Entrenador / Trainer'}: {trainer}") if trainer else "",
+        "description": f"{tr(lang, 'lbl_trainer')}: {trainer}" if trainer else "",
         "location": STUDIO_PLACE,
     }])
     return subject, html, text, ics
@@ -187,7 +182,7 @@ def client_trial_cancelled(name, start, lang=None, trial_id=None, trainer=None, 
     """(subject, html, text, ics). `ics` is a METHOD:CANCEL file (STATUS:CANCELLED, the same
     UID as the confirmation, a higher SEQUENCE) when the caller gives the trial id, so the event
     leaves the client's calendar; otherwise None."""
-    lang = normalize_language(lang)
+    lang = normalize_language(lang) or "en"
     day = format_date_bilingual(start)
 
     def build(l):
@@ -195,7 +190,7 @@ def client_trial_cancelled(name, start, lang=None, trial_id=None, trainer=None, 
             heading(tr(l, "trial_cancelled_title")),
             paragraph(tr(l, "greeting", name=name)),
             paragraph(tr(l, "trial_cancelled_body", when=day.full(l))),
-            _button(lang, "trial_cancelled_button", f"{site_url()}/trial-session" + (f"?lang={lang}" if lang else "")),
+            _button(lang, "trial_cancelled_button", f"{site_url()}/trial-session?lang={lang}"),
         ]
     subject, html, text = localized_email(lang, "trial_cancelled_subject", build, title_key="trial_cancelled_title")
     ics = None

@@ -100,12 +100,17 @@ class EmailPart(unittest.TestCase):
         self.assertEqual(team["to"], "info@thundbalance.com,pt@thundbalance.com")
         self.assertNotIn("Ana", client["subject"])
         self.assertIn("Ana <García>", team["subject"])
-        self.assertIn(" / ", client["subject"])
+        self.assertNotIn(" / ", client["subject"])
+        self.assertEqual(client["subject"], "Your training pack")           # the summary has no language: English
+        self.assertEqual(team["subject"].split(" — ")[0], "Tu pack de entrenamiento")   # the team's copy: Spanish
         for message in (client, team):
             self.assertEqual(len(message["attachments"]), 1)
             self.assertEqual(message["attachments"][0]["name"], "thundbalance-sesiones.ics")
             self.assertIn("&lt;García&gt;", message["html"])
-        self.assertEqual(client["attachments"][0]["data"], team["attachments"][0]["data"])
+        # same events (same UIDs and times); only the description is written in each reader's language
+        import base64
+        uids = lambda message: [l for l in base64.b64decode(message["attachments"][0]["data"]).decode().splitlines() if l.startswith(("UID:", "DTSTART"))]
+        self.assertEqual(uids(client), uids(team))
 
     def test_client_switch_off_and_no_recipients(self):
         result = send_pack_summary_email(sample_summary(), False, ["info@thundbalance.com"])

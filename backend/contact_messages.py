@@ -310,7 +310,7 @@ def register_contact_routes(app, require_admin):
         try:
             subject_line, html, text = staff_contact_message({"name": name, "email": email, "message": message, "created": created})
             to = os.getenv("CONTACT_NOTIFY_TO", "").strip() or studio_address()
-            send_email_async(to, subject_line, html, text, reply_to=email)
+            send_email_async(to, subject_line, html, text, reply_to=email, kind="staff_contact_message", lang="es")
         except Exception as error:  # noqa: BLE001
             logger.warning("Contact notification could not be sent: %s", type(error).__name__)
         return {"ok": True, "id": message_id}

@@ -17,6 +17,7 @@ from fastapi import Depends, HTTPException
 from pydantic import BaseModel
 
 import calendar_feed
+import client_lang
 import inbox
 import firebase_accounts as accounts
 import tax_id
@@ -57,6 +58,7 @@ class CreateClient(BaseModel):
     tax_id_type: str | None = None
     tax_id: str | None = None
     country: str | None = None
+    lang: str | None = None      # language of the client (en | es | ca): their e-mails go out in it; the panel offers Spanish by default
     pack: ClientPack | None = None
 
 
@@ -71,6 +73,8 @@ def ensure_account_fields():
         cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS tax_id_type TEXT")
         cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS tax_id TEXT")
         cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT")
+        # the language the client has on the site (en | es | ca): the language of every e-mail to them (client_lang.py)
+        cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS lang TEXT")
         conn.commit()
     finally:
         cursor.close()
@@ -147,18 +151,20 @@ def _pack_summary(cursor, user_id):
 
 def send_welcome(name, email, password, pack_summary):
     """Sends the welcome email (with pack summary and .ics when there is a
-    pack) and, separately, a password-free notice to the studio. Waits for the
-    client's email so the panel can tell the admin what happened. Returns
+    pack) and, separately, a password-free notice to the studio. The client's email is in the client's language
+    (client_lang.resolve_client_lang: the one chosen when the profile was created, else English); the studio's copy in
+    Spanish. Waits for the client's email so the panel can tell the admin what happened. Returns
     {"sent": bool, "problem": str}. Never raises, never logs the password."""
     try:
         if pack_summary:
             pack_summary["calendar_links"] = calendar_feed.links_for_email(email)
-        subject, html, text, ics = build_welcome_email(name, email, password, pack_summary)
+        lang = client_lang.resolve_client_lang(email=email)
+        subject, html, text, ics = build_welcome_email(name, email, password, pack_summary, lang)
         attachments = [{"filename": ICS_FILENAME, "content_type": ICS_CONTENT_TYPE, "data": ics.encode("utf-8")}] if ics else None
-        future = send_email_async(email, subject, html, text, attachments=attachments)
+        future = send_email_async(email, subject, html, text, attachments=attachments, kind="welcome", lang=lang)
 
         team_subject, team_html, team_text = build_staff_client_created(name, email, pack_summary)
-        send_email_async(studio_address(), team_subject, team_html, team_text)
+        send_email_async(studio_address(), team_subject, team_html, team_text, kind="welcome_team", lang="es")
 
         result = future.result(timeout=SEND_TIMEOUT)
         return {"sent": bool(result.ok), "problem": "" if result.ok else result.error}
@@ -209,12 +215,12 @@ def register_client_account_routes(app, require_admin, require_client):
             cursor.execute(
                 """
                 INSERT INTO users (nome, email, telefone, codigo_pais, cidade, morada, cep, must_change_password,
-                                   tax_id_type, tax_id, country)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s, %s)
+                                   tax_id_type, tax_id, country, lang)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (name, email, phone, country_code, _text(data.city, 80),
-                 _text(data.address, 200), postal, doc_type, document, _text(data.country, 60)),
+                 _text(data.address, 200), postal, doc_type, document, _text(data.country, 60), client_lang.valid_lang(data.lang)),
             )
             user_id = cursor.fetchone()[0]
 

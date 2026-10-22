@@ -11,6 +11,7 @@ e-mail is not configured).
 import logging
 import os
 
+from client_lang import resolve_client_lang
 from emails import send_email_async
 from emails.reschedule_emails import (
     client_reschedule_approved, client_reschedule_counter, client_reschedule_rejected, client_session_moved,
@@ -47,6 +48,7 @@ def _client(build, ctx, kind):
         return None
     try:
         to = validate_address(ctx.get("client_email"), "client email")
+        ctx["lang"] = resolve_client_lang(booking_lang=ctx.get("lang"), email=to)     # the request's own, else the profile's, else English
         subject, html, text = build()
         return send_email_async(to, subject, html, text, kind=kind, lang=language_of(ctx), reference=ctx.get("id"))
     except Exception as error:  # noqa: BLE001

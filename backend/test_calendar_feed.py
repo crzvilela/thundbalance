@@ -91,7 +91,7 @@ class CalendarFeedTests(unittest.TestCase):
             self.assertRegex(token, r"^[A-Za-z0-9_-]{43}$")
             self.assertTrue(calendar_feed._TOKEN.match(token))
 
-    def test_pack_email_carries_calendar_buttons_in_both_languages(self):
+    def test_pack_email_carries_calendar_buttons_in_one_language(self):
         links = calendar_feed.feed_urls("t" * 43, base_url="https://api.example.com")
         from datetime import datetime
         summary = {
@@ -99,12 +99,20 @@ class CalendarFeedTests(unittest.TestCase):
             "days": ["Monday"], "trainer": "Carles", "calendar_links": links,
             "sessions": [{"id": 1, "start": datetime(2026, 11, 3, 10), "trainer": "Carles", "number": "1/1"}],
         }
-        _, html, text = build_pack_email(summary)
-        for label in ("Añadir a mi Google Calendar", "Add to my Google Calendar", "Descargar .ics", "Download .ics",
-                      "Abre el archivo adjunto para añadir las sesiones a tu calendario.",
-                      "hasta 24 horas", "up to 24 hours"):
-            self.assertIn(label, html)
-        self.assertEqual(len(re.findall(r"calendar\.google\.com/calendar/r\?cid=", html)), 2)
+        wanted = {
+            "en": ("Add to my Google Calendar", "Download .ics", "Open the attached file to add the sessions to your calendar.", "up to 24 hours"),
+            "es": ("Añadir a mi Google Calendar", "Descargar .ics", "Abre el archivo adjunto para añadir las sesiones a tu calendario.", "hasta 24 horas"),
+            "ca": ("Afegir al meu Google Calendar", "Descarregar .ics", "Obre el fitxer adjunt per afegir les sessions al teu calendari.", "fins a 24 hores"),
+        }
+        for lang, labels in wanted.items():
+            _, html, text = build_pack_email(summary, lang=lang)
+            for label in labels:
+                self.assertIn(label, html)
+            for other, other_labels in wanted.items():
+                if other != lang:
+                    for label in other_labels:
+                        self.assertNotIn(label, html)
+            self.assertEqual(len(re.findall(r"calendar\.google\.com/calendar/r\?cid=", html)), 1)
         # the studio copy never carries the client's private link
         _, team_html, _ = build_pack_email(summary, team_subject=True)
         self.assertNotIn("/calendar/feed/", team_html)

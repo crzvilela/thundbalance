@@ -22,7 +22,8 @@ import {
 const SERVER_FIELDS = { name: 'name', email: 'email', phone: 'phone', postal_code: 'postal', tax_id: 'taxId' }
 const EMPTY = {
   name: '', email: '', phone: '', city: '', address: '', postal: '',
-  taxType: DEFAULT_TAX_ID_TYPE, taxId: '', country: 'España'
+  taxType: DEFAULT_TAX_ID_TYPE, taxId: '', country: 'España',
+  lang: 'es'          // language of the client's e-mails (Spanish unless the admin picks another)
 }
 
 // "Añadir cliente": creates the client with a login account and a generated
@@ -91,6 +92,7 @@ export default function AddClientDrawer({ plans, trainers, onClose, onCreated })
         tax_id_type: normalizeTaxId(profile.taxId) ? profile.taxType : null,
         tax_id: normalizeTaxId(profile.taxId) || null,
         country: profile.country.trim() || null,
+        lang: profile.lang,
         ...(withPack ? { pack: { ...packPayload(pack), allow_conflicts: allowConflicts } } : {})
       })
       onCreated(result)
@@ -181,6 +183,14 @@ export default function AddClientDrawer({ plans, trainers, onClose, onCreated })
         <FormField label={t('cc_country')}>
           {({ id, describedBy }) => <input id={id} value={profile.country} onChange={set('country')} disabled={busy} maxLength={60}
             aria-describedby={describedBy} className={`${INPUT_CLASS} ${inputBorder(false)}`} />}
+        </FormField>
+        <FormField label={t('cc_lang')}>
+          {({ id, describedBy }) => <select id={id} value={profile.lang} onChange={set('lang')} disabled={busy}
+            aria-describedby={describedBy} className={`${INPUT_CLASS} ${inputBorder(false)}`}>
+            <option value="es">{t('cc_lang_es')}</option>
+            <option value="en">{t('cc_lang_en')}</option>
+            <option value="ca">{t('cc_lang_ca')}</option>
+          </select>}
         </FormField>
       </div>
 

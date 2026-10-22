@@ -235,7 +235,7 @@ class Languages(unittest.TestCase):
             result, _ = self.book(value, f"unknown{number}{DOMAIN}", offset=20 + number)
             self.assertEqual(self.row(result["trial_id"])[0], "en", repr(value))
 
-    def test_rows_from_before_keep_the_older_bilingual_email(self):
+    def test_rows_from_before_get_english_never_two_languages(self):
         conn = get_connection()
         cur = conn.cursor()
         cur.execute(
@@ -249,7 +249,8 @@ class Languages(unittest.TestCase):
             trial_id, admin_api.TrialApprovePayload(trainer_id=self.trainer_id))
         self.wait_for_mail()
         message = self.to(f"old{DOMAIN}")[0]
-        self.assertIn(" / ", message["subject"])                     # unchanged ES / EN layout
+        self.assertNotIn(" / ", message["subject"])                  # no language anywhere: English only
+        self.assertEqual(message["subject"], "Confirm your trial session")
         self.assertEqual(len(self.to(f"old{DOMAIN}")), 1)
 
     def test_the_column_default_is_english_and_old_rows_stay_untouched(self):

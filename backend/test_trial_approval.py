@@ -342,7 +342,7 @@ class Approval(unittest.TestCase):
         cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'email_log' ORDER BY ordinal_position")
         columns = [c[0] for c in cur.fetchall()]
         conn.close()
-        self.assertEqual(columns, ["id", "tipo", "referencia", "destinatario", "estado", "erro", "criado_em"])
+        self.assertEqual(columns, ["id", "tipo", "referencia", "destinatario", "estado", "erro", "criado_em", "lang"])   # lang = the language the e-mail was written in; still no content
         self.assertEqual(len(rows), 1)
         joined = " ".join(str(v) for v in rows[0])
         self.assertNotIn("right-secret", joined)

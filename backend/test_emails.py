@@ -94,20 +94,25 @@ class EmailTests(unittest.TestCase):
         self.assertEqual(a.split("DTSTAMP")[0], b.split("DTSTAMP")[0])
 
     # ----- templates
-    def test_html_is_black_bilingual_and_escaped(self):
-        subject, html, text = sample_all_components()
-        self.assertIn(" / ", subject)
+    def test_html_is_black_one_language_and_escaped(self):
+        subject, html, text = sample_all_components()                   # no language given: English, only English
+        self.assertNotIn(" / ", subject)
+        self.assertEqual(subject, "Test email")
         self.assertIn('bgcolor="#000000"', html)
         self.assertIn("color-scheme", html)
         self.assertIn("email-logo.png", html)
         self.assertIn("max-width:600px", html)
-        self.assertIn("Test email", html)
-        self.assertIn("Email de prueba", html)
-        self.assertLess(html.index("Email de prueba"), html.index("Test email"))   # ES first
+        self.assertIn('<html lang="en"', html)
+        self.assertNotIn("Email de prueba", html)
         self.assertNotIn("<b>&</b>", html)                                          # user text escaped
         self.assertIn("&lt;b&gt;&amp;&lt;/b&gt;", html)
-        self.assertIn("Abrir ThundBalance / Open ThundBalance", html)
-        self.assertIn("Abrir ThundBalance / Open ThundBalance", text)
+        self.assertIn("Open ThundBalance", html)
+        self.assertNotIn("Open ThundBalance /", html)
+        self.assertIn("Open ThundBalance", text)
+        subject_ca, html_ca, _ = sample_all_components("ca")
+        self.assertEqual(subject_ca, "Correu de prova")
+        self.assertIn('<html lang="ca"', html_ca)
+        self.assertNotIn("Test email", html_ca)
 
     def test_user_text_cannot_inject_html(self):
         html, _ = render_email("t", [paragraph('<script>alert(1)</script>')])
@@ -115,16 +120,22 @@ class EmailTests(unittest.TestCase):
 
     def test_trial_emails(self):
         subject, html, text = client_trial_approved("Ana", datetime(2026, 10, 12, 9), "Carles", "TOKEN123")
-        self.assertIn("Confirma tu sesión de prueba / Confirm your trial session", subject)
-        self.assertIn("Lunes", html)
+        self.assertEqual(subject, "Confirm your trial session")            # no language saved anywhere: English, only English
         self.assertIn("Monday", html)
-        self.assertIn("Confirmar mi sesión / Confirm my session", html)
-        self.assertIn("No puedo asistir / I can&#x27;t make it", html)
-        self.assertIn("/trial-session/confirm/TOKEN123\"", html)
-        self.assertIn("/trial-session/confirm/TOKEN123?action=decline", html)
+        self.assertNotIn("Lunes", html)
+        self.assertIn("Confirm my session", html)
+        self.assertIn("I can&#x27;t make it", html)
+        self.assertNotIn("Confirmar mi sesión", html)
+        subject_es, html_es, _ = client_trial_approved("Ana", datetime(2026, 10, 12, 9), "Carles", "TOKEN123", "es")
+        self.assertEqual(subject_es, "Confirma tu sesión de prueba")
+        self.assertIn("Lunes", html_es)
+        self.assertIn("Confirmar mi sesión", html_es)
+        self.assertNotIn("Monday", html_es)
+        self.assertIn("/trial-session/confirm/TOKEN123?lang=en\"", html)
+        self.assertIn("/trial-session/confirm/TOKEN123?action=decline&amp;lang=en", html)
         self.assertIn("Carrer de Pallars 286", html)
         subject, html, _ = client_trial_received("Ana", datetime(2026, 10, 12, 9))
-        self.assertIn("lunes 12 de octubre de 2026, 09:00", html)
+        self.assertIn("Monday 12 October 2026, 09:00", html)
         subject, html, text, ics = client_trial_confirmed("Ana", datetime(2026, 10, 12, 9), "Carles", 5)
         self.assertIn("UID:trial-5@thundbalance.com", ics)
         self.assertIn("DTSTART:20261012T070000Z", ics)

@@ -14,13 +14,14 @@ send_pack_summary_email(summary, ...)   -> PackEmailResult
 import logging
 from dataclasses import dataclass, field
 
-from .dates import WEEKDAYS_EN, WEEKDAYS_ES, format_date_bilingual
+from .dates import WEEKDAYS_CA, WEEKDAYS_EN, WEEKDAYS_ES, format_date_bilingual
 from .ics import build_ics
 from calendar_titles import client_session_title, session_sequence
+from client_lang import resolve_client_lang
 from features import client_calendar_enabled
 from .recipients import clean_recipients
 from .template import Block, STUDIO_PLACE, button, heading, highlight_box, key_value, link_line, paragraph, sessions_table
-from .texts import bilingual_email, tr
+from .texts import localized_email, normalize_language, tr
 from .transport import send_email_async, validate_address
 
 logger = logging.getLogger("thundbalance.emails")
@@ -33,15 +34,15 @@ ICS_FILENAME = "thundbalance-sesiones.ics"
 ICS_CONTENT_TYPE = "text/calendar"   # METHOD:PUBLISH is inside the file; Gmail shows "Add to calendar"
 
 
-def pack_ics_attachment(summary):
-    """The attachment dict send_email() expects, for a pack summary; None when the
+def pack_ics_attachment(summary, lang=None):
+    """The attachment dict send_email() expects, for a pack summary (its text in `lang`); None when the
     client calendar is switched off (CLIENT_CALENDAR_ENABLED)."""
     if not client_calendar_enabled():
         return None
     return {
         "filename": ICS_FILENAME,
         "content_type": ICS_CONTENT_TYPE,
-        "data": build_pack_ics(summary).encode("utf-8"),
+        "data": build_pack_ics(summary, lang).encode("utf-8"),
     }
 
 
@@ -58,24 +59,29 @@ def _ordered_sessions(summary):
 
 
 def _day_names(days, lang):
-    names = WEEKDAYS_ES if lang == "es" else WEEKDAYS_EN
+    names = {"es": WEEKDAYS_ES, "ca": WEEKDAYS_CA}.get(lang, WEEKDAYS_EN)
     order = {name: index for index, name in enumerate(WEEKDAYS_EN)}
     known = sorted((day for day in days if day in order), key=lambda day: order[day])
     return ", ".join(names[order[day]].capitalize() for day in known)
 
 
-def render_pack_summary_block(summary, lang="es"):
-    """Pack summary (key-value rows) followed by the table of every session,
-    ordered by date. Returns one Block."""
+def _day_label(moment, lang):
+    """"Lunes, 12 de octubre de 2026" / "Monday, 12 October 2026" / "Dilluns, 12 d'octubre de 2026": the day in `lang`
+    (own tables, nothing depends on the server's locale)."""
+    day = format_date_bilingual(moment)
+    return f"{day.weekday(lang).capitalize()}, {day.date(lang)}"
+
+
+def render_pack_summary_block(summary, lang="en"):
+    """Pack summary (key-value rows) followed by the table of every session, ordered by date, with the weekdays, months and
+    dates in `lang` (en | es | ca). Returns one Block."""
+    lang = normalize_language(lang) or "en"
     sessions = _ordered_sessions(summary)
-    first = format_date_bilingual(sessions[0]["start"])
-    last = format_date_bilingual(sessions[-1]["start"])
-    pick = (lambda d: d.date_es) if lang == "es" else (lambda d: d.date_en)
     return _join([
         key_value([
             (tr(lang, "lbl_plan"), summary.get("plan_name")),
-            (tr(lang, "lbl_start"), f"{first.weekday_es.capitalize() if lang == 'es' else first.weekday_en}, {pick(first)}"),
-            (tr(lang, "lbl_end"), f"{last.weekday_es.capitalize() if lang == 'es' else last.weekday_en}, {pick(last)}"),
+            (tr(lang, "lbl_start"), _day_label(sessions[0]["start"], lang)),
+            (tr(lang, "lbl_end"), _day_label(sessions[-1]["start"], lang)),
             (tr(lang, "lbl_per_week"), summary.get("sessions_per_week")),
             (tr(lang, "lbl_days"), _day_names(summary.get("days") or [], lang)),
             (tr(lang, "lbl_total"), len(sessions)),
@@ -85,15 +91,16 @@ def render_pack_summary_block(summary, lang="es"):
     ])
 
 
-def build_pack_ics(summary):
-    """One 60-minute event per session, Europe/Madrid, UID {id}@thundbalance.com."""
+def build_pack_ics(summary, lang=None):
+    """One 60-minute event per session, Europe/Madrid, UID {id}@thundbalance.com. Its text is in `lang` (one language)."""
+    lang = normalize_language(lang or summary.get("lang")) or "en"
     return build_ics([
         {
             "id": f"session-{item['id']}",
             "start": item["start"],
             "summary": client_session_title(item.get("trainer"), item.get("number")),
             "sequence": session_sequence(item.get("feed_sequence", 0)),
-            "description": f"Entrenador / Trainer: {item['trainer']}" if item.get("trainer") else "",
+            "description": f"{tr(lang, 'lbl_trainer')}: {item['trainer']}" if item.get("trainer") else "",
             "location": ICS_PLACE,
         }
         for item in _ordered_sessions(summary)
@@ -114,11 +121,12 @@ def render_calendar_links_block(links, lang="es"):
     ])
 
 
-def build_pack_email(summary, team_subject=False):
-    """(subject, html, text): Spanish first, English below. With team_subject
-    the subject also carries the client's name (and the copy has no calendar
-    subscription link: that link belongs to the client).
+def build_pack_email(summary, team_subject=False, lang=None):
+    """(subject, html, text) entirely in ONE language: the client's (`lang`, else summary["lang"], else English). The team
+    copy (team_subject) is in Spanish, its subject also carries the client's name, and it has no calendar subscription
+    link (that link belongs to the client).
     summary["calendar_links"] (optional) adds the calendar buttons."""
+    lang = "es" if team_subject else (normalize_language(lang or summary.get("lang")) or "en")
     calendar_on = client_calendar_enabled()
     links = None if team_subject or not calendar_on else summary.get("calendar_links")
 
@@ -133,7 +141,7 @@ def build_pack_email(summary, team_subject=False):
         if calendar_on:          # nothing about calendars when the client calendar is off
             blocks += [paragraph(tr(lang, "pack_ics_note")), render_calendar_links_block(links, lang)]
         return blocks
-    subject, html, text = bilingual_email("pack_subject", build, title_key="pack_title")
+    subject, html, text = localized_email(lang, "pack_subject", build, title_key="pack_title")
     if team_subject:
         subject = f"{subject} — {_one_line(summary.get('client_name'))}"
     return subject, html, text
@@ -165,15 +173,16 @@ def send_pack_summary_email(summary, to_client=True, extra_recipients=()):
                 result.problem = "client_email_invalid"
         extras = clean_recipients(extra_recipients, exclude=[client_email] if client_email else [])
 
-        attachment = pack_ics_attachment(summary)
-        attachments = [attachment] if attachment else None
         jobs = []   # (addresses, future)
         if client_email:
-            subject, html, text = build_pack_email(summary)
-            jobs.append(([client_email], send_email_async(client_email, subject, html, text, attachments=attachments)))
+            lang = resolve_client_lang(booking_lang=summary.get("lang"), email=client_email)     # the client's language, one language
+            attachment = pack_ics_attachment(summary, lang)
+            subject, html, text = build_pack_email(summary, lang=lang)
+            jobs.append(([client_email], send_email_async(client_email, subject, html, text, attachments=[attachment] if attachment else None, kind="pack_summary", lang=lang)))
         if extras:
-            subject, html, text = build_pack_email(summary, team_subject=True)
-            jobs.append((extras, send_email_async(extras, subject, html, text, attachments=attachments)))
+            attachment = pack_ics_attachment(summary, "es")
+            subject, html, text = build_pack_email(summary, team_subject=True)               # the team's copy: Spanish
+            jobs.append((extras, send_email_async(extras, subject, html, text, attachments=[attachment] if attachment else None, kind="pack_summary_team", lang="es")))
         if not jobs and not result.problem:
             result.problem = "no_recipients"
 

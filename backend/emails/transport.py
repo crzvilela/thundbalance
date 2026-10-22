@@ -190,7 +190,7 @@ def send_email(to, subject, html, text, reply_to=None, attachments=None, cc=None
         result = _deliver(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang)
     if kind:
         recipient = to if isinstance(to, str) else ",".join(str(item) for item in (to or []))
-        email_log.record(kind, reference, recipient, result.ok, result.error)
+        email_log.record(kind, reference, recipient, result.ok, result.error, lang=lang or None)
     return result
 
 

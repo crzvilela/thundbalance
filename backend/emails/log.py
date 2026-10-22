@@ -37,6 +37,7 @@ def ensure_table():
             )
             """
         )
+        cursor.execute("ALTER TABLE email_log ADD COLUMN IF NOT EXISTS lang TEXT")       # the language the e-mail was written in
         cursor.execute("CREATE INDEX IF NOT EXISTS email_log_ref_idx ON email_log (tipo, referencia, id DESC)")
         conn.commit()
     finally:
@@ -44,8 +45,8 @@ def ensure_table():
         conn.close()
 
 
-def record(kind, reference, recipient, ok, error=""):
-    """Adds one row. Never raises."""
+def record(kind, reference, recipient, ok, error="", lang=None):
+    """Adds one row (with the language the e-mail was written in). Never raises."""
     if not kind:
         return
     try:
@@ -53,9 +54,9 @@ def record(kind, reference, recipient, ok, error=""):
         cursor = conn.cursor()
         try:
             cursor.execute(
-                "INSERT INTO email_log (tipo, referencia, destinatario, estado, erro) VALUES (%s, %s, %s, %s, %s)",
+                "INSERT INTO email_log (tipo, referencia, destinatario, estado, erro, lang) VALUES (%s, %s, %s, %s, %s, %s)",
                 (str(kind)[:60], None if reference is None else str(reference)[:60], str(recipient)[:254],
-                 SENT if ok else FAILED, None if ok else str(error or "error")[:60]),
+                 SENT if ok else FAILED, None if ok else str(error or "error")[:60], (str(lang)[:5] or None) if lang else None),
             )
             conn.commit()
         finally:
