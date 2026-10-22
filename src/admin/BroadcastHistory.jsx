@@ -4,7 +4,7 @@ import { useAdminText } from './useAdminText'
 import { useAdminResource } from './useAdminResource'
 import { useToast } from './toastContext'
 import { wallClock } from './calendar/calendarConfig'
-import { AUDIENCE_KEY, STATUS_TONE } from './broadcast'
+import { AUDIENCE_KEY, STATUS_TONE, audiencesOf } from './broadcast'
 import { Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Icon, SelectInput, Skeleton, TextInput } from './ui'
 
 const PAGE_SIZE = 20
@@ -15,6 +15,14 @@ function StatusBadge({ status }) {
   const { t } = useAdminText()
   const icon = status === 'scheduled' ? 'clock' : status === 'sent' ? 'check' : 'archive'      // icon + text, never only colour
   return <Badge tone={STATUS_TONE[status] || 'neutral'}><Icon name={icon} className="h-3.5 w-3.5" />{t(`bx_st_${status}`)}</Badge>
+}
+
+// The audiences of a message as small tags ("Todos · Entrenadores").
+function AudienceTags({ message }) {
+  const { t } = useAdminText()
+  return audiencesOf(message).map(audience => (
+    <span key={audience} className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs font-medium text-gray-200">{t(AUDIENCE_KEY[audience] || 'bx_to_all')}</span>
+  ))
 }
 
 function Info({ label, children }) {
@@ -53,7 +61,7 @@ function Detail({ id, onClose, onArchive, onRestore, busy }) {
       ) : (
         <>
           <dl className="mb-8 grid gap-x-8 gap-y-5 sm:grid-cols-2">
-            <Info label={t('bx_h_to')}>{t(AUDIENCE_KEY[data.audience])}{data.audience === 'user' && data.people?.[0] ? ` · ${data.people[0].email}` : ''}</Info>
+            <Info label={t('bx_h_to')}><AudienceTags message={data} />{data.audience === 'user' && data.people?.[0] ? <span className="ml-1 text-gray-300">· {data.people[0].email}</span> : null}</Info>
             <Info label={t('bx_h_status')}><StatusBadge status={data.status} /></Info>
             <Info label={t('bx_h_sends')}>{when(data.visible_from)}</Info>
             <Info label={t('bx_h_expires')}>{data.expires_at ? when(data.expires_at) : t('bx_h_no_expiry')}</Info>
@@ -214,7 +222,7 @@ export default function BroadcastHistory({ highlight }) {
                     <StatusBadge status={item.status} />
                   </span>
                   <span className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-gray-400">
-                    <span className="[overflow-wrap:anywhere]">{t(AUDIENCE_KEY[item.audience])}{item.person ? ` · ${item.person}` : ''}</span>
+                    <span className="flex flex-wrap items-center gap-1.5 [overflow-wrap:anywhere]"><AudienceTags message={item} />{item.person ? <span>· {item.person}</span> : null}</span>
                     <span>{t('bx_h_sends')}: {when(item.visible_from)}</span>
                     <span>{t('bx_h_expires')}: {item.expires_at ? when(item.expires_at) : t('bx_h_no_expiry')}</span>
                   </span>

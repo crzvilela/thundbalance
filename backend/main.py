@@ -26,6 +26,7 @@ from google_calendar import (
 )
 from landing_page_default import DEFAULT_LANDING_CONTENT
 from admin_api import register_admin_routes
+import trainer_area
 from client_lifecycle import ensure_columns as ensure_lifecycle_columns, register_client_lifecycle_routes
 import admin_calendar
 import logging
@@ -134,8 +135,8 @@ def require_admin(authorization: str | None = Header(default=None)):
     return claims
 
 
-def require_client(authorization: str | None = Header(default=None)):
-    """Verify a Firebase token for client-owned workflow endpoints."""
+def verified_claims(authorization):
+    """The verified Firebase claims of a Bearer token (401 otherwise); no role is checked."""
     scheme, _, token = (authorization or "").partition(" ")
     if scheme.casefold() != "bearer" or not token:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -150,7 +151,27 @@ def require_client(authorization: str | None = Header(default=None)):
     return claims
 
 
+def require_client(authorization: str | None = Header(default=None)):
+    """Verify a Firebase token for client-owned workflow endpoints. A trainer account
+    (trainer_area.py) has no client rights and is turned away with 403."""
+    claims = verified_claims(authorization)
+    token_email = str(claims.get("email", "")).strip().casefold()
+    if token_email != ADMIN_EMAIL and trainer_area.is_active_trainer_email(token_email):
+        raise trainer_area.trainer_turned_away()
+    return claims
+
+
+def require_inbox_user(authorization: str | None = Header(default=None)):
+    """Anyone with an account on the site: a client, the admin or a trainer (require_client turns
+    trainers away). Used by the inbox and by the profile (a trainer reads and edits their own)."""
+    return verified_claims(authorization)
+
+
+require_account = require_inbox_user
+
+
 register_admin_routes(app, require_admin)
+trainer_area.register_trainer_area_routes(app, require_admin, verified_claims, ADMIN_EMAIL)
 admin_calendar.register_admin_calendar_routes(app, require_admin)
 register_client_lifecycle_routes(
     app, require_admin, ADMIN_EMAIL,
@@ -174,6 +195,16 @@ def ensure_admin_calendar_columns():
         admin_calendar.ensure_columns()
     except Exception as error:  # noqa: BLE001
         print(f"admin calendar columns could not be created: {type(error).__name__}")
+
+
+@app.on_event("startup")
+def ensure_trainer_area():
+    # trainer_access + trainer_access_log, and the fifth trainer (Dominika) with a colour of her own
+    try:
+        trainer_area.ensure_tables()
+        trainer_area.ensure_dominika()
+    except Exception as error:  # noqa: BLE001
+        print(f"trainer area could not be prepared: {type(error).__name__}")
 
 
 @app.on_event("startup")
@@ -247,7 +278,7 @@ def assert_session_owner(claims, session_id):
 
 calendar_feed.register_calendar_feed_routes(app, require_admin, require_client, _own_user_id)
 reschedule_requests.register_reschedule_routes(app, require_admin, require_client, _own_user_id)
-inbox.register_inbox_routes(app, require_admin, require_client, _own_user_id, ADMIN_EMAIL)
+inbox.register_inbox_routes(app, require_admin, require_inbox_user, _own_user_id, ADMIN_EMAIL)
 client_lang.register_client_lang_routes(app, require_client, _own_user_id)
 
 
@@ -703,7 +734,7 @@ def get_sessions():
 
 
 @app.post("/users")
-def create_user(user: UserCreate, claims=Depends(require_client)):
+def create_user(user: UserCreate, claims=Depends(require_account)):
 
     # Who the account is comes from the login, never from the request body.
     user.firebase_uid = claims.get("sub")
@@ -828,7 +859,7 @@ def get_users():
 
 
 @app.get("/users/email/{email}")
-def get_user_by_email(email: str, claims=Depends(require_client)):
+def get_user_by_email(email: str, claims=Depends(require_account)):
 
     if not _is_admin(claims) and email.strip().casefold() != str(claims.get("email", "")).strip().casefold():
         raise HTTPException(status_code=403, detail="This belongs to another account")
@@ -991,7 +1022,7 @@ def cancel_session(session_id: int, claims=Depends(require_client)):
 
 
 @app.get("/profile/{user_id}")
-def get_profile(user_id: int, claims=Depends(require_client)):
+def get_profile(user_id: int, claims=Depends(require_account)):
 
     assert_owner(claims, user_id)
 
@@ -1213,7 +1244,7 @@ def admin_sessions():
 
 
 @app.post("/profile/{user_id}/photo")
-async def upload_profile_photo(user_id: int, file: UploadFile = File(...), claims=Depends(require_client)):
+async def upload_profile_photo(user_id: int, file: UploadFile = File(...), claims=Depends(require_account)):
     extension = os.path.splitext(file.filename or "")[1].lower()
     if extension not in {".jpg", ".jpeg", ".png", ".webp"}:
         raise HTTPException(status_code=400, detail="Use a JPG, PNG or WebP image")
@@ -1256,7 +1287,7 @@ async def upload_profile_photo(user_id: int, file: UploadFile = File(...), claim
 def update_profile(
     user_id: int,
     profile: UpdateProfile,
-    claims=Depends(require_client)
+    claims=Depends(require_account)
 ):
 
     assert_owner(claims, user_id)

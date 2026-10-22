@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Home from '../pages/Home'
 import Login from '../pages/Login'
 import RequireAdmin from '../components/admin/RequireAdmin'
+import { NotForTrainers, TrainerRoute } from '../roles/RoleGuards'
 const Register = lazy(() => import('../pages/Register'))
 const Dashboard = lazy(() => import('../pages/Dashboard'))
 const MySessions = lazy(() => import('../pages/MySessions'))
@@ -23,6 +24,8 @@ const Plans = lazy(() => import('../admin/pages/Plans'))
 const Videos = lazy(() => import('../admin/pages/Videos'))
 const Messages = lazy(() => import('../admin/pages/Messages'))
 const TrainingTips = lazy(() => import('../pages/TrainingTips'))
+const TrainerArea = lazy(() => import('../pages/TrainerArea'))
+const TrainerPanelView = lazy(() => import('../admin/pages/TrainerPanelView'))
 const TrialSession = lazy(() => import('../pages/Trialsession'))
 const TrialConfirm = lazy(() => import('../pages/TrialConfirm'))
 const RescheduleResponse = lazy(() => import('../pages/RescheduleResponse'))
@@ -42,11 +45,11 @@ function AppRoutes() {
 
         <Route path="/register" element={<Register />} />
 
-        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/dashboard" element={<NotForTrainers><Dashboard /></NotForTrainers>} />
 
         
         
-        <Route path="/my-sessions" element={<MySessions />} />
+        <Route path="/my-sessions" element={<NotForTrainers><MySessions /></NotForTrainers>} />
 
         <Route path="/messages" element={<ClientMessages />} />
 
@@ -64,6 +67,7 @@ function AppRoutes() {
           <Route path="schedule" element={<Schedule />} />
           <Route path="sent-messages" element={<SentMessages />} />
           <Route path="trainers" element={<Trainers />} />
+          <Route path="trainers/:trainerId/panel" element={<TrainerPanelView />} />
           <Route path="sessions" element={<Navigate to="/admin/calendar" replace />} />
           <Route path="plans" element={<Plans />} />
           <Route path="videos" element={<Videos />} />
@@ -78,12 +82,14 @@ function AppRoutes() {
         <Route path="/training-tips" element={<TrainingTips />} />
       
 
-        <Route path="/trial-session" element={<TrialSession />}/>
+        <Route path="/trial-session" element={<NotForTrainers><TrialSession /></NotForTrainers>}/>
 
         <Route path="/trial-session/confirm/:token" element={<TrialConfirm />}/>
         <Route path="/reschedule-response/:token" element={<RescheduleResponse />}/>
 
-        <Route path="/training-request" element={<TrainingRequest />}/>
+        <Route path="/training-request" element={<NotForTrainers><TrainingRequest /></NotForTrainers>}/>
+
+        <Route path="/trainer" element={<TrainerRoute><TrainerArea /></TrainerRoute>} />
       
       </Routes>
       </Suspense>

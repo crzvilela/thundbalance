@@ -15,6 +15,7 @@ the others.
 
 No tax id and no postal address ever go into an event.
 """
+import time
 from datetime import datetime, timedelta
 
 TIMEZONE = "Europe/Madrid"
@@ -28,7 +29,41 @@ APP_VALUE = "thundbalance"
 SESSION_PROPERTY = "thundbalance_session_id"
 TRIAL_PROPERTY = "thundbalance_trial_id"
 
-TRAINER_COLORS = {"Carles": "1", "David": "2", "Guille": "3", "Matilda": "4"}
+# Google's event colours are numbers 1-11. They now follow the colour each trainer has in the
+# trainers table (the admin calendar's palette, in order), so a new trainer needs no code change.
+# This map is only the fallback when the table can not be read.
+LEGACY_TRAINER_COLORS = {"Carles": "1", "David": "2", "Guille": "3", "Matilda": "4"}
+_color_cache = {"until": 0.0, "map": {}}
+
+
+def _trainer_color_map():
+    now = time.monotonic()
+    if _color_cache["until"] > now:
+        return _color_cache["map"]
+    mapping = {}
+    try:
+        from admin_calendar import PALETTE
+        from database import get_connection
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT nome, color FROM trainers WHERE color IS NOT NULL")
+            for name, color in cursor.fetchall():
+                if str(color).lower() in PALETTE:
+                    mapping[name] = str(PALETTE.index(str(color).lower()) % 11 + 1)
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception:  # noqa: BLE001 - no database or no colour column: use the fallback
+        mapping = {}
+    _color_cache.update(until=now + 60, map=mapping)
+    return mapping
+
+
+def trainer_color_id(trainer_name):
+    return _trainer_color_map().get(trainer_name) or LEGACY_TRAINER_COLORS.get(trainer_name, "1")
+
+
 TRIAL_COLOR = "10"
 
 _WEEKDAYS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
@@ -131,7 +166,7 @@ def build_session_event(*, client_name, client_email=None, client_phone=None, se
             client_name, client_email, client_phone, session_date, session_time,
             trainer_name, pack_name, session_number,
         ),
-        "colorId": TRAINER_COLORS.get(trainer_name, "1"),
+        "colorId": trainer_color_id(trainer_name),
         "start": start,
         "end": end,
         "extendedProperties": {"private": private},

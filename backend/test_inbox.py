@@ -702,7 +702,7 @@ class Inbox(unittest.TestCase):
 
     # ----- HTTP
     def test_http_flow_and_every_route_is_guarded(self):
-        main.app.dependency_overrides[main.require_client] = lambda: claims_of("ana")
+        main.app.dependency_overrides[main.require_inbox_user] = lambda: claims_of("ana")
         main.app.dependency_overrides[main.require_admin] = lambda: {"email": ADMIN, "sub": "uid-boss"}
         sent = self.client.post("/admin/messages", json={
             "audience": "user", "email": f"ana{DOMAIN}", "main_lang": "es", "title": "Hola", "body": "Cuerpo",
@@ -747,12 +747,12 @@ class Inbox(unittest.TestCase):
             path = getattr(item, "path", "")
             calls = {dependency.call for dependency in getattr(getattr(item, "dependant", None), "dependencies", [])}
             if path.startswith("/inbox"):
-                self.assertIn(main.require_client, calls, path)
+                self.assertIn(main.require_inbox_user, calls, path)
             if path.startswith("/admin/messages"):
                 self.assertIn(main.require_admin, calls, path)
 
     def test_too_many_requests_are_limited(self):
-        main.app.dependency_overrides[main.require_client] = lambda: claims_of("ana")
+        main.app.dependency_overrides[main.require_inbox_user] = lambda: claims_of("ana")
         limit = inbox.RATE["count"][0]
         codes = [self.client.get("/inbox/unread-count").status_code for _ in range(limit + 2)]
         self.assertEqual((codes[0], codes[limit - 1], codes[limit]), (200, 200, 429))

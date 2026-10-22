@@ -1,7 +1,7 @@
 // node --test src/admin/
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { addDays, emptyDraft, hasHtml, isDirty, isHttpUrl, previewItem, serverErrorKey, toPayload, validateDraft } from './broadcast.js'
+import { addDays, audiencesOf, emptyDraft, hasHtml, isDirty, isHttpUrl, previewItem, serverErrorKey, toPayload, validateDraft } from './broadcast.js'
 
 const NOW = '2026-10-18T12:00'
 const valid = (extra = {}) => ({ ...emptyDraft('es'), title: 'Hola', body: 'Cuerpo', ...extra })
@@ -19,8 +19,8 @@ test('a valid draft has no problems and the problems are found by field', () => 
   assert.equal(validateDraft(valid({ title: 'x'.repeat(121) }), NOW).title, 'bx_v_too_long')
   assert.equal(validateDraft(valid({ body: 'x'.repeat(2001) }), NOW).body, 'bx_v_too_long')
   assert.equal(validateDraft(valid({ body: 'hola <b>x</b>' }), NOW).body, 'bx_v_html')
-  assert.equal(validateDraft(valid({ audience: 'user' }), NOW).person, 'bx_v_person')
-  assert.deepEqual(validateDraft(valid({ audience: 'user', person: { id: 1, name: 'Ana', email: 'a@x.es' } }), NOW), {})
+  assert.equal(validateDraft(valid({ audiences: ['user'] }), NOW).person, 'bx_v_person')
+  assert.deepEqual(validateDraft(valid({ audiences: ['user'], person: { id: 1, name: 'Ana', email: 'a@x.es' } }), NOW), {})
   const translated = valid(); translated.translations.en = { title: '<i>x</i>', body: '' }
   assert.equal(validateDraft(translated, NOW).t_en, 'bx_v_html')
   const own = valid(); own.translations.es = { title: '<i>x</i>', body: '' }             // the main language is not a translation
@@ -51,15 +51,15 @@ test('scheduling: in the future, at most a year ahead; expiry after the send dat
 })
 
 test('the payload sent to the server', () => {
-  const draft = valid({ audience: 'user', person: { id: 3, name: 'Ana', email: 'ana@x.es' }, button: true, label: ' Ver ', target: '/my-sessions', when: 'later', sendAt: '2026-12-24T09:00', expires: true, expiresAt: '2026-12-31T09:00' })
+  const draft = valid({ audiences: ['user'], person: { id: 3, name: 'Ana', email: 'ana@x.es' }, button: true, label: ' Ver ', target: '/my-sessions', when: 'later', sendAt: '2026-12-24T09:00', expires: true, expiresAt: '2026-12-31T09:00' })
   draft.translations.en = { title: ' Hello ', body: '' }
   draft.translations.ca = { title: '', body: '' }
   assert.deepEqual(toPayload(draft, 'key-1'), {
-    audience: 'user', email: 'ana@x.es', main_lang: 'es', title: 'Hola', body: 'Cuerpo', translations: { en: { title: 'Hello' } },
+    audiences: ['user'], email: 'ana@x.es', main_lang: 'es', title: 'Hola', body: 'Cuerpo', translations: { en: { title: 'Hello' } },
     action_label: 'Ver', action_target: '/my-sessions', visible_from: '2026-12-24T09:00', expires_at: '2026-12-31T09:00', idempotency_key: 'key-1'
   })
   const simple = toPayload(valid(), 'key-2')
-  assert.deepEqual(Object.keys(simple).sort(), ['audience', 'body', 'idempotency_key', 'main_lang', 'title'])
+  assert.deepEqual(Object.keys(simple).sort(), ['audiences', 'body', 'idempotency_key', 'main_lang', 'title'])
   const external = toPayload(valid({ button: true, label: 'Web', target: 'external', url: ' https://a.example/x ' }), 'k')
   assert.equal(external.action_target, 'https://a.example/x')
 })
@@ -103,4 +103,20 @@ test('the button text of each language: sent, shown in the preview and checked',
   assert.deepEqual(toPayload(draft, 'k').translations, { ca: { title: 'Hola' } })
   const dirty = emptyDraft(); dirty.translations.ca.label = 'Hola'
   assert.equal(isDirty(dirty), true)
+})
+
+test('several audiences can be combined and are sent in a fixed order; none is a problem', () => {
+  assert.equal(validateDraft(valid({ audiences: [] }), NOW).audiences, 'bx_v_audiences')
+  assert.deepEqual(validateDraft(valid({ audiences: ['trainers', 'all'] }), NOW), {})
+  assert.deepEqual(toPayload(valid({ audiences: ['trainers', 'all'] }), 'k').audiences, ['all', 'trainers'])
+  const withPerson = toPayload(valid({ audiences: ['trainers', 'user'], person: { id: 1, name: 'Ana', email: 'a@x.es' } }), 'k')
+  assert.deepEqual([withPerson.audiences, withPerson.email], [['trainers', 'user'], 'a@x.es'])
+  assert.equal(previewItem(valid({ audiences: ['user'], person: { id: 1, name: 'A', email: 'a@x.es' } }), 'es', NOW).type, 'direct')
+  assert.equal(previewItem(valid({ audiences: ['user', 'trainers'] }), 'es', NOW).type, 'broadcast')
+})
+
+test('the history reads the list of audiences, or the old single one', () => {
+  assert.deepEqual(audiencesOf({ audience: 'all', audiences: ['all', 'trainers'] }), ['all', 'trainers'])
+  assert.deepEqual(audiencesOf({ audience: 'active_pack' }), ['active_pack'])
+  assert.deepEqual(audiencesOf({ audience: 'all', audiences: null }), ['all'])
 })

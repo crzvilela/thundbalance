@@ -6,6 +6,7 @@
 // regardless of the selected language. See I18nContext.jsx for the t()
 // lookup function and its fallback chain.
 import { pageText } from './pageText'
+import { trainerText } from './trainerText'
 
 const base = {
   en: {
@@ -172,7 +173,7 @@ const base = {
 }
 
 export const translations = {
-  en: { ...base.en, ...pageText.en },
-  es: { ...base.es, ...pageText.es },
-  ca: { ...base.ca, ...pageText.ca }
+  en: { ...base.en, ...pageText.en, ...trainerText.en },
+  es: { ...base.es, ...pageText.es, ...trainerText.es },
+  ca: { ...base.ca, ...pageText.ca, ...trainerText.ca }
 }

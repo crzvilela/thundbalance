@@ -6,7 +6,7 @@ Availability is stored per trainer and weekday in trainer_availability
 trainer available 07:00-14:00 can START a session from 07:00 up to 13:00.
 """
 
-from datetime import date as date_type, datetime
+from datetime import date as date_type, datetime, timedelta
 
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 SESSION_HOURS = 1
@@ -163,6 +163,46 @@ def free_start_times(cursor, trainer_id, day, ignore_session_id=None):
     times = _start_times(_windows(cursor, trainer_id, weekday_name(day)))
     taken = _busy_times(cursor, day, {trainer_id}, ignore_session_id).get(trainer_id, set())
     return sorted(times - taken)
+
+
+def free_slots_between(cursor, trainer_id, first, last):
+    """[("YYYY-MM-DD", "HH:00")] the trainer can still take from `first` to `last` (both
+    inclusive). The same rules as free_start_times (working hours minus booked sessions
+    and approved or confirmed trials), for a whole range with three queries instead of
+    two per day. Nothing for a trainer who is no longer active."""
+    cursor.execute("SELECT 1 FROM trainers WHERE id = %s AND active", (trainer_id,))
+    if not cursor.fetchone():
+        return []
+    cursor.execute(
+        "SELECT day_of_week, start_time, end_time FROM trainer_availability WHERE trainer_id = %s",
+        (trainer_id,),
+    )
+    windows = {}
+    for weekday, start, end in cursor.fetchall():
+        windows.setdefault(weekday, []).append((to_minutes(start), to_minutes(end)))
+    cursor.execute(
+        """
+        SELECT session_date, session_time FROM sessions
+        WHERE trainer_id = %s AND session_date >= %s AND session_date <= %s AND status = 'Booked'
+        UNION ALL
+        SELECT session_date, session_time FROM trial_sessions
+        WHERE trainer_id = %s AND session_date >= %s AND session_date <= %s
+          AND LOWER(status) IN ('approved', 'confirmed')
+        """,
+        (trainer_id, first, last, trainer_id, first, last),
+    )
+    busy = {}
+    for day, moment in cursor.fetchall():
+        if day is not None and moment is not None:
+            busy.setdefault(str(day)[:10], set()).add(hhmm(moment))
+    slots = []
+    day = first
+    while day <= last:
+        key = str(day)
+        times = _start_times(windows.get(WEEKDAYS[day.weekday()], []))
+        slots += [(key, hour) for hour in sorted(times - busy.get(key, set()))]
+        day += timedelta(days=1)
+    return slots
 
 
 def _time_limit(timeout_ms):

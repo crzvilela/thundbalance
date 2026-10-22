@@ -16,8 +16,11 @@ export const TARGETS = [
   { value: 'external', key: 'bx_dest_external' }
 ]
 
+// The audiences the studio can combine. 'user' needs a person (chosen by email).
+export const AUDIENCE_OPTIONS = ['all', 'active_pack', 'trainers', 'user']
+
 export const emptyDraft = (mainLang = 'es') => ({
-  audience: 'all', person: null,
+  audiences: ['all'], person: null,
   mainLang, title: '', body: '', translations: { en: { title: '', body: '', label: '' }, es: { title: '', body: '', label: '' }, ca: { title: '', body: '', label: '' } },
   showTranslations: false,
   button: false, label: '', target: '/my-sessions', url: '',
@@ -58,7 +61,8 @@ export function addDays(wall, days) {
 // Each value is a translation key (bx_v_*). `nowWall` is the Madrid wall clock as "YYYY-MM-DDTHH:MM".
 export function validateDraft(draft, nowWall) {
   const problems = {}
-  if (draft.audience === 'user' && !draft.person) problems.person = 'bx_v_person'
+  if (draft.audiences.length === 0) problems.audiences = 'bx_v_audiences'
+  if (draft.audiences.includes('user') && !draft.person) problems.person = 'bx_v_person'
   if (!draft.title.trim()) problems.title = 'bx_v_title_required'
   else if (draft.title.length > TITLE_MAX) problems.title = 'bx_v_too_long'
   else if (hasHtml(draft.title)) problems.title = 'bx_v_html'
@@ -103,8 +107,8 @@ export function toPayload(draft, idempotencyKey) {
     if (title || body || label) translations[code] = { ...(title ? { title } : {}), ...(body ? { body } : {}), ...(label ? { action_label: label } : {}) }
   }
   return {
-    audience: draft.audience,
-    ...(draft.audience === 'user' ? { email: draft.person.email } : {}),
+    audiences: AUDIENCE_OPTIONS.filter(option => draft.audiences.includes(option)),
+    ...(draft.audiences.includes('user') ? { email: draft.person.email } : {}),
     main_lang: draft.mainLang,
     title: draft.title.trim(),
     body: draft.body.trim(),
@@ -126,7 +130,7 @@ export function previewItem(draft, lang, nowWall) {
     ? [{ type: 'link', label, target, state: 'available' }]
     : []
   return {
-    id: 0, kind: 'admin', type: draft.audience === 'user' ? 'direct' : 'broadcast',
+    id: 0, kind: 'admin', type: draft.audiences.length === 1 && draft.audiences[0] === 'user' ? 'direct' : 'broadcast',
     title: own.title?.trim() || draft.title.trim(), body: own.body?.trim() || draft.body.trim(),
     date: nowWall, read: false, actions, can_archive: true, archived: false
   }
@@ -143,5 +147,8 @@ const SERVER = {
 export const serverErrorKey = (code) => SERVER[code] || 'bx_err_generic'
 
 // The audience as the history says it
-export const AUDIENCE_KEY = { all: 'bx_to_all', active_pack: 'bx_to_pack', user: 'bx_to_user' }
+export const AUDIENCE_KEY = { all: 'bx_to_all', active_pack: 'bx_to_pack', trainers: 'bx_to_trainers', user: 'bx_to_user' }
+
+// The audiences of a message of the history: the list, or the single old column of an older message.
+export const audiencesOf = (message) => (Array.isArray(message.audiences) && message.audiences.length ? message.audiences : [message.audience].filter(Boolean))
 export const STATUS_TONE = { scheduled: 'sky', sent: 'emerald', expired: 'neutral' }

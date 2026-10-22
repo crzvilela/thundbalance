@@ -11,9 +11,16 @@ Tables
                     person has no account: it is linked when they sign up with a VERIFIED e-mail).
 
 Who receives (worked out WHEN the studio sends or schedules; later sign-ups do not get old messages)
-  all          every client that is not archived (never the admin account)
+  all          every client that is not archived (never the admin account, never an active trainer)
   active_pack  the same, with an active pack (pack_view.active_pack_sql: the dashboard's definition)
-  user         one client, chosen by e-mail
+  trainers     the people with an ACTIVE trainer access (trainer_access). They read it in this same inbox
+  user         one person, chosen by e-mail (a client, or an active trainer: the way a future automatic
+               message will reach one trainer)
+  A message can have SEVERAL audiences (inbox_messages.audiences, a JSON list; older messages only have the
+  single `audience` column and are read as a list of one). A person who falls in more than one rule gets ONE
+  message (the recipients are de-duplicated by e-mail). Trainers are not clients: "all" and "active_pack" leave
+  them out. What reached someone only through the "trainers" rule (inbox_recipients.source = 'trainers') is
+  visible only while their trainer access is active.
   Archived clients never receive anything, automatic messages included.
 
 Time: visible_from / expires_at are Europe/Madrid wall-clock times. There is no background job: "send
@@ -60,7 +67,8 @@ PAGE_SIZE_MAX = 50
 MAX_SCHEDULE_DAYS = 366
 # the only internal paths a button of the studio may open (anything else must be an http(s) address)
 INTERNAL_TARGETS = ("/my-sessions", "/profile", "/dashboard", "/trial-session", "/training-request", "/training-tips")
-AUDIENCES = ("all", "active_pack", "user")
+AUDIENCES = ("all", "active_pack", "trainers", "user")
+TRAINERS_SOURCE = "trainers"
 
 # What each automatic message offers. (action type, label key, target for links)
 SYSTEM_ACTIONS = {
@@ -176,6 +184,10 @@ def ensure_tables():
         cursor.execute("ALTER TABLE inbox_recipients ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP")
         cursor.execute("ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP")
         cursor.execute("ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS archived_by TEXT")
+        # several audiences per message (JSON list); the old single `audience` column keeps being written and read
+        cursor.execute("ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS audiences JSONB")
+        # how a recipient was reached: 'trainers' = only through the trainers rule (hidden once the access is revoked)
+        cursor.execute("ALTER TABLE inbox_recipients ADD COLUMN IF NOT EXISTS source TEXT")
         cursor.execute("UPDATE inbox_recipients SET archived_at = deleted_at WHERE deleted_at IS NOT NULL AND archived_at IS NULL")
         cursor.execute("UPDATE inbox_messages SET archived_at = deleted_at WHERE deleted_at IS NOT NULL AND archived_at IS NULL")
         cursor.execute("CREATE INDEX IF NOT EXISTS inbox_recipients_user_archived_idx ON inbox_recipients (user_id, archived_at)")
@@ -192,6 +204,8 @@ def ensure_tables():
     finally:
         cursor.close()
         conn.close()
+    import trainer_area
+    trainer_area.ensure_tables()          # the queries below read trainer_access
     _ready.set()
 
 
@@ -387,7 +401,10 @@ SELECT_ITEMS = """
 """
 # A message the studio archived is in nobody's inbox or archive; one past its expiry neither.
 VISIBLE = ("m.archived_at IS NULL AND m.visible_from <= %(now)s "
-           "AND (m.expires_at IS NULL OR m.expires_at > %(now)s)")
+           "AND (m.expires_at IS NULL OR m.expires_at > %(now)s) "
+           # what arrived only through the "trainers" rule stops showing when the trainer access is revoked
+           "AND (r.source IS DISTINCT FROM 'trainers' OR EXISTS ("
+           "SELECT 1 FROM trainer_access ta WHERE ta.revoked_at IS NULL AND ta.email = LOWER(r.recipient_email)))")
 IN_INBOX = "r.archived_at IS NULL"
 IN_ARCHIVE = "r.archived_at IS NOT NULL"
 
@@ -683,8 +700,7 @@ def _check_moment(text, field):
 
 def _clean_message(data):
     """Validated, cleaned fields of a message of the studio."""
-    if data.audience not in AUDIENCES:
-        raise fail(422, "invalid_audience", "Choose who receives the message.")
+    audiences = audiences_of(data)
     main_lang = normalize_language(data.main_lang) or ("es" if not data.main_lang else None)
     if not main_lang:
         raise fail(422, "invalid_language", "Choose the language of the message.")
@@ -724,32 +740,83 @@ def _clean_message(data):
         if expires_at <= visible_from:
             raise fail(422, "expiry_before_start", "The expiry must be after the send date.")
     key = str(data.idempotency_key or "").strip()[:100] or None
-    return {"audience": data.audience, "main_lang": main_lang, "title": title, "body": body, "translations": translations,
+    return {"audiences": audiences, "main_lang": main_lang, "title": title, "body": body, "translations": translations,
             "label": label or None, "target": target or None, "visible_from": visible_from, "expires_at": expires_at, "key": key}
 
 
-def _audience_sql(audience):
-    """(FROM/WHERE for the recipients, extra parameters)."""
-    where = "u.archived_at IS NULL AND u.email IS NOT NULL AND LOWER(u.email) <> %(admin)s"
-    if audience == "active_pack":
+def audiences_of(data):
+    """The audiences of a payload, in order and without repeats. `audiences` (a list) wins; the old
+    single `audience` still works."""
+    raw = getattr(data, "audiences", None) or ([getattr(data, "audience", None)] if getattr(data, "audience", None) else [])
+    result = []
+    for item in raw:
+        if item not in AUDIENCES:
+            raise fail(422, "invalid_audience", "Choose who receives the message.")
+        if item not in result:
+            result.append(item)
+    if not result:
+        raise fail(422, "invalid_audience", "Choose who receives the message.")
+    return result
+
+
+def _client_where(active_pack):
+    """Clients: not archived, with an email, not the admin and NOT an active trainer."""
+    where = ("u.archived_at IS NULL AND u.email IS NOT NULL AND LOWER(u.email) <> %(admin)s "
+             "AND NOT EXISTS (SELECT 1 FROM trainer_access ta WHERE ta.revoked_at IS NULL AND ta.email = LOWER(u.email))")
+    if active_pack:
         where += f" AND {pack_view.active_pack_sql('u.id')}"
     return where
 
 
+def _recipient_rows_sql(audiences):
+    """SELECT of (user_id, email, src) for every rule of the message, before de-duplicating. Parameters: admin, email."""
+    parts = []
+    if "all" in audiences:
+        parts.append(f"SELECT u.id AS user_id, LOWER(u.email) AS email, 'client' AS src FROM users u WHERE {_client_where(False)}")
+    if "active_pack" in audiences:
+        parts.append(f"SELECT u.id AS user_id, LOWER(u.email) AS email, 'client' AS src FROM users u WHERE {_client_where(True)}")
+    if "trainers" in audiences:
+        parts.append(
+            "SELECT u.id AS user_id, ta.email AS email, 'trainer' AS src FROM trainer_access ta LEFT JOIN users u ON LOWER(u.email) = ta.email "
+            "WHERE ta.revoked_at IS NULL AND (u.id IS NULL OR u.archived_at IS NULL)")
+    if "user" in audiences:
+        # one person: a client (not archived) or an active trainer; a trainer with no profile yet waits by e-mail
+        parts.append("SELECT u.id AS user_id, LOWER(u.email) AS email, 'user' AS src FROM users u WHERE LOWER(u.email) = %(email)s AND u.archived_at IS NULL")
+        parts.append(
+            "SELECT NULL::int AS user_id, ta.email AS email, 'user' AS src FROM trainer_access ta WHERE ta.revoked_at IS NULL AND ta.email = %(email)s "
+            "AND NOT EXISTS (SELECT 1 FROM users u WHERE LOWER(u.email) = ta.email)")
+    return " UNION ALL ".join(parts)
+
+
+def _person_state(cursor, email):
+    """(found, archived) of the person a "user" audience points to."""
+    email = str(email or "").strip().lower()
+    cursor.execute("SELECT archived_at IS NOT NULL FROM users WHERE LOWER(email) = %s", (email,))
+    row = cursor.fetchone()
+    if row:
+        return True, bool(row[0])
+    cursor.execute("SELECT 1 FROM trainer_access WHERE revoked_at IS NULL AND email = %s", (email,))
+    return cursor.fetchone() is not None, False
+
+
 def preview(audience, email=None):
-    """How many clients would receive a message for this audience (nothing is written)."""
+    """How many people would receive a message for these audiences, each counted once (nothing is
+    written). `audience` is one name or a list."""
     ensure_tables_once()
-    if audience not in AUDIENCES:
-        raise fail(422, "invalid_audience", "Choose who receives the message.")
+    audiences = [audience] if isinstance(audience, str) else list(audience or [])
+    audiences = audiences_of(type("A", (), {"audiences": audiences})())
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        if audience == "user":
-            cursor.execute("SELECT archived_at IS NOT NULL FROM users WHERE LOWER(email) = %s", (str(email or "").strip().lower(),))
-            row = cursor.fetchone()
-            return {"count": 1 if row and not row[0] else 0, "found": bool(row), "archived": bool(row and row[0])}
-        cursor.execute(f"SELECT COUNT(*) FROM users u WHERE {_audience_sql(audience)}", {"admin": ADMIN_EMAIL})
-        return {"count": cursor.fetchone()[0]}
+        email = str(email or "").strip().lower()
+        extra = {}
+        if "user" in audiences:
+            found, archived = _person_state(cursor, email)
+            extra = {"found": found, "archived": archived}
+        cursor.execute(
+            f"SELECT COUNT(*) FROM (SELECT email FROM ({_recipient_rows_sql(audiences)}) rows GROUP BY email) people",
+            {"admin": ADMIN_EMAIL, "email": email})
+        return {"count": cursor.fetchone()[0], **extra}
     finally:
         cursor.close()
         conn.close()
@@ -757,9 +824,11 @@ def preview(audience, email=None):
 
 def send_admin_message(data, admin=""):
     """Creates (and so sends or schedules) a message of the studio: the recipients are fixed now, in one
-    transaction. The same idempotency_key twice returns the first message instead of sending again."""
+    transaction, one per person even when several rules reach them. The same idempotency_key twice returns
+    the first message instead of sending again."""
     ensure_tables_once()
     clean = _clean_message(data)
+    audiences = clean["audiences"]
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -769,31 +838,32 @@ def send_admin_message(data, admin=""):
             if existing:
                 return {"id": existing[0], "repeated": True, **_summary(cursor, existing[0])}
         email = str(data.email or "").strip().lower()
-        if clean["audience"] == "user":
-            cursor.execute("SELECT id, archived_at IS NOT NULL FROM users WHERE LOWER(email) = %s", (email,))
-            account = cursor.fetchone()
-            if not account:
+        if "user" in audiences:
+            found, archived = _person_state(cursor, email)
+            if not found:
                 raise fail(422, "no_such_client", "There is no client with that email.")
-            if account[1]:
+            if archived:
                 raise fail(422, "client_archived", "That client is archived and does not receive messages.")
+        only_user = audiences == ["user"]
+        legacy = "user" if only_user else next(item for item in audiences if item != "user")      # the old single column
         cursor.execute(
             """
-            INSERT INTO inbox_messages (kind, type, title, body, translations, main_lang, audience, action_label, action_target,
+            INSERT INTO inbox_messages (kind, type, title, body, translations, main_lang, audience, audiences, action_label, action_target,
                                         visible_from, expires_at, created_by, idempotency_key)
-            VALUES ('admin', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+            VALUES ('admin', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
             """,
-            ("direct" if clean["audience"] == "user" else "broadcast", clean["title"], clean["body"], Json(clean["translations"]),
-             clean["main_lang"], clean["audience"], clean["label"], clean["target"], clean["visible_from"], clean["expires_at"],
+            ("direct" if only_user else "broadcast", clean["title"], clean["body"], Json(clean["translations"]),
+             clean["main_lang"], legacy, Json(audiences), clean["label"], clean["target"], clean["visible_from"], clean["expires_at"],
              str(admin)[:120] or None, clean["key"]),
         )
         message_id = cursor.fetchone()[0]
-        if clean["audience"] == "user":
-            cursor.execute("INSERT INTO inbox_recipients (message_id, user_id, recipient_email) SELECT %s, id, LOWER(email) FROM users WHERE LOWER(email) = %s",
-                           (message_id, email))
-        else:
-            cursor.execute(
-                f"INSERT INTO inbox_recipients (message_id, user_id, recipient_email) SELECT %(id)s, u.id, LOWER(u.email) FROM users u WHERE {_audience_sql(clean['audience'])}",
-                {"id": message_id, "admin": ADMIN_EMAIL})
+        cursor.execute(
+            f"""
+            INSERT INTO inbox_recipients (message_id, user_id, recipient_email, source)
+            SELECT %(id)s, MIN(user_id), email, CASE WHEN BOOL_AND(src = 'trainer') THEN '{TRAINERS_SOURCE}' END
+            FROM ({_recipient_rows_sql(audiences)}) rows GROUP BY email
+            """,
+            {"id": message_id, "admin": ADMIN_EMAIL, "email": email})
         if cursor.rowcount == 0:
             raise fail(409, "no_recipients", "Nobody would receive this message.")
         conn.commit()
@@ -868,7 +938,8 @@ def list_admin(page=1, size=20, q="", status="", archived=False):
             SELECT m.id, m.title, m.audience, m.main_lang, m.visible_from, m.expires_at, m.created_at, m.created_by,
                    (SELECT COUNT(*) FROM inbox_recipients r WHERE r.message_id = m.id),
                    (SELECT COUNT(*) FROM inbox_recipients r WHERE r.message_id = m.id AND r.read_at IS NOT NULL),
-                   CASE WHEN m.audience = 'user' THEN (SELECT r.recipient_email FROM inbox_recipients r WHERE r.message_id = m.id LIMIT 1) END
+                   CASE WHEN m.audience = 'user' THEN (SELECT r.recipient_email FROM inbox_recipients r WHERE r.message_id = m.id LIMIT 1) END,
+                   m.audiences
             FROM inbox_messages m WHERE {where}
             ORDER BY m.id DESC LIMIT %(limit)s OFFSET %(offset)s
             """,
@@ -876,7 +947,7 @@ def list_admin(page=1, size=20, q="", status="", archived=False):
         )
         now = params["now"]
         items = [
-            {"id": r[0], "title": r[1], "audience": r[2], "main_lang": r[3], "visible_from": _iso(r[4]), "expires_at": _iso(r[5]),
+            {"id": r[0], "title": r[1], "audience": r[2], "audiences": r[11] or [r[2]], "main_lang": r[3], "visible_from": _iso(r[4]), "expires_at": _iso(r[5]),
              "created_at": _iso(r[6]), "created_by": r[7], "status": _status(r[4], r[5], now), "recipients": r[8], "read": r[9],
              "person": r[10]}
             for r in cursor.fetchall()
@@ -901,7 +972,7 @@ def get_admin(message_id):
         cursor.execute(
             """
             SELECT m.id, m.title, m.body, m.translations, m.main_lang, m.audience, m.action_label, m.action_target,
-                   m.visible_from, m.expires_at, m.created_at, m.created_by, m.archived_at, m.archived_by
+                   m.visible_from, m.expires_at, m.created_at, m.created_by, m.archived_at, m.archived_by, m.audiences
             FROM inbox_messages m WHERE m.id = %s AND m.kind = 'admin'
             """, (message_id,))
         row = cursor.fetchone()
@@ -911,7 +982,7 @@ def get_admin(message_id):
         cursor.execute("SELECT COUNT(*) FROM inbox_recipients WHERE message_id = %s AND read_at IS NOT NULL", (message_id,))
         read = cursor.fetchone()[0]
         detail = {
-            "id": row[0], "title": row[1], "body": row[2], "translations": row[3] or {}, "main_lang": row[4], "audience": row[5],
+            "id": row[0], "title": row[1], "body": row[2], "translations": row[3] or {}, "main_lang": row[4], "audience": row[5], "audiences": row[14] or [row[5]],
             "action_label": row[6], "action_target": row[7], "visible_from": _iso(row[8]), "expires_at": _iso(row[9]),
             "created_at": _iso(row[10]), "created_by": row[11], "status": summary["status"], "recipients": summary["recipients"], "read": read,
             "archived": row[12] is not None, "archived_at": _iso(row[12]), "archived_by": row[13],
@@ -967,12 +1038,14 @@ def restore_admin(message_id, admin=""):
 
 # ----------------------------------------------------------------------------- HTTP
 class PreviewPayload(BaseModel):
-    audience: str
+    audience: str | None = None            # the old single audience
+    audiences: list[str] | None = None
     email: str | None = None
 
 
 class MessagePayload(BaseModel):
-    audience: str
+    audience: str | None = None            # the old single audience
+    audiences: list[str] | None = None     # one or several: all | active_pack | trainers | user
     email: str | None = None
     main_lang: str | None = None
     title: str
@@ -986,7 +1059,9 @@ class MessagePayload(BaseModel):
 
 
 def register_inbox_routes(app, require_admin, require_client, own_user_id, admin_email=""):
-    """own_user_id(claims) -> users.id of the signed-in account (or None)."""
+    """own_user_id(claims) -> users.id of the signed-in account (or None). `require_client` here is the
+    dependency of "anyone who has an inbox": clients, the admin and trainers (trainers read and archive
+    their messages in the same inbox; they can not delete them, nobody can)."""
     configure(admin_email)
     admin = [Depends(require_admin)]
 
@@ -1003,15 +1078,25 @@ def register_inbox_routes(app, require_admin, require_client, own_user_id, admin
             raise fail(404, "not_found", "Client not found.")
         return user_id
 
+    def trainer_without_profile(claims):
+        """A trainer who never signed in on the site has no profile row yet: an empty inbox, not an error
+        (what was sent to them waits by e-mail until the profile exists)."""
+        import trainer_area
+        return not own_user_id(claims) and trainer_area.is_active_trainer_email(claims.get("email"))
+
     # ---- the client
     @app.get("/inbox")
     def client_inbox(lang: str = "en", page: int = 1, filter: str = "all", size: int = PAGE_SIZE, claims=Depends(require_client)):
         _throttle("list", claims)
+        if trainer_without_profile(claims):
+            return {"items": [], "total": 0, "page": 1, "pages": 1, "unread": 0, "counts": {"inbox": 0, "unread": 0, "archived": 0}}
         return list_inbox(me(claims), claims, lang, page, filter, size)
 
     @app.get("/inbox/unread-count")
     def client_unread(claims=Depends(require_client)):
         _throttle("count", claims)
+        if trainer_without_profile(claims):
+            return {"unread": 0}
         return unread_count(me(claims), claims)
 
     @app.post("/inbox/read-all")
@@ -1053,7 +1138,7 @@ def register_inbox_routes(app, require_admin, require_client, own_user_id, admin
     # ---- the studio (Firebase ID token + administrator)
     @app.post("/admin/messages/preview", dependencies=admin)
     def admin_preview(data: PreviewPayload):
-        return preview(data.audience, data.email)
+        return preview(audiences_of(data), data.email)
 
     @app.post("/admin/messages")
     def admin_send(data: MessagePayload, claims=Depends(require_admin)):
