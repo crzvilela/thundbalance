@@ -23,6 +23,7 @@ from emails.trial_emails import (
 from emails.welcome_emails import build_staff_client_created, build_welcome_email
 
 here = pathlib.Path(__file__).resolve().parent
+os.environ.setdefault("EMAIL_ALLOW_LOCAL_URLS", "1")          # the preview opens in a browser from disk: a file:// logo is fine here
 os.environ.setdefault("EMAIL_LOGO_URL", (here.parent / "public" / "email-logo.png").as_uri())
 
 out = here / "email_previews"

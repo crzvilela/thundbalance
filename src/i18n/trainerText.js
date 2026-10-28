@@ -45,7 +45,7 @@ export const trainerText = {
 
     tr_cal_today: 'Today', tr_cal_day: 'Day', tr_cal_week: 'Week', tr_cal_month: 'Month',
     tr_cal_more: 'more',
-    tr_cal_free: 'Free', tr_cal_trial: 'Trial',
+    tr_cal_trial: 'Trial',
     tr_cal_legend: 'Calendar key',
     tr_cal_legend_session: 'Your session', tr_cal_legend_trial: 'Trial session', tr_cal_legend_free: 'Free hour',
     tr_cal_legend_cancelled: 'Cancelled',
@@ -110,7 +110,7 @@ export const trainerText = {
 
     tr_cal_today: 'Hoy', tr_cal_day: 'Día', tr_cal_week: 'Semana', tr_cal_month: 'Mes',
     tr_cal_more: 'más',
-    tr_cal_free: 'Libre', tr_cal_trial: 'Trial',
+    tr_cal_trial: 'Trial',
     tr_cal_legend: 'Leyenda del calendario',
     tr_cal_legend_session: 'Tu sesión', tr_cal_legend_trial: 'Sesión de prueba', tr_cal_legend_free: 'Hora libre',
     tr_cal_legend_cancelled: 'Cancelada',
@@ -175,7 +175,7 @@ export const trainerText = {
 
     tr_cal_today: 'Avui', tr_cal_day: 'Dia', tr_cal_week: 'Setmana', tr_cal_month: 'Mes',
     tr_cal_more: 'més',
-    tr_cal_free: 'Lliure', tr_cal_trial: 'Trial',
+    tr_cal_trial: 'Trial',
     tr_cal_legend: 'Llegenda del calendari',
     tr_cal_legend_session: 'La teva sessió', tr_cal_legend_trial: 'Sessió de prova', tr_cal_legend_free: 'Hora lliure',
     tr_cal_legend_cancelled: 'Cancel·lada',

@@ -12,6 +12,7 @@ Typical use:
 A client email is written in ONE language (texts.localized_email); the staff ones in Spanish (texts.spanish_email).
 """
 import os
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from html import escape
 
@@ -26,16 +27,45 @@ FOOTER_ADDRESS = "ThundBalance, Carrer de Pallars 286, 08005 Barcelona"
 FOOTER_EMAIL = "info@thundbalance.com"
 STUDIO_PLACE = FOOTER_ADDRESS
 
-# The first production origin allowed by CORS in main.py. Set SITE_URL on Render to override.
+# The first production origin allowed by CORS in main.py. Set FRONTEND_URL on Render to override (SITE_URL, the
+# name used before, still works).
 DEFAULT_SITE_URL = "https://thundbalance.vercel.app"
+
+# The logo is a PNG in the frontend's public folder (public/email-logo.png): 600 px wide, white on transparent, shown
+# at 200 px. Gmail does not show SVG, base64 images, relative paths or localhost, so it is always an ABSOLUTE https URL.
+LOGO_PATH = "/email-logo.png"
+LOGO_WIDTH, LOGO_HEIGHT = 200, 145        # the PNG is 600 x 434: shown at a third of its size (sharp on retina screens)
+_LOCAL_HOSTS = ("localhost", "127.0.0.1", "0.0.0.0", "::1")
+
+
+def _public_url(value):
+    """The address without a trailing slash when it is a public https one; None for anything an email client can not
+    reach (empty, http, relative, localhost, a file). Local previews may allow them with EMAIL_ALLOW_LOCAL_URLS=1."""
+    text = str(value or "").strip().rstrip("/")
+    if not text:
+        return None
+    if os.getenv("EMAIL_ALLOW_LOCAL_URLS", "").strip() == "1":
+        return text
+    parts = urlparse(text)
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https" or not host or host in _LOCAL_HOSTS or host.endswith(".local"):
+        return None
+    return text
 
 
 def site_url():
-    return (os.getenv("SITE_URL", "").strip() or DEFAULT_SITE_URL).rstrip("/")
+    """The public address of the website: FRONTEND_URL, else SITE_URL, else the default. A value that is not a public
+    https address is ignored (never localhost in an email)."""
+    for name in ("FRONTEND_URL", "SITE_URL"):
+        url = _public_url(os.getenv(name, ""))
+        if url:
+            return url
+    return DEFAULT_SITE_URL
 
 
 def logo_url():
-    return os.getenv("EMAIL_LOGO_URL", "").strip() or f"{site_url()}/email-logo.png"
+    """https://<frontend>/email-logo.png (EMAIL_LOGO_URL can point somewhere else, if it is a public https address)."""
+    return _public_url(os.getenv("EMAIL_LOGO_URL", "")) or f"{site_url()}{LOGO_PATH}"
 
 
 @dataclass(frozen=True)
@@ -174,11 +204,21 @@ def _separator():
     )
 
 
+def email_header(logo=None):
+    """The logo row at the top of EVERY email (client and team): the one place that draws it. The cell has the same
+    black as the email, so if the image is blocked the alt text ("ThundBalance", white) stays readable."""
+    return (
+        f'<tr><td class="px tb-bg" align="left" bgcolor="{BLACK}" style="padding:0 0 28px 0;background-color:{BLACK};">'
+        f'<img src="{escape(logo or logo_url())}" width="{LOGO_WIDTH}" height="{LOGO_HEIGHT}" alt="ThundBalance" '
+        f'style="display:block;border:0;outline:none;width:{LOGO_WIDTH}px;max-width:100%;height:auto;'
+        f'color:{WHITE};font-family:{FONT};font-size:20px;font-weight:700;letter-spacing:3px;"></td></tr>'
+    )
+
+
 def render_email(title, blocks, blocks_after_separator=None, preheader="", lang="es", logo=None):
     """(html, text). `blocks_after_separator` (optional, set below a thin grey line) is kept for the rare email that needs a
     second part, but no email puts two languages in it any more. <html lang> and the Content-Language meta carry `lang`,
     so the mail client does not offer to translate it."""
-    logo = logo or logo_url()
     groups = [blocks] + ([blocks_after_separator] if blocks_after_separator else [])
     rows, texts = [], []
     for index, group in enumerate(groups):
@@ -216,7 +256,7 @@ def render_email(title, blocks, blocks_after_separator=None, preheader="", lang=
 <table role="presentation" class="tb-bg" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="{BLACK}" style="background-color:{BLACK};">
 <tr><td align="center" style="padding:24px 12px;">
 <table role="presentation" class="container tb-bg" width="600" cellpadding="0" cellspacing="0" border="0" bgcolor="{BLACK}" style="width:100%;max-width:600px;background-color:{BLACK};">
-<tr><td class="px" align="left" style="padding:0 0 28px 0;"><img src="{escape(logo)}" width="120" alt="ThundBalance" style="display:block;border:0;outline:none;width:120px;height:auto;"></td></tr>
+{email_header(logo)}
 {chr(10).join(rows)}
 <tr><td class="px" style="padding:24px 0 0 0;border-top:1px solid {LINE};font-family:{FONT};font-size:12px;line-height:1.6;color:{MUTED};">
 {escape(FOOTER_ADDRESS)}<br><a href="mailto:{FOOTER_EMAIL}" style="color:{MUTED};text-decoration:underline;">{FOOTER_EMAIL}</a>

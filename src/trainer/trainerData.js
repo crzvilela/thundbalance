@@ -92,7 +92,7 @@ export function eventTimes(date, time) {
 }
 
 // The FullCalendar events of the panel: the trainer's sessions and trials, and the free hours as quiet blocks.
-// `text` gives the labels already in the reader's language: { trial, free }.
+// The free hours carry no text (just the quiet dashed block). `text` gives the label of the trial: { trial }.
 export function calendarEvents(sessions, freeSlots, color, text) {
   const events = sessions.map(item => ({
     id: `${item.is_trial ? 't' : 's'}${item.session_id}`,
@@ -102,7 +102,7 @@ export function calendarEvents(sessions, freeSlots, color, text) {
   }))
   const free = freeSlots.map(slot => ({
     id: `f${slot.date}${slot.time}`,
-    title: text.free,
+    title: '',
     ...eventTimes(slot.date, slot.time),
     extendedProps: { kind: 'free', status: 'free', color }
   }))

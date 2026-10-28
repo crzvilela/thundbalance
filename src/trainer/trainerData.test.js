@@ -68,8 +68,8 @@ test('calendar events: sessions with the trainer colour, trials marked, free hou
     { session_id: 5, client_display_name: 'Ana Lopez', session_number: '3/12', pack_name: 'Mensual', date: '2026-10-21', time: '09:00', status: 'booked', is_trial: false },
     { session_id: 9, client_display_name: 'Lead Perez', session_number: null, pack_name: 'Trial Session', date: '2026-10-21', time: '11:00', status: 'booked', is_trial: true }
   ]
-  const events = calendarEvents(sessions, [{ date: '2026-10-21', time: '10:00' }], '#34d399', { trial: 'Trial', free: 'Libre' })
-  assert.deepEqual(events.map(event => event.title), ['3/12 Ana Lopez', 'Trial · Lead Perez', 'Libre'])
+  const events = calendarEvents(sessions, [{ date: '2026-10-21', time: '10:00' }], '#34d399', { trial: 'Trial' })
+  assert.deepEqual(events.map(event => event.title), ['3/12 Ana Lopez', 'Trial · Lead Perez', ''])
   assert.deepEqual(events.map(event => event.extendedProps.kind), ['session', 'trial', 'free'])
   assert.equal(events[0].extendedProps.color, '#34d399')
   assert.equal(events[0].id, 's5')

@@ -54,19 +54,33 @@ def _trial_day(trial):
     return format_date_bilingual(parse_madrid(trial.get("session_date"), trial.get("session_time") or "00:00"))
 
 
+def _first_and_last(full_name):
+    """"Ana Maria Prueba Lopez" -> "Ana Lopez" (first name and last surname)."""
+    parts = str(full_name or "").split()
+    return parts[0] if len(parts) == 1 else (f"{parts[0]} {parts[-1]}" if parts else "")
+
+
 def staff_trial_requested(trial):
-    """(subject, html, text) for info@: a visitor asked for a trial session.
+    """(subject, html, text) for the team: a visitor asked for a trial session. Spanish only.
     `trial` is the dict built in create_trial_session."""
     day = _trial_day(trial)
     name = _one_line(trial.get("full_name"))
-    subject = tr("es", "staff_trial_subject", name=name, date=trial.get("session_date") or "", time=trial.get("session_time") or "")
+    subject = tr("es", "staff_trial_request_subject", name=_one_line(_first_and_last(trial.get("full_name"))))
+    rows = [
+        (tr("es", "lbl_name"), trial.get("full_name")),
+        (tr("es", "lbl_email"), trial.get("email")),
+        (tr("es", "lbl_phone"), trial.get("phone")),
+        (tr("es", "lbl_goals"), trial.get("goal")),
+        (tr("es", "lbl_experience"), trial.get("experience")),
+        (tr("es", "staff_lbl_when_requested"), day.es),                 # "lunes 2 de noviembre de 2026, 09:00"
+    ]
 
     def build():
         return [
             heading(tr("es", "staff_trial_title")),
-            key_value(_staff_rows(trial, day)),
+            key_value(rows),
             paragraph(tr("es", "staff_trial_manage"), muted=True),
-            button(tr("es", "staff_trial_button"), "", f"{site_url()}/admin/trials", only="es"),
+            button(tr("es", "staff_trial_request_button"), "", f"{site_url()}/admin/trials", only="es"),
         ]
 
     return spanish_email(subject, build, preheader=tr("es", "staff_trial_pre", name=name, date=day.date_es, time=day.time))

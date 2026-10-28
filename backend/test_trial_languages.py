@@ -176,7 +176,7 @@ class Languages(unittest.TestCase):
 
             # the team's email: Spanish only, once
             staff = team[0]
-            self.assertTrue(staff["subject"].startswith("Nueva sesión de prueba"))
+            self.assertTrue(staff["subject"].startswith("Nueva solicitud de Trial Session"))
             self.assertIn('<html lang="es"', staff["html"])
             self.assertNotIn("We have received", plain(staff["html"]))
 
