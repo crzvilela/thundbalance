@@ -12,7 +12,8 @@ const LEGEND = ['upcoming', 'rescheduled', 'completed', 'cancelled']
 
 // Month grid (Monday first, language of the site). Arrow keys move between days,
 // PageUp / PageDown change month; only one day is in the tab order at a time.
-export default function SessionCalendar({ month, onMonth, sessionsByDay, statusOf, trialDay, selectedDay, onSelectDay, todayKey }) {
+// compact: a small month for the dashboard (short cells, small title and legend), so the whole thing fits on one screen.
+export default function SessionCalendar({ month, onMonth, sessionsByDay, statusOf, trialDay, selectedDay, onSelectDay, todayKey, compact = false }) {
   const { t, locale } = useI18n()
   const [focusKey, setFocusKey] = useState(null)
   const refs = useRef(new Map())
@@ -63,22 +64,22 @@ export default function SessionCalendar({ month, onMonth, sessionsByDay, statusO
   }
 
   const shiftMonth = (amount) => onMonth(new Date(month.getFullYear(), month.getMonth() + amount, 1))
-  const arrow = 'min-h-[44px] min-w-[44px] rounded-lg px-3 py-2 text-gray-300 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400'
+  const arrow = `${compact ? 'min-h-[40px] min-w-[40px]' : 'min-h-[44px] min-w-[44px]'} rounded-lg px-3 py-2 text-gray-300 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400`
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between gap-2">
-        <h2 aria-live="polite" style={{ fontFamily: 'Bebas Neue' }} className="text-3xl capitalize sm:text-4xl">{formatMonth(month, locale)}</h2>
+      <div className={`flex items-center justify-between gap-2 ${compact ? 'mb-2' : 'mb-4'}`}>
+        <h2 aria-live="polite" style={{ fontFamily: 'Bebas Neue' }} className={`first-letter:uppercase ${compact ? 'text-2xl' : 'text-3xl sm:text-4xl'}`}>{formatMonth(month, locale)}</h2>
         <div className="flex items-center gap-1">
           <button type="button" aria-label={t('ms_prev_month')} onClick={() => shiftMonth(-1)} className={arrow}>←</button>
           <button type="button" onClick={() => { const now = new Date(); onMonth(new Date(now.getFullYear(), now.getMonth(), 1)); onSelectDay(todayKey, false) }}
-            className="min-h-[44px] rounded-lg border border-white/20 px-3 text-sm transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400">{t('ms_today')}</button>
+            className={`${compact ? 'min-h-[40px]' : 'min-h-[44px]'} rounded-lg border border-white/20 px-3 text-sm transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400`}>{t('ms_today')}</button>
           <button type="button" aria-label={t('ms_next_month')} onClick={() => shiftMonth(1)} className={arrow}>→</button>
         </div>
       </div>
 
-      <div role="group" aria-label={t('ms_calendar_label')} className="grid grid-cols-7 gap-1 text-center sm:gap-1.5">
-        {weekdayNames(locale).map(name => <div key={name} className="pb-2 text-[11px] uppercase tracking-wider text-gray-400">{name}</div>)}
+      <div role="group" aria-label={t('ms_calendar_label')} className={`grid grid-cols-7 text-center ${compact ? 'gap-0.5' : 'gap-1 sm:gap-1.5'}`}>
+        {weekdayNames(locale).map(name => <div key={name} className={`text-[11px] uppercase tracking-wider text-gray-400 ${compact ? 'pb-1' : 'pb-2'}`}>{name}</div>)}
         {cells.map(cell => {
           const list = sessionsByDay.get(cell.key) || []
           const hasTrial = cell.key === trialDay
@@ -94,7 +95,7 @@ export default function SessionCalendar({ month, onMonth, sessionsByDay, statusO
               ref={(node) => { if (node) refs.current.set(cell.key, node); else refs.current.delete(cell.key) }}
               onClick={() => { setFocusKey(cell.key); onSelectDay(cell.key, true) }}
               onKeyDown={(event) => onKeyDown(event, cell.key)}
-              className={`relative flex aspect-square min-h-[40px] flex-col items-center justify-center rounded-xl border text-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400 ${
+              className={`relative flex flex-col items-center justify-center rounded-xl border text-sm transition ${compact ? 'h-10' : 'aspect-square min-h-[40px]'} focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400 ${
                 isSelected ? 'border-emerald-400 bg-emerald-400/15'
                   : live.some(status => status === 'upcoming') ? 'border-emerald-400/25 bg-emerald-400/[0.07] hover:bg-emerald-400/15'
                     : isToday ? 'border-transparent hover:bg-white/5' : 'border-transparent hover:border-white/15 hover:bg-white/5'
@@ -112,7 +113,7 @@ export default function SessionCalendar({ month, onMonth, sessionsByDay, statusO
         })}
       </div>
 
-      <ul className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-xs text-gray-300" aria-label={t('ms_calendar_label')}>
+      <ul className={`flex flex-wrap text-xs text-gray-300 ${compact ? 'mt-3 gap-x-3 gap-y-1' : 'mt-5 gap-x-5 gap-y-2'}`} aria-label={t('ms_calendar_label')}>
         {LEGEND.map(key => (
           <li key={key} className="flex items-center gap-2"><span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${DOT[key]}`} />{t(`ms_status_${key}`)}</li>
         ))}

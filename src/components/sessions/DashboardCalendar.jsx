@@ -27,10 +27,10 @@ export default function DashboardCalendar({ className = '' }) {
   const opened = openId ? sessions.find(session => session.id === openId) : null
 
   return (
-    <section aria-labelledby="dash-cal-title" className={`rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6 ${className}`}>
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <h2 id="dash-cal-title" style={{ fontFamily: 'Bebas Neue' }} className="text-4xl">{t('dash_cal_title')}</h2>
-        <Link to="/my-sessions" className={`inline-flex min-h-[44px] items-center rounded-lg border border-white/20 px-5 py-2.5 text-sm font-semibold transition hover:bg-white/10 ${FOCUS}`}>{t('dash_cal_view_all')} <span aria-hidden="true" className="ml-2">→</span></Link>
+    <section aria-labelledby="dash-cal-title" className={`rounded-2xl border border-white/10 bg-white/[0.03] p-4 ${className}`}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 id="dash-cal-title" style={{ fontFamily: 'Bebas Neue' }} className="text-3xl">{t('dash_cal_title')}</h2>
+        <Link to="/my-sessions" className={`inline-flex min-h-[40px] items-center rounded-lg border border-white/20 px-4 py-2 text-sm font-semibold transition hover:bg-white/10 ${FOCUS}`}>{t('dash_cal_view_all')} <span aria-hidden="true" className="ml-2">→</span></Link>
       </div>
 
       {error ? (
@@ -43,7 +43,7 @@ export default function DashboardCalendar({ className = '' }) {
       ) : sessions.length === 0 && !trial ? (
         <p className="py-6 text-center text-gray-400">{t('dash_cal_empty')}</p>
       ) : (
-        <SessionCalendarPanel data={data} onOpen={(session) => setOpenId(session.id)} />
+        <SessionCalendarPanel compact data={data} onOpen={(session) => setOpenId(session.id)} />
       )}
 
       {opened && (

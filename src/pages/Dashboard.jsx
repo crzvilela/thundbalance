@@ -99,11 +99,13 @@ function Dashboard() {
           <article className={card}><p className="text-gray-400 mb-2">{t('dash_package')}</p><h2 className="text-2xl">{(workflow.plans || []).map(pack => (pack.session_type === 'dual' ? `${pack.name} · ${t('st_dual')}` : pack.name)).join(' + ') || workflow.plan?.name || workflow.request?.package || t('dash_assigned_plan')}</h2>{(workflow.plans || []).length > 1 && <ul className="mt-3 space-y-1 text-sm text-gray-400">{workflow.plans.map(pack => <li key={pack.id}>{pack.name}{pack.session_type === 'dual' ? ` · ${t('st_dual')}` : ''} · {pack.remaining} {t('dash_pack_left')}</li>)}</ul>}</article>
           <article className={card}><p className="text-gray-400 mb-2">{t('dash_remaining')}</p><h2 className="text-3xl">{workflow.sessions_remaining}</h2></article>
         </div>
-        <DashboardCalendar className="mb-8" />
+        <div className="mb-8 grid items-start gap-6 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
+        <DashboardCalendar />
         <section className={card}><h2 style={{ fontFamily: 'Bebas Neue' }} className="text-4xl mb-5">{t('dash_upcoming')}</h2>
           {upcoming.length ? <div className="divide-y divide-white/10">{upcoming.map(session => <div key={session.id} className="py-4 flex flex-wrap justify-between gap-2"><span>{new Date(`${session.date}T00:00:00`).toLocaleDateString(locale)}</span><span className="text-gray-400">{session.time}</span><span className="text-gray-400">{session.trainer || workflow.plan?.trainer || t('dash_trainer_word')}</span><span className="text-green-400">{session.status === 'Booked' ? t('dash_booked') : session.status}</span></div>)}</div> : <p className="text-gray-400">{t('dash_preparing')}</p>}
           <button onClick={() => navigate('/my-sessions')} className="mt-6 border border-white/20 px-5 py-3 rounded-lg">{t('dash_view_all')}</button>
         </section>
+        </div>
         {clientCalendar && <CalendarSubscribe className="mt-8" />}
       </>}
     </main>

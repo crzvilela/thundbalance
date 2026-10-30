@@ -7,7 +7,7 @@ import { SessionRow } from './SessionParts'
 // The month calendar of the client's sessions with the list of the selected day under it. Used by My Sessions and by the
 // dashboard (the data comes from useClientSessions). A day with ONE session opens it straight away (`onOpen`); with several
 // (or the trial session) the day's list is shown and each row opens its session.
-export default function SessionCalendarPanel({ data, onOpen }) {
+export default function SessionCalendarPanel({ data, onOpen, compact = false }) {
   const { t, locale } = useI18n()
   const { byDay, statusOf, trial, today } = data
   const [month, setMonth] = useState(() => { const date = new Date(); return new Date(date.getFullYear(), date.getMonth(), 1) })
@@ -26,7 +26,7 @@ export default function SessionCalendarPanel({ data, onOpen }) {
     <>
       <SessionCalendar
         month={month} onMonth={setMonth} sessionsByDay={byDay} statusOf={statusOf} trialDay={trialDay}
-        selectedDay={selectedDay} onSelectDay={clickDay} todayKey={today}
+        selectedDay={selectedDay} onSelectDay={clickDay} todayKey={today} compact={compact}
       />
       {selectedDay && (
         <div className="mt-5 border-t border-white/10 pt-5">
