@@ -8,6 +8,9 @@ import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { normalizeRequests } from '../requests'
+import { PriceBox, TypeBadge } from '../SessionKind'
+import { formatMoney, packPricePerSession, totalPrice } from '../../utils/pricing'
+import { usePricing } from '../../utils/usePricing'
 import { firstMismatch, hoursSummary } from '../availability'
 import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon, PageHeader,
@@ -49,6 +52,7 @@ export default function Requests() {
   }) : []), [trainers, approving])
   const nobodyFits = approving && trainerOptions.length > 0 && trainerOptions.every(option => option.badDay)
   const plans = useMemo(() => plansResource.data || [], [plansResource.data])
+  const { prices } = usePricing()
 
   const counts = useMemo(() => ({
     all: requests.length,
@@ -120,6 +124,14 @@ export default function Requests() {
     const weeks = chosen?.[4]
     return weeks && form.perWeek ? weeks * Number(form.perWeek) : null
   }, [approving, form.plan, form.perWeek, plans])
+
+  // the type is fixed by the request; the price follows the plan that will be used
+  const approvalPrice = useMemo(() => {
+    if (!approving) return null
+    const chosen = form.plan ? plans.find(plan => String(plan[0]) === form.plan) : plans.find(plan => plan[1] === approving.plan)
+    const perSession = packPricePerSession(prices, approving.sessionType, chosen?.[2] ?? approving.months)
+    return { perSession, total: totalPrice(perSession, sessionEstimate) }
+  }, [approving, form.plan, plans, prices, sessionEstimate])
 
   const approve = async (allowConflicts = false, confirmReplace = false) => {
     if (!form.trainer || !form.date) { setFormError(t('need_trainer_date')); return }
@@ -216,6 +228,7 @@ export default function Requests() {
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="truncate text-base font-semibold">{request.client}</p>
                       <Badge tone={STATUS_TONE[request.status] || 'neutral'}>{t(`st_${request.status}`)}</Badge>
+                      <TypeBadge type={request.sessionType} secondName={request.secondName} />
                     </div>
                     <p className="mt-1 text-sm text-gray-400">{request.plan} · {request.perWeek} {t('req_per_week')}</p>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -296,6 +309,26 @@ export default function Requests() {
           <p className={`mb-4 rounded-xl border px-4 py-3 text-sm ${nobodyFits ? 'border-red-400/25 bg-red-400/10 text-red-200' : 'border-sky-400/20 bg-sky-400/5 text-sky-100'}`}>
             {nobodyFits ? t('av_none') : `${t('av_hint')} ${approving.days.map(day => dayFull(day)).join(', ')} · ${approving.time}`}
           </p>
+        )}
+        {approving && (
+          <div className="mb-4 space-y-3">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-gray-300">
+              <span>{t('ty_type_row')}:</span>
+              <strong>{approving.sessionType === 'dual' ? t('ty_dual') : t('ty_individual')}</strong>
+              <span className="text-xs text-gray-500">({t('ty_fixed')})</span>
+            </div>
+            {approving.sessionType === 'dual' && (
+              <p className="text-sm text-gray-300">{t('ty_second_person')}: <strong>{approving.secondName}</strong> · {approving.secondEmail}</p>
+            )}
+            <PriceBox
+              title={t('ty_summary')}
+              warning={prices && approvalPrice?.perSession == null ? t('ty_no_price') : undefined}
+              rows={[
+                { label: t('ty_price_session'), value: formatMoney(approvalPrice?.perSession) },
+                { label: t('ty_price_total'), value: formatMoney(approvalPrice?.total), strong: true }
+              ]}
+            />
+          </div>
         )}
         {sessionEstimate && (
           <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-sm text-emerald-200">

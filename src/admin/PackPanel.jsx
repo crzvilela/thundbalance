@@ -6,6 +6,8 @@ import { dateKey, parseDateKey } from './requests'
 import { WEEKDAYS } from './availability'
 import { Badge, Button, ConfirmDialog, Drawer } from './ui'
 import PackFields from './PackFields'
+import { TypeBadge } from './SessionKind'
+import { formatMoney } from '../utils/pricing'
 import { packIsComplete, packPayload, startIsInThePast, usePackForm, usePackPreview } from './packForm'
 import EmailRecipients from './EmailRecipients'
 import { recipientsPayload, reportEmailResult, useEmailRecipients } from './recipientsState'
@@ -22,7 +24,7 @@ export function PackStatusBadge({ status }) {
 // The client's packs: the active one (period, schedule, trainer and done /
 // left) and the previous one while it still has sessions to come. A client has
 // ONE active pack: a new pack replaces the current one from its start date.
-export function PackSummary({ packs = [], onRenew }) {
+export function PackSummary({ packs = [], onNewPack }) {
   const { t, language, dayLabel } = useAdminText()
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
   const fmt = (key) => (key ? parseDateKey(key).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
@@ -44,6 +46,7 @@ export function PackSummary({ packs = [], onRenew }) {
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <p className="text-lg font-semibold">{pack.name}</p>
               <div className="flex items-center gap-2">
+                <TypeBadge type={pack.session_type} secondName={pack.second_person_name} />
                 {!pack.active && <Badge tone="neutral">{t('pk_previous')}</Badge>}
                 <PackStatusBadge status={pack.status} />
               </div>
@@ -53,6 +56,15 @@ export function PackSummary({ packs = [], onRenew }) {
               <div><dt className="text-sm text-gray-500">{t('pk_sessions')}</dt><dd>{pack.done} {t('pk_done')} · {pack.remaining} {t('pk_left')}</dd></div>
               <div><dt className="text-sm text-gray-500">{t('pk_per_week')}</dt><dd>{pack.sessions_per_week || '—'}</dd></div>
               <div><dt className="text-sm text-gray-500">{t('pk_trainer')}</dt><dd>{pack.trainer || '—'}</dd></div>
+              {pack.session_type === 'dual' && (
+                <div className="col-span-2"><dt className="text-sm text-gray-500">{t('ty_second_person')}</dt><dd>{pack.second_person_name} · {pack.second_person_email}</dd></div>
+              )}
+              {pack.price_per_session != null && (
+                <>
+                  <div><dt className="text-sm text-gray-500">{t('ty_price_session')}</dt><dd>{formatMoney(pack.price_per_session)}</dd></div>
+                  <div><dt className="text-sm text-gray-500">{t('ty_price_total')}</dt><dd>{formatMoney(pack.total_price)}</dd></div>
+                </>
+              )}
               <div className="col-span-2">
                 <dt className="text-sm text-gray-500">{t('pk_schedule')}</dt>
                 <dd>{pack.preferred_days ? `${pack.preferred_days.split(',').map(day => dayLabel(day.trim())).join(', ')} · ${String(pack.preferred_time || '').slice(0, 5)}` : '—'}</dd>
@@ -60,7 +72,7 @@ export function PackSummary({ packs = [], onRenew }) {
             </dl>
           </div>
         ))}
-        <Button variant={urgent || packs.length === 0 ? 'primary' : 'secondary'} onClick={onRenew}>
+        <Button variant={urgent || packs.length === 0 ? 'primary' : 'secondary'} onClick={onNewPack}>
           {packs.length ? t('pk_add_pack') : t('pk_start_pack')}
         </Button>
       </div>
@@ -132,7 +144,7 @@ export function TrainingCalendar({ sessions }) {
   )
 }
 
-export function RenewDrawer({ client, pack, plans, trainers, onClose, onDone }) {
+export function NewPackDrawer({ client, pack, plans, trainers, onClose, onDone }) {
   const { t } = useAdminText()
   const toast = useToast()
   const [form, set] = usePackForm(pack)
@@ -162,7 +174,7 @@ export function RenewDrawer({ client, pack, plans, trainers, onClose, onDone }) 
         allow_conflicts: allowConflicts,
         confirm_replace: confirmReplace
       })
-      toast.push(t('pk_renewed'))
+      toast.push(t('pk_created'))
       reportEmailResult(toast, t, result.email)
       reportCalendarResult(toast, t, result.calendar)
       onDone()
@@ -195,13 +207,13 @@ export function RenewDrawer({ client, pack, plans, trainers, onClose, onDone }) 
   return (
     <Drawer
       open onClose={onClose} busy={busy}
-      title={pack ? t('pk_renew_title') : t('pk_start_title')} subtitle={client.name}
+      title={t('pk_new_title')} subtitle={client.name}
       footer={<>
         <Button variant="secondary" className="flex-1" onClick={onClose} disabled={busy}>{t('cancel')}</Button>
-        <Button variant="primary" className="flex-[2]" onClick={() => submit()} loading={busy}>{busy ? t('pk_renewing') : t('pk_confirm')}</Button>
+        <Button variant="primary" className="flex-[2]" onClick={() => submit()} loading={busy}>{busy ? t('pk_creating') : t('pk_confirm')}</Button>
       </>}
     >
-      <p className="mb-6 text-sm text-gray-400">{t('pk_renew_sub')}</p>
+      <p className="mb-6 text-sm text-gray-400">{t('pk_new_sub')}</p>
       <PackFields form={form} set={update} plans={plans} trainers={trainers} pack={pack} busy={busy} preview={preview} serverConflicts={serverConflicts} />
       <EmailRecipients value={recipients} onChange={setRecipients} disabled={busy} />
       {askConflicts && conflicts.length > 0 && (

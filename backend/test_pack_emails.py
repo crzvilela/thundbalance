@@ -10,6 +10,8 @@ import json
 import os
 import threading
 import unittest
+
+import plans_schema
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -169,7 +171,7 @@ class PackFlow(unittest.TestCase):
         row = cur.fetchone()
         cur.execute("SELECT id FROM trainers WHERE active ORDER BY id LIMIT 1")
         cls.trainer_id = (row or cur.fetchone())[0]
-        cur.execute("INSERT INTO plans (nome, preco, duracao_meses, duration_weeks) VALUES ('TEST pack 2 weeks', 0, 1, 2) RETURNING id")
+        cur.execute(f"INSERT INTO plans (nome, {plans_schema.price_column(cur)}, duracao_meses, duration_weeks) VALUES ('TEST pack 2 weeks', 0, 1, 2) RETURNING id")
         cls.plan_id = cur.fetchone()[0]
         cur.execute("INSERT INTO users (nome, email) VALUES ('Ana Test Pack', 'ana.pack.test@example.com') RETURNING id")
         cls.user_id = cur.fetchone()[0]
@@ -216,7 +218,7 @@ class PackFlow(unittest.TestCase):
         base = dict(plan_id=self.plan_id, sessions_per_week=2, preferred_days="Monday,Wednesday",
                     preferred_time="09:00", trainer_id=self.trainer_id, start_date=start.isoformat())
         base.update(changes)
-        return main.RenewPack(**base)
+        return main.NewPack(**base)
 
     def count_sessions(self):
         conn = get_connection()
@@ -226,7 +228,7 @@ class PackFlow(unittest.TestCase):
         conn.close()
         return n
 
-    def test_renew_creates_sessions_events_and_emails(self):
+    def test_a_new_pack_creates_sessions_events_and_emails(self):
         if not self.plan_id:
             self.skipTest("no 2-week plan in the local database")
         result = endpoint("/admin/clients/{client_id}/renew-pack", "POST")(

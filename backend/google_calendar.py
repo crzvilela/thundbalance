@@ -251,7 +251,9 @@ def create_calendar_event_status(
     event_id=None,
     session_id=None,
     client_phone=None,
-    pack_name=None
+    pack_name=None,
+    session_type=None,
+    second_person_name=None
 ):
     """Creates the event of a client session. Returns (event_id, created).
 
@@ -262,6 +264,7 @@ def create_calendar_event_status(
         client_name=client_name, client_email=client_email, client_phone=client_phone,
         session_date=session_date, session_time=session_time, trainer_name=trainer_name,
         pack_name=pack_name, session_number=session_number, session_id=session_id,
+        session_type=session_type, second_person_name=second_person_name,
     )
     return _insert(get_calendar_service(), body, event_id)
 
@@ -346,7 +349,9 @@ def create_trial_session_event(
     session_time,
     trainer_name=None,
     event_id=None,
-    trial_id=None
+    trial_id=None,
+    session_type=None,
+    second_person_name=None
 ):
     """Creates the event of a confirmed trial session ("Trial Session - Ana
     Ruiz") and returns its id. With a deterministic event_id calling it twice
@@ -356,6 +361,7 @@ def create_trial_session_event(
         full_name=full_name, email=email, phone=phone, session_date=session_date,
         session_time=session_time, trainer_name=trainer_name, goal=goal,
         experience=experience, trial_id=trial_id,
+        session_type=session_type, second_person_name=second_person_name,
     )
     return _insert(get_calendar_service(), body, event_id)[0]
 
@@ -370,7 +376,9 @@ def update_trial_session_event(
     session_date,
     session_time,
     trainer_name=None,
-    trial_id=None
+    trial_id=None,
+    session_type=None,
+    second_person_name=None
 ):
     """Rewrites title, description and time of an existing trial event (the
     same event: confirming never creates a second one). Raises if the event
@@ -380,6 +388,7 @@ def update_trial_session_event(
         full_name=full_name, email=email, phone=phone, session_date=session_date,
         session_time=session_time, trainer_name=trainer_name, goal=goal,
         experience=experience, trial_id=trial_id,
+        session_type=session_type, second_person_name=second_person_name,
     )
     patch_calendar_event(event_id, {
         key: body[key] for key in ("summary", "description", "start", "end", "colorId", "extendedProperties")

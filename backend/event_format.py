@@ -108,8 +108,16 @@ def _lines(pairs):
     return "\n".join(f"{label}: {value}" for label, value in pairs if str(value or "").strip())
 
 
+def type_line(session_type, second_person_name):
+    """"Dual (Ana Ruiz)": the 'Tipo' line of a DUAL session. Individual sessions keep the description they always had."""
+    if str(session_type or "").lower() != "dual":
+        return ""
+    name = " ".join(str(second_person_name or "").split())
+    return f"Dual ({name})" if name else "Dual"
+
+
 def session_description(client_name, client_email, client_phone, session_date, session_time,
-                        trainer_name, pack_name, session_number):
+                        trainer_name, pack_name, session_number, session_type=None, second_person_name=None):
     pack = " · ".join(
         part for part in (
             str(pack_name or "").strip(),
@@ -124,11 +132,12 @@ def session_description(client_name, client_email, client_phone, session_date, s
         ("Horario", _hours_text(session_time)),
         ("Entrenador", trainer_name),
         ("Pack", pack),
+        ("Tipo", type_line(session_type, second_person_name)),
     ])
 
 
 def trial_description(full_name, email, phone, session_date, session_time, trainer_name,
-                      goal=None, experience=None):
+                      goal=None, experience=None, session_type=None, second_person_name=None):
     return _lines([
         ("Cliente", full_name),
         ("Email", email),
@@ -137,6 +146,7 @@ def trial_description(full_name, email, phone, session_date, session_time, train
         ("Horario", _hours_text(session_time)),
         ("Entrenador", trainer_name),
         ("Pack", "Trial Session"),
+        ("Tipo", type_line(session_type, second_person_name)),
         ("Objetivos", goal),
         ("Experiencia", experience),
     ])
@@ -152,7 +162,8 @@ def event_times(session_date, session_time):
 
 
 def build_session_event(*, client_name, client_email=None, client_phone=None, session_date, session_time,
-                        trainer_name=None, pack_name=None, session_number=None, session_id=None):
+                        trainer_name=None, pack_name=None, session_number=None, session_id=None,
+                        session_type=None, second_person_name=None):
     """Body of the Google event of one pack session (no "id": the caller adds
     the deterministic one)."""
     start, end = event_times(session_date, session_time)
@@ -164,7 +175,7 @@ def build_session_event(*, client_name, client_email=None, client_phone=None, se
         "location": LOCATION,
         "description": session_description(
             client_name, client_email, client_phone, session_date, session_time,
-            trainer_name, pack_name, session_number,
+            trainer_name, pack_name, session_number, session_type, second_person_name,
         ),
         "colorId": trainer_color_id(trainer_name),
         "start": start,
@@ -174,7 +185,8 @@ def build_session_event(*, client_name, client_email=None, client_phone=None, se
 
 
 def build_trial_event(*, full_name, email=None, phone=None, session_date, session_time,
-                      trainer_name=None, goal=None, experience=None, trial_id=None):
+                      trainer_name=None, goal=None, experience=None, trial_id=None,
+                      session_type=None, second_person_name=None):
     """Body of the Google event of a CONFIRMED trial session."""
     start, end = event_times(session_date, session_time)
     private = {APP_PROPERTY: APP_VALUE}
@@ -185,6 +197,7 @@ def build_trial_event(*, full_name, email=None, phone=None, session_date, sessio
         "location": LOCATION,
         "description": trial_description(
             full_name, email, phone, session_date, session_time, trainer_name, goal, experience,
+            session_type, second_person_name,
         ),
         "colorId": TRIAL_COLOR,
         "start": start,

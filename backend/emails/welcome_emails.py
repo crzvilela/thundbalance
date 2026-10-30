@@ -4,6 +4,7 @@ The client email contains the generated password (that is its purpose); the
 studio copy never does.
 """
 from features import client_calendar_enabled
+from .session_kind import kind_rows
 from .pack_emails import build_pack_ics, render_calendar_links_block, render_pack_summary_block
 from .template import button, heading, highlight_box, key_value, notice, paragraph, site_url
 from .texts import localized_email, spanish_email, tr
@@ -52,6 +53,7 @@ def build_staff_client_created(name, email, pack_summary=None):
         ]
         if pack_summary:
             rows.append((tr("es", "lbl_sessions"), len(pack_summary["sessions"])))
+            rows += kind_rows("es", pack_summary, staff=True, total=True)
         return [
             heading(tr("es", "staff_client_title")),
             key_value(rows),

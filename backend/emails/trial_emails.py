@@ -9,6 +9,7 @@ from .dates import format_date_bilingual, parse_madrid
 from .ics import build_ics
 from calendar_titles import client_trial_title
 from features import client_calendar_enabled
+from .session_kind import kind_rows
 from .template import (
     STUDIO_PLACE, button, heading, key_value, link_line, notice, paragraph, sessions_table, site_url,
 )
@@ -47,6 +48,7 @@ def _staff_rows(trial, day):
         (tr("es", "lbl_trainer"), trial.get("trainer")),
         (tr("es", "lbl_date"), f"{day.weekday_es} {day.date_es}"),
         (tr("es", "lbl_time"), day.time),
+        *kind_rows("es", trial, staff=True),
     ]
 
 
@@ -73,6 +75,7 @@ def staff_trial_requested(trial):
         (tr("es", "lbl_goals"), trial.get("goal")),
         (tr("es", "lbl_experience"), trial.get("experience")),
         (tr("es", "staff_lbl_when_requested"), day.es),                 # "lunes 2 de noviembre de 2026, 09:00"
+        *kind_rows("es", trial, staff=True),                              # type, second person, price per session
     ]
 
     def build():
@@ -131,7 +134,7 @@ def _link(lang, key, url):
     return link_line("", "", url, label=tr(lang, key))
 
 
-def client_trial_received(name, start, lang=None):
+def client_trial_received(name, start, lang=None, details=None):
     """We got the request; the team will be in touch. Shows the day and time asked for."""
     lang = normalize_language(lang) or "en"
     day = format_date_bilingual(start)
@@ -141,12 +144,12 @@ def client_trial_received(name, start, lang=None):
             heading(tr(l, "trial_received_title")),
             paragraph(tr(l, "greeting", name=name)),
             paragraph(tr(l, "trial_received_body")),
-            key_value([(tr(l, "trial_received_asked"), day.full(l))]),
+            key_value([(tr(l, "trial_received_asked"), day.full(l)), *kind_rows(l, details)]),
         ]
     return localized_email(lang, "trial_received_subject", build, title_key="trial_received_title")
 
 
-def client_trial_approved(name, start, trainer, token, lang=None):
+def client_trial_approved(name, start, trainer, token, lang=None, details=None):
     """Approved by the admin: asks the client to confirm (primary) or say they can't come."""
     lang = normalize_language(lang) or "en"
 
@@ -156,7 +159,7 @@ def client_trial_approved(name, start, trainer, token, lang=None):
             paragraph(tr(l, "greeting", name=name)),
             paragraph(tr(l, "trial_approved_body")),
             sessions_table([{"start": start, "trainer": trainer}], l),
-            key_value([(tr(l, "lbl_place"), STUDIO_PLACE)]),
+            key_value([*kind_rows(l, details), (tr(l, "lbl_place"), STUDIO_PLACE)]),
             _button(lang, "trial_approved_confirm", confirmation_url(token, lang=lang)),
             _link(lang, "trial_approved_decline", confirmation_url(token, "decline", lang=lang)),
             paragraph(tr(l, "trial_approved_note"), muted=True),
@@ -164,7 +167,7 @@ def client_trial_approved(name, start, trainer, token, lang=None):
     return localized_email(lang, "trial_approved_subject", build, title_key="trial_approved_title")
 
 
-def client_trial_confirmed(name, start, trainer, trial_id, lang=None):
+def client_trial_confirmed(name, start, trainer, trial_id, lang=None, details=None):
     """Confirmation with the calendar file. Returns (subject, html, text, ics_text)."""
     lang = normalize_language(lang) or "en"
 
@@ -175,7 +178,7 @@ def client_trial_confirmed(name, start, trainer, trial_id, lang=None):
             # the sentence that mentions the attached event only exists with the client calendar on
             paragraph(tr(l, "trial_confirmed_body" if client_calendar_enabled() else "trial_confirmed_body_plain")),
             sessions_table([{"start": start, "trainer": trainer}], l),
-            key_value([(tr(l, "lbl_place"), STUDIO_PLACE)]),
+            key_value([*kind_rows(l, details), (tr(l, "lbl_place"), STUDIO_PLACE)]),
             paragraph(tr(l, "trial_confirmed_note"), muted=True),
         ]
     subject, html, text = localized_email(lang, "trial_confirmed_subject", build, title_key="trial_confirmed_title")

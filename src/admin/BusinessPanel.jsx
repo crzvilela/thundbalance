@@ -8,7 +8,7 @@ import { Badge, Card, EmptyState, ErrorState, Skeleton, StatCard } from './ui'
 
 const INACTIVE = new Set(['cancelled', 'canceled', 'completed', 'rejected'])
 
-// Business view for the Overview: packs that need renewing, clients without a
+// Business view for the Overview: packs that are ending, clients without a
 // pack and the month's workload per trainer. Everything comes from data the
 // admin already loads (/admin/clients, sessions and trial sessions).
 export default function BusinessPanel({ sessions, trials }) {
@@ -18,12 +18,12 @@ export default function BusinessPanel({ sessions, trials }) {
   const clients = useMemo(() => (Array.isArray(clientsResource.data) ? clientsResource.data : []), [clientsResource.data])
   const loading = clientsResource.loading && !clientsResource.data
 
-  const { toRenew, withoutPack, activePacks } = useMemo(() => {
-    const renew = clients
+  const { ending, withoutPack, activePacks } = useMemo(() => {
+    const endingSoon = clients
       .filter(client => client.pack_status === 'expired' || client.pack_status === 'expiring')
       .sort((a, b) => String(a.pack_end || '').localeCompare(String(b.pack_end || '')))
     return {
-      toRenew: renew,
+      ending: endingSoon,
       withoutPack: clients.filter(client => client.pack_status === 'none'),
       activePacks: clients.filter(client => client.pack_status === 'active' || client.pack_status === 'expiring').length
     }
@@ -61,7 +61,7 @@ export default function BusinessPanel({ sessions, trials }) {
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         <StatCard label={t('biz_active_packs')} value={activePacks} icon="clients" loading={loading} to="/admin/clients" />
-        <StatCard label={t('biz_to_renew')} value={toRenew.length} icon="calendar" tone="amber" loading={loading} to="/admin/clients?filter=renew" hint={t('biz_to_renew_hint')} />
+        <StatCard label={t('biz_to_end')} value={ending.length} icon="calendar" tone="amber" loading={loading} to="/admin/clients?filter=ending" hint={t('biz_to_end_hint')} />
         <div className="col-span-2 sm:col-span-1">
           <StatCard label={t('biz_no_pack')} value={withoutPack.length} icon="requests" tone="sky" loading={loading} to="/admin/clients?filter=no_plan" />
         </div>
@@ -71,19 +71,19 @@ export default function BusinessPanel({ sessions, trials }) {
         <Card className="p-6 lg:col-span-3">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold">{t('biz_renew_title')}</h3>
-              <p className="text-sm text-gray-500">{t('biz_renew_sub')}</p>
+              <h3 className="text-lg font-semibold">{t('biz_end_title')}</h3>
+              <p className="text-sm text-gray-500">{t('biz_end_sub')}</p>
             </div>
-            <Link to="/admin/clients?filter=renew" className="inline-flex min-h-[44px] items-center text-sm text-emerald-300 hover:text-emerald-200">{t('view_all')} →</Link>
+            <Link to="/admin/clients?filter=ending" className="inline-flex min-h-[44px] items-center text-sm text-emerald-300 hover:text-emerald-200">{t('view_all')} →</Link>
           </div>
           {clientsResource.error
             ? <ErrorState message={t('load_error')} retryLabel={t('retry')} onRetry={clientsResource.reload} />
             : loading
               ? <div className="space-y-3"><Skeleton className="h-14" /><Skeleton className="h-14" /></div>
-              : toRenew.length === 0
-                ? <EmptyState icon="check" title={t('biz_renew_empty')} />
+              : ending.length === 0
+                ? <EmptyState icon="check" title={t('biz_end_empty')} />
                 : <ul className="space-y-2">
-                  {toRenew.slice(0, 6).map(client => (
+                  {ending.slice(0, 6).map(client => (
                     <li key={client.id}>
                       <Link to={`/admin/clients?client=${client.id}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 transition hover:border-amber-400/30 hover:bg-amber-400/5">
                         <span className="min-w-0">

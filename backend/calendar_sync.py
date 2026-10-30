@@ -96,6 +96,15 @@ def record(cursor, session_id, ok, error=None, event_id=None):
         )
 
 
+def _pack_fields(pack):
+    """What an event says about the pack of a session: its name and, for a dual pack, the second person."""
+    pack = pack or {}
+    return {
+        "pack_name": pack.get("name"), "session_type": pack.get("session_type"),
+        "second_person_name": pack.get("second_person_name"),
+    }
+
+
 def load_sessions(cursor, user_id, *, session_id=None, only_future=False):
     """The data of a client's Booked sessions that goes into their events:
     [{"id", "date", "time", "number", "event_id", "sync_status", "client_name",
@@ -119,12 +128,12 @@ def load_sessions(cursor, user_id, *, session_id=None, only_future=False):
     )
     rows = cursor.fetchall()
     packs, assignment = pack_view.user_packs(cursor, user_id)
-    names = {pack["id"]: pack["name"] for pack in packs}
+    names = {pack["id"]: pack for pack in packs}
     return [
         {
             "id": row[0], "date": str(row[1])[:10], "time": str(row[2])[:5], "number": row[3],
             "event_id": row[4], "sync_status": row[5], "client_name": row[6], "client_email": row[7],
-            "client_phone": row[8], "trainer": row[9], "pack_name": names.get(assignment.get(row[0])),
+            "client_phone": row[8], "trainer": row[9], **_pack_fields(names.get(assignment.get(row[0]))),
         }
         for row in rows
     ]
@@ -137,7 +146,8 @@ def event_body(session):
         client_phone=session["client_phone"], session_date=session["date"],
         session_time=session["time"], trainer_name=session["trainer"],
         pack_name=session["pack_name"], session_number=session["number"],
-        session_id=session["id"],
+        session_id=session["id"], session_type=session.get("session_type"),
+        second_person_name=session.get("second_person_name"),
     )
 
 
@@ -182,14 +192,14 @@ def load_states(cursor, session_ids):
     packs_of = {}
     for user_id in {row[1] for row in rows}:
         packs, assignment = pack_view.user_packs(cursor, user_id)
-        packs_of[user_id] = ({pack["id"]: pack["name"] for pack in packs}, assignment)
+        packs_of[user_id] = ({pack["id"]: pack for pack in packs}, assignment)
     states = {}
     for row in rows:
         names, assignment = packs_of[row[1]]
         states[row[0]] = {
             "id": row[0], "user_id": row[1], "status": str(row[2]), "date": str(row[3])[:10], "time": str(row[4])[:5],
             "number": row[5], "event_id": row[6], "sync_status": row[7], "client_name": row[8], "client_email": row[9],
-            "client_phone": row[10], "trainer": row[11], "pack_name": names.get(assignment.get(row[0])),
+            "client_phone": row[10], "trainer": row[11], **_pack_fields(names.get(assignment.get(row[0]))),
         }
     return states
 
@@ -225,6 +235,7 @@ def _google_step(state, key):
             state["trainer"], state["client_name"], state["client_email"], state["date"], state["time"],
             state["number"], event_id=wanted, session_id=session_id,
             client_phone=state["client_phone"], pack_name=state["pack_name"],
+            session_type=state.get("session_type"), second_person_name=state.get("second_person_name"),
         )
         return {"action": "created" if created else "updated", "event_id": new_id}
     except Exception as error:  # noqa: BLE001 - a Google failure never stops the operation in the app
@@ -385,6 +396,7 @@ def sync_client(client_id):
                         item["trainer"], item["client_name"], item["client_email"], item["date"], item["time"],
                         item["number"], event_id=event_id, session_id=session_id,
                         client_phone=item["client_phone"], pack_name=item["pack_name"],
+                        session_type=item.get("session_type"), second_person_name=item.get("second_person_name"),
                     )
                     record(cursor, session_id, True, event_id=new_id)
                     result["created" if created else "already_ok"] += 1

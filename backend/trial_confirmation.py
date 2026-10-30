@@ -95,6 +95,14 @@ def panel_status(status, token):
     return value
 
 
+def _details(trial):
+    """What the client's emails say about the kind of session: {type, second person, price per session}."""
+    return {
+        "session_type": trial.get("session_type"), "second_person_name": trial.get("second_person_name"),
+        "price_per_session": trial.get("price_per_session"),
+    }
+
+
 def _first_name(full_name):
     return (str(full_name or "").split() or [""])[0]
 
@@ -103,7 +111,8 @@ def _load(cursor, token, lock=False):
     cursor.execute(
         f"""
         SELECT ts.id, ts.full_name, ts.email, ts.phone, ts.age, ts.birth_date, ts.goal, ts.experience,
-               ts.session_date, ts.session_time, ts.status, ts.google_event_id, t.nome, ts.lang
+               ts.session_date, ts.session_time, ts.status, ts.google_event_id, t.nome, ts.lang,
+               ts.session_type, ts.second_person_name, ts.price_per_session
         FROM trial_sessions ts
         LEFT JOIN trainers t ON t.id = ts.trainer_id
         WHERE ts.confirmation_token = %s
@@ -123,7 +132,7 @@ def _trial_dict(row):
         "id": row[0], "full_name": row[1], "email": row[2], "phone": row[3], "age": row[4],
         "birth_date": row[5].isoformat() if row[5] else None, "goal": row[6], "experience": row[7],
         "session_date": str(row[8])[:10], "session_time": str(row[9])[:5], "trainer": row[12],
-        "lang": row[13],
+        "lang": row[13], "session_type": row[14], "second_person_name": row[15], "price_per_session": row[16],
     }
 
 
@@ -189,7 +198,7 @@ def answer_trial(token, wanted):
             mailer.send_trial_confirmed(
                 trial["email"], _first_name(trial["full_name"]), trial["session_date"],
                 trial["session_time"], trial["trainer"], trial["id"], trial["lang"],
-                reference=trial["id"],
+                reference=trial["id"], details=_details(trial),
             )
         else:
             _remove_event(row)
@@ -257,7 +266,7 @@ def sync_calendar_event(trial_id):
         cursor.execute(
             """
             SELECT ts.full_name, ts.email, ts.phone, ts.goal, ts.experience, ts.session_date,
-                   ts.session_time, ts.google_event_id, t.nome
+                   ts.session_time, ts.google_event_id, t.nome, ts.session_type, ts.second_person_name
             FROM trial_sessions ts LEFT JOIN trainers t ON t.id = ts.trainer_id
             WHERE ts.id = %s FOR UPDATE OF ts
             """,
@@ -267,7 +276,7 @@ def sync_calendar_event(trial_id):
         if not row:
             conn.rollback()
             return False
-        full_name, email, phone, goal, experience, day, time, event_id, trainer = row
+        full_name, email, phone, goal, experience, day, time, event_id, trainer, session_type, second_name = row
         day, time = str(day)[:10], str(time)[:5]
         try:
             key = calendar_sync.instance_key(cursor)
@@ -276,7 +285,7 @@ def sync_calendar_event(trial_id):
                 try:
                     update_trial_session_event(
                         event_id, full_name, email, phone, goal, experience, day, time, trainer,
-                        trial_id=trial_id,
+                        trial_id=trial_id, session_type=session_type, second_person_name=second_name,
                     )
                 except Exception as error:  # noqa: BLE001
                     if not _is_gone(error):
@@ -285,7 +294,7 @@ def sync_calendar_event(trial_id):
             if not event_id:
                 event_id = create_trial_session_event(
                     full_name, email, phone, goal, experience, day, time, trainer,
-                    event_id=wanted_id, trial_id=trial_id,
+                    event_id=wanted_id, trial_id=trial_id, session_type=session_type, second_person_name=second_name,
                 )
             cursor.execute(
                 "UPDATE trial_sessions SET google_event_id = %s, calendar_error = NULL, "
@@ -337,7 +346,7 @@ def approve_trial(trial_id, trainer_id):
     try:
         cursor.execute(
             """
-            SELECT full_name, email, session_date, session_time, lang
+            SELECT full_name, email, session_date, session_time, lang, session_type, second_person_name, price_per_session
             FROM trial_sessions
             WHERE id = %s AND LOWER(status) = 'pending'
             FOR UPDATE
@@ -379,12 +388,13 @@ def approve_trial(trial_id, trainer_id):
         conn.close()
 
     # From here on the session IS approved, whatever happens to the email or the calendar.
-    full_name, email, day, time, lang = trial
+    full_name, email, day, time, lang, session_type, second_name, price = trial
     inbox.on_trial_approved(trial_id, email, day, time)         # the inbox message: parallel to the e-mail, never raises
     try:
         future = mailer.send_trial_approved(
             email, _first_name(full_name), str(day)[:10], str(time)[:5], trainer[0], token, lang,
             reference=trial_id,
+            details={"session_type": session_type, "second_person_name": second_name, "price_per_session": price},
         )
     except Exception as error:  # noqa: BLE001 - building the email failed
         logger.error("approval email of trial %s could not be built (%s)", trial_id, type(error).__name__)
@@ -403,7 +413,8 @@ def resend_approval(trial_id):
     try:
         cursor.execute(
             """
-            SELECT ts.full_name, ts.email, ts.session_date, ts.session_time, ts.lang, ts.status, ts.confirmation_token, t.nome
+            SELECT ts.full_name, ts.email, ts.session_date, ts.session_time, ts.lang, ts.status, ts.confirmation_token, t.nome,
+                   ts.session_type, ts.second_person_name, ts.price_per_session
             FROM trial_sessions ts LEFT JOIN trainers t ON t.id = ts.trainer_id
             WHERE ts.id = %s
             """,
@@ -415,7 +426,7 @@ def resend_approval(trial_id):
         conn.close()
     if not row:
         raise HTTPException(status_code=404, detail="Trial session not found")
-    full_name, email, day, time, lang, status, token, trainer = row
+    full_name, email, day, time, lang, status, token, trainer, session_type, second_name, price = row
     if str(status).lower() != "approved" or not token:
         raise HTTPException(status_code=409, detail=_bilingual(
             "Esta sesión no está pendiente de confirmación del cliente.",
@@ -433,6 +444,7 @@ def resend_approval(trial_id):
 
     future = mailer.send_trial_approved(
         email, _first_name(full_name), str(day)[:10], str(time)[:5], trainer, token, lang, reference=trial_id,
+        details={"session_type": session_type, "second_person_name": second_name, "price_per_session": price},
     )
     sent, problem = _email_result(future)
     return {"email": {"sent": sent, "problem": problem}}
@@ -446,7 +458,8 @@ def resend_received(trial_id):
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "SELECT full_name, email, session_date, session_time, lang, status FROM trial_sessions WHERE id = %s",
+            "SELECT full_name, email, session_date, session_time, lang, status, session_type, second_person_name, price_per_session "
+            "FROM trial_sessions WHERE id = %s",
             (trial_id,),
         )
         row = cursor.fetchone()
@@ -455,7 +468,7 @@ def resend_received(trial_id):
         conn.close()
     if not row:
         raise HTTPException(status_code=404, detail="Trial session not found")
-    full_name, email, day, time, lang, status = row
+    full_name, email, day, time, lang, status, session_type, second_name, price = row
     if str(status).lower() in ("rejected", "cancelled", "declined"):
         raise HTTPException(status_code=409, detail=_bilingual(
             "Esta solicitud ya no está activa: no se reenvía el email.",
@@ -468,6 +481,7 @@ def resend_received(trial_id):
             f"Wait {wait} s before resending the email."))
     future = mailer.send_trial_received(
         email, _first_name(full_name), str(day)[:10], str(time)[:5], lang, reference=trial_id,
+        details={"session_type": session_type, "second_person_name": second_name, "price_per_session": price},
     )
     sent, problem = _email_result(future)
     return {"email": {"sent": sent, "problem": problem}}

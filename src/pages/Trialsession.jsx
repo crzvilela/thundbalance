@@ -7,11 +7,14 @@ import { API_URL } from '../config'
 import { cachedDay, loadDay, loadWeek, pingServer, prefetchSchedule } from '../api/schedule'
 import { useI18n } from '../i18n/I18nContext'
 import FormField from '../components/forms/FormField'
+import SessionTypeSection, { PriceSummary } from '../components/forms/SessionTypeSection'
 import PhoneInput from '../components/forms/PhoneInput'
 import EmailInput from '../components/forms/EmailInput'
 import { focusFirstInvalid } from '../components/forms/focusFirstInvalid'
 import { formText, serverFieldError } from '../i18n/formText'
 import { birthDateProblem, emailProblem, nameProblem, normalizeEmail, phoneProblem } from '../utils/validators'
+import { formatMoney, sessionTypeBody, trialPricePerSession } from '../utils/pricing'
+import { secondPersonProblems, usePricing } from '../utils/usePricing'
 
 // The English text is what the server stores; the visitor sees the translation.
 const GOALS = [
@@ -29,7 +32,7 @@ function ageFrom(birthDate, today = new Date()) {
   return age
 }
 
-const EMPTY = { fullName: '', email: '', phone: '', birthDate: null, goals: [], experience: '', date: null, time: '' }
+const EMPTY = { fullName: '', email: '', phone: '', birthDate: null, goals: [], experience: '', date: null, time: '', type: 'individual', secondName: '', secondEmail: '' }
 
 const control = 'w-full rounded-xl border bg-black/40 px-4 py-3.5 text-white outline-none transition focus:ring-2 focus:ring-emerald-400/20'
 
@@ -45,6 +48,9 @@ function validate(form) {
   const age = ageFrom(form.birthDate)
   if (birth) errors.birthDate = `form:${birth}`
   else if (form.birthDate && (age < 10 || age > 100)) errors.birthDate = 'ts_e_birth'
+  const second = secondPersonProblems({ type: form.type, name: form.secondName, email: form.secondEmail })
+  if (second.name) errors.secondName = `form:${second.name}`
+  if (second.email) errors.secondEmail = `form:${second.email}`
   if (form.goals.length === 0) errors.goals = 'ts_e_goals'
   if (!form.experience) errors.experience = 'ts_e_experience'
   if (!form.date) errors.date = 'ts_e_date'
@@ -84,6 +90,7 @@ function TrialSession() {
   const formRef = useRef(null)
   const errorText = useErrorText()
   const [done, setDone] = useState(false)
+  const { prices } = usePricing()
   const [existing, setExisting] = useState(null) // an open request of this email: { status, session_date, session_time }
   const [schedule, setSchedule] = useState(null) // times offered per weekday
   const [times, setTimes] = useState([]) // free start times on the chosen date
@@ -191,7 +198,9 @@ function TrialSession() {
           goals: form.goals,
           experience: form.experience,
           session_date: sessionDate,
-          session_time: form.time
+          session_time: form.time,
+          // only the kind of session: the server works the price out itself
+          ...sessionTypeBody({ type: form.type, name: form.secondName, email: form.secondEmail })
         })
       })
       const data = await response.json().catch(() => ({}))
@@ -202,7 +211,7 @@ function TrialSession() {
       }
       const fieldError = response.status === 422 ? serverFieldError(data.detail, language) : null
       if (fieldError) {
-        const key = { full_name: 'fullName', email: 'email', phone: 'phone', birth_date: 'birthDate' }[fieldError.field]
+        const key = { full_name: 'fullName', email: 'email', phone: 'phone', birth_date: 'birthDate', second_person_name: 'secondName', second_person_email: 'secondEmail' }[fieldError.field]
         if (key) {
           setErrors(current => ({ ...current, [key]: `msg:${fieldError.message}` }))
           focusFirstInvalid(formRef.current)
@@ -276,6 +285,21 @@ function TrialSession() {
             {/* Anti-bot trap: a checkbox off screen. Autofill and password managers fill text fields but never tick a checkbox, so a real visitor can not trip it. */}
             <input type="checkbox" name="tb_hp_field" id="tb_hp_field" tabIndex={-1} autoComplete="off" aria-hidden="true" checked={Boolean(form.hp)} onChange={(event) => setForm(current => ({ ...current, hp: event.target.checked ? '1' : '' }))} style={{ position: 'absolute', left: '-10000px', width: 1, height: 1, opacity: 0 }} />
             <div className="grid gap-6 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <SessionTypeSection
+                  value={{ type: form.type, name: form.secondName, email: form.secondEmail }}
+                  errors={{ name: errorText(errors.secondName), email: errorText(errors.secondEmail) }}
+                  onChange={patch => {
+                    setForm(current => ({
+                      ...current,
+                      ...(patch.type !== undefined ? { type: patch.type } : {}),
+                      ...(patch.name !== undefined ? { secondName: patch.name } : {}),
+                      ...(patch.email !== undefined ? { secondEmail: patch.email } : {})
+                    }))
+                    setErrors(current => ({ ...current, secondName: undefined, secondEmail: undefined }))
+                  }}
+                />
+              </div>
               <Field label={t('ts_full_name')} error={errors.fullName} required>
                 <input type="text" autoComplete="name" maxLength={100} value={form.fullName} onChange={set('fullName')}
                   onBlur={() => { const problem = nameProblem(form.fullName); setErrors(current => ({ ...current, fullName: problem ? `form:${problem}` : undefined })) }}
@@ -378,6 +402,17 @@ function TrialSession() {
                   </span>
                 )}
               </Field>
+            </div>
+
+            <div className="mt-8">
+              <PriceSummary
+                title={t('st_summary')}
+                rows={[
+                  { label: t('st_type_row'), value: t(form.type === 'dual' ? 'st_trial_dual' : 'st_trial_individual') },
+                  { label: t('st_trial_price'), value: formatMoney(trialPricePerSession(prices, form.type)), strong: true }
+                ]}
+                note={form.type === 'dual' ? t('st_price_both') : undefined}
+              />
             </div>
 
             {serverError && (

@@ -7,6 +7,8 @@ and cleaned up.
 """
 import unittest
 
+import plans_schema
+
 import testsafety
 from datetime import date, timedelta
 from types import SimpleNamespace
@@ -46,7 +48,7 @@ class Lifecycle(unittest.TestCase):
         cur = conn.cursor()
         cur.execute("SELECT id FROM trainers WHERE active ORDER BY id LIMIT 1")
         cls.trainer_id = cur.fetchone()[0]
-        cur.execute("INSERT INTO plans (nome, preco, duracao_meses, duration_weeks) VALUES ('TEST lifecycle', 0, 1, 1) RETURNING id")
+        cur.execute(f"INSERT INTO plans (nome, {plans_schema.price_column(cur)}, duracao_meses, duration_weeks) VALUES ('TEST lifecycle', 0, 1, 1) RETURNING id")
         cls.plan_id = cur.fetchone()[0]
         conn.commit()
         conn.close()

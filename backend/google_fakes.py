@@ -35,13 +35,14 @@ class FakeGoogle:
             raise RuntimeError("google down")
 
     def create(self, trainer, client_name, client_email, date, time, number=None, event_id=None, session_id=None,
-               client_phone=None, pack_name=None):
+               client_phone=None, pack_name=None, session_type=None, second_person_name=None):
         import event_format
         self.calls.append(("create", event_id))
         self._check(event_id)
         body = event_format.build_session_event(
             client_name=client_name, client_email=client_email, client_phone=client_phone, session_date=date,
-            session_time=time, trainer_name=trainer, pack_name=pack_name, session_number=number, session_id=session_id)
+            session_time=time, trainer_name=trainer, pack_name=pack_name, session_number=number, session_id=session_id,
+            session_type=session_type, second_person_name=second_person_name)
         if event_id in self.events:
             return event_id, False                       # a 409: already there
         self.events[event_id] = body

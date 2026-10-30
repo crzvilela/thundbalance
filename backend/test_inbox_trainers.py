@@ -6,6 +6,8 @@ Real HTTP calls (FastAPI TestClient); the Firebase token check is replaced by a 
 the local database is used and cleaned up.
 """
 import unittest
+
+import plans_schema
 from datetime import date, timedelta
 
 import testsafety
@@ -40,7 +42,7 @@ class InboxTrainers(unittest.TestCase):
         cls.cleanup()
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("INSERT INTO plans (nome, preco, duracao_meses, duration_weeks) VALUES ('TEST inbox trainers', 0, 1, 1) RETURNING id")
+        cur.execute(f"INSERT INTO plans (nome, {plans_schema.price_column(cur)}, duracao_meses, duration_weeks) VALUES ('TEST inbox trainers', 0, 1, 1) RETURNING id")
         cls.plan_id = cur.fetchone()[0]
         cls.t1 = availability.create_trainer(cur, "TEST IT Uno")
         cls.t2 = availability.create_trainer(cur, "TEST IT Dos")

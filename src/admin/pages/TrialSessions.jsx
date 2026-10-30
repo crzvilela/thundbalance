@@ -5,6 +5,8 @@ import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { parseDateKey } from '../requests'
+import { TypeBadge } from '../SessionKind'
+import { formatMoney } from '../../utils/pricing'
 import SectionCard from '../../components/admin/SectionCard'
 import { canStart, hoursSummary, weekdayOf } from '../availability'
 import {
@@ -226,6 +228,8 @@ export default function TrialSessions() {
                       {trial.experience && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{trial.experience}</span>}
                       {trial.age && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{trial.age}</span>}
                       {trial.trainer && <span className="rounded-md border border-sky-400/20 bg-sky-400/10 px-2 py-0.5 text-xs text-sky-200">{t('tr_trainer')}: {trial.trainer}</span>}
+                      <TypeBadge type={trial.session_type} secondName={trial.second_person_name} />
+                      {trial.price_per_session != null && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{t('ty_trial_price')}: {formatMoney(trial.price_per_session)}</span>}
                     </div>
                     <SectionCard className="mt-4 !p-4" title={t('fx_tab_activity')} collapsible defaultOpen={(trial.received_email?.status === 'failed' || trial.approval_email?.status === 'failed' || trial.calendar_missing)}>
                     <p className={`mb-3 text-sm ${trial.received_email?.status === 'failed' ? 'text-red-300' : 'text-gray-400'}`}>
@@ -292,6 +296,9 @@ export default function TrialSessions() {
         </>}
       >
         <p className="mb-6 text-sm text-gray-400">{t('tr_approve_sub')}</p>
+        {approving?.session_type === 'dual' && (
+          <p className="mb-4 text-sm text-gray-300"><TypeBadge type="dual" /> {t('ty_second_person')}: <strong>{approving.second_person_name}</strong> · {approving.second_person_email}</p>
+        )}
         {approving && (
           <div className="mb-6 rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-sm text-emerald-100">
             {parseDateKey(approving.date).toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' })} · {approving.time}

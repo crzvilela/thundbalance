@@ -182,8 +182,7 @@ def code_review():
         for number, line in enumerate(text.splitlines(), 1):
             if "create_calendar_event(" in line and "def " not in line:
                 print(f"  {name}:{number}  {line.strip()}")
-    print("  'Renovar pack', 'aprovar pedido' e 'Añadir cliente' passam por packs.create_pack (uma só função).")
-    print("  'Asignar plan' (admin_assign_plan) só muda o tipo de pack e depois reescreve a descrição dos eventos futuros.")
+    print("  'Nuevo pack', 'aprovar pedido' e 'Añadir cliente' passam por packs.create_pack (uma só função).")
     print("  O título e a descrição de TODOS os eventos vêm de event_format.py (uma só função).")
 
 

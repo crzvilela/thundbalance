@@ -6,6 +6,7 @@ import { useAdminText } from '../useAdminText'
 import { useToast } from '../toastContext'
 import { useFocusTrap } from '../useFocusTrap'
 import { Badge, Button, ConfirmDialog, Icon } from '../ui'
+import { TypeBadge } from '../SessionKind'
 import { NEUTRAL_COLOR, dayKey, describeWhen, madridWallClock } from './calendarConfig'
 
 const STATUS_TONE = { booked: 'emerald', completed: 'neutral', cancelled: 'red', rescheduled: 'amber', pending: 'amber', approved: 'sky', confirmed: 'emerald', declined: 'red', rejected: 'red' }
@@ -153,6 +154,11 @@ export default function EventDetail({ event, onClose, onChanged }) {
               </Row>
               <Row label={t('ac_status')}><Badge tone={STATUS_TONE[props.status] || 'neutral'}>{statusLabel}</Badge></Row>
               <Row label={t('ac_client')}>{props.clientName}</Row>
+              <Row label={t('ty_calendar_type')}>
+                {props.sessionType === 'dual'
+                  ? <span className="flex flex-wrap items-center gap-2"><TypeBadge type="dual" /><span>{props.secondPersonName}</span></span>
+                  : t('ty_individual')}
+              </Row>
               <Row label={t('ac_email')}>{props.email && <a href={`mailto:${props.email}`} className="text-emerald-300 underline underline-offset-4">{props.email}</a>}</Row>
               <Row label={t('ac_phone')}>{props.phone && <a href={`tel:${props.phone.replace(/\s/g, '')}`} className="underline underline-offset-4">{props.phone}</a>}</Row>
               {isTrial

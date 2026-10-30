@@ -20,6 +20,7 @@ from calendar_titles import client_session_title, session_sequence
 from client_lang import resolve_client_lang
 from features import client_calendar_enabled
 from .recipients import clean_recipients
+from .session_kind import kind_rows
 from .template import Block, STUDIO_PLACE, button, heading, highlight_box, key_value, link_line, paragraph, sessions_table
 from .texts import localized_email, normalize_language, tr
 from .transport import send_email_async, validate_address
@@ -85,6 +86,7 @@ def render_pack_summary_block(summary, lang="en"):
             (tr(lang, "lbl_per_week"), summary.get("sessions_per_week")),
             (tr(lang, "lbl_days"), _day_names(summary.get("days") or [], lang)),
             (tr(lang, "lbl_total"), len(sessions)),
+            *kind_rows(lang, summary, total=True),
         ]),
         paragraph(tr(lang, "pack_sessions_title")),
         sessions_table([{"start": item["start"], "trainer": item.get("trainer")} for item in sessions], lang),

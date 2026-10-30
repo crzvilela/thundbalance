@@ -12,6 +12,9 @@ from .template import render_email
 logger = logging.getLogger("thundbalance.emails")
 
 TEXTS_ES = {
+    "lbl_type": "Tipo", "lbl_second_person": "Segunda persona", "lbl_second_email": "Email de la segunda persona",
+    "lbl_price_session": "Precio por sesión", "lbl_price_total": "Total del pack",
+    "type_individual": "Individual", "type_dual": "Dual",
     "greeting": "Hola {name},",
     "view_site": "Ver en la web",
     # client: trial session
@@ -100,6 +103,9 @@ TEXTS_EN = {
     "greeting": "Hi {name},",
     "view_site": "View on the website",
     "lbl_place": "Place",
+    "lbl_type": "Type", "lbl_second_person": "Second person", "lbl_second_email": "Second person email",
+    "lbl_price_session": "Price per session", "lbl_price_total": "Pack total",
+    "type_individual": "Individual", "type_dual": "Dual",
     "place_value": "ThundBalance, Carrer de Pallars 286, 08005 Barcelona",
     "trial_received_subject": "We received your request",
     "trial_received_title": "Request received",
@@ -154,6 +160,9 @@ TEXTS_EN = {
 TEXTS_CA = {
     "greeting": "Hola {name},",
     "lbl_place": "Lloc",
+    "lbl_type": "Tipus", "lbl_second_person": "Segona persona", "lbl_second_email": "Correu de la segona persona",
+    "lbl_price_session": "Preu per sessió", "lbl_price_total": "Total del pack",
+    "type_individual": "Individual", "type_dual": "Dual",
     "place_value": "ThundBalance, Carrer de Pallars 286, 08005 Barcelona",
     "trial_received_subject": "Hem rebut la teva sol·licitud",
     "trial_received_title": "Sol·licitud rebuda",

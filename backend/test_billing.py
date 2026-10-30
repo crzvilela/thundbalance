@@ -13,6 +13,8 @@ import json
 import logging
 import threading
 import unittest
+
+import plans_schema
 from contextlib import redirect_stdout
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -117,7 +119,7 @@ class Endpoints(unittest.TestCase):
         row = cur.fetchone()
         cur.execute("SELECT id FROM trainers WHERE active ORDER BY id LIMIT 1")
         cls.trainer_id = (row or cur.fetchone())[0]
-        cur.execute("INSERT INTO plans (nome, preco, duracao_meses, duration_weeks) VALUES ('TEST billing 2 weeks', 0, 1, 2) RETURNING id")
+        cur.execute(f"INSERT INTO plans (nome, {plans_schema.price_column(cur)}, duracao_meses, duration_weeks) VALUES ('TEST billing 2 weeks', 0, 1, 2) RETURNING id")
         cls.plan_id = cur.fetchone()[0]
         conn.commit()
         conn.close()

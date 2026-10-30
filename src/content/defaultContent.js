@@ -241,8 +241,6 @@ export const defaultContent = {
         {
           name: ml('Monthly Plan', 'Plan Mensual', 'Pla Mensual'),
           nameStyle: textStyle(),
-          price: '€65',
-          priceStyle: textStyle(),
           period: ml('/session', '/sesión', '/sessió'),
           periodStyle: textStyle(),
           description: ml(
@@ -263,8 +261,6 @@ export const defaultContent = {
         {
           name: ml('Quarterly Plan', 'Plan Trimestral', 'Pla Trimestral'),
           nameStyle: textStyle(),
-          price: '€60',
-          priceStyle: textStyle(),
           period: ml('/session', '/sesión', '/sessió'),
           periodStyle: textStyle(),
           description: ml(
@@ -286,8 +282,6 @@ export const defaultContent = {
         {
           name: ml('Semiannual Plan', 'Plan Semestral', 'Pla Semestral'),
           nameStyle: textStyle(),
-          price: '€55',
-          priceStyle: textStyle(),
           period: ml('/session', '/sesión', '/sessió'),
           periodStyle: textStyle(),
           description: ml(
@@ -576,8 +570,6 @@ export function makeDefaultPricingPlan() {
   return {
     name: 'New Plan',
     nameStyle: textStyle(),
-    price: '€0',
-    priceStyle: textStyle(),
     period: ml('/session', '/sesión', '/sessió'),
     periodStyle: textStyle(),
     description: 'Describe this plan.',

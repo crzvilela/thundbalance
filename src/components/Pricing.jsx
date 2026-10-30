@@ -1,9 +1,19 @@
 import { EditableText, useSectionSelection, SectionEditOverlay } from './editor/Editable'
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
 import MovableBox from './editor/MovableBox'
+import { useState } from 'react'
+import { useI18n } from '../i18n/I18nContext'
+import SegmentedType from './forms/SegmentedType'
+import { formatMoney, packPricePerSession, priceMonths } from '../utils/pricing'
+import { usePricing } from '../utils/usePricing'
 
 function Pricing({ sectionId }) {
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'Pricing')
+  const { t } = useI18n()
+  // The prices are not part of the page text: they come from the server (the one table of prices). The cards, in order,
+  // are the durations that have a price (1, 3, 6 months); Individual | Dual changes the figures of all of them.
+  const { prices, failed } = usePricing()
+  const [sessionType, setSessionType] = useState('individual')
 
   if (!visible && !isEditMode) return null
 
@@ -41,10 +51,19 @@ function Pricing({ sectionId }) {
           />
         </div>
 
+        <div className="mb-10 flex justify-center">
+          <SegmentedType
+            value={sessionType} onChange={setSessionType}
+            labels={{ legend: t('st_prices_for'), individual: t('st_individual'), dual: t('st_dual') }}
+            tone="light" className="text-center [&_legend]:mx-auto"
+          />
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
 
           {plans.map((plan, index) => {
             const highlighted = !!plan.highlighted
+            const price = packPricePerSession(prices, sessionType, priceMonths(prices)[index])
 
             return (
               <MovableBox key={index} path={`sections.${sectionId}.plans.${index}.card`} label={`Plan ${index + 1} Card`} className="h-full">
@@ -64,20 +83,19 @@ function Pricing({ sectionId }) {
                   className="text-3xl mb-4 uppercase block"
                 />
 
-                <div className="text-5xl font-bold mb-6">
-                  <EditableText
-                    as="span"
-                    path={`sections.${sectionId}.plans.${index}.price`}
-                    styleObj={`sections.${sectionId}.plans.${index}.priceStyle`}
-                    label={`Plan ${index + 1} Price`}
-                  />
-                  <EditableText
-                    as="span"
-                    path={`sections.${sectionId}.plans.${index}.period`}
-                    styleObj={`sections.${sectionId}.plans.${index}.periodStyle`}
-                    label={`Plan ${index + 1} Period`}
-                    className="text-xl ml-1"
-                  />
+                <div className="mb-6">
+                  <div className="text-5xl font-bold">
+                    <span aria-live="polite">{prices ? formatMoney(price) : '—'}</span>
+                    <EditableText
+                      as="span"
+                      path={`sections.${sectionId}.plans.${index}.period`}
+                      styleObj={`sections.${sectionId}.plans.${index}.periodStyle`}
+                      label={`Plan ${index + 1} Period`}
+                      className="text-xl ml-1"
+                    />
+                  </div>
+                  {sessionType === 'dual' && <p className={`mt-1 text-sm ${highlighted ? 'text-gray-400' : 'text-gray-500'}`}>{t('st_price_both')}</p>}
+                  {failed && <p className="mt-1 text-sm text-red-500">{t('st_price_error')}</p>}
                 </div>
 
                 <EditableText
