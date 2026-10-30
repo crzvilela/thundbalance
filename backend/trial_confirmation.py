@@ -1,19 +1,20 @@
 """Client confirmation of an approved trial session.
 
-Flow: the admin approves (approve_trial: a token is created and the client is
-emailed; NOTHING is put on the calendar yet), the client opens
-/trial-session/confirm/<token>, and only pressing the button on that page (a
-POST) confirms or declines. The calendar event ("Trial Session - Ana Ruiz") is
-created only when the client CONFIRMS; declining afterwards deletes it. There
-is exactly one approval path. Until the client answers, the hour stays blocked
-for the trainer by the database (availability.py counts approved and
-confirmed trials), so nobody else can book it.
+Flow: the admin approves (approve_trial: a token is created, the trial goes onto the
+calendar at once as "Trial (Pendiente) - Ana Ruiz" in grey, and the client is emailed),
+the client opens /trial-session/confirm/<token>, and only pressing the button on that
+page (a POST) confirms or declines. Confirming PATCHES THE SAME event into
+"Trial - Ana Ruiz" (normal colour); declining, or the admin cancelling, deletes it.
+There is exactly one approval path and one function that writes the event
+(sync_calendar_event), so approving twice or confirming twice never duplicates it
+(the event id is deterministic and stored in google_event_id). From the approval the hour
+is blocked for the trainer (availability.py counts approved and confirmed trials).
 
 Statuses in trial_sessions.status:
   Pending    waiting for the admin
-  Approved   approved, waiting for the client (has a confirmation_token)
-  Confirmed  the client confirmed; the calendar event exists (or calendar_error is set
-             and the panel offers "Crear evento en el calendario")
+  Approved   approved, waiting for the client (has a confirmation_token); the PENDING event exists
+             (or calendar_error is set and the panel offers "Crear evento en el calendario")
+  Confirmed  the client confirmed; the same event is now the confirmed one
   Declined   the client said they can't come
   Rejected   declined by the admin       Cancelled  cancelled by the admin
 Rows approved before this flow existed stay "Approved" with no token; the
@@ -25,6 +26,7 @@ The public endpoints accept only the token and return the least possible data.
 import logging
 import secrets
 import traceback
+from datetime import date, datetime
 
 from fastapi import HTTPException
 
@@ -121,6 +123,12 @@ def _load(cursor, token, lock=False):
         (token,),
     )
     return cursor.fetchone()
+
+
+def is_pending(status, token):
+    """Approved and waiting for the client. Approved rows with no token are from before the confirmation
+    flow and count as confirmed."""
+    return str(status or "").lower() == "approved" and bool(token)
 
 
 def _expired(row):
@@ -248,13 +256,16 @@ def _is_gone(error):
 
 
 def sync_calendar_event(trial_id):
-    """Makes the calendar event of a CONFIRMED trial session exist and match
-    the session, and returns True when it does.
+    """Makes the calendar event of an APPROVED or CONFIRMED trial session exist and match
+    the session, and returns True when it does. (The trial counterpart of
+    calendar_sync.sync_session_to_google: every trial event is written here and only here.)
 
-    - no event yet  -> creates it ("Trial Session - Ana Ruiz") with a
-      deterministic id and stores it;
+    - approved, client not confirmed yet -> "Trial (Pendiente) - Ana Ruiz", grey;
+    - confirmed                          -> "Trial - Ana Ruiz", the normal trial colour;
+    - no event yet  -> creates it with a deterministic id and stores it;
     - event exists  -> updates THAT event (never a second one); if somebody
-      deleted it in Google, it is created again.
+      deleted it in Google, it is created again;
+    - any other status (pending request, declined, cancelled...) has no event: returns False.
 
     The session row is locked while this runs, so a double click on "Crear
     evento" or a confirmation at the same moment can not create two events.
@@ -266,17 +277,19 @@ def sync_calendar_event(trial_id):
         cursor.execute(
             """
             SELECT ts.full_name, ts.email, ts.phone, ts.goal, ts.experience, ts.session_date,
-                   ts.session_time, ts.google_event_id, t.nome, ts.session_type, ts.second_person_name
+                   ts.session_time, ts.google_event_id, t.nome, ts.session_type, ts.second_person_name,
+                   ts.status, ts.confirmation_token
             FROM trial_sessions ts LEFT JOIN trainers t ON t.id = ts.trainer_id
             WHERE ts.id = %s FOR UPDATE OF ts
             """,
             (trial_id,),
         )
         row = cursor.fetchone()
-        if not row:
+        if not row or str(row[11] or "").lower() not in ("approved", "confirmed"):
             conn.rollback()
             return False
-        full_name, email, phone, goal, experience, day, time, event_id, trainer, session_type, second_name = row
+        full_name, email, phone, goal, experience, day, time, event_id, trainer, session_type, second_name = row[:11]
+        pending = is_pending(row[11], row[12])
         day, time = str(day)[:10], str(time)[:5]
         try:
             key = calendar_sync.instance_key(cursor)
@@ -286,6 +299,7 @@ def sync_calendar_event(trial_id):
                     update_trial_session_event(
                         event_id, full_name, email, phone, goal, experience, day, time, trainer,
                         trial_id=trial_id, session_type=session_type, second_person_name=second_name,
+                        pending=pending,
                     )
                 except Exception as error:  # noqa: BLE001
                     if not _is_gone(error):
@@ -295,6 +309,7 @@ def sync_calendar_event(trial_id):
                 event_id = create_trial_session_event(
                     full_name, email, phone, goal, experience, day, time, trainer,
                     event_id=wanted_id, trial_id=trial_id, session_type=session_type, second_person_name=second_name,
+                    pending=pending,
                 )
             cursor.execute(
                 "UPDATE trial_sessions SET google_event_id = %s, calendar_error = NULL, "
@@ -328,19 +343,18 @@ def _email_result(future):
         return False, "timeout"
 
 
-def approve_trial(trial_id, trainer_id):
+def approve_trial(trial_id, trainer_id, session_date=None, session_time=None):
     """THE way a trial session becomes "Pendiente de confirmación del cliente".
 
     1. status -> Approved, trainer and a new token saved (nothing else can
-       approve a session: the panel button calls this and only this);
-    2. the approval email goes out in the language saved with the booking.
+       approve a session: the panel button calls this and only this). If the admin
+       adjusts the day or hour, the FINAL ones are saved and used everywhere below;
+    2. the trial goes onto the calendar at once as "Trial (Pendiente) - ..." (sync_calendar_event);
+       the hour is blocked for the trainer from here (availability.py);
+    3. the approval email goes out in the language saved with the booking.
 
-    NO calendar event is created here: it is created when the client
-    confirms. The hour stays blocked meanwhile (the database holds it, see
-    availability.py).
-
-    An email failure does not undo the approval. It is reported in the return
-    value ({"email": {"sent", "problem"}}) and in email_log."""
+    An email or calendar failure does not undo the approval. They are reported in the return
+    value ({"email": {"sent", "problem"}, "calendar": {"ok"}}), in email_log and in calendar_error."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -362,7 +376,16 @@ def approve_trial(trial_id, trainer_id):
         if not trainer:
             raise HTTPException(status_code=404, detail="Trainer not found")
 
-        problem = slot_problem(cursor, trainer_id, str(trial[2]), str(trial[3])[:5], ignore_trial_id=trial_id)
+        day, time = str(trial[2])[:10], str(trial[3])[:5]
+        if session_date or session_time:
+            try:
+                day = date.fromisoformat(str(session_date or day)[:10]).isoformat()
+                time = datetime.strptime(str(session_time or time)[:5], "%H:%M").strftime("%H:%M")
+            except ValueError as error:
+                raise HTTPException(status_code=422, detail="Invalid date or time") from error
+            if now_madrid() >= parse_madrid(day, time):
+                raise HTTPException(status_code=422, detail="The session time has already passed")
+        problem = slot_problem(cursor, trainer_id, day, time, ignore_trial_id=trial_id)
         if problem:
             raise HTTPException(status_code=409, detail=problem)
 
@@ -370,11 +393,11 @@ def approve_trial(trial_id, trainer_id):
         cursor.execute(
             """
             UPDATE trial_sessions
-            SET status = 'Approved', trainer_id = %s, confirmation_token = %s,
+            SET status = 'Approved', trainer_id = %s, confirmation_token = %s, session_date = %s, session_time = %s,
                 approved_at = NOW(), rejection_reason = NULL
             WHERE id = %s
             """,
-            (trainer_id, token, trial_id),
+            (trainer_id, token, day, time, trial_id),
         )
         conn.commit()
     except HTTPException:
@@ -388,7 +411,8 @@ def approve_trial(trial_id, trainer_id):
         conn.close()
 
     # From here on the session IS approved, whatever happens to the email or the calendar.
-    full_name, email, day, time, lang, session_type, second_name, price = trial
+    full_name, email, _requested_day, _requested_time, lang, session_type, second_name, price = trial
+    calendar_ok = sync_calendar_event(trial_id)                 # the pending event; a failure is kept in calendar_error
     inbox.on_trial_approved(trial_id, email, day, time)         # the inbox message: parallel to the e-mail, never raises
     try:
         future = mailer.send_trial_approved(
@@ -402,7 +426,7 @@ def approve_trial(trial_id, trainer_id):
         future = None
 
     sent, problem = _email_result(future) if future is not None else (False, "error")
-    return {"email": {"sent": sent, "problem": problem}}
+    return {"email": {"sent": sent, "problem": problem}, "calendar": {"ok": calendar_ok}}
 
 
 def resend_approval(trial_id):

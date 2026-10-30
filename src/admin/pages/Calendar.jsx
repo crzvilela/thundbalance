@@ -120,7 +120,9 @@ export default function Calendar() {
 
   const mounted = (info) => {
     const props = info.event.extendedProps
-    info.el.style.setProperty('--ev', props.color || NEUTRAL_COLOR)
+    // a trial the client has not confirmed yet is grey, like its "Trial (Pendiente)" event in Google
+    const pending = props.kind === 'trial' && props.status === 'approved'
+    info.el.style.setProperty('--ev', pending ? NEUTRAL_COLOR : (props.color || NEUTRAL_COLOR))
     info.el.title = info.event.title                      // the full title, whatever is cut by the width
   }
 
@@ -150,6 +152,7 @@ export default function Calendar() {
         {trainers.map(trainer => (
           <li key={trainer.id} className="flex items-center gap-2"><span aria-hidden="true" className="h-3 w-3 rounded-full" style={{ background: trainer.color || NEUTRAL_COLOR }} />{trainer.name}</li>
         ))}
+        <li className="flex items-center gap-2"><span aria-hidden="true" className="h-3.5 w-5 rounded border-2 border-dashed" style={{ borderColor: NEUTRAL_COLOR, background: 'color-mix(in srgb, #9ca3af 22%, transparent)' }} />{t('ac_legend_pending')}</li>
         <li className="flex items-center gap-2"><span aria-hidden="true" className="h-3.5 w-5 rounded border-2 border-dashed border-gray-300" />{t('ac_legend_trial')}</li>
         <li className="flex items-center gap-2"><span aria-hidden="true" className="h-3 w-3 rounded-full" style={{ background: NEUTRAL_COLOR }} />{t('ac_unassigned')}</li>
         <li className="flex items-center gap-2 text-gray-400"><span aria-hidden="true" className="h-3 w-3 rounded-full opacity-45" style={{ background: NEUTRAL_COLOR }} /><span className="line-through">{t('ac_legend_cancelled')}</span></li>

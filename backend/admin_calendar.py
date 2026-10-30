@@ -152,13 +152,19 @@ def session_event(row, now):
     }
 
 
+def trial_title_text(email, pending):
+    """"Trial - ana@x.com", or "Trial (Pendiente) - ana@x.com" while the client has not confirmed."""
+    base = "Trial (Pendiente)" if pending else "Trial"
+    return f"{base} - {email}" if email else base
+
+
 def trial_event(row):
     trial_id, day, moment, status, token, name, email, phone, trainer_id, trainer, color, goal, sync_status, sync_error, session_type, second_name = row
     start, end = _iso(day, moment)
     email = str(email or "").strip()
     return {
         "id": f"t{trial_id}",
-        "title": f"Trial - {email}" if email else "Trial",
+        "title": trial_title_text(email, trial_status(status, token) == "approved"),
         "start": start,
         "end": end,
         "extendedProps": {

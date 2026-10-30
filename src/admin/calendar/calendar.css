@@ -81,7 +81,8 @@
   border: 2px dashed var(--ev);
   color: var(--ac-soft-text);
 }
-.admin-fc .fc-event.ac-trial.ac-pending, .admin-fc .fc-event.ac-trial.ac-approved { opacity: 0.6; }   /* not confirmed yet */
+.admin-fc .fc-event.ac-trial.ac-pending { opacity: 0.6; }                                       /* not approved yet */
+.admin-fc .fc-event.ac-trial.ac-approved { opacity: 0.85; }                                      /* "Pendiente": approved, grey (--ev is set in Calendar.jsx) */
 .admin-fc .fc-event.ac-trial.ac-declined, .admin-fc .fc-event.ac-trial.ac-rejected, .admin-fc .fc-event.ac-trial.ac-cancelled { opacity: 0.4; text-decoration: line-through; }
 
 /* sessions: finished ones calmer, cancelled ones faded and struck through */

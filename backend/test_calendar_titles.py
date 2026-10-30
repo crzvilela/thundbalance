@@ -46,8 +46,8 @@ class Titles(unittest.TestCase):
         self.assertTrue(titles.client_session_title("Matilda", "1/12").endswith(" 1/12"))
 
     def test_studio_trial_title_for_a_single_name_and_a_full_name(self):
-        self.assertEqual(trial_title("Ana María Ruiz"), "Trial Session - Ana Ruiz")
-        self.assertEqual(trial_title("Ana"), "Trial Session - Ana")
+        self.assertEqual(trial_title("Ana María Ruiz"), "Trial - Ana Ruiz")
+        self.assertEqual(trial_title("Ana"), "Trial - Ana")
 
     def test_the_number_does_not_change_when_another_session_is_cancelled(self):
         # numbers are stored once ("2/12"): the title is a pure function of them

@@ -5,6 +5,7 @@ protected by the same require_admin dependency as the other /admin/* routes.
 """
 
 import traceback
+from typing import Optional
 
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -77,6 +78,8 @@ class BillingPayload(BaseModel):
 
 class TrialApprovePayload(BaseModel):
     trainer_id: int
+    session_date: Optional[str] = Field(default=None, max_length=10)     # the admin may adjust the day / hour
+    session_time: Optional[str] = Field(default=None, max_length=5)
 
 
 class EmailTestPayload(BaseModel):
@@ -573,8 +576,8 @@ def register_admin_routes(app, require_admin):
                     # Confirmed by the client but with no event on the calendar: the panel
                     # offers "Crear evento en el calendario" (calendar_failed = the last
                     # attempt errored). An approved session has no event by design.
-                    "calendar_missing": status == "confirmed" and not r[16],
-                    "calendar_failed": status == "confirmed" and not r[16] and bool(r[17]),
+                    "calendar_missing": status in ("approved", "confirmed") and not r[16],
+                    "calendar_failed": status in ("approved", "confirmed") and not r[16] and bool(r[17]),
                     # Newest approval email, from email_log (None: none was ever sent)
                     "approval_email": ({
                         "status": "sent" if sent["status"] == email_log.SENT else "failed",
@@ -598,9 +601,10 @@ def register_admin_routes(app, require_admin):
     def admin_approve_trial(trial_id: int, data: TrialApprovePayload):
         """Approves the request. Everything (status, token, email in the saved
         language) happens in approve_trial(), the only approval path. Approving
-        creates NO calendar event: it is created when the client confirms."""
+        puts the trial on the calendar at once as "Trial (Pendiente)"; the client's
+        confirmation turns that same event into the confirmed one."""
         try:
-            result = approve_trial(trial_id, data.trainer_id)
+            result = approve_trial(trial_id, data.trainer_id, data.session_date, data.session_time)
         except HTTPException:
             raise
         except Exception as error:
@@ -640,7 +644,7 @@ def register_admin_routes(app, require_admin):
 
     @app.post("/admin/trial-sessions/{trial_id}/calendar-event", dependencies=admin)
     def admin_trial_calendar_event(trial_id: int):
-        """Creates the calendar event of a CONFIRMED trial session if it is
+        """Creates the calendar event of an APPROVED or CONFIRMED trial session if it is
         missing (or refreshes the existing one: it never makes a second event).
         The panel button "Crear evento en el calendario"."""
         conn = get_connection()
@@ -654,10 +658,10 @@ def register_admin_routes(app, require_admin):
         if not row:
             raise HTTPException(status_code=404, detail="Trial session not found")
         status = panel_status(row[0], row[1])
-        if status != "confirmed":
+        if status not in ("approved", "confirmed"):
             raise HTTPException(
                 status_code=409,
-                detail="Only trial sessions confirmed by the client have a calendar event",
+                detail="Only approved or confirmed trial sessions have a calendar event",
             )
         ok = sync_calendar_event(trial_id)
         return {"calendar": {"ok": ok}}

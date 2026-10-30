@@ -5,7 +5,7 @@ emails and the subscription feed). One place, so every path writes the same text
     "ThundBalance · Trial Session con Matilda"    a trial session
 
 The studio's own Google Calendar uses event_format.session_title / trial_title
-("Ana Ruiz 1/12", "Trial Session - Ana Ruiz"); the x/n is the same number
+("Ana Ruiz 1/12", "Trial - Ana Ruiz"); the x/n is the same number
 (sessions.session_number), which is FIXED when the pack is created: cancelling a
 session never renumbers the others.
 
