@@ -156,7 +156,7 @@ class EmailTests(unittest.TestCase):
                             attachments=[{"filename": "a.ics", "content_type": "text/calendar", "data": b"x"}])
         self.assertTrue(result.ok)
         sent = RECEIVED[0]
-        self.assertEqual(sent["replyTo"], "info@thundbalance.com")
+        self.assertEqual(sent["replyTo"], "pt@thundbalance.com")
         self.assertEqual(sent["name"], "ThundBalance")
         self.assertEqual(sent["attachments"][0]["name"], "a.ics")
 

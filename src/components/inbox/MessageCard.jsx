@@ -9,7 +9,7 @@ const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outli
 const BUTTON = `inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition disabled:cursor-wait disabled:opacity-60 sm:w-auto ${FOCUS}`
 const PRIMARY = `${BUTTON} bg-emerald-400 text-black hover:bg-emerald-300`
 const SECONDARY = `${BUTTON} border border-white/25 text-white hover:bg-white/10`
-const CONTACT_ADDRESS = 'info@thundbalance.com'
+const CONTACT_ADDRESS = 'pt@thundbalance.com'
 
 const spinner = <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-current/30 border-t-current" />
 

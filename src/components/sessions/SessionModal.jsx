@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import TrainerChoice from '../forms/TrainerChoice'
+import { loadTrainers } from '../../api/trainers'
 import { downloadSessionIcs } from '../../api/calendarFeed'
 import { useModalFocus } from '../../hooks/useModalFocus'
 import { useI18n } from '../../i18n/I18nContext'
@@ -11,10 +13,11 @@ const BUTTON = `inline-flex min-h-[44px] w-full items-center justify-center gap-
 
 // "Session details": date, hour, trainer, status, the state of a change request, add to calendar,
 // "request a date change" (ONE request per session: the studio decides) and cancel (with a confirmation,
-// immediate). The page owns the requests; the modal only asks for them.
+// immediate). The page owns the requests; the modal only asks for them. `readOnly` (the dashboard calendar) shows the same
+// facts and the state of a change request, with no buttons that change anything.
 export default function SessionModal({
   session, status, initialMode = 'view', todayKey, onClose, onLoadTimes, onRequest, onCancel, onRespond,
-  showCalendar = false, change, hours, noteMax = 300, answering = null
+  showCalendar = false, change, hours, noteMax = 300, answering = null, readOnly = false, trainerId = ''
 }) {
   const { t, locale } = useI18n()
   const [mode, setMode] = useState(initialMode)           // view | request | confirm | cancel
@@ -27,17 +30,26 @@ export default function SessionModal({
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
   const [downloading, setDownloading] = useState(false)
+  const [askTrainer, setAskTrainer] = useState(trainerId)      // the trainer at the new hour: the session's own unless that one is busy
+  const [trainerStatus, setTrainerStatus] = useState('idle')   // idle | checking | ok | busy | none
+  const [trainerRefresh, setTrainerRefresh] = useState(0)
+  const [trainerNames, setTrainerNames] = useState({})
+  useEffect(() => {
+    if (readOnly) return
+    loadTrainers().then(list => setTrainerNames(Object.fromEntries(list.map(item => [item.id, item.name]))))
+  }, [readOnly])
+  const newTrainerName = trainerNames[askTrainer] || ''
 
   const close = () => { if (!working) onClose() }
   const ref = useModalFocus(true, close)
 
   const live = status === 'upcoming' || status === 'rescheduled' || status === 'change_pending'
-  const addable = live && showCalendar                     // not for cancelled / finished sessions, nor when the client calendar is off
+  const addable = live && showCalendar && !readOnly                     // not for cancelled / finished sessions, nor when the client calendar is off
   const request = change?.request
   const canRequest = change?.state === 'available'
 
   const pickDate = async (value) => {
-    setNewDate(value); setNewTime(''); setTimes([]); setError('')
+    setNewDate(value); setNewTime(''); setTimes([]); setError(''); setAskTrainer(trainerId)
     if (!value) return
     setLoadingTimes(true)
     try {
@@ -58,6 +70,7 @@ export default function SessionModal({
       await action()
     } catch (problem) {
       setError(t(problem.message?.startsWith('ms_') ? problem.message : 'ms_err_generic', { hours }))
+      if (problem.code === 'trainer_unavailable') { setMode('request'); setTrainerRefresh(count => count + 1) }    // somebody took the trainer: pick again
       setWorking(false)
     }
   }
@@ -119,12 +132,12 @@ export default function SessionModal({
             <p className="mt-2 text-sm text-gray-100">{t('ms_proposal_text', when(request.counter_date, request.counter_time))}</p>
             {request.counter_deadline && <p className="mt-1 text-sm font-semibold text-amber-200">{t('ms_proposal_deadline', when(request.counter_deadline.slice(0, 10), request.counter_deadline.slice(11, 16)))}</p>}
             {request.admin_note && <p className="mt-2 break-words text-sm text-gray-300">{t('ms_proposal_note', { note: request.admin_note })}</p>}
-            <div className="mt-4 grid gap-3 sm:flex">
+            {!readOnly && <div className="mt-4 grid gap-3 sm:flex">
               <button type="button" disabled={!!answering} onClick={() => onRespond(request, true)}
                 className={`${BUTTON} bg-emerald-400 text-black hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-60`}>{answering === request.id && <Spinner />}{t('ms_proposal_accept')}</button>
               <button type="button" disabled={!!answering} onClick={() => onRespond(request, false)}
                 className={`${BUTTON} border border-white/25 hover:bg-white/10 disabled:cursor-wait disabled:opacity-60`}>{t('ms_proposal_decline')}</button>
-            </div>
+            </div>}
           </section>
         )}
 
@@ -162,6 +175,16 @@ export default function SessionModal({
               </div>
             )}
 
+            {newDate && newTime && trainerId && (
+              <div className="mt-5">
+                <TrainerChoice
+                  showSelect={false} value={askTrainer} onChange={setAskTrainer} date={newDate} time={newTime} excludeSessionId={session.id}
+                  refreshKey={trainerRefresh} onStatus={setTrainerStatus} disabled={working}
+                  selectClass={`w-full rounded-xl border border-white/20 bg-black/40 px-4 py-3 text-white outline-none transition focus:border-emerald-400/70 ${FOCUS}`}
+                />
+              </div>
+            )}
+
             {/* the optional reason: a small "+" with its caption always visible, never required */}
             <div className="mt-5">
               <div className="flex items-center gap-3">
@@ -187,6 +210,7 @@ export default function SessionModal({
           <div role="alertdialog" aria-labelledby="session-confirm-title" className="mt-5 rounded-2xl border border-amber-400/40 bg-amber-400/[0.07] p-5">
             <p id="session-confirm-title" className="font-semibold text-amber-100">{t('ms_request_confirm_title')}</p>
             <p className="mt-2 text-sm text-gray-100 first-letter:uppercase">{t('ms_request_summary', when(newDate, newTime))}</p>
+            {askTrainer && askTrainer !== trainerId && <p className="mt-1 text-sm text-gray-200">{t('ms_request_trainer', { name: newTrainerName })}</p>}
             {note.trim() && <p className="mt-1 break-words text-sm text-gray-300">{t('ms_pending_note', { note: note.trim() })}</p>}
             <p className="mt-3 text-sm text-gray-200">{t('ms_request_confirm_text', { hours })}</p>
           </div>
@@ -202,7 +226,7 @@ export default function SessionModal({
 
         {error && <p role="alert" className="mt-5 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</p>}
 
-        {live && mode === 'view' && (
+        {live && !readOnly && mode === 'view' && (
           <>
             <div className="mt-6 grid gap-3 sm:flex sm:flex-wrap">
               <button type="button" onClick={() => { setMode('request'); setError('') }} disabled={!canRequest}
@@ -216,7 +240,7 @@ export default function SessionModal({
 
         {mode === 'request' && (
           <div className="mt-6 grid gap-3 sm:flex sm:flex-wrap">
-            <button type="button" disabled={!newDate || !newTime || working} onClick={() => { setMode('confirm'); setError('') }}
+            <button type="button" disabled={!newDate || !newTime || working || trainerStatus === 'busy' || trainerStatus === 'none'} onClick={() => { setMode('confirm'); setError('') }}
               className={`${BUTTON} bg-emerald-400 text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-50`}>{t('ms_request_send')}</button>
             <button type="button" onClick={back} disabled={working} className={`${BUTTON} border border-white/25 hover:bg-white/10 disabled:opacity-50`}>{t('ms_back')}</button>
           </div>
@@ -224,7 +248,7 @@ export default function SessionModal({
 
         {mode === 'confirm' && (
           <div className="mt-6 grid gap-3 sm:flex sm:flex-wrap">
-            <button type="button" disabled={working} onClick={() => run(() => onRequest(session, newDate, newTime, note.trim()))}
+            <button type="button" disabled={working} onClick={() => run(() => onRequest(session, newDate, newTime, note.trim(), askTrainer && askTrainer !== trainerId ? askTrainer : ''))}
               className={`${BUTTON} bg-emerald-400 text-black hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-60`}>
               {working && <Spinner />}{working ? t('ms_working') : t('ms_request_send')}
             </button>
@@ -242,7 +266,7 @@ export default function SessionModal({
           </div>
         )}
 
-        {!live && mode === 'view' && (
+        {(!live || readOnly) && mode === 'view' && (
           <div className="mt-6"><button type="button" onClick={close} className={`${BUTTON} border border-white/25 hover:bg-white/10`}>{t('ms_close')}</button></div>
         )}
       </div>

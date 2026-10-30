@@ -64,6 +64,7 @@ export default function ScheduleCard({ item, now, busy, locked, highlight, error
                 <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />
                 {item.trainer || t('ac_unassigned')}
               </span>
+              {item.requested_trainer && <span className="text-sky-200">{t('sch_trainer_requested')}: {item.requested_trainer}</span>}
             </p>
           </div>
           {leftText && (

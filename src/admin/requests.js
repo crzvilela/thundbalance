@@ -1,5 +1,5 @@
 // /admin/client-requests returns rows as arrays:
-// [id, clientName, packageName, sessionsPerWeek, preferredDays, preferredTime, status, rejectionReason, archivedAt]
+// [id, clientName, packageName, sessionsPerWeek, preferredDays, preferredTime, status, rejectionReason, archivedAt, trainerId, trainerName]
 export function normalizeRequests(rows) {
   if (!Array.isArray(rows)) return []
   return rows.map(row => ({
@@ -11,7 +11,9 @@ export function normalizeRequests(rows) {
     time: row[5] || '',
     status: String(row[6] || '').toLowerCase(),
     reason: row[7] || '',
-    archived: !!row[8]
+    archived: !!row[8],
+    trainerId: row[9] ?? null,          // asked for by the client, then the final one once approved
+    trainer: row[10] || ''
   }))
 }
 

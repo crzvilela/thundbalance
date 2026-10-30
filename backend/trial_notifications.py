@@ -7,23 +7,22 @@ so it works on hosts that block SMTP (Render free). Configuration, all optional:
 
   TRIAL_EMAIL_WEBHOOK_URL     the Apps Script web app URL. Unset = no e-mail.
   TRIAL_EMAIL_WEBHOOK_SECRET  shared secret the script checks.
-  TRIAL_NOTIFY_TO             recipient (default info@thundbalance.com).
+  TEAM_NOTIFICATION_EMAILS    recipients of every internal notice (default pt@thundbalance.com).
 
 Sending runs in the background and never raises, so a mail problem can not make
 a booking fail.
 """
 import os
 
-from emails import send_email_async
+from emails import send_email_async, team_emails
 from emails.transport import validate_address
 from emails.trial_emails import staff_trial_confirmed, staff_trial_declined, staff_trial_requested
 
-DEFAULT_RECIPIENT = "info@thundbalance.com"
 
 
 def studio_address():
-    """Where the studio's notices go (TRIAL_NOTIFY_TO, default info@thundbalance.com)."""
-    return os.getenv("TRIAL_NOTIFY_TO", DEFAULT_RECIPIENT).strip() or DEFAULT_RECIPIENT
+    """Where the studio's notices go: the team addresses (TEAM_NOTIFICATION_EMAILS, default pt@thundbalance.com). A list."""
+    return team_emails()
 
 
 def _send(build, trial, kind, legacy=False):
@@ -34,7 +33,7 @@ def _send(build, trial, kind, legacy=False):
         try:
             reply_to = validate_address(trial.get("email"), "reply_to")
         except ValueError:
-            reply_to = None  # falls back to info@
+            reply_to = None  # falls back to pt@
     except Exception as error:  # noqa: BLE001 - never break the booking
         print(f"Trial notification could not be built: {type(error).__name__}")
         return None

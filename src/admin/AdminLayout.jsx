@@ -42,7 +42,7 @@ const linkClass = ({ isActive }) =>
 
 function ToastHost({ toasts }) {
   return (
-    <div className="pointer-events-none fixed bottom-5 right-5 z-[60] flex flex-col gap-2">
+    <div className="pointer-events-none fixed bottom-28 right-5 z-[60] sm:bottom-5 flex flex-col gap-2">
       {toasts.map(toast => (
         <div key={toast.id} role="status" className={`admin-toast pointer-events-auto flex items-center gap-2.5 rounded-xl border px-4 py-3 text-sm shadow-xl backdrop-blur ${
           toast.tone === 'error' ? 'border-red-400/30 bg-red-950/80 text-red-100' : toast.tone === 'warning' ? 'border-amber-400/40 bg-amber-950/90 text-amber-100' : 'border-emerald-400/30 bg-emerald-950/80 text-emerald-100'

@@ -1,4 +1,4 @@
-import { canRequestChange } from './sessionDates'
+import { canRequestChange } from './sessionDates.js'
 
 // What the client can do about the date of ONE session, from the requests they already made.
 // The numbers come from the server (GET /me/reschedule-requests), never from the page:

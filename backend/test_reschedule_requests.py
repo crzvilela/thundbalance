@@ -284,7 +284,8 @@ class Requests(unittest.TestCase):
         other = self.new_session(self.bia, self.slot_day, self.free[1], "1/4", synced=False)   # trainer busy then
         with self.assertRaises(HTTPException) as busy:
             self.request()
-        self.assertEqual(self.code_of(busy), "slot_unavailable")
+        self.assertEqual(self.code_of(busy), "trainer_unavailable")             # the trainer is the problem: the answer lists who is free
+        self.assertIn("alternatives", busy.exception.detail)
         self.sql("DELETE FROM sessions WHERE id = %s", (other,))
         # the client is busy then, with ANOTHER trainer (so it is the client who is the problem)
         conn = get_connection()

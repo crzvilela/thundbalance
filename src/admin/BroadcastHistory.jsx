@@ -3,11 +3,14 @@ import { adminRequest } from './api'
 import { useAdminText } from './useAdminText'
 import { useAdminResource } from './useAdminResource'
 import { useToast } from './toastContext'
+import { BulkBar, RowCheck, SelectAllRow } from './BulkBar'
+import { useBulkSelection } from './bulk'
 import { wallClock } from './calendar/calendarConfig'
 import { AUDIENCE_KEY, STATUS_TONE, audiencesOf } from './broadcast'
 import { Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Icon, SelectInput, Skeleton, TextInput } from './ui'
 
 const PAGE_SIZE = 20
+const sentKey = item => item.id
 const fill = (text, values) => Object.entries(values).reduce((result, [key, value]) => result.replace(`{${key}}`, value), text)
 const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400'
 
@@ -149,6 +152,7 @@ export default function BroadcastHistory({ highlight }) {
   const items = useMemo(() => resource.data?.items || [], [resource.data])
   const pages = resource.data?.pages || 1
   const filtered = !!(q || status !== 'all')
+  const selection = useBulkSelection(items, sentKey)
 
   useEffect(() => {
     if (!highlight || scrolled.current || !items.some(item => item.id === highlight)) return
@@ -212,11 +216,13 @@ export default function BroadcastHistory({ highlight }) {
         <Card><EmptyState icon={archivedTab ? 'archive' : 'send'} title={t(filtered ? 'bx_h_empty_filtered' : archivedTab ? 'bx_h_empty_archived' : 'bx_h_empty')} /></Card>
       ) : (
         <>
+          <SelectAllRow selection={selection} />
           <ul className="space-y-3">
             {items.map(item => (
-              <li key={item.id} id={`sent-${item.id}`}>
+              <li key={item.id} id={`sent-${item.id}`} className="flex items-start gap-1">
+                <span className="pt-4"><RowCheck selection={selection} id={item.id} label={t('bk_select_one').replace('{name}', item.title)} /></span>
                 <button type="button" onClick={() => setOpenId(item.id)} aria-label={fill(t('bx_h_open'), { title: item.title })}
-                  className={`block w-full rounded-2xl border bg-white/[0.03] p-5 text-left transition hover:border-white/25 hover:bg-white/[0.05] ${FOCUS} ${item.id === highlight ? 'border-emerald-400/60 ring-2 ring-emerald-400/30' : 'border-white/[0.08]'}`}>
+                  className={`block min-w-0 flex-1 rounded-2xl border bg-white/[0.03] p-5 text-left transition hover:border-white/25 hover:bg-white/[0.05] ${FOCUS} ${item.id === highlight ? 'border-emerald-400/60 ring-2 ring-emerald-400/30' : selection.chosen.has(item.id) ? 'border-emerald-400/40' : 'border-white/[0.08]'}`}>
                   <span className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
                     <span className="min-w-0 flex-1 basis-60 text-base font-semibold text-white [overflow-wrap:anywhere]">{item.title}</span>
                     <StatusBadge status={item.status} />
@@ -244,6 +250,18 @@ export default function BroadcastHistory({ highlight }) {
           )}
         </>
       )}
+
+      <BulkBar
+        selection={selection} onDone={resource.reload}
+        labelOf={id => items.find(item => item.id === id)?.title || t('bk_deleted_item').replace('{id}', id)}
+        actions={[
+          archivedTab
+            ? { key: 'restore', verb: 'restore', tone: 'neutral', label: t('bk_a_restore'), effects: [t('bk_fx_messages')],
+                run: ids => adminRequest('POST', '/admin/messages/bulk', { action: 'restore', ids }) }
+            : { key: 'archive', verb: 'archive', tone: 'neutral', label: t('bk_a_archive'), effects: [t('bk_fx_messages')],
+                run: ids => adminRequest('POST', '/admin/messages/bulk', { action: 'archive', ids }) }
+        ]}
+      />
 
       {openId && <Detail key={openId} id={openId} busy={busy} onClose={() => setOpenId(null)} onArchive={setArchiving} onRestore={(target) => change(target, 'restore', 'bx_restored')} />}
 

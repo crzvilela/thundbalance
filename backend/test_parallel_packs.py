@@ -434,10 +434,10 @@ class Parallel(unittest.TestCase):          # "Parallel" is the old name; see th
     # ----- emails
     def test_the_pack_email_has_only_the_new_packs_sessions(self):
         monday = next_weekday(14, 0)
-        self.renew(per_week=1, days="Monday", start=monday, extra=["info@thundbalance.com"])
+        self.renew(per_week=1, days="Monday", start=monday, extra=["pt@thundbalance.com"])
         RECEIVED.clear()
         second = self.renew(per_week=2, days="Tuesday,Thursday", start=monday + timedelta(days=1), time="10:00",
-                            extra=["info@thundbalance.com"])
+                            extra=["pt@thundbalance.com"])
         self.assertEqual(second["total_sessions"], 4)
         import time
         from emails.transport import _pool

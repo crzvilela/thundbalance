@@ -6,7 +6,7 @@ import { authFetch } from './authFetch'
 
 const CODES = {
   limit_reached: 'ms_err_limit', open_request: 'ms_err_open', too_late: 'ms_err_late', slot_unavailable: 'ms_err_taken',
-  session_not_open: 'ms_err_past', closed: 'ms_err_closed', expired: 'ms_err_closed', note_too_long: 'ms_err_note', invalid_slot: 'ms_err_taken'
+  session_not_open: 'ms_err_past', trainer_unavailable: 'ms_err_trainer', closed: 'ms_err_closed', expired: 'ms_err_closed', note_too_long: 'ms_err_note', invalid_slot: 'ms_err_taken'
 }
 
 async function read(response, fallback) {
@@ -29,11 +29,11 @@ function wrap(promise, fallback) {
 // { items: [...], max_per_session, notice_hours, note_max }
 export const loadMyRequests = () => wrap(authFetch(`${API_URL}/me/reschedule-requests`).then(r => read(r, 'ms_err_request')), 'ms_err_request')
 
-export const createRescheduleRequest = (sessionId, { date, time, note, lang }) => wrap(
+export const createRescheduleRequest = (sessionId, { date, time, note, lang, trainerId }) => wrap(
   authFetch(`${API_URL}/me/sessions/${sessionId}/reschedule-request`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requested_date: date, requested_time: time, note: note || null, lang })
+    body: JSON.stringify({ requested_date: date, requested_time: time, note: note || null, lang, trainer_id: trainerId || null })
   }).then(r => read(r, 'ms_err_request')),
   'ms_err_request'
 )

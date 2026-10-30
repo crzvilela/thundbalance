@@ -69,7 +69,7 @@ class Languages(unittest.TestCase):
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
         os.environ["TRIAL_EMAIL_WEBHOOK_URL"] = f"http://127.0.0.1:{cls.server.server_port}/exec"
         os.environ["TRIAL_EMAIL_WEBHOOK_SECRET"] = "right-secret"
-        os.environ["TRIAL_NOTIFY_TO"] = "info@thundbalance.com"
+        os.environ["TEAM_NOTIFICATION_EMAILS"] = "pt@thundbalance.com"
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("SELECT id FROM trainers WHERE active AND nome IN ('Guille','Matilda') ORDER BY id LIMIT 1")
@@ -155,7 +155,7 @@ class Languages(unittest.TestCase):
             result, log = self.book(lang, email)
             self.assertEqual(self.row(result["trial_id"])[0], lang)
 
-            client, team = self.to(email), self.to("info@thundbalance.com")
+            client, team = self.to(email), self.to("pt@thundbalance.com")
             self.assertEqual((len(client), len(team), len(RECEIVED)), (1, 1, 2), lang)
 
             # the client's email: ONE language everywhere
@@ -217,7 +217,7 @@ class Languages(unittest.TestCase):
             endpoint("/trial-sessions/confirmation/{token}/confirm", "POST")(token)
             self.wait_for_mail()
             confirmed = self.to(email)
-            self.assertEqual((len(confirmed), len(self.to("info@thundbalance.com"))), (1, 1), lang)
+            self.assertEqual((len(confirmed), len(self.to("pt@thundbalance.com"))), (1, 1), lang)
             message = confirmed[0]
             self.assertIn(MARKERS[lang]["confirmed"], plain(message["html"]))
             self.assertIn(f'<html lang="{lang}"', message["html"])

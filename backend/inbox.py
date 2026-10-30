@@ -49,6 +49,7 @@ from psycopg2.extras import Json
 from pydantic import BaseModel
 
 import pack_view
+from bulk_actions import BulkPayload, run_each, unknown_action
 from database import get_connection
 from emails.dates import format_date_bilingual, now_madrid, parse_madrid
 from emails.texts import normalize_language
@@ -1151,6 +1152,16 @@ def register_inbox_routes(app, require_admin, require_client, own_user_id, admin
     @app.get("/admin/messages/{message_id}", dependencies=admin)
     def admin_detail(message_id: int):
         return get_admin(message_id)
+
+    @app.post("/admin/messages/bulk")
+    def admin_bulk(data: BulkPayload, claims=Depends(require_admin)):
+        """archive | restore several sent messages (a message is never deleted)."""
+        email = str(claims.get("email", ""))
+        if data.action == "archive":
+            return run_each("messages", "archive", data.ids, lambda message_id: archive_admin(message_id, email))
+        if data.action == "restore":
+            return run_each("messages", "restore", data.ids, lambda message_id: restore_admin(message_id, email))
+        raise unknown_action(data.action)
 
     @app.post("/admin/messages/{message_id}/archive")
     def admin_archive(message_id: int, claims=Depends(require_admin)):

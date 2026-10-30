@@ -1,26 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { onAuthStateChanged } from 'firebase/auth'
-import { auth } from '../firebase/auth'
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import TempPasswordNotice from '../components/TempPasswordNotice'
 import AddAllMenu from '../components/sessions/AddAllMenu'
-import SessionCalendar from '../components/sessions/SessionCalendar'
+import PendingRequests from '../components/sessions/PendingRequests'
+import SessionCalendarPanel from '../components/sessions/SessionCalendarPanel'
 import SessionModal from '../components/sessions/SessionModal'
 import { NextSessionCard, SessionRow, Spinner } from '../components/sessions/SessionParts'
 import { API_URL } from '../config'
 import { authFetch } from '../api/authFetch'
 import { useFeatures } from '../api/features'
-import { answerMyProposal, createRescheduleRequest, loadMyRequests } from '../api/reschedule'
+import { loadDay } from '../api/schedule'
+import { answerMyProposal, createRescheduleRequest } from '../api/reschedule'
+import { useClientSessions } from '../hooks/useClientSessions'
 import { useI18n } from '../i18n/I18nContext'
-import { bySession, changeState } from '../utils/changeRequest'
-import { formatDay, formatTime, madridNow, sessionStatus } from '../utils/sessionDates'
-
-// Sessions come as rows: [id, 'YYYY-MM-DD', 'HH:MM:SS', trainerName, status, rescheduled, number]
-const toSession = (row) => ({
-  id: row[0], date: String(row[1]), time: String(row[2]).slice(0, 5),
-  trainer: row[3], status: row[4], rescheduled: !!row[5], number: row[6]
-})
+import { formatDay, formatTime, madridNow } from '../utils/sessionDates'
 
 // Trial goals/levels are stored in English; the index is the translation key (ts_goal_N / ts_level_N).
 const TRIAL_GOALS = ['Body recomposition', 'Lose weight', 'Build muscle', 'Increase strength', 'Rehabilitation/injury recovery', 'Conditioning', 'Endurance', 'Tone/define', 'Improve mobility & flexibility', 'Increase energy']
@@ -37,98 +31,19 @@ function friendlyCancel(problem) {
 }
 
 function MySessions() {
-  const navigate = useNavigate()
   const { t, locale, language } = useI18n()
-  const { clientCalendar, rescheduleMinHours } = useFeatures()      // CLIENT_CALENDAR_ENABLED: no calendar buttons or menus when off; the notice hours
-  const [now, setNow] = useState(() => new Date())
-  const today = madridNow(now).date
-
-  const [sessions, setSessions] = useState([])
-  const [trial, setTrial] = useState(null) // { status, session_date, session_time, trainer, goal, experience }
-  const [trainerIds, setTrainerIds] = useState({})
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const { clientCalendar } = useFeatures()      // CLIENT_CALENDAR_ENABLED: no calendar buttons or menus when off
+  const data = useClientSessions()
+  const { sessions, trial, trainerIds, requestInfo, loading, error, reload, today, rules, changeOf, statusOf } = data
   const [toast, setToast] = useState(null)   // { tone: 'success' | 'error', text }
-  const [month, setMonth] = useState(() => { const date = new Date(); return new Date(date.getFullYear(), date.getMonth(), 1) })
-  const [selectedDay, setSelectedDay] = useState(null)
   const [open, setOpen] = useState(null)     // { id, mode }
-  const [requestInfo, setRequestInfo] = useState({ items: [], max_per_session: 1, notice_hours: null, note_max: 300 })
   const [answering, setAnswering] = useState(null)      // id of the proposal being answered (no double clicks)
-
-  // the "completed" state follows the clock: look again every minute
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 60000)
-    return () => window.clearInterval(timer)
-  }, [])
 
   useEffect(() => {
     if (!toast) return undefined
     const timer = window.setTimeout(() => setToast(null), toast.tone === 'error' ? 9000 : 5000)
     return () => window.clearTimeout(timer)
   }, [toast])
-
-  const load = useCallback(async (email) => {
-    try {
-      const [userResponse, trainersResponse] = await Promise.all([
-        authFetch(`${API_URL}/users/email/${encodeURIComponent(email)}`),
-        fetch(`${API_URL}/trainers`)
-      ])
-      if (!userResponse.ok) throw new Error('ms_err_account')
-      const user = await userResponse.json()
-      if (!user.id) throw new Error('ms_err_profile')
-
-      const sessionsResponse = await authFetch(`${API_URL}/sessions/user/${user.id}`)
-      if (!sessionsResponse.ok) throw new Error('ms_err_sessions')
-      const rows = await sessionsResponse.json()
-      setSessions(Array.isArray(rows) ? rows.map(toSession) : [])
-
-      // The change requests of this client and the rules the page shows (the server owns the numbers).
-      try {
-        const info = await loadMyRequests()
-        setRequestInfo(previous => ({ ...previous, ...info, items: Array.isArray(info.items) ? info.items : [] }))
-      } catch {
-        // the sessions are still shown; the change button simply keeps what it knew
-      }
-
-      // The open trial session of this login email (not part of the sessions list).
-      try {
-        const trialResponse = await authFetch(`${API_URL}/client/trial`)
-        const body = trialResponse.ok ? await trialResponse.json() : null
-        setTrial(body?.trial || null)
-      } catch {
-        setTrial(null)
-      }
-
-      // Trainer rows are [id, name, specialty]; the sessions only carry names.
-      const trainers = trainersResponse.ok ? await trainersResponse.json() : []
-      setTrainerIds(Object.fromEntries(trainers.map(row => [row[1], row[0]])))
-      setError('')
-    } catch (problem) {
-      setError(problem instanceof TypeError ? 'ms_err_network' : (problem.message?.startsWith('ms_') ? problem.message : 'ms_err_sessions'))
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => onAuthStateChanged(auth, (user) => {
-    if (!user) { navigate('/login', { replace: true }); return }
-    load(user.email)
-  }), [navigate, load])
-
-  const requestsBySession = useMemo(() => bySession(requestInfo.items), [requestInfo])
-  // the notice hours come from the server (the page never writes the number): with the requests, or from the public configuration
-  const rules = useMemo(() => ({ limit: requestInfo.max_per_session, hours: requestInfo.notice_hours ?? rescheduleMinHours }), [requestInfo, rescheduleMinHours])
-  const changeOf = useCallback((session) => changeState(session, requestsBySession.get(session.id) || [], rules, now), [requestsBySession, rules, now])
-
-  // the state shown for a session: with a change waiting for the studio (or for the client) it is "change pending"
-  const statusOf = useCallback((session) => {
-    const base = sessionStatus(session, now)
-    if (base === 'upcoming' || base === 'rescheduled') {
-      const state = changeOf(session).state
-      if (state === 'pending' || state === 'proposal') return 'change_pending'
-    }
-    return base
-  }, [now, changeOf])
 
   const groups = useMemo(() => {
     const byTime = (a, b) => (a.date + a.time).localeCompare(b.date + b.time)
@@ -140,49 +55,25 @@ function MySessions() {
     }
   }, [sessions, statusOf])
 
-  const byDay = useMemo(() => {
-    const map = new Map()
-    for (const session of sessions) {
-      if (!map.has(session.date)) map.set(session.date, [])
-      map.get(session.date).push(session)
-    }
-    return map
-  }, [sessions])
-
   const next = groups.upcoming[0]
   const others = groups.upcoming.slice(1)
   const total = groups.active.length
   const done = groups.past.length
-  const trialDay = trial?.session_date || null
   const opened = open ? sessions.find(session => session.id === open.id) : null
-  const dayList = selectedDay ? (byDay.get(selectedDay) || []) : []
 
   const showToast = (tone, text) => setToast({ tone, text })
 
-  const clickDay = (key, fromUser) => {
-    if (!fromUser) { setSelectedDay(null); return }
-    const list = byDay.get(key) || []
-    if (list.length === 1 && key !== trialDay) { setSelectedDay(key); setOpen({ id: list[0].id, mode: 'view' }); return }
-    setSelectedDay(current => (current === key ? null : key))
-  }
-
+  // The hours offered are the ones when ANY trainer is free (the modal then checks the session's own trainer and, if he or she
+  // is busy, offers the trainers who are free then).
   const loadTimes = async (session, value) => {
-    const trainerId = trainerIds[session.trainer]
-    if (!trainerId) throw new Error('ms_err_no_trainer')
     let list
     try {
-      const response = await fetch(`${API_URL}/trainer/${trainerId}/available-times/${value}`)
-      list = response.ok ? await response.json() : []
+      list = await loadDay(value, { force: true })
     } catch {
       throw new Error('ms_err_times')
     }
     const current = madridNow(new Date())
     return list.map(item => String(item).slice(0, 5)).filter(time => value !== current.date || time > current.time)
-  }
-
-  const refresh = async () => {
-    setLoading(true)
-    await load(auth.currentUser.email)
   }
 
   // Cancelling stays immediate. The server answers 200 with {error} for business rules, so check both.
@@ -196,15 +87,15 @@ function MySessions() {
     }
     setOpen(null)
     showToast('success', t('ms_cancelled_ok'))
-    await refresh()
+    await reload()
   }
 
   // The client no longer moves a session by themselves: they send ONE request and the studio decides.
-  const requestChange = async (session, date, time, note) => {
-    await createRescheduleRequest(session.id, { date, time, note, lang: language })
+  const requestChange = async (session, date, time, note, trainerId) => {
+    await createRescheduleRequest(session.id, { date, time, note, lang: language, trainerId })
     setOpen(null)
     showToast('success', t('ms_request_sent'))
-    await refresh()
+    await reload()
   }
 
   const respondTo = async (request, accept) => {
@@ -214,20 +105,14 @@ function MySessions() {
       await answerMyProposal(request.id, accept)
       setOpen(null)
       showToast('success', t(accept ? 'ms_proposal_accepted' : 'ms_proposal_declined'))
-      await refresh()
+      await reload()
     } catch (problem) {
       showToast('error', t(problem.message))
-      await refresh()
+      await reload()
     } finally {
       setAnswering(null)
     }
   }
-
-  // proposals from the studio that wait for an answer (only for sessions that still exist)
-  const proposals = requestInfo.items
-    .filter(request => request.status === 'counter_proposed')
-    .map(request => ({ request, session: sessions.find(item => item.id === request.session_id) }))
-    .filter(item => item.session && statusOf(item.session) !== 'cancelled' && statusOf(item.session) !== 'completed')
 
   const trialCard = trial && (
     <section aria-label={t('tt_title')} className="mb-6 rounded-3xl border border-violet-400/30 bg-violet-400/[0.06] p-5 sm:p-7">
@@ -290,25 +175,14 @@ function MySessions() {
         {error ? (
           <div role="alert" className={`${card} p-10 text-center`}>
             <p className="mb-5 text-gray-200">{t(error)}</p>
-            <button type="button" onClick={() => { setLoading(true); setError(''); load(auth.currentUser?.email) }} className={`min-h-[44px] rounded-xl bg-white px-6 py-3 text-sm font-semibold text-black hover:bg-gray-200 ${FOCUS}`}>{t('pg_try_again')}</button>
+            <button type="button" onClick={reload} className={`min-h-[44px] rounded-xl bg-white px-6 py-3 text-sm font-semibold text-black hover:bg-gray-200 ${FOCUS}`}>{t('pg_try_again')}</button>
           </div>
         ) : loading && sessions.length === 0 ? (
           <div role="status" className={`${card} flex items-center gap-3 p-10 text-gray-300`}><Spinner /> {t('ms_loading')}</div>
         ) : (
           <>
-            {proposals.map(({ request, session }) => (
-              <section key={request.id} role="alert" aria-label={t('ms_proposal_title')} className="mb-6 rounded-3xl border border-amber-400/40 bg-amber-400/[0.07] p-5 sm:p-7">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-amber-300">{t('ms_proposal_title')}</p>
-                <p className="max-w-2xl text-base text-gray-100">{t('ms_proposal_text', { date: formatDay(request.counter_date, locale), time: formatTime(request.counter_time) })}</p>
-                <p className="mt-1 text-sm text-gray-300">{session.number ? `${t('ms_session_n', { n: session.number })} · ` : ''}{formatDay(session.date, locale)}, {formatTime(session.time)}</p>
-                {request.counter_deadline && <p className="mt-2 text-sm font-semibold text-amber-200">{t('ms_proposal_deadline', { date: formatDay(request.counter_deadline.slice(0, 10), locale), time: formatTime(request.counter_deadline.slice(11, 16)) })}</p>}
-                {request.admin_note && <p className="mt-2 text-sm text-gray-300">{t('ms_proposal_note', { note: request.admin_note })}</p>}
-                <div className="mt-5 grid gap-3 sm:flex">
-                  <button type="button" disabled={!!answering} onClick={() => respondTo(request, true)} className={`inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-emerald-400 px-6 py-2.5 text-sm font-semibold text-black transition hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-60 ${FOCUS}`}>{answering === request.id && <Spinner />}{t('ms_proposal_accept')}</button>
-                  <button type="button" disabled={!!answering} onClick={() => respondTo(request, false)} className={`inline-flex min-h-[44px] items-center justify-center rounded-xl border border-white/25 px-6 py-2.5 text-sm font-semibold transition hover:bg-white/10 disabled:cursor-wait disabled:opacity-60 ${FOCUS}`}>{t('ms_proposal_decline')}</button>
-                </div>
-              </section>
-            ))}
+            {/* what still waits for an answer comes first: change requests, the pack request, the trial session */}
+            <PendingRequests data={data} onRespond={respondTo} answering={answering} />
 
             {trialCard}
 
@@ -374,27 +248,7 @@ function MySessions() {
                     {clientCalendar && <AddAllMenu onError={(text) => showToast('error', text)} />}
                   </div>
                   <div className={`${card} p-4 sm:p-6`}>
-                    <SessionCalendar
-                      month={month} onMonth={setMonth} sessionsByDay={byDay} statusOf={statusOf} trialDay={trialDay}
-                      selectedDay={selectedDay} onSelectDay={clickDay} todayKey={today}
-                    />
-                    {selectedDay && (
-                      <div className="mt-5 border-t border-white/10 pt-5">
-                        <h3 className="mb-3 text-sm font-semibold capitalize text-gray-200">{formatDay(selectedDay, locale)}</h3>
-                        {dayList.length === 0 && selectedDay !== trialDay ? (
-                          <p className="text-sm text-gray-400">{t('ms_no_session_day')}</p>
-                        ) : (
-                          <ul className="space-y-3">
-                            {selectedDay === trialDay && (
-                              <li className="rounded-2xl border border-violet-400/40 bg-violet-400/[0.06] p-4 text-sm">
-                                <span className="font-medium text-violet-200">{t('tt_title')}</span> · {formatTime(trial.session_time)} · {trial.trainer || t('tt_trainer_tbd')}
-                              </li>
-                            )}
-                            {dayList.map(session => <li key={session.id}><SessionRow session={session} status={statusOf(session)} onOpen={(item) => setOpen({ id: item.id, mode: 'view' })} /></li>)}
-                          </ul>
-                        )}
-                      </div>
-                    )}
+                    <SessionCalendarPanel data={data} onOpen={(session) => setOpen({ id: session.id, mode: 'view' })} />
                   </div>
                 </div>
               </div>
@@ -407,7 +261,7 @@ function MySessions() {
         <SessionModal
           key={`${opened.id}-${open.mode}`}
           session={opened} status={statusOf(opened)} initialMode={open.mode} todayKey={today} showCalendar={clientCalendar}
-          change={changeOf(opened)} hours={rules.hours} noteMax={requestInfo.note_max} answering={answering}
+          change={changeOf(opened)} hours={rules.hours} noteMax={requestInfo.note_max} answering={answering} trainerId={trainerIds[opened.trainer] || ''}
           onClose={() => setOpen(null)} onLoadTimes={loadTimes} onRequest={requestChange} onCancel={cancel} onRespond={respondTo}
         />
       )}

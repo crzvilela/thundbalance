@@ -3,6 +3,8 @@ import { adminRequest } from '../api'
 import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
+import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
+import { useBulkSelection } from '../bulk'
 import { WEEKDAYS } from '../availability'
 import TrainerAccess from '../TrainerAccess'
 import { NEUTRAL_COLOR, TRAINER_PALETTE } from '../calendar/calendarConfig'
@@ -14,6 +16,7 @@ import {
 const START_OPTIONS = Array.from({ length: 18 }, (_, index) => `${String(index + 5).padStart(2, '0')}:00`) // 05:00-22:00
 const END_OPTIONS = Array.from({ length: 18 }, (_, index) => `${String(index + 6).padStart(2, '0')}:00`) // 06:00-23:00
 const DEFAULT_WINDOW = { start: '07:00', end: '14:00' }
+const trainerKey = trainer => trainer.id
 
 // Monday to Friday 07:00-14:00 as a starting point for a new trainer.
 const starterHours = () => Object.fromEntries(WEEKDAYS.map((day, index) => [day, index < 5 ? { ...DEFAULT_WINDOW } : null]))
@@ -108,7 +111,7 @@ function HoursEditor({ hours, setHours }) {
 
 const hoursInvalid = (hours) => WEEKDAYS.some(day => hours[day] && hours[day].start >= hours[day].end)
 
-function TrainerCard({ trainer, onChanged }) {
+function TrainerCard({ trainer, onChanged, check = null, selected = false }) {
   const { t } = useAdminText()
   const toast = useToast()
   const [hours, setHours] = useState(trainer.hours)
@@ -151,8 +154,9 @@ function TrainerCard({ trainer, onChanged }) {
   }
 
   return (
-    <Card className="p-6">
+    <Card className={`p-6 ${selected ? '!border-emerald-400/50' : ''}`}>
       <div className="mb-5 flex flex-wrap items-center gap-4">
+        {check}
         <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400/25 to-emerald-700/10 text-xl font-semibold text-emerald-200">
           {trainer.name.slice(0, 1).toUpperCase()}
         </span>
@@ -238,6 +242,7 @@ export default function Trainers() {
   const resource = useAdminResource('/admin/trainer-availability')
   const trainers = useMemo(() => (Array.isArray(resource.data) ? resource.data : []), [resource.data])
   const [adding, setAdding] = useState(false)
+  const selection = useBulkSelection(trainers, trainerKey)
 
   return (
     <div className="admin-fade">
@@ -261,13 +266,27 @@ export default function Trainers() {
       ) : trainers.length === 0 ? (
         <Card><EmptyState icon="clients" title={t('tn_empty')} action={<Button variant="primary" onClick={() => setAdding(true)}>{t('tn_add')}</Button>} /></Card>
       ) : (
-        <div className="grid gap-5 xl:grid-cols-2">
-          {trainers.map(trainer => (
-            // The key includes the saved hours so a saved card re-reads them.
-            <TrainerCard key={`${trainer.id}-${JSON.stringify(trainer.hours)}`} trainer={trainer} onChanged={resource.reload} />
-          ))}
-        </div>
+        <>
+          <SelectAllRow selection={selection} />
+          <div className="grid gap-5 xl:grid-cols-2">
+            {trainers.map(trainer => (
+              // The key includes the saved hours so a saved card re-reads them.
+              <TrainerCard key={`${trainer.id}-${JSON.stringify(trainer.hours)}`} trainer={trainer} onChanged={resource.reload}
+                selected={selection.chosen.has(trainer.id)}
+                check={<RowCheck selection={selection} id={trainer.id} label={t('bk_select_one').replace('{name}', trainer.name)} />} />
+            ))}
+          </div>
+        </>
       )}
+
+      <BulkBar
+        selection={selection} onDone={resource.reload}
+        labelOf={id => trainers.find(trainer => trainer.id === id)?.name || t('bk_deleted_item').replace('{id}', id)}
+        actions={[{
+          key: 'remove', verb: 'remove', tone: 'danger', label: t('bk_a_remove'), effects: [t('bk_fx_trainers')],
+          run: ids => adminRequest('POST', '/admin/trainers/bulk', { action: 'remove', ids })
+        }]}
+      />
 
       <NewTrainer open={adding} onClose={() => setAdding(false)} onCreated={resource.reload} />
     </div>

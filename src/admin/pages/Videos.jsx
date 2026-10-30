@@ -8,11 +8,15 @@ import { uploadLandingVideo } from '../../api/landingPage'
 import { resolveText } from '../../utils/multilingual'
 import { useAdminText } from '../useAdminText'
 import { useToast } from '../toastContext'
+import { adminRequest } from '../api'
+import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
+import { useBulkSelection } from '../bulk'
 import { Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon, PageHeader, Skeleton, TextArea, TextInput } from '../ui'
 
 // Videos are upload-only: video_source is always 'upload' for anything saved
 // here. Older videos with another source still play on the public page.
 const EMPTY_FORM = { title: '', description: '', video_source: 'upload', video_url: '' }
+const videoKey = video => video.id
 
 export default function Videos() {
   const { t, language } = useAdminText()
@@ -30,6 +34,7 @@ export default function Videos() {
 
   const [version, setVersion] = useState(0)
   const reload = useCallback(() => setVersion(value => value + 1), [])
+  const selection = useBulkSelection(videos, videoKey)
 
   useEffect(() => {
     let cancelled = false
@@ -123,10 +128,13 @@ export default function Videos() {
       ) : videos.length === 0 ? (
         <Card><EmptyState icon="video" title={t('vd_empty')} action={<Button variant="primary" onClick={openNew}>{t('vd_add')}</Button>} /></Card>
       ) : (
+        <>
+        <SelectAllRow selection={selection} />
         <ul className="space-y-3">
           {videos.map((video, index) => (
             <li key={video.id}>
-              <Card className="flex flex-col gap-4 p-4 transition hover:border-white/20 sm:flex-row sm:items-center">
+              <Card className={`flex flex-col gap-4 p-4 transition hover:border-white/20 sm:flex-row sm:items-center ${selection.chosen.has(video.id) ? '!border-emerald-400/50' : ''}`}>
+                <RowCheck selection={selection} id={video.id} label={t('bk_select_one').replace('{name}', resolveText(video.title, language))} />
                 <div className="w-full shrink-0 overflow-hidden rounded-xl sm:w-40">
                   <TrainingVideoPlayer source={video.video_source} url={video.video_url} compact />
                 </div>
@@ -146,7 +154,17 @@ export default function Videos() {
             </li>
           ))}
         </ul>
+        </>
       )}
+
+      <BulkBar
+        selection={selection} onDone={reload}
+        labelOf={id => resolveText(videos.find(video => video.id === id)?.title, language) || t('bk_deleted_item').replace('{id}', id)}
+        actions={[{
+          key: 'delete', verb: 'delete', tone: 'danger', label: t('bk_a_delete'), effects: [t('bk_fx_videos')],
+          run: ids => adminRequest('POST', '/admin/training-videos/bulk', { action: 'delete', ids })
+        }]}
+      />
 
       <Drawer
         open={!!editingId} onClose={close} busy={saving || uploading}

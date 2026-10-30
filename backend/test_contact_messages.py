@@ -82,6 +82,8 @@ class Contact(unittest.TestCase):
         self.assertEqual(item["message"], "Hola <b>equipo</b> & gracias")          # kept as typed: the panel escapes when drawing
         self.assertEqual(len(self.sent), 1)
         self.assertIn("Nuevo mensaje de contacto", self.sent[0][0][1])             # Spanish, to the studio
+        self.assertEqual(self.sent[0][0][0], ["pt@thundbalance.com"])               # only pt@ (the default team address)
+        self.assertEqual(self.sent[0][1]["reply_to"], f"ana{DOMAIN}")               # answering goes to who wrote
 
     def test_an_email_failure_does_not_stop_saving(self):
         with mock.patch.object(cm, "send_email_async", side_effect=RuntimeError("down")):

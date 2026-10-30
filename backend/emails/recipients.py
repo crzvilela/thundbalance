@@ -3,9 +3,9 @@ import os
 
 from .transport import validate_address
 
-# Pre-filled in the "Enviar confirmación a" field. Override on the server with
-# TEAM_EMAILS="a@x.com,b@x.com".
-DEFAULT_TEAM_EMAILS = ("info@thundbalance.com", "pt@thundbalance.com")
+# Where every internal notice goes (trial, pack request, reschedule, contact messages, new client) and what is pre-filled in
+# "Enviar confirmación a". Override on the server with TEAM_NOTIFICATION_EMAILS="a@x.com,b@x.com".
+DEFAULT_TEAM_EMAILS = ("pt@thundbalance.com",)
 MAX_RECIPIENTS = 10
 
 
@@ -30,13 +30,14 @@ def clean_recipients(addresses, exclude=()):
 
 
 def team_emails():
-    """The default team addresses: TEAM_EMAILS if set (and valid), else the constants."""
-    raw = os.getenv("TEAM_EMAILS", "").strip()
-    if raw:
-        try:
-            parsed = clean_recipients(raw.split(","))
-            if parsed:
-                return parsed
-        except ValueError:
-            print("TEAM_EMAILS is not valid; using the default team addresses")
+    """The team addresses: TEAM_NOTIFICATION_EMAILS if set (and valid), else the older TEAM_EMAILS, else pt@."""
+    for name in ("TEAM_NOTIFICATION_EMAILS", "TEAM_EMAILS"):
+        raw = os.getenv(name, "").strip()
+        if raw:
+            try:
+                parsed = clean_recipients(raw.split(","))
+                if parsed:
+                    return parsed
+            except ValueError:
+                print(f"{name} is not valid; using the default team addresses")
     return list(DEFAULT_TEAM_EMAILS)

@@ -43,7 +43,7 @@ def build_welcome_email(name, email, password, pack_summary=None, lang=None):
 
 
 def build_staff_client_created(name, email, pack_summary=None):
-    """(subject, html, text) for info@: a client was created. Spanish, no password."""
+    """(subject, html, text) for pt@: a client was created. Spanish, no password."""
     def build():
         rows = [
             (tr("es", "lbl_name"), _one_line(name)),

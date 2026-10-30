@@ -3,7 +3,7 @@
     python preview_emails.py        # -> backend/email_previews/*.html
 
 EVERY email a client can receive is written three times (-en, -es, -ca), each entirely in its language. The ones for the
-team (info@, pt@) are written once, in Spanish. The logo is read from ../public/email-logo.png so it shows before the
+team (pt@) are written once, in Spanish. The logo is read from ../public/email-logo.png so it shows before the
 file is deployed. The credentials in the examples are made up.
 """
 import os

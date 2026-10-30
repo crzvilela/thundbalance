@@ -11,7 +11,7 @@ const ICON_OPTIONS = [
 ]
 const DEFAULT_ICONS = [
   { id: 'location', icon: 'location', label: 'Google Maps', url: 'https://www.google.com/maps/place//data=!4m2!3m1!1s0x12a4a385af63a49b:0x841dd304c428a382?sa=X&ved=1t:8290&ictx=111', newTab: true, visible: true },
-  { id: 'email', icon: 'email', label: 'Email', url: 'mailto:info@thundbalance.com', newTab: true, visible: true },
+  { id: 'email', icon: 'email', label: 'Email', url: 'mailto:pt@thundbalance.com', newTab: true, visible: true },
   { id: 'whatsapp', icon: 'whatsapp', label: 'WhatsApp', url: 'https://wa.me/+34617213360', newTab: true, visible: true },
   { id: 'instagram', icon: 'instagram', label: 'Instagram', url: 'https://www.instagram.com/thundbalance/', newTab: true, visible: true },
   { id: 'youtube', icon: 'youtube', label: 'YouTube', url: 'https://www.youtube.com/@thundbalance3668', newTab: true, visible: true }

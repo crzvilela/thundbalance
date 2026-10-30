@@ -231,7 +231,7 @@ class Accounts(unittest.TestCase):
         self.assertEqual(self.events, [])
 
         client = next(m for m in RECEIVED if m["to"] == "ana" + DOMAIN)
-        team = next(m for m in RECEIVED if m["to"] == "info@thundbalance.com")
+        team = next(m for m in RECEIVED if m["to"] == "pt@thundbalance.com")
         password = self.passwords[0]
         self.assertEqual(client["subject"], "Your ThundBalance profile")      # no language chosen: English, only English
         self.assertIn(password, client["html"])
@@ -407,7 +407,7 @@ class Accounts(unittest.TestCase):
             created = self.create(email=email, pack=True, lang=lang)
             self.assertEqual(self.db_user(email)[0] is not None and self.stored_lang(email), lang)
             client = next(m for m in RECEIVED if m["to"] == email)
-            team = next(m for m in RECEIVED if m["to"] == "info@thundbalance.com")
+            team = next(m for m in RECEIVED if m["to"] == "pt@thundbalance.com")
             self.assertEqual(client["subject"], subject)
             self.assertNotIn(" / ", client["subject"])
             self.assertIn(f'<html lang="{lang}"', client["html"])

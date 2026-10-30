@@ -63,7 +63,7 @@ export default function BusinessPanel({ sessions, trials }) {
         <StatCard label={t('biz_active_packs')} value={activePacks} icon="clients" loading={loading} to="/admin/clients" />
         <StatCard label={t('biz_to_renew')} value={toRenew.length} icon="calendar" tone="amber" loading={loading} to="/admin/clients?filter=renew" hint={t('biz_to_renew_hint')} />
         <div className="col-span-2 sm:col-span-1">
-          <StatCard label={t('biz_no_pack')} value={withoutPack.length} icon="requests" tone="sky" loading={loading} to="/admin/clients?filter=no_plan" />
+          <StatCard label={t('biz_no_pack')} value={withoutPack.length} icon="requests" tone="sky" loading={loading} />
         </div>
       </div>
 
@@ -128,7 +128,6 @@ export default function BusinessPanel({ sessions, trials }) {
       <Card className="mt-6 p-6">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-semibold">{t('biz_nopack_title')}</h3>
-          <Link to="/admin/clients?filter=no_plan" className="inline-flex min-h-[44px] items-center text-sm text-emerald-300 hover:text-emerald-200">{t('view_all')} →</Link>
         </div>
         {loading
           ? <Skeleton className="h-14" />

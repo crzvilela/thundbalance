@@ -72,7 +72,7 @@ def log_rows(kind=None, reference=None):
     cur = conn.cursor()
     cur.execute(
         "SELECT tipo, referencia, estado, erro FROM email_log WHERE destinatario LIKE %s OR destinatario = %s ORDER BY id",
-        (f"%{DOMAIN}", "info@thundbalance.com"),
+        (f"%{DOMAIN}", "pt@thundbalance.com"),
     )
     rows = [r for r in cur.fetchall() if (kind is None or r[0] == kind) and (reference is None or r[1] == str(reference))]
     conn.close()
@@ -112,7 +112,7 @@ class Delivery(unittest.TestCase):
         STATE.update(calls=[], mode="ok", fail_first=0)
         os.environ["TRIAL_EMAIL_WEBHOOK_URL"] = self.url
         os.environ["TRIAL_EMAIL_WEBHOOK_SECRET"] = SECRET
-        os.environ["TRIAL_NOTIFY_TO"] = "info@thundbalance.com"
+        os.environ["TEAM_NOTIFICATION_EMAILS"] = "pt@thundbalance.com"
         self.cleanup()
         main._trial_hits.clear()
 

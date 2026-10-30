@@ -55,7 +55,7 @@ def _trial_day(trial):
 
 
 def staff_trial_requested(trial):
-    """(subject, html, text) for info@: a visitor asked for a trial session.
+    """(subject, html, text) for pt@: a visitor asked for a trial session.
     `trial` is the dict built in create_trial_session."""
     day = _trial_day(trial)
     name = _one_line(trial.get("full_name"))

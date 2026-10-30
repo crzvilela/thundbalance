@@ -3,7 +3,7 @@ import { API_URL } from '../config'
 import { adminFetch } from '../api/admin'
 
 export const MAX_EXTRA_RECIPIENTS = 10
-const FALLBACK_TEAM = ['info@thundbalance.com', 'pt@thundbalance.com']
+const FALLBACK_TEAM = ['pt@thundbalance.com']
 const EMAIL = /^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$/
 
 // State for the "Enviar confirmación a" field: whether the client gets the

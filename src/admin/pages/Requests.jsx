@@ -8,6 +8,8 @@ import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { normalizeRequests } from '../requests'
+import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
+import { useBulkSelection } from '../bulk'
 import { firstMismatch, hoursSummary } from '../availability'
 import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon, PageHeader,
@@ -15,6 +17,7 @@ import {
 } from '../ui'
 
 const STATUS_TONE = { pending: 'amber', approved: 'emerald', rejected: 'red' }
+const requestKey = request => request.id
 
 export default function Requests() {
   const { t, dayLabel, dayFull } = useAdminText()
@@ -68,6 +71,7 @@ export default function Requests() {
     )
   }, [requests, archivedRequests, filter, query])
   const activeResource = filter === 'archived' ? archivedResource : requestsResource
+  const selection = useBulkSelection(visible, requestKey)
 
   const reloadAll = () => { requestsResource.reload(); archivedResource.reload() }
 
@@ -99,7 +103,7 @@ export default function Requests() {
   }
 
   const openApprove = (request) => {
-    setForm({ trainer: '', date: '', plan: '', perWeek: String(request.perWeek || 1) })
+    setForm({ trainer: request.trainerId ? String(request.trainerId) : '', date: '', plan: '', perWeek: String(request.perWeek || 1) })       // the one the client asked for is already chosen
     setFormError('')
     setConflicts([])
     resetRecipients()
@@ -204,11 +208,14 @@ export default function Requests() {
       ) : visible.length === 0 ? (
         <Card><EmptyState icon="inbox" title={t(filter === 'archived' ? 'req_empty_archived' : 'req_empty')} /></Card>
       ) : (
+        <>
+        <SelectAllRow selection={selection} />
         <ul className="space-y-3">
           {visible.map(request => (
             <li key={request.id}>
-              <Card className="p-5 transition hover:border-white/20">
+              <Card className={`p-5 transition hover:border-white/20 ${selection.chosen.has(request.id) ? '!border-emerald-400/40' : ''}`}>
                 <div className="flex flex-wrap items-center gap-4">
+                  <RowCheck selection={selection} id={request.id} label={t('bk_select_one').replace('{name}', request.client)} />
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400/25 to-emerald-700/10 text-base font-semibold text-emerald-200">
                     {request.client.split(' ').slice(0, 2).map(part => part[0]).join('').toUpperCase()}
                   </span>
@@ -218,6 +225,7 @@ export default function Requests() {
                       <Badge tone={STATUS_TONE[request.status] || 'neutral'}>{t(`st_${request.status}`)}</Badge>
                     </div>
                     <p className="mt-1 text-sm text-gray-400">{request.plan} · {request.perWeek} {t('req_per_week')}</p>
+                    {request.trainer && <p className="mt-1 text-sm text-sky-200">{t(request.status === 'pending' ? 'req_trainer_requested' : 'req_trainer')}: {request.trainer}</p>}
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       {request.days.map(day => (
                         <span key={day} className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{dayLabel(day)}</span>
@@ -240,7 +248,20 @@ export default function Requests() {
             </li>
           ))}
         </ul>
+        </>
       )}
+
+      <BulkBar
+        selection={selection} onDone={reloadAll}
+        labelOf={id => visible.find(request => request.id === id)?.client || t('bk_deleted_item').replace('{id}', id)}
+        actions={[
+          filter === 'archived'
+            ? { key: 'unarchive', verb: 'unarchive', tone: 'neutral', label: t('bk_a_unarchive'), effects: [t('bk_fx_requests')],
+                run: ids => adminRequest('POST', '/admin/client-requests/bulk', { action: 'unarchive', ids }) }
+            : { key: 'archive', verb: 'archive', tone: 'neutral', label: t('bk_a_archive'), effects: [t('bk_fx_requests')],
+                run: ids => adminRequest('POST', '/admin/client-requests/bulk', { action: 'archive', ids }) }
+        ]}
+      />
 
       <ConfirmDialog
         open={!!archiving} busy={busy} tone="neutral" icon="archive"

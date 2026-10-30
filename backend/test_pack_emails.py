@@ -91,13 +91,13 @@ class EmailPart(unittest.TestCase):
         self.assertLess(ics.index("session-1@"), ics.index("session-2@"))
 
     def test_sends_client_and_team_messages(self):
-        result = send_pack_summary_email(sample_summary(), True, ["info@thundbalance.com", "pt@thundbalance.com", "ANA@example.com", "info@thundbalance.com"])
+        result = send_pack_summary_email(sample_summary(), True, ["pt@thundbalance.com", "ANA@example.com", "pt@thundbalance.com"])
         self.assertTrue(result.ok)
-        self.assertEqual(result.sent_to, ["ana@example.com", "info@thundbalance.com", "pt@thundbalance.com"])
+        self.assertEqual(result.sent_to, ["ana@example.com", "pt@thundbalance.com"])
         self.assertEqual(len(RECEIVED), 2)
         client = next(m for m in RECEIVED if m["to"] == "ana@example.com")
         team = next(m for m in RECEIVED if m["to"] != "ana@example.com")
-        self.assertEqual(team["to"], "info@thundbalance.com,pt@thundbalance.com")
+        self.assertEqual(team["to"], "pt@thundbalance.com")
         self.assertNotIn("Ana", client["subject"])
         self.assertIn("Ana <García>", team["subject"])
         self.assertNotIn(" / ", client["subject"])
@@ -113,8 +113,8 @@ class EmailPart(unittest.TestCase):
         self.assertEqual(uids(client), uids(team))
 
     def test_client_switch_off_and_no_recipients(self):
-        result = send_pack_summary_email(sample_summary(), False, ["info@thundbalance.com"])
-        self.assertEqual((result.sent_to, len(RECEIVED)), (["info@thundbalance.com"], 1))
+        result = send_pack_summary_email(sample_summary(), False, ["pt@thundbalance.com"])
+        self.assertEqual((result.sent_to, len(RECEIVED)), (["pt@thundbalance.com"], 1))
         RECEIVED.clear()
         result = send_pack_summary_email(sample_summary(), False, [])
         self.assertFalse(result.ok)
@@ -122,10 +122,10 @@ class EmailPart(unittest.TestCase):
 
     def test_failure_is_reported_not_raised(self):
         os.environ["TRIAL_EMAIL_WEBHOOK_SECRET"] = "wrong"
-        result = send_pack_summary_email(sample_summary(), True, ["info@thundbalance.com"])
+        result = send_pack_summary_email(sample_summary(), True, ["pt@thundbalance.com"])
         self.assertFalse(result.ok)
         self.assertEqual(result.sent_to, [])
-        self.assertEqual(result.failed, ["ana@example.com", "info@thundbalance.com"])
+        self.assertEqual(result.failed, ["ana@example.com", "pt@thundbalance.com"])
         del os.environ["TRIAL_EMAIL_WEBHOOK_URL"]
         self.assertFalse(send_pack_summary_email(sample_summary(), True, []).ok)
 
@@ -137,14 +137,19 @@ class EmailPart(unittest.TestCase):
             clean_recipients(["a@x.com\nbcc:b@x.com"])
         with self.assertRaises(ValueError):
             clean_recipients([f"u{n}@x.com" for n in range(11)])
+        leaked = os.environ.pop("TEAM_NOTIFICATION_EMAILS", None)      # another test file may have set the newer variable
+        self.addCleanup(lambda: leaked is None or os.environ.__setitem__("TEAM_NOTIFICATION_EMAILS", leaked))
         os.environ["TEAM_EMAILS"] = "one@x.com, two@x.com,one@x.com"
         try:
             self.assertEqual(team_emails(), ["one@x.com", "two@x.com"])
+            os.environ["TEAM_NOTIFICATION_EMAILS"] = "x@y.com, z@y.com"
+            self.assertEqual(team_emails(), ["x@y.com", "z@y.com"])          # the new variable wins over the older one
+            os.environ.pop("TEAM_NOTIFICATION_EMAILS")
             os.environ["TEAM_EMAILS"] = "broken"
-            self.assertEqual(team_emails(), ["info@thundbalance.com", "pt@thundbalance.com"])
+            self.assertEqual(team_emails(), ["pt@thundbalance.com"])
         finally:
             del os.environ["TEAM_EMAILS"]
-        self.assertEqual(team_emails(), ["info@thundbalance.com", "pt@thundbalance.com"])
+        self.assertEqual(team_emails(), ["pt@thundbalance.com"])
 
 
 def endpoint(path, method):
@@ -230,11 +235,11 @@ class PackFlow(unittest.TestCase):
         if not self.plan_id:
             self.skipTest("no 2-week plan in the local database")
         result = endpoint("/admin/clients/{client_id}/renew-pack", "POST")(
-            self.user_id, self.payload(email_extra=["info@thundbalance.com", "pt@thundbalance.com"]))
+            self.user_id, self.payload(email_extra=["pt@thundbalance.com"]))
         self.assertEqual(result["total_sessions"], 4)
         self.assertEqual(self.count_sessions(), 4)
         self.assertEqual(len(self.events), 4)
-        self.assertEqual(sorted(result["email"]["sent_to"]), ["ana.pack.test@example.com", "info@thundbalance.com", "pt@thundbalance.com"])
+        self.assertEqual(sorted(result["email"]["sent_to"]), ["ana.pack.test@example.com", "pt@thundbalance.com"])
         self.assertEqual(result["email"]["failed"], [])
         self.assertEqual(len(RECEIVED), 2)
         ics = RECEIVED[0]["attachments"][0]["data"]
@@ -292,8 +297,8 @@ class PackFlow(unittest.TestCase):
         if not self.plan_id:
             self.skipTest("no 2-week plan in the local database")
         result = endpoint("/admin/clients/{client_id}/renew-pack", "POST")(
-            self.user_id, self.payload(email_client=False, email_extra=["info@thundbalance.com"]))
-        self.assertEqual(result["email"]["sent_to"], ["info@thundbalance.com"])
+            self.user_id, self.payload(email_client=False, email_extra=["pt@thundbalance.com"]))
+        self.assertEqual(result["email"]["sent_to"], ["pt@thundbalance.com"])
         self.assertIn("Ana Test Pack", RECEIVED[0]["subject"])
 
     def test_approving_a_request_uses_the_same_creation_and_email(self):

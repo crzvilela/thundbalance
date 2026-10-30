@@ -23,7 +23,7 @@ BLACK, WHITE = "#000000", "#ffffff"
 MUTED, LINE, PANEL = "#a3a3a3", "#2a2a2a", "#111111"
 
 FOOTER_ADDRESS = "ThundBalance, Carrer de Pallars 286, 08005 Barcelona"
-FOOTER_EMAIL = "info@thundbalance.com"
+FOOTER_EMAIL = "pt@thundbalance.com"
 STUDIO_PLACE = FOOTER_ADDRESS
 
 # The first production origin allowed by CORS in main.py. Set SITE_URL on Render to override.

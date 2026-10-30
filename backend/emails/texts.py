@@ -1,7 +1,7 @@
 """Email texts, one dictionary per language (English, Spanish, Catalan).
 
 Client emails: ONE language each, the client's (see client_lang.resolve_client_lang): subject, title, body, buttons,
-notices, footer and dates all in it. Staff emails (info@, pt@): Spanish only (TEXTS_ES), once.
+notices, footer and dates all in it. Staff emails (pt@): Spanish only (TEXTS_ES), once.
 {placeholders} are filled by tr(); the values are escaped later by the components.
 A text missing in a language falls back on English and writes a warning WITHOUT any personal data (tr / MISSING_HOOK).
 """
@@ -66,6 +66,8 @@ TEXTS_ES = {
     "cal_delay_note": "Google puede tardar hasta 24 horas en reflejar los cambios de un calendario suscrito. Para verlas ya, usa el archivo adjunto.",
     "pack_sessions_title": "Tus sesiones",
     "lbl_plan": "Plan", "lbl_start": "Empieza", "lbl_end": "Termina (última sesión)",
+    "lbl_type": "Tipo", "lbl_duration": "Duración", "lbl_price_session": "Precio por sesión", "lbl_price_total": "Precio total",
+    "plan_type_individual": "Individual (1 a 1)", "plan_type_dual": "Dual (en pareja)", "dur_weeks": "{n} semanas",
     "lbl_per_week": "Sesiones por semana", "lbl_days": "Días de entrenamiento", "lbl_total": "Total de sesiones",
     # welcome (new client created by the admin)
     "welcome_subject": "Tu perfil en ThundBalance",
@@ -127,6 +129,8 @@ TEXTS_EN = {
     "cal_delay_note": "Google can take up to 24 hours to show changes to a subscribed calendar. To see them right away, use the attached file.",
     "pack_sessions_title": "Your sessions",
     "lbl_plan": "Plan", "lbl_start": "Starts", "lbl_end": "Ends (last session)",
+    "lbl_type": "Type", "lbl_duration": "Duration", "lbl_price_session": "Price per session", "lbl_price_total": "Total price",
+    "plan_type_individual": "Individual (1 to 1)", "plan_type_dual": "Dual (in pairs)", "dur_weeks": "{n} weeks",
     "lbl_per_week": "Sessions per week", "lbl_days": "Training days", "lbl_total": "Total sessions",
     "welcome_subject": "Your ThundBalance profile",
     "welcome_title": "Your profile is ready",
@@ -186,6 +190,8 @@ TEXTS_CA = {
     "cal_delay_note": "Google pot trigar fins a 24 hores a mostrar els canvis d'un calendari subscrit. Per veure'ls ja, fes servir el fitxer adjunt.",
     "pack_sessions_title": "Les teves sessions",
     "lbl_plan": "Pla", "lbl_start": "Comença", "lbl_end": "Acaba (última sessió)",
+    "lbl_type": "Tipus", "lbl_duration": "Durada", "lbl_price_session": "Preu per sessió", "lbl_price_total": "Preu total",
+    "plan_type_individual": "Individual (1 a 1)", "plan_type_dual": "Dual (en parella)", "dur_weeks": "{n} setmanes",
     "lbl_per_week": "Sessions per setmana", "lbl_days": "Dies d'entrenament", "lbl_total": "Total de sessions",
     # welcome (new client created by the admin)
     "welcome_subject": "El teu perfil a ThundBalance",

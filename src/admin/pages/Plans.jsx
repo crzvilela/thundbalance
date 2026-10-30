@@ -3,13 +3,16 @@ import { adminRequest } from '../api'
 import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
-import { Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon, PageHeader, Skeleton, TextInput } from '../ui'
+import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
+import { useBulkSelection } from '../bulk'
+import { Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon, PageHeader, SelectInput, Skeleton, TextInput } from '../ui'
 
-const EMPTY = { name: '', months: '', weeks: '', price: '' }
+const EMPTY = { name: '', months: '', weeks: '', price: '', type: 'individual' }
+const planKey = plan => plan[0]
 
 // /plans rows: [id, name, months, price, weeks]
 function toForm(plan) {
-  return { name: plan[1], months: String(plan[2] ?? ''), weeks: String(plan[4] ?? ''), price: String(plan[3] ?? '') }
+  return { name: plan[1], months: String(plan[2] ?? ''), weeks: String(plan[4] ?? ''), price: String(plan[3] ?? ''), type: plan[5] === 'dual' ? 'dual' : 'individual' }
 }
 
 export default function Plans() {
@@ -18,6 +21,7 @@ export default function Plans() {
   const resource = useAdminResource('/plans')
   const plans = useMemo(() => resource.data || [], [resource.data])
 
+  const selection = useBulkSelection(plans, planKey)
   const [editing, setEditing] = useState(null) // null | 'new' | plan row
   const [form, setForm] = useState(EMPTY)
   const [busy, setBusy] = useState(false)
@@ -32,7 +36,8 @@ export default function Plans() {
       nome: form.name.trim(),
       duracao_meses: Number(form.months),
       duration_weeks: Number(form.weeks),
-      preco: Number(form.price)
+      preco: Number(form.price),
+      tipo: form.type
     }
     const valid = payload.nome && payload.duracao_meses >= 1 && payload.duration_weeks >= 1 && form.price !== '' && payload.preco >= 0
     if (!valid) { setFormError(t('pl_invalid')); return }
@@ -87,12 +92,17 @@ export default function Plans() {
       ) : plans.length === 0 ? (
         <Card><EmptyState icon="inbox" title={t('pl_empty')} action={<Button variant="primary" onClick={openNew}>{t('pl_new')}</Button>} /></Card>
       ) : (
+        <>
+        <SelectAllRow selection={selection} />
         <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {plans.map(plan => (
             <li key={plan[0]}>
-              <Card className="group relative h-full overflow-hidden p-6 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-400/30">
+              <Card className={`group relative h-full overflow-hidden p-6 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-400/30 ${selection.chosen.has(plan[0]) ? '!border-emerald-400/50' : ''}`}>
                 <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-emerald-400/5 blur-2xl" />
-                <Badge tone="emerald">{plan[2]} {t('pl_months_short')} · {plan[4]} {t('pl_weeks_short')}</Badge>
+                <div className="relative flex items-center justify-between gap-2">
+                  <span className="flex flex-wrap gap-2"><Badge tone="emerald">{plan[2]} {t('pl_months_short')} · {plan[4]} {t('pl_weeks_short')}</Badge><Badge tone={plan[5] === 'dual' ? 'sky' : 'neutral'}>{t(plan[5] === 'dual' ? 'pl_type_dual' : 'pl_type_individual')}</Badge></span>
+                  <RowCheck selection={selection} id={plan[0]} label={t('bk_select_one').replace('{name}', plan[1])} />
+                </div>
                 <h2 className="mt-4 text-xl font-semibold">{plan[1]}</h2>
                 <p className="mt-2 text-4xl font-semibold tabular-nums">€{Number(plan[3]).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
                 <div className="mt-6 flex gap-2">
@@ -103,7 +113,17 @@ export default function Plans() {
             </li>
           ))}
         </ul>
+        </>
       )}
+
+      <BulkBar
+        selection={selection} onDone={resource.reload}
+        labelOf={id => plans.find(plan => plan[0] === id)?.[1] || t('bk_deleted_item').replace('{id}', id)}
+        actions={[{
+          key: 'delete', verb: 'delete', tone: 'danger', label: t('bk_a_delete'), effects: [t('bk_fx_plans')],
+          run: ids => adminRequest('POST', '/admin/plans/bulk', { action: 'delete', ids })
+        }]}
+      />
 
       <Drawer
         open={!!editing} onClose={() => setEditing(null)} busy={busy}
@@ -118,6 +138,12 @@ export default function Plans() {
           <Field label={t('pl_months')}><TextInput type="number" min="1" value={form.months} onChange={set('months')} disabled={busy} /></Field>
           <Field label={t('pl_weeks')} hint={t('pl_weeks_hint')}><TextInput type="number" min="1" value={form.weeks} onChange={set('weeks')} disabled={busy} /></Field>
           <Field label={t('pl_price')}><TextInput type="number" min="0" step="0.01" value={form.price} onChange={set('price')} disabled={busy} /></Field>
+          <Field label={t('pl_type')}>
+            <SelectInput value={form.type} onChange={set('type')} disabled={busy}>
+              <option value="individual">{t('pl_type_individual')}</option>
+              <option value="dual">{t('pl_type_dual')}</option>
+            </SelectInput>
+          </Field>
         </div>
         {formError && <p role="alert" className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{formError}</p>}
       </Drawer>

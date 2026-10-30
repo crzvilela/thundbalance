@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { auth } from '../firebase/auth'
 import Navbar from '../components/Navbar'
 import TempPasswordNotice from '../components/TempPasswordNotice'
+import TrainerChoice from '../components/forms/TrainerChoice'
 import { API_URL } from '../config'
 import { useI18n } from '../i18n/I18nContext'
 
@@ -18,6 +19,11 @@ function TrainingRequest() {
   const [preferredDays, setPreferredDays] = useState([])
 
   const [preferredTime, setPreferredTime] = useState('18:00')
+
+  const [trainerId, setTrainerId] = useState('')               // the trainer asked for (optional)
+  const [trainerStatus, setTrainerStatus] = useState('idle')   // idle | checking | ok | busy | none
+  const [trainerRefresh, setTrainerRefresh] = useState(0)       // the server said the trainer was taken: check again
+  const [problem, setProblem] = useState('')                    // a translation key, shown in the page (no alert boxes)
 
   // Start times offered per weekday (only when at least one trainer works).
   const [schedule, setSchedule] = useState(null)
@@ -78,8 +84,9 @@ function TrainingRequest() {
   const handleSubmit = async () => {
 
     if (!auth.currentUser) { navigate('/login'); return }
-    if (!preferredDays.length) { alert(t('tr_choose_day')); return }
-    if (!effectiveTime) { alert(t('tr_no_time')); return }
+    setProblem('')
+    if (!preferredDays.length) { setProblem('tr_choose_day'); return }
+    if (!effectiveTime) { setProblem('tr_no_time'); return }
     setSubmitting(true)
 
     try {
@@ -103,7 +110,9 @@ function TrainingRequest() {
 
             preferred_days: preferredDays.join(','),
 
-            preferred_time: effectiveTime
+            preferred_time: effectiveTime,
+
+            trainer_id: trainerId || null
 
           })
 
@@ -114,7 +123,12 @@ function TrainingRequest() {
 
         const body = await response.json().catch(() => ({}))
 
-        alert(typeof body.detail === 'string' ? body.detail : t('tr_err_send'))
+        if (response.status === 409 && body.detail?.code === 'trainer_unavailable') {
+          setTrainerRefresh(count => count + 1)      // somebody took that trainer a moment ago: read the free ones again
+          setProblem('tc_race')
+        } else {
+          setProblem(typeof body.detail === 'string' ? `msg:${body.detail}` : 'tr_err_send')
+        }
 
         return
 
@@ -130,9 +144,7 @@ function TrainingRequest() {
 
       console.log(error)
 
-      alert(
-        error.message || t('tr_err_generic')
-      )
+      setProblem(error instanceof TypeError ? 'tr_err_generic' : `msg:${error.message || t('tr_err_generic')}`)
 
     } finally {
       setSubmitting(false)
@@ -259,9 +271,24 @@ function TrainingRequest() {
 
           </div>
 
+          <div className="mb-8">
+
+            <TrainerChoice
+              value={trainerId} onChange={setTrainerId} weekdays={preferredDays} time={effectiveTime}
+              refreshKey={trainerRefresh} onStatus={setTrainerStatus} disabled={submitting}
+              labelClass="block mb-2 text-gray-400"
+              selectClass="w-full bg-black border border-white/20 p-4 text-white"
+            />
+
+          </div>
+
+          {problem && (
+            <p role="alert" className="mb-6 rounded-lg border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">{problem.startsWith('msg:') ? problem.slice(4) : t(problem)}</p>
+          )}
+
           <button
             onClick={handleSubmit}
-            disabled={submitting || plans.length === 0}
+            disabled={submitting || plans.length === 0 || trainerStatus === 'busy' || trainerStatus === 'none'}
             className="w-full sm:w-auto bg-white text-black px-8 py-4 uppercase tracking-[3px] hover:bg-gray-300 transition duration-300"
           >
             {submitting ? t('tr_submitting') : plans.length ? t('tr_submit') : t('tr_unavailable')}

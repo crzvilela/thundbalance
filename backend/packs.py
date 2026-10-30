@@ -17,6 +17,7 @@ owns the transaction and the list of created event ids, so everything can be
 rolled back together.
 """
 import traceback
+import logging
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException
@@ -28,6 +29,28 @@ from emails.dates import parse_madrid
 import calendar_feed
 import calendar_sync
 from google_calendar import create_calendar_event, delete_calendar_event, describe_error, http_status
+
+logger = logging.getLogger("thundbalance.packs")
+
+PLAN_TYPES = ("individual", "dual")
+
+
+def plan_facts(cursor, plan_id):
+    """What the confirmation email says about a plan: type (individual | dual), duration in weeks and the price of ONE
+    session (plans.preco is per session, like the "/session" of the price list). Reads plans.tipo only when the column
+    exists (it is added at startup by ensure_pack_columns), so a server that has not restarted yet still works."""
+    cursor.execute("SELECT 1 FROM information_schema.columns WHERE table_name = 'plans' AND column_name = 'tipo'")
+    kind = "tipo" if cursor.fetchone() else "'individual'"
+    cursor.execute(f"SELECT nome, duration_weeks, duracao_meses, preco, {kind} FROM plans WHERE id = %s", (plan_id,))
+    row = cursor.fetchone()
+    if not row:
+        return None
+    return {
+        "name": row[0], "weeks": row[1], "months": row[2],
+        "price": float(row[3]) if row[3] is not None else None,
+        "type": row[4] if row[4] in PLAN_TYPES else "individual",
+    }
+
 
 DAY_MAP = {
     "Monday": 0,
@@ -229,11 +252,10 @@ def create_pack(
     [{"id", "start" (Madrid datetime), "trainer", "number"}]. Sessions whose
     calendar event could not be created are still created (and flagged).
     """
-    cursor.execute("SELECT nome, duration_weeks FROM plans WHERE id = %s", (plan_id,))
-    plan = cursor.fetchone()
-    if not plan or not plan[1]:
+    plan = plan_facts(cursor, plan_id)
+    if not plan or not plan["weeks"]:
         raise HTTPException(status_code=404, detail="Plan not found")
-    plan_name, weeks = plan
+    plan_name, weeks = plan["name"], plan["weeks"]
 
     total_sessions = weeks * sessions_per_week
     session_dates = generate_session_dates(start_date, preferred_days, total_sessions)
@@ -325,6 +347,7 @@ def create_pack(
         "pack_id": pack_id,
         "conflicts": conflicts,
         "plan_name": plan_name,
+        "plan": plan,
         "total_sessions": total_sessions,
         "session_dates": session_dates,
         "sessions": sessions,
@@ -384,20 +407,26 @@ def clean_pack_recipients(email_extra, client_email):
 
 def email_pack(created, *, client_name, client_email, days, sessions_per_week, trainer_name, to_client, extra):
     """Sends the pack summary after the sessions are saved. A failure never
-    undoes them: it is reported in the answer so the panel can warn the admin."""
-    summary = {
-        "client_name": client_name,
-        "client_email": client_email,
-        "plan_name": created["plan_name"],
-        "sessions_per_week": sessions_per_week,
-        "days": days,
-        "trainer": trainer_name,
-        "sessions": created["sessions"],
-    }
-    if to_client:
-        summary["calendar_links"] = calendar_feed.links_for_email(client_email)
-    result = send_pack_summary_email(summary, to_client=to_client, extra_recipients=extra)
-    return {"sent_to": result.sent_to, "failed": result.failed, "problem": result.problem}
+    undoes them: it is reported in the answer so the panel can warn the admin. NOTHING in here may raise (the pack is
+    already saved): any error becomes problem="error" and only its type is logged, never an address or a name."""
+    try:
+        summary = {
+            "client_name": client_name,
+            "client_email": client_email,
+            "plan_name": created["plan_name"],
+            "plan": created.get("plan"),
+            "sessions_per_week": sessions_per_week,
+            "days": days,
+            "trainer": trainer_name,
+            "sessions": created["sessions"],
+        }
+        if to_client:
+            summary["calendar_links"] = calendar_feed.links_for_email(client_email)
+        result = send_pack_summary_email(summary, to_client=to_client, extra_recipients=extra)
+        return {"sent_to": result.sent_to, "failed": result.failed, "problem": result.problem}
+    except Exception as error:  # noqa: BLE001
+        logger.error("Pack email could not be prepared (%s)", type(error).__name__)
+        return {"sent_to": [], "failed": [], "problem": "error"}
 
 
 def validate_pack_request(cursor, *, trainer_id, sessions_per_week, preferred_days, start_date):
@@ -434,6 +463,8 @@ def ensure_pack_columns():
     cursor = conn.cursor()
     try:
         cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_plan_id INTEGER")
+        # individual (1 to 1) or dual (in pairs): the confirmation email says which one
+        cursor.execute("ALTER TABLE plans ADD COLUMN IF NOT EXISTS tipo TEXT NOT NULL DEFAULT 'individual'")
         conn.commit()
     finally:
         cursor.close()

@@ -1,7 +1,7 @@
 import { useI18n } from '../i18n/I18nContext'
 
 const SOON_DAYS = 7
-const STUDIO_EMAIL = 'info@thundbalance.com'
+const STUDIO_EMAIL = 'pt@thundbalance.com'
 
 const stampOf = (session) => `${session.date} ${String(session.time || '').slice(0, 5)}`
 

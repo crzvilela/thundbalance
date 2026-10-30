@@ -394,8 +394,8 @@ DEFAULT_LANDING_CONTENT = {
             "privacyPolicyUrl": "",
             "termsUrl": "",
             "contactUsUrl": "https://www.thundbalance.com/contactus",
-            "joinUsEmail": "mailto:info@thundbalance.com?subject=I%20am%20interested%20to%20join%20TB%20team",
-            "contactEmail": "info@thundbalance.com",
+            "joinUsEmail": "mailto:pt@thundbalance.com?subject=I%20am%20interested%20to%20join%20TB%20team",
+            "contactEmail": "pt@thundbalance.com",
             "whatsappNumber": "+34 617 21 33 60",
             "whatsappLink": "https://wa.me/+34617213360",
             "instagramUrl": "https://www.instagram.com/thundbalance"

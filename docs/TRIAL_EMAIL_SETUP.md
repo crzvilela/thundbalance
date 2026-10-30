@@ -1,7 +1,7 @@
 # Aviso por e-mail de sesiones de prueba
 
-Cuando alguien reserva una sesión de prueba, el backend avisa a `info@thundbalance.com`.
-El envío usa un Google Apps Script (funciona en Render gratis y no necesita acceso a la cuenta de info@).
+Cuando alguien reserva una sesión de prueba, el backend avisa a `pt@thundbalance.com`.
+El envío usa un Google Apps Script (funciona en Render gratis y no necesita acceso a la cuenta de pt@).
 
 1. Entra en https://script.google.com con la cuenta Google creada para el sitio → **Nuevo proyecto**.
 2. Pega el contenido de `docs/trial-email.gs` (usa GmailApp: la primera vez ejecuta una función de prueba para autorizar el permiso de Gmail). Cambia `SECRET` por una clave larga inventada por ti.
@@ -11,7 +11,7 @@ El envío usa un Google Apps Script (funciona en Render gratis y no necesita acc
 5. En Render → servicio del backend → **Environment**, añade:
    - `TRIAL_EMAIL_WEBHOOK_URL` = la URL `/exec`
    - `TRIAL_EMAIL_WEBHOOK_SECRET` = la misma clave del paso 2
-   - (opcional) `TRIAL_NOTIFY_TO` = otro destinatario; por defecto `info@thundbalance.com`
+   - (opcional) `TEAM_NOTIFICATION_EMAILS` = destinatarios de TODOS los avisos internos (separados por comas); por defecto `pt@thundbalance.com`. Las variables antiguas `TRIAL_NOTIFY_TO`, `CONTACT_NOTIFY_TO` y `TEAM_EMAILS` ya no hacen falta (bórralas en Render si existen)
 6. Guarda y redeploya. Pide al jefe que marque el remitente como seguro para que no vaya a spam.
 
 Si las variables no están definidas, no se envía nada y las reservas funcionan igual.
@@ -27,7 +27,7 @@ El script `docs/trial-email.gs` ahora entiende dos formatos: el nuevo (asunto, H
 
 ## Emails al renovar o asignar un pack
 
-Al renovar un pack (y al aprobar una solicitud de entrenamiento) el panel envía un email con el resumen y un `.ics` con todas las sesiones, usando el mismo script de Google. En el modal, "Enviar confirmación a" viene con las direcciones del equipo, que se pueden quitar o ampliar (máximo 10 extra). Para cambiar las direcciones por defecto, en Render define `TEAM_EMAILS` (separadas por comas), por ejemplo `info@thundbalance.com,pt@thundbalance.com`.
+Al renovar un pack (y al aprobar una solicitud de entrenamiento) el panel envía un email con el resumen y un `.ics` con todas las sesiones, usando el mismo script de Google. En el modal, "Enviar confirmación a" viene con las direcciones del equipo, que se pueden quitar o ampliar (máximo 10 extra). Para cambiar las direcciones por defecto, en Render define `TEAM_NOTIFICATION_EMAILS` (separadas por comas).
 
 ## Clientes creados desde el panel (Firebase Admin)
 

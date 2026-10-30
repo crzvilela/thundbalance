@@ -5,6 +5,8 @@ import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { parseDateKey } from '../requests'
+import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
+import { useBulkSelection } from '../bulk'
 import SectionCard from '../../components/admin/SectionCard'
 import { canStart, hoursSummary, weekdayOf } from '../availability'
 import {
@@ -13,6 +15,8 @@ import {
 } from '../ui'
 
 const STATUS_TONE = { pending: 'amber', approved: 'sky', confirmed: 'emerald', declined: 'red', rejected: 'red', cancelled: 'neutral' }
+const trialKey = trial => trial.id
+const canCancelTrial = trial => trial.status === 'approved' || trial.status === 'confirmed'     // the only ones the server cancels
 
 export default function TrialSessions() {
   const { t, language, dayFull } = useAdminText()
@@ -59,6 +63,8 @@ export default function TrialSessions() {
       (!needle || `${trial.name} ${trial.email} ${trial.phone}`.toLowerCase().includes(needle))
     )
   }, [trials, filter, query])
+
+  const selection = useBulkSelection(visible, trialKey, canCancelTrial)
 
   const run = async (action, successKey, done) => {
     setBusy(true)
@@ -200,11 +206,14 @@ export default function TrialSessions() {
       ) : visible.length === 0 ? (
         <Card><EmptyState icon="inbox" title={t('tr_empty')} /></Card>
       ) : (
+        <>
+        <SelectAllRow selection={selection} />
         <ul className="space-y-3">
           {visible.map(trial => (
             <li key={trial.id}>
-              <Card className="p-5 transition hover:border-white/20">
+              <Card className={`p-5 transition hover:border-white/20 ${selection.chosen.has(trial.id) ? '!border-emerald-400/40' : ''}`}>
                 <div className="flex flex-wrap items-start gap-4">
+                  {canCancelTrial(trial) && <RowCheck selection={selection} id={trial.id} label={t('bk_select_one').replace('{name}', trial.name)} />}
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-400/25 to-sky-700/10 text-base font-semibold text-sky-200">
                     {trial.name.split(' ').slice(0, 2).map(part => part[0]).join('').toUpperCase()}
                   </span>
@@ -225,7 +234,7 @@ export default function TrialSessions() {
                       {trial.goal && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{t('tr_goal')}: {trial.goal}</span>}
                       {trial.experience && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{trial.experience}</span>}
                       {trial.age && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{trial.age}</span>}
-                      {trial.trainer && <span className="rounded-md border border-sky-400/20 bg-sky-400/10 px-2 py-0.5 text-xs text-sky-200">{t('tr_trainer')}: {trial.trainer}</span>}
+                      {trial.trainer && <span className="rounded-md border border-sky-400/20 bg-sky-400/10 px-2 py-0.5 text-xs text-sky-200">{t(trial.status === 'pending' ? 'tr_trainer_requested' : 'tr_trainer')}: {trial.trainer}</span>}
                     </div>
                     <SectionCard className="mt-4 !p-4" title={t('fx_tab_activity')} collapsible defaultOpen={(trial.received_email?.status === 'failed' || trial.approval_email?.status === 'failed' || trial.calendar_missing)}>
                     <p className={`mb-3 text-sm ${trial.received_email?.status === 'failed' ? 'text-red-300' : 'text-gray-400'}`}>
@@ -264,7 +273,7 @@ export default function TrialSessions() {
                       </Button>
                     )}
                     {trial.status === 'pending' && <>
-                      <Button variant="primary" onClick={() => { setTrainerId(''); setFormError(''); setApproving(trial) }}><Icon name="check" className="h-4 w-4" />{t('req_approve')}</Button>
+                      <Button variant="primary" onClick={() => { setTrainerId(trial.trainer_id ? String(trial.trainer_id) : ''); setFormError(''); setApproving(trial) }}><Icon name="check" className="h-4 w-4" />{t('req_approve')}</Button>
                       <Button variant="danger" onClick={() => { setReason(''); setFormError(''); setDeclining(trial) }}>{t('req_reject')}</Button>
                     </>}
                     {trial.status === 'approved' && (
@@ -281,6 +290,7 @@ export default function TrialSessions() {
             </li>
           ))}
         </ul>
+        </>
       )}
 
       <Drawer
@@ -329,6 +339,15 @@ export default function TrialSessions() {
         </Field>
         {formError && <p role="alert" className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{formError}</p>}
       </Drawer>
+
+      <BulkBar
+        selection={selection} onDone={trialsResource.reload}
+        labelOf={id => visible.find(trial => trial.id === id)?.name || t('bk_deleted_item').replace('{id}', id)}
+        actions={[{
+          key: 'cancel', verb: 'cancel', tone: 'danger', label: t('bk_a_cancel'), effects: [t('bk_fx_trials')],
+          run: ids => adminRequest('POST', '/admin/trial-sessions/bulk', { action: 'cancel', ids })
+        }]}
+      />
 
       <ConfirmDialog
         open={!!cancelling} busy={busy}

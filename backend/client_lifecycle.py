@@ -40,6 +40,7 @@ from pydantic import BaseModel
 
 import calendar_sync
 import firebase_accounts as accounts
+from bulk_actions import BulkPayload, run_each, unknown_action
 import google_calendar
 from database import get_connection
 
@@ -177,6 +178,36 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
             raise HTTPException(status_code=404, detail="Client not found")
         _refuse_protected(row[2], row[3], claims, admin_email)
         return row
+
+    # --------------------------------------------------------------------- bulk
+    @app.post("/admin/clients/bulk")
+    def bulk_clients(data: BulkPayload, claims=Depends(require_admin)):
+        """archive | unarchive | delete on several clients: each one goes through the SAME function as the single action
+        (same protections, calendar, audit and steps). delete also needs confirm_word = ELIMINAR."""
+        if data.action == "archive":
+            payload = ArchivePayload(cancel_future_sessions=data.cancel_future_sessions, confirm_cancel=data.confirm_cancel)
+            return run_each("clients", "archive", data.ids, lambda client_id: archive_client(client_id, payload, claims))
+        if data.action == "unarchive":
+            return run_each("clients", "unarchive", data.ids, lambda client_id: unarchive_client(client_id, claims))
+        if data.action == "delete":
+            if data.confirm_word.strip().upper() != "ELIMINAR":
+                raise HTTPException(status_code=422, detail={"code": "confirmation_required", "message": "Type ELIMINAR to confirm."})
+
+            def delete_one(client_id):
+                conn = get_connection()
+                cursor = conn.cursor()
+                try:
+                    cursor.execute("SELECT nome FROM users WHERE id = %s", (client_id,))
+                    row = cursor.fetchone()
+                finally:
+                    cursor.close()
+                    conn.close()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Client not found")
+                # the typed name of the single action is replaced by the explicit bulk confirmation above
+                return delete_client(client_id, DeletePayload(confirm_data=True, confirm_name=row[0]), claims)
+            return run_each("clients", "delete", data.ids, delete_one)
+        raise unknown_action(data.action)
 
     # ------------------------------------------------------------------ archive
     @app.post("/admin/clients/{client_id}/archive")

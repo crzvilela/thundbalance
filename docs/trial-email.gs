@@ -35,7 +35,7 @@ function doPost(e) {
 function sendMessage(data) {
   const options = {
     name: data.name || 'ThundBalance',
-    replyTo: data.replyTo || 'info@thundbalance.com'
+    replyTo: data.replyTo || 'pt@thundbalance.com'
   };
   if (data.html) options.htmlBody = data.html;
   if (data.cc) options.cc = data.cc;

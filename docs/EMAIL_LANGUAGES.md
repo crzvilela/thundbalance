@@ -2,7 +2,7 @@
 
 **Every e-mail to a client is written in ONE language: the client's** (`en`, `es` or `ca`): subject, title, body, buttons,
 notices, footer, weekdays, months and dates, the plain-text version and `<html lang>` / `Content-Language`.
-No e-mail puts two languages together ("ES / EN") any more. E-mails to the team (info@, pt@) are Spanish only, unchanged.
+No e-mail puts two languages together ("ES / EN") any more. E-mails to the team (pt@) are Spanish only, unchanged.
 
 ## Which language is used (`backend/client_lang.py`, `resolve_client_lang`)
 

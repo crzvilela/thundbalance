@@ -3,7 +3,7 @@
 To the studio: Spanish only. To the client: ONE language per email (en | es | ca)."""
 
 ES = {
-    # ---- to the studio (info@): Spanish only
+    # ---- to the studio (pt@): Spanish only
     "rs_staff_req_subject": "Solicitud de cambio de fecha · {name} ({number})",
     "rs_staff_req_title": "Solicitud de cambio de fecha",
     "rs_staff_req_manage": "Revisa la solicitud en el panel: puedes aprobarla, rechazarla o proponer otra fecha.",

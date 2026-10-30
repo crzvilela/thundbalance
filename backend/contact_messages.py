@@ -14,8 +14,7 @@ messages or any data of the people who wrote them.
 
 Spam protection: a hidden "website" field that real people never fill, a limit
 per IP address and a limit per e-mail address, and length limits on every field.
-The notice e-mail goes to CONTACT_NOTIFY_TO (default: the same address as the
-trial-session notices, TRIAL_NOTIFY_TO / info@thundbalance.com).
+The notice e-mail goes to the team (TEAM_NOTIFICATION_EMAILS, default pt@thundbalance.com), with the sender as Reply-To.
 """
 import logging
 import os
@@ -36,7 +35,7 @@ import validators
 PER_IP_LIMIT = 5          # messages per hour from one IP address
 PER_EMAIL_LIMIT = 3       # messages per hour with the same sender e-mail
 WINDOW_SECONDS = 3600
-MAX_BULK = 100            # ids per bulk request
+MAX_BULK = 200            # ids per bulk request
 PAGE_MAX = 100
 
 logger = logging.getLogger("thundbalance.contact")
@@ -309,7 +308,7 @@ def register_contact_routes(app, require_admin):
         # The message is already saved; a mail problem must not fail the request.
         try:
             subject_line, html, text = staff_contact_message({"name": name, "email": email, "message": message, "created": created})
-            to = os.getenv("CONTACT_NOTIFY_TO", "").strip() or studio_address()
+            to = studio_address()
             send_email_async(to, subject_line, html, text, reply_to=email, kind="staff_contact_message", lang="es")
         except Exception as error:  # noqa: BLE001
             logger.warning("Contact notification could not be sent: %s", type(error).__name__)

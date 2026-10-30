@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { adminRequest } from '../api'
 import { useAdminText } from '../useAdminText'
+import { reportEmailResult } from '../recipientsState'
 import { useFeatures } from '../../api/features'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
@@ -18,6 +19,8 @@ import { formatPhone, toE164 } from '../../utils/validators'
 import { ADMIN_EMAIL } from '../../config'
 import { auth } from '../../firebase/auth'
 import { ArchiveDialog, DeleteDialog } from '../ClientLifecycleDialogs'
+import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
+import { useBulkSelection } from '../bulk'
 import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Icon,
   PageHeader, SelectInput, Skeleton, TextInput
@@ -41,6 +44,7 @@ function ProgressBar({ done, total }) {
 
 const TAB_IDS = ['resumen', 'sesiones', 'packs', 'datos', 'facturacion', 'actividad']
 const TAB_PREFIX = 'client-file'
+const sessionKey = session => session.id
 
 function Detail({ label, children, wide = false }) {
   return (
@@ -94,6 +98,8 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
   const active = sessions.filter(session => session.status !== 'Cancelled')
   const done = active.filter(session => session.date < today).length
   const upcoming = active.filter(session => session.date >= today).sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))
+  const canCancelSession = useCallback(session => session.status !== 'Cancelled' && session.date >= today, [today])     // what the server can still cancel
+  const sessionSelection = useBulkSelection(sessions, sessionKey, canCancelSession)
   const nextSession = upcoming[0] || null
   const lastSession = active.filter(session => session.date < today).sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))[0] || null
   const failedSync = sessions.filter(session => session.calendar_sync_status === 'failed').length
@@ -149,8 +155,9 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
   const assign = async () => {
     setSaving(true)
     try {
-      await adminRequest('POST', '/admin/assign-plan', { user_id: clientId, plan_id: Number(planChoice) })
+      const result = await adminRequest('POST', '/admin/assign-plan', { user_id: clientId, plan_id: Number(planChoice) })
       toast.push(t('cl_plan_saved'))
+      reportEmailResult(toast, t, result.email)       // the confirmation email to the client (and the team)
       setPlanChoice('')
       detail.reload()
       onChanged()
@@ -307,6 +314,7 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
       <EmptyState icon="calendar" title={t('cl_no_sessions')} />
     ) : (
       <div className="space-y-5">
+        <SelectAllRow selection={sessionSelection} />
         {groups.map(group => (
           <div key={group.key}>
             <p className="mb-2 flex flex-wrap items-baseline justify-between gap-2 text-sm font-medium text-gray-300">
@@ -318,7 +326,10 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
                 const cancelled = session.status === 'Cancelled'
                 const past = session.date < today
                 return (
-                  <li key={session.id} className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-5 sm:py-4 ${cancelled || past ? 'opacity-60' : ''}`}>
+                  <li key={session.id} className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-5 sm:py-4 ${cancelled || past ? 'opacity-60' : ''} ${sessionSelection.chosen.has(session.id) ? 'bg-emerald-400/[0.05]' : ''}`}>
+                    {canCancelSession(session)
+                      ? <RowCheck selection={sessionSelection} id={session.id} label={t('bk_select_one').replace('{name}', `${session.number || ''} ${session.date} ${session.time}`.trim())} />
+                      : <span className="w-11 shrink-0" aria-hidden="true" />}
                     <span className="w-10 text-sm tabular-nums text-gray-500 sm:w-14">{session.number || ''}</span>
                     <span className="min-w-0 flex-1 basis-40">
                       <span className="block text-base font-medium">{parseDateKey(session.date).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
@@ -543,6 +554,14 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
           onDone={() => { setRenewing(false); detail.reload(); onChanged() }}
         />
       )}
+      <BulkBar
+        selection={sessionSelection} onDone={() => { detail.reload(); onChanged() }}
+        labelOf={id => { const found = sessions.find(session => session.id === id); return found ? `${found.number || ''} ${found.date} ${found.time}`.trim() : t('bk_deleted_item').replace('{id}', id) }}
+        actions={[{
+          key: 'cancel', verb: 'cancel', tone: 'danger', label: t('bk_a_cancel'), effects: [t('bk_fx_sessions')],
+          run: ids => adminRequest('POST', '/admin/sessions/bulk', { action: 'cancel', ids })
+        }]}
+      />
       <ConfirmDialog
         open={!!cancelTarget} busy={cancelling}
         title={t('cl_cancel_title')} text={t('cl_cancel_text')}
@@ -574,6 +593,8 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
 }
 
 const PAGE_SIZE = 50
+const clientKey = client => client.id
+const canSelectClient = client => !isProtectedAccount(client.email)     // the admin and whoever is signed in are never touched
 
 export default function Clients() {
   const { t } = useAdminText()
@@ -585,7 +606,7 @@ export default function Clients() {
   const [query, setQuery] = useState('')
   const [shown, setShown] = useState(PAGE_SIZE)                 // how many rows are drawn (50 more each time)
   const [searchParams, setSearchParams] = useSearchParams()
-  const [filter, setFilter] = useState(() => (['with_plan', 'no_plan', 'pending', 'renew', 'archived'].includes(searchParams.get('filter')) ? searchParams.get('filter') : 'all'))
+  const [filter, setFilter] = useState(() => (['pending', 'renew', 'archived'].includes(searchParams.get('filter')) ? searchParams.get('filter') : 'all'))
   const reloadAll = () => { clientsResource.reload(); archivedResource.reload() }
   // the open file lives in the URL (?client=ID&tab=sesiones): reload and back keep it
   const selectedId = Number(searchParams.get('client')) || null
@@ -606,8 +627,6 @@ export default function Clients() {
 
   const counts = useMemo(() => ({
     all: activeClients.length,
-    with_plan: activeClients.filter(client => client.plan).length,
-    no_plan: activeClients.filter(client => !client.plan).length,
     pending: activeClients.filter(client => client.has_pending_request).length,
     renew: activeClients.filter(client => client.pack_status === 'expired' || client.pack_status === 'expiring').length,
     archived: archivedClients.length
@@ -617,19 +636,18 @@ export default function Clients() {
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
     return clients.filter(client => {
-      if (filter === 'with_plan' && !client.plan) return false
-      if (filter === 'no_plan' && client.plan) return false
       if (filter === 'pending' && !client.has_pending_request) return false
       if (filter === 'renew' && client.pack_status !== 'expired' && client.pack_status !== 'expiring') return false
       return !needle || String(client.email || '').toLowerCase().includes(needle)
     })
   }, [clients, filter, query])
   const rows = visible.slice(0, shown)
+  const selection = useBulkSelection(rows, clientKey, canSelectClient)
 
   const changeQuery = (value) => { setQuery(value); setShown(PAGE_SIZE) }
   const changeFilter = (key) => { setFilter(key); setShown(PAGE_SIZE) }
 
-  const filters = [['all', t('cl_all')], ['with_plan', t('cl_with_plan')], ['no_plan', t('cl_no_plan_filter')], ['pending', t('cl_pending')], ['renew', t('biz_to_renew')], ['archived', t('lc_archived_filter')]]
+  const filters = [['all', t('cl_all')], ['pending', t('cl_pending')], ['renew', t('biz_to_renew')], ['archived', t('lc_archived_filter')]]
 
   return (
     <div className="admin-fade">
@@ -683,9 +701,12 @@ export default function Clients() {
       ) : (
         <>
           <p role="status" className="mb-2 px-1 text-xs text-gray-500">{t(visible.length === 1 ? 'cl_count_one' : 'cl_count_other').replace('{n}', visible.length)}</p>
+          <SelectAllRow selection={selection} />
           <ul className="divide-y divide-white/[0.06] overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02]">
             {rows.map(client => (
-              <ClientRow key={client.id} client={client} onOpen={setSelectedId} label={t('cl_open').replace('{email}', client.email)} />
+              <ClientRow key={client.id} client={client} onOpen={setSelectedId} label={t('cl_open').replace('{email}', client.email)}
+                selected={selection.chosen.has(client.id)}
+                check={canSelectClient(client) ? <RowCheck selection={selection} id={client.id} label={t('bk_select_one').replace('{name}', client.email)} /> : null} />
             ))}
           </ul>
           {visible.length > rows.length && (
@@ -696,6 +717,27 @@ export default function Clients() {
           )}
         </>
       )}
+
+      <BulkBar
+        selection={selection} onDone={reloadAll}
+        labelOf={id => clients.find(client => client.id === id)?.email || t('bk_deleted_item').replace('{id}', id)}
+        actions={[
+          filter === 'archived'
+            ? { key: 'unarchive', verb: 'unarchive', tone: 'neutral', label: t('bk_a_unarchive'), effects: [],
+                run: ids => adminRequest('POST', '/admin/clients/bulk', { action: 'unarchive', ids }) }
+            : { key: 'archive', verb: 'archive', tone: 'neutral', label: t('bk_a_archive'), effects: [t('bk_fx_client_archive')],
+                extraInitial: { cancel: false },
+                renderExtra: (extra, setExtra, busy) => (
+                  <label className="flex min-h-[44px] cursor-pointer items-start gap-3 text-sm text-gray-300">
+                    <input type="checkbox" checked={extra.cancel} disabled={busy} onChange={event => setExtra({ ...extra, cancel: event.target.checked })} className="mt-1 h-5 w-5 shrink-0 accent-emerald-400" />
+                    {t('bk_fx_client_cancel')}
+                  </label>),
+                run: (ids, extra) => adminRequest('POST', '/admin/clients/bulk', { action: 'archive', ids, cancel_future_sessions: !!extra.cancel, confirm_cancel: !!extra.cancel }) },
+          { key: 'delete', verb: 'delete', tone: 'danger', label: t('bk_a_delete'), word: 'ELIMINAR', effects: [t('bk_fx_calendar'), t('bk_fx_client_delete')],
+            run: (ids, extra) => adminRequest('POST', '/admin/clients/bulk', { action: 'delete', ids, confirm_word: extra.word })
+          }
+        ]}
+      />
 
       {adding && (
         <AddClientDrawer

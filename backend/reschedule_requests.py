@@ -40,6 +40,7 @@ import calendar_sync
 import features
 import inbox
 import reschedule_notifications as notify
+import trainer_choice
 from availability import hhmm, slot_problem
 from database import get_connection
 from emails.dates import madrid_to_utc, now_madrid, to_madrid
@@ -87,6 +88,8 @@ def ensure_tables():
             """
         )
         cursor.execute("ALTER TABLE reschedule_requests ADD COLUMN IF NOT EXISTS lang TEXT")
+        # the trainer the client asks for at the NEW hour (empty = the session keeps its trainer)
+        cursor.execute("ALTER TABLE reschedule_requests ADD COLUMN IF NOT EXISTS requested_trainer_id INTEGER REFERENCES trainers(id)")
         # true: the studio proposed inside the notice period and confirmed it, so the client may answer until the session starts
         cursor.execute("ALTER TABLE reschedule_requests ADD COLUMN IF NOT EXISTS counter_late BOOLEAN NOT NULL DEFAULT FALSE")
         cursor.execute("CREATE INDEX IF NOT EXISTS reschedule_requests_status_idx ON reschedule_requests (status)")
@@ -223,7 +226,7 @@ def _load(cursor, request_id=None, token=None, user_id=None, lock=False):
         SELECT rr.id, rr.session_id, rr.user_id, rr.status, rr.requested_date, rr.requested_time,
                rr.counter_date, rr.counter_time, rr.lang, rr.client_note, rr.admin_note,
                s.status, s.session_date, s.session_time, s.trainer_id, s.session_number,
-               rr.original_date, rr.original_time, rr.created_at, rr.decided_at, rr.counter_late
+               rr.original_date, rr.original_time, rr.created_at, rr.decided_at, rr.counter_late, rr.requested_trainer_id
         FROM reschedule_requests rr JOIN sessions s ON s.id = rr.session_id
         WHERE {' AND '.join(where)}
         {"FOR UPDATE OF rr, s" if lock else ""}
@@ -235,7 +238,7 @@ def _load(cursor, request_id=None, token=None, user_id=None, lock=False):
         return None
     keys = ("id", "session_id", "user_id", "status", "requested_date", "requested_time", "counter_date", "counter_time",
             "lang", "client_note", "admin_note", "session_status", "session_date", "session_time", "trainer_id",
-            "number", "original_date", "original_time", "created_at", "decided_at", "counter_late")
+            "number", "original_date", "original_time", "created_at", "decided_at", "counter_late", "requested_trainer_id")
     return dict(zip(keys, row))
 
 
@@ -252,6 +255,7 @@ def _public(req, with_counter=True):
         "counter_deadline": _deadline(req["session_date"], req["session_time"], req["counter_late"]) if req["status"] == "counter_proposed" else None,
         "created_at": req["created_at"].isoformat() if req["created_at"] else None,
         "decided_at": req["decided_at"].isoformat() if req["decided_at"] else None,
+        "requested_trainer_id": req.get("requested_trainer_id"),
     }
 
 
@@ -283,7 +287,7 @@ def _context(cursor, request_id):
     }
 
 
-def _move_session(cursor, req, day, time, mark_rescheduled=True):
+def _move_session(cursor, req, day, time, mark_rescheduled=True, trainer_id=None):
     """Moves the session of `req` to day/time after checking everything again (the slot may have
     been taken since the request was made). Raises 409 with the reason. The Google event is
     updated by the central rule; if Google fails the session stays moved and is flagged."""
@@ -291,19 +295,20 @@ def _move_session(cursor, req, day, time, mark_rescheduled=True):
         raise fail(409, "session_not_open", "The session is no longer booked.")
     if _start(req["session_date"], req["session_time"]) <= _now():
         raise fail(409, "expired", "The session has already started.")
-    problem = _slot_error(cursor, req["user_id"], req["trainer_id"], req["session_id"], day, time)
+    trainer_id = trainer_id or req["trainer_id"]            # the trainer at the new hour: the one asked for, else the session's
+    problem = _slot_error(cursor, req["user_id"], trainer_id, req["session_id"], day, time)
     if problem:
         raise fail(409, "slot_unavailable", problem)
     cursor.execute(
-        "UPDATE sessions SET session_date = %s, session_time = %s, rescheduled = rescheduled OR %s, "
+        "UPDATE sessions SET session_date = %s, session_time = %s, trainer_id = %s, rescheduled = rescheduled OR %s, "
         "feed_sequence = feed_sequence + 1 WHERE id = %s",
-        (str(day)[:10], hhmm(time), bool(mark_rescheduled), req["session_id"]),
+        (str(day)[:10], hhmm(time), trainer_id, bool(mark_rescheduled), req["session_id"]),
     )
     calendar_sync.sync_session_to_google(req["session_id"], cursor=cursor)
 
 
 # ----------------------------------------------------------------------------- the client's side
-def create_request(user_id, session_id, requested_date, requested_time, note=None, lang=None):
+def create_request(user_id, session_id, requested_date, requested_time, note=None, lang=None, trainer_id=None):
     """The client asks to move one of their sessions. Returns the request (public fields)."""
     ensure_tables_once()
     requested_date, requested_time = _clean_slot(requested_date, requested_time)
@@ -328,16 +333,23 @@ def create_request(user_id, session_id, requested_date, requested_time, note=Non
             raise fail(409, "limit_reached", "A change has already been requested for this session.")
         if not _enough_notice(_start(row[2], row[3]), _now()):
             raise fail(409, "too_late", f"Changes can only be requested up to {_hours()} hours before the session.")
-        problem = _slot_error(cursor, user_id, row[4], session_id, requested_date, requested_time)
+        wanted = trainer_id or row[4]                           # the trainer asked for at the new hour, else the session's own
+        problem = _slot_error(cursor, user_id, wanted, session_id, requested_date, requested_time)
         if problem:
+            # the trainer is the reason: say who IS free (the client may pick another); any other reason stays as it was
+            alternatives = trainer_choice.free_trainers(cursor, requested_date, requested_time, ignore_session_id=session_id)
+            if problem != "The client already has another session at that day and time." and not problem.startswith("The new date"):
+                raise trainer_choice.unavailable(alternatives, problem)
             raise fail(409, "slot_unavailable", problem)
         cursor.execute(
             """
             INSERT INTO reschedule_requests
-                (session_id, user_id, original_date, original_time, requested_date, requested_time, client_note, token, lang)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                (session_id, user_id, original_date, original_time, requested_date, requested_time, client_note, token, lang,
+                 requested_trainer_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
             """,
-            (session_id, user_id, row[2], row[3], requested_date, requested_time, note, secrets.token_urlsafe(32), (lang or "en")[:2].lower() if lang else "en"),
+            (session_id, user_id, row[2], row[3], requested_date, requested_time, note, secrets.token_urlsafe(32), (lang or "en")[:2].lower() if lang else "en",
+             trainer_id if trainer_id and trainer_id != row[4] else None),
         )
         request_id = cursor.fetchone()[0]
         conn.commit()
@@ -546,10 +558,12 @@ def list_for_admin(status=None, trainer_id=None, email=None, limit=25, offset=0,
             SELECT rr.id, rr.session_id, rr.status, rr.original_date, rr.original_time, rr.requested_date, rr.requested_time,
                    rr.client_note, rr.admin_note, rr.counter_date, rr.counter_time, rr.created_at, rr.decided_at,
                    u.id, u.nome, u.email, s.session_number, s.trainer_id, t.nome, rr.lang,
-                   t.color, s.session_date, s.session_time, rr.decided_by, s.calendar_sync_status, s.calendar_sync_error, s.status, rr.counter_late
+                   t.color, s.session_date, s.session_time, rr.decided_by, s.calendar_sync_status, s.calendar_sync_error, s.status, rr.counter_late,
+                   rr.requested_trainer_id, rt.nome
             FROM reschedule_requests rr
             JOIN users u ON u.id = rr.user_id JOIN sessions s ON s.id = rr.session_id
             LEFT JOIN trainers t ON t.id = s.trainer_id
+            LEFT JOIN trainers rt ON rt.id = rr.requested_trainer_id
             WHERE {where}
             ORDER BY (rr.status IN ('pending', 'counter_proposed')) DESC,
                      CASE WHEN rr.status IN ('pending', 'counter_proposed') THEN s.session_date + s.session_time END ASC,
@@ -571,6 +585,7 @@ def list_for_admin(status=None, trainer_id=None, email=None, limit=25, offset=0,
                 "color": r[20], "session_date": str(r[21])[:10], "session_time": hhmm(r[22]), "decided_by": r[23],
                 "sync_status": r[24], "sync_error": r[25], "session_status": r[26], "conflict": None,
                 "counter_deadline": _deadline(r[21], r[22], r[27]) if r[2] == "counter_proposed" else None,
+                "requested_trainer_id": r[28], "requested_trainer": r[29],
             }
             for r in cursor.fetchall()
         ]
@@ -578,7 +593,8 @@ def list_for_admin(status=None, trainer_id=None, email=None, limit=25, offset=0,
             if item["status"] in OPEN_STATUSES:
                 day, time = ((item["counter_date"], item["counter_time"]) if item["status"] == "counter_proposed"
                              else (item["requested_date"], item["requested_time"]))
-                item["conflict"] = _slot_error(cursor, item["client_id"], item["trainer_id"], item["session_id"], day, time)
+                asked = item["requested_trainer_id"] if item["status"] != "counter_proposed" else None     # a counter-proposal keeps the session's trainer
+                item["conflict"] = _slot_error(cursor, item["client_id"], asked or item["trainer_id"], item["session_id"], day, time)
         return {"items": items, "total": total, "counts": counts, "limit": limit, "offset": offset}
     finally:
         cursor.close()
@@ -641,7 +657,7 @@ def _inbox(kind, request_id, state=""):
 def approve(request_id, admin=""):
     """Moves the session to the requested day and hour (after checking conflicts again)."""
     def action(cursor, req):
-        _move_session(cursor, req, req["requested_date"], req["requested_time"])
+        _move_session(cursor, req, req["requested_date"], req["requested_time"], trainer_id=req["requested_trainer_id"])
         cursor.execute("UPDATE reschedule_requests SET status = 'approved', decided_by = %s, decided_at = NOW() WHERE id = %s", (admin, req["id"]))
 
     request_id, repeated = _decide(request_id, admin, {"from": ("pending",), "repeat": ("approved",)}, action)
@@ -809,6 +825,7 @@ class RequestPayload(BaseModel):
     requested_time: str
     note: str | None = None
     lang: str | None = None
+    trainer_id: int | None = None      # another trainer at the new hour (optional)
 
 
 class RejectPayload(BaseModel):
@@ -844,7 +861,7 @@ def register_reschedule_routes(app, require_admin, require_client, own_user_id):
     # ---- the client (Firebase ID token; only their own sessions and requests)
     @app.post("/me/sessions/{session_id}/reschedule-request")
     def client_create_request(session_id: int, data: RequestPayload, claims=Depends(require_client)):
-        return create_request(me(claims), session_id, data.requested_date, data.requested_time, data.note, data.lang)
+        return create_request(me(claims), session_id, data.requested_date, data.requested_time, data.note, data.lang, data.trainer_id)
 
     @app.get("/me/reschedule-requests")
     def client_list_requests(claims=Depends(require_client)):

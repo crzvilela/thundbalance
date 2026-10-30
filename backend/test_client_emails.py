@@ -240,7 +240,7 @@ class Recorder:
         return EmailResult(True)
 
     def to(self, address):
-        return [m for m in self.sent if m["to"] == address]
+        return [m for m in self.sent if address == m["to"] or (not isinstance(m["to"], str) and address in m["to"])]
 
 
 class WhichLanguage(unittest.TestCase):
@@ -304,7 +304,7 @@ class WhichLanguage(unittest.TestCase):
 
     def test_the_team_copy_of_a_reschedule_stays_spanish(self):
         notifications.wait(notifications.staff_requested({**RESCHEDULE, "lang": "ca"}))
-        sent = self.mail("info@thundbalance.com")
+        sent = self.mail("pt@thundbalance.com")
         self.assertTrue(sent)
         self.assertEqual({m["lang"] for m in sent}, {"es"})
 

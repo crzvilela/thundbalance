@@ -28,7 +28,7 @@ from emails.dates import parse_madrid
 from emails.pack_emails import ICS_CONTENT_TYPE, ICS_FILENAME
 from emails.transport import validate_address
 from emails.welcome_emails import build_staff_client_created, build_welcome_email
-from packs import create_pack, delete_created_events, validate_pack_request
+from packs import create_pack, delete_created_events, plan_facts, validate_pack_request
 from trial_notifications import studio_address
 
 logger = logging.getLogger("thundbalance.accounts")
@@ -112,7 +112,7 @@ def _pack_summary(cursor, user_id):
     """The client's active pack as an email summary (None without one)."""
     cursor.execute(
         """
-        SELECT p.nome, up.sessions_per_week, up.preferred_days, up.start_date, up.end_date, t.nome
+        SELECT p.nome, up.sessions_per_week, up.preferred_days, up.start_date, up.end_date, t.nome, p.id
         FROM user_plans up
         JOIN plans p ON p.id = up.plan_id
         LEFT JOIN trainers t ON t.id = up.trainer_id
@@ -124,7 +124,7 @@ def _pack_summary(cursor, user_id):
     plan = cursor.fetchone()
     if not plan:
         return None
-    plan_name, per_week, days, start, end, trainer = plan
+    plan_name, per_week, days, start, end, trainer, plan_id = plan
     cursor.execute(
         """
         SELECT s.id, s.session_date, s.session_time, s.session_number, t.nome
@@ -143,7 +143,7 @@ def _pack_summary(cursor, user_id):
     if not sessions:
         return None
     return {
-        "plan_name": plan_name, "sessions_per_week": per_week,
+        "plan_name": plan_name, "plan": plan_facts(cursor, plan_id), "sessions_per_week": per_week,
         "days": [day.strip() for day in str(days or "").split(",") if day.strip()],
         "trainer": trainer, "sessions": sessions,
     }
@@ -239,7 +239,7 @@ def register_client_account_routes(app, require_admin, require_client):
                     allow_conflicts=pack.allow_conflicts,
                 )
                 pack_summary = {
-                    "client_name": name, "client_email": email, "plan_name": created["plan_name"],
+                    "client_name": name, "client_email": email, "plan_name": created["plan_name"], "plan": created.get("plan"),
                     "sessions_per_week": pack.sessions_per_week, "days": days,
                     "trainer": trainer_name, "sessions": created["sessions"],
                 }

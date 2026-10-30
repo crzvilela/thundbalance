@@ -22,6 +22,7 @@ from availability import (
     trainer_usage, validate_hours,
 )
 import mailer
+from bulk_actions import BulkPayload, run_each, unknown_action
 from google_calendar import delete_calendar_event, list_calendar_events
 from datetime import timezone
 
@@ -44,6 +45,7 @@ class PlanPayload(BaseModel):
     duracao_meses: int = Field(ge=1, le=60)
     duration_weeks: int = Field(ge=1, le=260)
     preco: float = Field(ge=0, le=100000)
+    tipo: str = Field(default="individual", pattern="^(individual|dual)$")
 
 
 class HoursWindow(BaseModel):
@@ -362,6 +364,34 @@ def register_admin_routes(app, require_admin):
         """Which calendar this server writes to (masked) and where that comes from."""
         return google_calendar.describe_target()
 
+    @app.post("/admin/sessions/bulk", dependencies=admin)
+    def bulk_sessions(data: BulkPayload):
+        """cancel several sessions: each through the single action (event removed from Google, sync recorded)."""
+        if data.action != "cancel":
+            raise unknown_action(data.action)
+        return run_each("sessions", "cancel", data.ids, admin_cancel_session)
+
+    @app.post("/admin/trial-sessions/bulk", dependencies=admin)
+    def bulk_trial_sessions(data: BulkPayload):
+        """cancel several approved / confirmed trial sessions: event removed, client e-mailed, like the single action."""
+        if data.action != "cancel":
+            raise unknown_action(data.action)
+        return run_each("trial-sessions", "cancel", data.ids, admin_cancel_trial)
+
+    @app.post("/admin/plans/bulk", dependencies=admin)
+    def bulk_plans(data: BulkPayload):
+        """delete several plans (the ones in use are refused one by one, like the single action)."""
+        if data.action != "delete":
+            raise unknown_action(data.action)
+        return run_each("plans", "delete", data.ids, admin_delete_plan)
+
+    @app.post("/admin/trainers/bulk", dependencies=admin)
+    def bulk_trainers(data: BulkPayload):
+        """remove several trainers (refused when they still have upcoming sessions; archived when they have history)."""
+        if data.action != "remove":
+            raise unknown_action(data.action)
+        return run_each("trainers", "remove", data.ids, admin_remove_trainer)
+
     @app.post("/admin/sessions/{session_id}/cancel", dependencies=admin)
     def admin_cancel_session(session_id: int):
         conn = get_connection()
@@ -408,10 +438,10 @@ def register_admin_routes(app, require_admin):
         try:
             cursor.execute(
                 """
-                INSERT INTO plans (nome, duracao_meses, preco, duration_weeks)
-                VALUES (%s, %s, %s, %s) RETURNING id
+                INSERT INTO plans (nome, duracao_meses, preco, duration_weeks, tipo)
+                VALUES (%s, %s, %s, %s, %s) RETURNING id
                 """,
-                (plan.nome.strip(), plan.duracao_meses, plan.preco, plan.duration_weeks),
+                (plan.nome.strip(), plan.duracao_meses, plan.preco, plan.duration_weeks, plan.tipo),
             )
             plan_id = cursor.fetchone()[0]
             conn.commit()
@@ -435,10 +465,10 @@ def register_admin_routes(app, require_admin):
             cursor.execute(
                 """
                 UPDATE plans
-                SET nome = %s, duracao_meses = %s, preco = %s, duration_weeks = %s
+                SET nome = %s, duracao_meses = %s, preco = %s, duration_weeks = %s, tipo = %s
                 WHERE id = %s RETURNING id
                 """,
-                (plan.nome.strip(), plan.duracao_meses, plan.preco, plan.duration_weeks, plan_id),
+                (plan.nome.strip(), plan.duracao_meses, plan.preco, plan.duration_weeks, plan.tipo, plan_id),
             )
             if not cursor.fetchone():
                 raise HTTPException(status_code=404, detail="Plan not found")

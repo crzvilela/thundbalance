@@ -10,7 +10,7 @@ export function footerElement(section, key, contactUrl = '/#contact') {
     instagram: { label: 'Instagram @thundbalance', url: 'https://www.instagram.com/thundbalance/', icon: 'instagram', width: 46, height: 46, iconSize: 20 },
     whatsapp: { label: 'WhatsApp +34 617 21 33 60', url: 'https://wa.me/34617213360', icon: 'whatsapp', width: 46, height: 46, iconSize: 20 },
     youtube: { label: 'YouTube Thundbalance', url: 'https://www.youtube.com/@thundbalance3668', icon: 'youtube', width: 46, height: 46, iconSize: 20 },
-    gmail: { label: 'Gmail: info@thundbalance.com', url: 'https://mail.google.com/mail/?view=cm&fs=1&to=info%40thundbalance.com', icon: 'gmail', width: 46, height: 46, iconSize: 20 },
+    gmail: { label: 'Gmail: pt@thundbalance.com', url: 'https://mail.google.com/mail/?view=cm&fs=1&to=pt%40thundbalance.com', icon: 'gmail', width: 46, height: 46, iconSize: 20 },
     visit: { text: 'Visit Us', fontSize: 12 }, address: { fontSize: 12, iconSize: 16 }, map: { width: '100%', height: 112 }
   }
   return { ...defaults[key], ...section.elements?.[key] }

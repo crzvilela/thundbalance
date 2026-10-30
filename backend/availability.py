@@ -84,7 +84,7 @@ def has_conflict(cursor, trainer_id, day, time, ignore_session_id=None, ignore_t
         """
         SELECT 1 FROM trial_sessions
         WHERE trainer_id = %s AND session_date = %s AND session_time = %s
-          AND LOWER(status) IN ('approved', 'confirmed') AND (%s::int IS NULL OR id <> %s::int)
+          AND LOWER(status) IN ('pending', 'approved', 'confirmed') AND (%s::int IS NULL OR id <> %s::int)
         LIMIT 1
         """,
         (trainer_id, str(day)[:10], hhmm(time), ignore_trial_id, ignore_trial_id),
@@ -137,7 +137,7 @@ def _busy_times(cursor, day, trainer_ids=None, ignore_session_id=None):
     cursor.execute(
         """
         SELECT trainer_id, session_time FROM trial_sessions
-        WHERE session_date = %s AND LOWER(status) IN ('approved', 'confirmed')
+        WHERE session_date = %s AND LOWER(status) IN ('pending', 'approved', 'confirmed')
         """,
         (key,),
     )
@@ -187,7 +187,7 @@ def free_slots_between(cursor, trainer_id, first, last):
         UNION ALL
         SELECT session_date, session_time FROM trial_sessions
         WHERE trainer_id = %s AND session_date >= %s AND session_date <= %s
-          AND LOWER(status) IN ('approved', 'confirmed')
+          AND LOWER(status) IN ('pending', 'approved', 'confirmed')
         """,
         (trainer_id, first, last, trainer_id, first, last),
     )
@@ -229,7 +229,7 @@ def free_start_times_any_trainer(cursor, day, timeout_ms=None):
         FROM sessions WHERE session_date = %s AND status = 'Booked'
         UNION ALL
         SELECT 'b', trainer_id, session_time::text, NULL
-        FROM trial_sessions WHERE session_date = %s AND LOWER(status) IN ('approved', 'confirmed')
+        FROM trial_sessions WHERE session_date = %s AND LOWER(status) IN ('pending', 'approved', 'confirmed')
         """,
         (weekday, key, key),
     )
@@ -246,12 +246,12 @@ def free_start_times_any_trainer(cursor, day, timeout_ms=None):
     return sorted(free)
 
 
-def trainers_for_slot(cursor, day, time):
+def trainers_for_slot(cursor, day, time, ignore_session_id=None):
     """Active trainers who can take the slot, as [(id, name)]."""
     cursor.execute("SELECT id, nome FROM trainers WHERE active ORDER BY id")
     return [
         (trainer_id, name) for trainer_id, name in cursor.fetchall()
-        if slot_problem(cursor, trainer_id, day, time) is None
+        if slot_problem(cursor, trainer_id, day, time, ignore_session_id=ignore_session_id) is None
     ]
 
 

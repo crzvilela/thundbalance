@@ -9,7 +9,7 @@ def _one_line(value, limit=120):
 
 
 def staff_contact_message(message):
-    """(subject, html, text) for info@. `message` has name, email, message and
+    """(subject, html, text) for pt@. `message` has name, email, message and
     created (a datetime, optional). Replying to this e-mail answers the sender."""
     name = _one_line(message.get("name"))
     when = message.get("created")

@@ -26,6 +26,20 @@ export function formatShortDay(key, locale) {
   return new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(utcDay(key))
 }
 
+// "12 nov" (no weekday, no year) for the one-line summaries
+export function formatShortDate(key, locale) {
+  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(utcDay(key))
+}
+
+// When the client sent something: the server saves UTC, the page shows the day in Madrid ("4 nov 2026").
+export function formatSentAt(iso, locale) {
+  if (!iso) return ''
+  const text = String(iso)
+  const moment = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(text) ? text : `${text}Z`)
+  if (Number.isNaN(moment.getTime())) return ''
+  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: TIMEZONE }).format(moment)
+}
+
 export function formatMonth(date, locale) {
   return new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(date)
 }

@@ -31,6 +31,8 @@ from client_lifecycle import ensure_columns as ensure_lifecycle_columns, registe
 import admin_calendar
 import logging
 import client_lang
+import trainer_choice
+from bulk_actions import BulkPayload, run_each, unknown_action
 import inbox
 import reschedule_requests
 from features import client_calendar_enabled, reschedule_min_hours_before
@@ -42,7 +44,8 @@ from packs import (
     ensure_pack_columns, preview_pack, remove_replaced_events, validate_pack_request,
 )
 import pack_view
-from emails import team_emails
+from emails import send_pack_summary_email, team_emails
+import client_accounts
 from emails import log as email_log
 from emails.texts import normalize_language
 import calendar_sync
@@ -279,6 +282,7 @@ def assert_session_owner(claims, session_id):
 calendar_feed.register_calendar_feed_routes(app, require_admin, require_client, _own_user_id)
 reschedule_requests.register_reschedule_routes(app, require_admin, require_client, _own_user_id)
 inbox.register_inbox_routes(app, require_admin, require_inbox_user, _own_user_id, ADMIN_EMAIL)
+trainer_choice.register_trainer_choice_routes(app)
 client_lang.register_client_lang_routes(app, require_client, _own_user_id)
 
 
@@ -466,6 +470,9 @@ def ensure_client_workflow_fields():
         cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS sessions_per_week INTEGER")
         # Archiving hides a request from the admin lists without deleting anything.
         cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP")
+        # When the client sent it (shown on their "pending requests" card). Older rows stay empty: the card then shows no date.
+        cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS created_at TIMESTAMP")
+        cursor.execute("ALTER TABLE client_requests ALTER COLUMN created_at SET DEFAULT (NOW() AT TIME ZONE 'UTC')")
         cursor.execute("ALTER TABLE client_requests ALTER COLUMN status SET DEFAULT 'Pending'")
         cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE")
         # Pack period and schedule, recorded when a pack is approved or renewed.
@@ -543,6 +550,7 @@ class TrialSessionCreate(BaseModel):
     experience: str
     session_date: str
     session_time: str
+    trainer_id: int | None = None      # the trainer the visitor prefers (optional): must be free at that day and hour
 
 
 class AssignPlan(BaseModel):
@@ -556,6 +564,7 @@ class ClientRequestCreate(BaseModel):
     sessions_per_week: int
     preferred_days: str
     preferred_time: str
+    trainer_id: int | None = None      # the trainer the client prefers (optional): must work at that time on every chosen day
 
 
 class ApproveRequest(BaseModel):
@@ -1518,7 +1527,7 @@ def _active_trial_for_email(cursor, email):
     and not in the past. Declined/cancelled ones do not count."""
     cursor.execute(
         """
-        SELECT ts.id, ts.status, ts.session_date, ts.session_time, ts.goal, ts.experience, t.nome
+        SELECT ts.id, ts.status, ts.session_date, ts.session_time, ts.goal, ts.experience, t.nome, ts.created_at
         FROM trial_sessions ts
         LEFT JOIN trainers t ON t.id = ts.trainer_id
         WHERE LOWER(ts.email) = %s AND LOWER(ts.status) IN ('pending', 'approved', 'confirmed')
@@ -1539,6 +1548,7 @@ def _active_trial_for_email(cursor, email):
         "goal": row[4],
         "experience": row[5],
         "trainer": row[6],
+        "created_at": row[7].isoformat() if row[7] else None,
     }
 
 
@@ -1616,11 +1626,15 @@ def create_trial_session(
 
     try:
 
-        if not trainers_for_slot(cursor, session_date, trial.session_time):
+        free = trainers_for_slot(cursor, session_date, trial.session_time)
+        if not free:
             raise HTTPException(
                 status_code=422,
                 detail="No trainer is available at that day and time. Please choose another."
             )
+        # A trainer the visitor asked for must still be free (the list may be some seconds old): otherwise 409 with who is.
+        if trial.trainer_id is not None and trial.trainer_id not in [trainer_id for trainer_id, _ in free]:
+            raise trainer_choice.unavailable([{"id": trainer_id, "name": name} for trainer_id, name in free])
 
         existing = _active_trial_for_email(cursor, email)
         if existing:
@@ -1649,11 +1663,12 @@ def create_trial_session(
                 session_date,
                 session_time,
                 status,
-                lang
+                lang,
+                trainer_id
             )
 
             VALUES
-            (%s,%s,%s,%s,%s,%s,%s,%s,%s,'Pending',%s)
+            (%s,%s,%s,%s,%s,%s,%s,%s,%s,'Pending',%s,%s)
 
             RETURNING id
             """,
@@ -1667,7 +1682,8 @@ def create_trial_session(
                 trial.experience.strip()[:60],
                 session_date,
                 trial.session_time,
-                client_lang
+                client_lang,
+                trial.trainer_id
             )
         )
 
@@ -1709,6 +1725,41 @@ def create_trial_session(
 
         cursor.close()
         conn.close()
+
+
+def _after_pack_commit(created):
+    """Removes the Google events of the sessions a new pack replaced. The pack is already saved, so a failure here must
+    not stop the confirmation email nor undo anything: only its type is logged."""
+    try:
+        remove_replaced_events(created)
+    except Exception as error:  # noqa: BLE001
+        print(f"Replaced events could not be removed: {type(error).__name__}")
+
+
+def _assign_plan_email(user_id):
+    """The confirmation email of "Asignar plan" (it was never sent): the client's active pack and its sessions, to the client
+    and the team's default addresses, like the other two paths. None when there is nothing to summarize (a plan without
+    sessions). Never raises."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT nome, email FROM users WHERE id = %s", (user_id,))
+            user = cursor.fetchone()
+            summary = client_accounts._pack_summary(cursor, user_id) if user else None
+        finally:
+            cursor.close()
+            conn.close()
+        if not summary:
+            return None
+        summary["client_name"], summary["client_email"] = user
+        summary["calendar_links"] = calendar_feed.links_for_email(user[1])
+        extra = clean_pack_recipients(None, user[1])
+        result = send_pack_summary_email(summary, to_client=True, extra_recipients=extra)
+        return {"sent_to": result.sent_to, "failed": result.failed, "problem": result.problem}
+    except Exception as error:  # noqa: BLE001
+        print(f"Assign-plan email could not be prepared: {type(error).__name__}")
+        return {"sent_to": [], "failed": [], "problem": "error"}
 
 
 @app.post("/admin/assign-plan", dependencies=[Depends(require_admin)])
@@ -1769,6 +1820,7 @@ def admin_assign_plan(
         return {
             "message": "Plan assigned successfully",
             "calendar": calendar,
+            "email": _assign_plan_email(data.user_id),
         }
 
     except Exception as e:
@@ -1798,7 +1850,7 @@ def client_workflow(authorization: str | None = Header(default=None)):
         user_id = user[0]
         cursor.execute("""
             SELECT cr.id, cr.status, cr.rejection_reason, p.nome, cr.sessions_per_week,
-                   cr.preferred_days, cr.preferred_time, t.nome, cr.start_date
+                   cr.preferred_days, cr.preferred_time, t.nome, cr.start_date, cr.created_at
             FROM client_requests cr
             LEFT JOIN plans p ON p.id = cr.plan_id
             LEFT JOIN trainers t ON t.id = cr.trainer_id
@@ -1826,7 +1878,8 @@ def client_workflow(authorization: str | None = Header(default=None)):
             "request": ({"id": request[0], "status": request[1], "reason": request[2],
                          "package": request[3], "sessions_per_week": request[4],
                          "preferred_days": request[5], "preferred_time": request[6],
-                         "trainer": request[7], "start_date": request[8]} if request else None),
+                         "trainer": request[7], "start_date": request[8],
+                         "created_at": request[9].isoformat() if request[9] else None} if request else None),
             "plan": ({"name": plan[0], "trainer": plan[1], "id": plan[2],
                       "end_date": str(plan[3]) if plan[3] else None} if plan else None),
             # all the packs that are running, each with its own counters
@@ -1876,6 +1929,11 @@ def create_client_request(
                 detail=f"No trainer works at {request.preferred_time} on {', '.join(unavailable)}. Please choose another time."
             )
 
+        if request.trainer_id is not None:
+            working = trainer_choice.working_trainers(cursor, chosen_days, request.preferred_time)
+            if request.trainer_id not in [item["id"] for item in working]:
+                raise trainer_choice.unavailable(working)
+
         cursor.execute("""
             SELECT id FROM client_requests WHERE user_id = %s AND LOWER(status) = 'pending'
             LIMIT 1
@@ -1894,18 +1952,20 @@ def create_client_request(
                 plan_id,
                 sessions_per_week,
                 preferred_days,
-                preferred_time
+                preferred_time,
+                trainer_id
             )
 
             VALUES
-            (%s,%s,%s,%s,%s)
+            (%s,%s,%s,%s,%s,%s)
             """,
             (
                 user_id,
                 request.plan_id,
                 request.sessions_per_week,
                 request.preferred_days,
-                request.preferred_time
+                request.preferred_time,
+                request.trainer_id
             )
         )
 
@@ -1959,7 +2019,9 @@ def admin_client_requests(archived: str = "exclude"):
 
                 cr.status,
                 cr.rejection_reason,
-                cr.archived_at
+                cr.archived_at,
+                cr.trainer_id,
+                tr.nome
 
             FROM client_requests cr
 
@@ -1968,6 +2030,9 @@ def admin_client_requests(archived: str = "exclude"):
 
             JOIN plans p
                 ON cr.plan_id = p.id
+
+            LEFT JOIN trainers tr
+                ON tr.id = cr.trainer_id
 
             WHERE (%s = 'include'
                    OR (%s = 'only' AND cr.archived_at IS NOT NULL)
@@ -1979,7 +2044,7 @@ def admin_client_requests(archived: str = "exclude"):
         )
 
         return [
-            [*row[:8], row[8].isoformat() if row[8] else None]
+            [*row[:8], row[8].isoformat() if row[8] else None, row[9], row[10]]
             for row in cursor.fetchall()
         ]
 
@@ -2098,7 +2163,7 @@ def approve_request(
         )
 
         conn.commit()
-        remove_replaced_events(created)     # only now: the cancelled sessions are saved
+        _after_pack_commit(created)         # only now: the cancelled sessions are saved
         inbox.on_pack_created(user_id, created["pack_id"], created["plan_name"])
 
         email = email_pack(
@@ -2173,7 +2238,7 @@ def admin_renew_pack(client_id: int, data: RenewPack):
         )
 
         conn.commit()
-        remove_replaced_events(created)     # only now: the cancelled sessions are saved
+        _after_pack_commit(created)         # only now: the cancelled sessions are saved
         inbox.on_pack_created(client_id, created["pack_id"], created["plan_name"])
 
         email = email_pack(
@@ -2265,6 +2330,14 @@ def archive_request(data: ArchiveRequest):
 @app.post("/admin/unarchive-request", dependencies=[Depends(require_admin)])
 def unarchive_request(data: ArchiveRequest):
     return set_request_archived(data.request_id, False)
+
+
+@app.post("/admin/client-requests/bulk", dependencies=[Depends(require_admin)])
+def bulk_client_requests(data: BulkPayload):
+    """archive | unarchive several requests (only the archive mark changes, like the single action)."""
+    if data.action not in ("archive", "unarchive"):
+        raise unknown_action(data.action)
+    return run_each("client-requests", data.action, data.ids, lambda request_id: set_request_archived(request_id, data.action == "archive"))
 
 
 @app.get("/admin/sessions/email/{email}", dependencies=[Depends(require_admin)])
@@ -2936,6 +3009,14 @@ def update_training_video(
 
         cursor.close()
         conn.close()
+
+
+@app.post("/admin/training-videos/bulk", dependencies=[Depends(require_admin)])
+def bulk_training_videos(data: BulkPayload):
+    """remove several training videos, like the single action."""
+    if data.action != "delete":
+        raise unknown_action(data.action)
+    return run_each("training-videos", "delete", data.ids, delete_training_video)
 
 
 @app.delete("/training-videos/{video_id}", dependencies=[Depends(require_admin)])
