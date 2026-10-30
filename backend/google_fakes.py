@@ -35,13 +35,14 @@ class FakeGoogle:
             raise RuntimeError("google down")
 
     def create(self, trainer, client_name, client_email, date, time, number=None, event_id=None, session_id=None,
-               client_phone=None, pack_name=None):
+               client_phone=None, pack_name=None, session_type=None, second_person_name=None):
         import event_format
         self.calls.append(("create", event_id))
         self._check(event_id)
         body = event_format.build_session_event(
             client_name=client_name, client_email=client_email, client_phone=client_phone, session_date=date,
-            session_time=time, trainer_name=trainer, pack_name=pack_name, session_number=number, session_id=session_id)
+            session_time=time, trainer_name=trainer, pack_name=pack_name, session_number=number, session_id=session_id,
+            session_type=session_type, second_person_name=second_person_name)
         if event_id in self.events:
             return event_id, False                       # a 409: already there
         self.events[event_id] = body
@@ -61,6 +62,19 @@ class FakeGoogle:
             raise FakeHttpError(404)
         del self.events[event_id]
 
+    def create_trial(self, full_name, email, phone, goal, experience, session_date, session_time, trainer_name=None,
+                     event_id=None, trial_id=None, session_type=None, second_person_name=None, pending=False):
+        """google_calendar.create_trial_session_event: the real event body, the same "already there" rule."""
+        import event_format
+        self.calls.append(("create", event_id))
+        self._check(event_id)
+        if event_id not in self.events:
+            self.events[event_id] = event_format.build_trial_event(
+                full_name=full_name, email=email, phone=phone, session_date=session_date, session_time=session_time,
+                trainer_name=trainer_name, goal=goal, experience=experience, trial_id=trial_id,
+                session_type=session_type, second_person_name=second_person_name, pending=pending)
+        return event_id
+
     def list_events(self, time_min, time_max):
         if self.fail:
             raise RuntimeError("google down")
@@ -74,8 +88,13 @@ class FakeGoogle:
 
     # ----- installing it
     def install(self):
+        import trial_confirmation
         self._saved = (gc.create_calendar_event_status, gc.patch_calendar_event, gc.delete_calendar_event,
                        gc.list_calendar_events, gc.get_calendar_event)
+        # trial_confirmation imported these two by name; its update goes through gc.patch_calendar_event (faked above)
+        self._saved_trials = (trial_confirmation.create_trial_session_event, trial_confirmation.delete_calendar_event)
+        trial_confirmation.create_trial_session_event = self.create_trial
+        trial_confirmation.delete_calendar_event = self.delete
         gc.create_calendar_event_status = self.create
         gc.patch_calendar_event = self.patch
         gc.delete_calendar_event = self.delete
@@ -88,6 +107,10 @@ class FakeGoogle:
             (gc.create_calendar_event_status, gc.patch_calendar_event, gc.delete_calendar_event,
              gc.list_calendar_events, gc.get_calendar_event) = self._saved
             self._saved = None
+        if getattr(self, "_saved_trials", None):
+            import trial_confirmation
+            trial_confirmation.create_trial_session_event, trial_confirmation.delete_calendar_event = self._saved_trials
+            self._saved_trials = None
 
     def count(self, kind):
         return sum(1 for item in self.calls if item[0] == kind)

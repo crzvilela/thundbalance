@@ -131,8 +131,9 @@ class Flow(unittest.TestCase):
         token = self.approve(trial_id)
         self.assertGreaterEqual(len(token), 40)
         self.assertEqual(self.row(trial_id)[0], "Approved")
-        self.assertEqual(len(self.events), 0)                  # approving puts NOTHING on the calendar
-        self.assertIsNone(self.row(trial_id)[1])
+        self.assertEqual(len(self.events), 1)                  # approving puts the PENDING event on the calendar
+        self.assertTrue(self.events[0][1]["pending"])
+        self.assertEqual(self.row(trial_id)[1], "evt-1")
 
         view = self.info(token)                                # opening the link
         self.info(token)
@@ -140,16 +141,16 @@ class Flow(unittest.TestCase):
         self.assertEqual(view["first_name"], "Ana")
         self.assertEqual(set(view), {"state", "first_name", "date", "time"})   # minimum data only
         self.assertEqual(self.row(trial_id)[0], "Approved")    # ... confirms nothing
-        self.assertEqual((self.events, self.updates), ([], []))
+        self.assertEqual((len(self.events), self.updates), (1, []))
 
         self.assertEqual(self.confirm(token)["outcome"], "confirmed")
         self.assertEqual(self.confirm(token)["outcome"], "already_confirmed")   # double press
-        self.assertEqual(len(self.events), 1)                  # the event exists only now, once
+        self.assertEqual(len(self.events), 1)                  # still the one event, never a second
         kwargs = self.events[0][1]
         self.assertNotIn("provisional", kwargs)
         self.assertTrue(kwargs["event_id"].startswith("tb"))   # deterministic id: a repeat can not duplicate
         self.assertEqual(kwargs["trial_id"], trial_id)
-        self.assertEqual(self.updates, [])
+        self.assertEqual(self.updates, ["evt-1"])              # the same event, turned into the confirmed one
         self.assertEqual([m[0] for m in self.mails if m[0] != "approved"], ["staff_confirmed", "client_confirmed"])
         status, event_id, _, calendar_error, confirmed_at, _ = self.row(trial_id)
         self.assertEqual((status, event_id, calendar_error), ("Confirmed", "evt-1", None))
@@ -182,14 +183,14 @@ class Flow(unittest.TestCase):
         self.assertEqual((status, event_id), ("Declined", "evt-1"))    # the id is kept
         self.assertTrue(calendar_error)
 
-    def test_decline_before_confirming_never_touches_the_calendar(self):
+    def test_decline_before_confirming_removes_the_pending_event(self):
         trial_id = self.new_trial(days=15)
         token = self.approve(trial_id)
         self.assertEqual(self.decline(token)["outcome"], "declined")
         self.assertEqual(self.decline(token)["outcome"], "already_declined")
         self.assertEqual(self.confirm(token)["outcome"], "already_declined")
         self.assertEqual(self.row(trial_id)[0], "Declined")
-        self.assertEqual((self.events, self.deleted), ([], []))   # there was never an event
+        self.assertEqual((len(self.events), self.deleted), (1, ["evt-1"]))   # the pending event was deleted
         self.assertIsNone(self.row(trial_id)[1])
         self.assertEqual([m[0] for m in self.mails if m[0] != "approved"], ["staff_declined"])
         # the slot is free again
@@ -200,7 +201,7 @@ class Flow(unittest.TestCase):
         self.assertEqual(main.slot_problem(cur, self.trainer_id, str(day), "10:00"), None)
         conn.close()
 
-    def test_an_approved_session_keeps_its_hour_blocked_without_an_event(self):
+    def test_an_approved_session_keeps_its_hour_blocked_and_has_its_pending_event(self):
         trial_id = self.new_trial(days=20, hour="08:00")
         self.approve(trial_id)
         conn = get_connection()
@@ -210,16 +211,20 @@ class Flow(unittest.TestCase):
         self.assertNotIn("08:00", main.free_start_times(cur, self.trainer_id, day))   # blocked from the database
         self.assertIsNotNone(main.slot_problem(cur, self.trainer_id, day, "08:00"))
         conn.close()
-        self.assertEqual(self.events, [])
-        with self.assertRaises(HTTPException) as caught:           # the panel button is for confirmed ones only
-            endpoint("/admin/trial-sessions/{trial_id}/calendar-event", "POST")(trial_id)
+        self.assertEqual(len(self.events), 1)
+        again = endpoint("/admin/trial-sessions/{trial_id}/calendar-event", "POST")(trial_id)   # the panel button
+        self.assertTrue(again["calendar"]["ok"])
+        self.assertEqual(len(self.events), 1)                      # refreshed, never a second event
+        declined = self.new_trial(days=26, status="Rejected")
+        with self.assertRaises(HTTPException) as caught:           # a rejected request has no event
+            endpoint("/admin/trial-sessions/{trial_id}/calendar-event", "POST")(declined)
         self.assertEqual(caught.exception.status_code, 409)
-        self.assertEqual(self.events, [])
 
     def test_calendar_failure_keeps_session_confirmed_and_flags_it(self):
         trial_id = self.new_trial(days=16, hour="11:00")
+        self.fail_calendar = True                              # the calendar is down from the approval on
         token = self.approve(trial_id)
-        self.fail_calendar = True                              # creating the event at confirmation fails
+        self.assertEqual(self.row(trial_id)[:2], ("Approved", None))   # approved all the same
         self.assertEqual(self.confirm(token)["outcome"], "confirmed")
         status, event_id, _, calendar_error, _, _ = self.row(trial_id)
         self.assertEqual((status, event_id), ("Confirmed", None))      # confirmed, no event yet
@@ -251,7 +256,7 @@ class Flow(unittest.TestCase):
         self.assertEqual(self.info(token)["state"], "expired")
         self.assertEqual(self.confirm(token)["outcome"], "expired")
         self.assertEqual(self.row(trial_id)[0], "Approved")
-        self.assertEqual((self.events, self.updates), ([], []))
+        self.assertEqual((len(self.events), self.updates), (1, []))     # only the approval touched the calendar
         with self.assertRaises(HTTPException) as caught:
             self.info("x" * 43)
         self.assertEqual(caught.exception.status_code, 404)
@@ -275,13 +280,14 @@ class Flow(unittest.TestCase):
             self.approve(waiting)
             cancel(waiting)
             self.assertEqual(self.row(waiting)[0], "Cancelled")
-            self.assertEqual(self.deleted, [])                 # waiting for the client: no event to remove
+            self.assertEqual(self.deleted, ["evt-1"])          # waiting for the client: its pending event is removed
+            self.assertIsNone(self.row(waiting)[1])
 
             confirmed = self.new_trial(days=21, hour="09:00")
             self.confirm(self.approve(confirmed))
             cancel(confirmed)
             self.assertEqual(self.row(confirmed)[0], "Cancelled")
-            self.assertEqual(self.deleted, ["evt-1"])          # the confirmed one had its event removed
+            self.assertEqual(self.deleted, ["evt-1", "evt-2"])  # the confirmed one had its event removed too
         finally:
             mailer.send_trial_cancelled = orig
         self.assertEqual(len(sent), 2)

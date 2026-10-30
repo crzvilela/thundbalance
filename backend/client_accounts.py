@@ -19,6 +19,7 @@ from pydantic import BaseModel
 import calendar_feed
 import client_lang
 import inbox
+import pricing
 import firebase_accounts as accounts
 import tax_id
 import validators
@@ -28,7 +29,7 @@ from emails.dates import parse_madrid
 from emails.pack_emails import ICS_CONTENT_TYPE, ICS_FILENAME
 from emails.transport import validate_address
 from emails.welcome_emails import build_staff_client_created, build_welcome_email
-from packs import create_pack, delete_created_events, plan_facts, validate_pack_request
+from packs import create_pack, delete_created_events, validate_pack_request
 from trial_notifications import studio_address
 
 logger = logging.getLogger("thundbalance.accounts")
@@ -44,6 +45,10 @@ class ClientPack(BaseModel):
     trainer_id: int
     start_date: str
     allow_conflicts: bool = False
+    # individual (default) | dual; a dual pack needs the second person (the price is worked out by the server)
+    session_type: str | None = None
+    second_person_name: str | None = None
+    second_person_email: str | None = None
 
 
 class CreateClient(BaseModel):
@@ -112,7 +117,8 @@ def _pack_summary(cursor, user_id):
     """The client's active pack as an email summary (None without one)."""
     cursor.execute(
         """
-        SELECT p.nome, up.sessions_per_week, up.preferred_days, up.start_date, up.end_date, t.nome, p.id
+        SELECT p.nome, up.sessions_per_week, up.preferred_days, up.start_date, up.end_date, t.nome,
+               up.session_type, up.second_person_name, up.price_per_session, up.total_price
         FROM user_plans up
         JOIN plans p ON p.id = up.plan_id
         LEFT JOIN trainers t ON t.id = up.trainer_id
@@ -124,7 +130,7 @@ def _pack_summary(cursor, user_id):
     plan = cursor.fetchone()
     if not plan:
         return None
-    plan_name, per_week, days, start, end, trainer, plan_id = plan
+    plan_name, per_week, days, start, end, trainer, session_type, second_name, price, total_price = plan
     cursor.execute(
         """
         SELECT s.id, s.session_date, s.session_time, s.session_number, t.nome
@@ -143,9 +149,10 @@ def _pack_summary(cursor, user_id):
     if not sessions:
         return None
     return {
-        "plan_name": plan_name, "plan": plan_facts(cursor, plan_id), "sessions_per_week": per_week,
+        "plan_name": plan_name, "sessions_per_week": per_week,
         "days": [day.strip() for day in str(days or "").split(",") if day.strip()],
-        "trainer": trainer, "sessions": sessions,
+        "trainer": trainer, "sessions": sessions, "session_type": session_type, "second_person_name": second_name,
+        "price_per_session": price, "total_price": total_price,
     }
 
 
@@ -236,12 +243,15 @@ def register_client_account_routes(app, require_admin, require_client):
                     plan_id=pack.plan_id, trainer_id=pack.trainer_id, trainer_name=trainer_name,
                     sessions_per_week=pack.sessions_per_week, preferred_days=",".join(days),
                     preferred_time=pack.preferred_time, start_date=pack.start_date,
-                    allow_conflicts=pack.allow_conflicts,
+                    allow_conflicts=pack.allow_conflicts, session_type=pack.session_type,
+                    second_person_name=pack.second_person_name, second_person_email=pack.second_person_email,
                 )
                 pack_summary = {
-                    "client_name": name, "client_email": email, "plan_name": created["plan_name"], "plan": created.get("plan"),
+                    "client_name": name, "client_email": email, "plan_name": created["plan_name"],
                     "sessions_per_week": pack.sessions_per_week, "days": days,
                     "trainer": trainer_name, "sessions": created["sessions"],
+                    "session_type": created["session_type"], "second_person_name": created["second_person_name"],
+                    "price_per_session": created["price_per_session"], "total_price": created["total_price"],
                 }
                 pack_info = {
                     "total_sessions": created["total_sessions"],
@@ -249,6 +259,8 @@ def register_client_account_routes(app, require_admin, require_client):
                     "calendar_errors": created["calendar_errors"],
                     "start_date": created["session_dates"][0],
                     "end_date": created["session_dates"][-1],
+                    "session_type": created["session_type"], "price_per_session": pricing.number(created["price_per_session"]),
+                    "total_price": pricing.number(created["total_price"]),
                 }
 
             # The login account is created last: if it fails, nothing else exists yet outside

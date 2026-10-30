@@ -14,6 +14,8 @@ import os
 import json
 import threading
 import unittest
+
+import plans_schema
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -76,7 +78,7 @@ class Parallel(unittest.TestCase):          # "Parallel" is the old name; see th
         cur.execute("SELECT id FROM trainers WHERE active ORDER BY id LIMIT 1")
         cls.trainer_id = (rows[0] if rows else cur.fetchone())[0]
         cls.other_trainer_id = rows[1][0] if len(rows) > 1 else cls.trainer_id
-        cur.execute("INSERT INTO plans (nome, preco, duracao_meses, duration_weeks) VALUES ('TEST parallel 2 weeks', 0, 1, 2) RETURNING id")
+        cur.execute(f"INSERT INTO plans (nome, {plans_schema.price_column(cur)}, duracao_meses, duration_weeks) VALUES ('TEST parallel 2 weeks', 0, 1, 2) RETURNING id")
         cls.plan_id = cur.fetchone()[0]
         conn.commit()
         conn.close()
@@ -128,7 +130,7 @@ class Parallel(unittest.TestCase):          # "Parallel" is the old name; see th
 
     # ----- helpers
     def renew(self, *, per_week, days, start, time="09:00", allow=False, trainer=None, extra=None, confirm=True):
-        return route("/admin/clients/{client_id}/renew-pack", "POST")(self.user_id, main.RenewPack(
+        return route("/admin/clients/{client_id}/renew-pack", "POST")(self.user_id, main.NewPack(
             plan_id=self.plan_id, sessions_per_week=per_week, preferred_days=days, preferred_time=time,
             trainer_id=trainer or self.trainer_id, start_date=start.isoformat(),
             email_extra=extra if extra is not None else [], allow_conflicts=allow, confirm_replace=confirm))

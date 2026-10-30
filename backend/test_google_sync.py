@@ -9,6 +9,8 @@ import os
 import threading
 import time
 import unittest
+
+import plans_schema
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from unittest import mock
@@ -59,7 +61,7 @@ class Sync(unittest.TestCase):
         cur = conn.cursor()
         cur.execute("SELECT id FROM trainers WHERE active ORDER BY id LIMIT 1")
         cls.trainer_id = cur.fetchone()[0]
-        cur.execute("INSERT INTO plans (nome, preco, duracao_meses, duration_weeks) VALUES ('TEST gsync 3 weeks', 0, 1, 3) RETURNING id")
+        cur.execute(f"INSERT INTO plans (nome, {plans_schema.price_column(cur)}, duracao_meses, duration_weeks) VALUES ('TEST gsync 3 weeks', 0, 1, 3) RETURNING id")
         cls.plan_id = cur.fetchone()[0]
         conn.commit()
         conn.close()
@@ -104,7 +106,7 @@ class Sync(unittest.TestCase):
     # ----- helpers
     def renew(self, start=None):
         start = start or next_weekday(10, 0)
-        return route("/admin/clients/{client_id}/renew-pack", "POST").endpoint(self.user_id, main.RenewPack(
+        return route("/admin/clients/{client_id}/renew-pack", "POST").endpoint(self.user_id, main.NewPack(
             plan_id=self.plan_id, sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="10:00",
             trainer_id=self.trainer_id, start_date=start.isoformat(), email_extra=[], allow_conflicts=True, confirm_replace=True))
 

@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException
 
 from availability import has_conflict, slot_problem, weekday_name, within_hours
+import pricing
 from database import get_connection
 from emails import clean_recipients, send_pack_summary_email, team_emails
 from emails.dates import parse_madrid
@@ -31,26 +32,6 @@ import calendar_sync
 from google_calendar import create_calendar_event, delete_calendar_event, describe_error, http_status
 
 logger = logging.getLogger("thundbalance.packs")
-
-PLAN_TYPES = ("individual", "dual")
-
-
-def plan_facts(cursor, plan_id):
-    """What the confirmation email says about a plan: type (individual | dual), duration in weeks and the price of ONE
-    session (plans.preco is per session, like the "/session" of the price list). Reads plans.tipo only when the column
-    exists (it is added at startup by ensure_pack_columns), so a server that has not restarted yet still works."""
-    cursor.execute("SELECT 1 FROM information_schema.columns WHERE table_name = 'plans' AND column_name = 'tipo'")
-    kind = "tipo" if cursor.fetchone() else "'individual'"
-    cursor.execute(f"SELECT nome, duration_weeks, duracao_meses, preco, {kind} FROM plans WHERE id = %s", (plan_id,))
-    row = cursor.fetchone()
-    if not row:
-        return None
-    return {
-        "name": row[0], "weeks": row[1], "months": row[2],
-        "price": float(row[3]) if row[3] is not None else None,
-        "type": row[4] if row[4] in PLAN_TYPES else "individual",
-    }
-
 
 DAY_MAP = {
     "Monday": 0,
@@ -167,10 +148,11 @@ def find_conflicts(cursor, *, user_id, trainer_id, session_dates, preferred_time
     return conflicts
 
 
-def preview_pack(cursor, *, user_id, plan_id, trainer_id, sessions_per_week, preferred_days, preferred_time, start_date):
+def preview_pack(cursor, *, user_id, plan_id, trainer_id, sessions_per_week, preferred_days, preferred_time, start_date,
+                 session_type=None):
     """What a pack would create, without creating anything: the sessions and the
     conflicts (see find_conflicts). The start date may be any day."""
-    cursor.execute("SELECT nome, duration_weeks FROM plans WHERE id = %s", (plan_id,))
+    cursor.execute("SELECT nome, duration_weeks, duracao_meses FROM plans WHERE id = %s", (plan_id,))
     plan = cursor.fetchone()
     if not plan or not plan[1]:
         raise HTTPException(status_code=404, detail="Plan not found")
@@ -181,8 +163,14 @@ def preview_pack(cursor, *, user_id, plan_id, trainer_id, sessions_per_week, pre
     total = plan[1] * sessions_per_week
     dates = generate_session_dates(start_date, ",".join(days), total)
     replaced = sessions_to_replace(cursor, user_id, start_date)
+    try:       # the price is shown, never invented: no price for this duration = no figures (create_pack refuses it)
+        quote = pricing.pack_quote(cursor, pricing.normalize_type(session_type), plan[2], total)
+    except HTTPException:
+        quote = {"price_per_session": None, "total_price": None}
     return {
         "total_sessions": total,
+        "price_per_session": pricing.number(quote["price_per_session"]),
+        "total_price": pricing.number(quote["total_price"]),
         "dates": dates,
         "first_date": dates[0],
         "last_date": dates[-1],
@@ -225,7 +213,8 @@ def replace_error(summary):
 def create_pack(
     cursor, created_event_ids, *, user_id, client_name, client_email, plan_id, trainer_id,
     trainer_name, sessions_per_week, preferred_days, preferred_time, start_date,
-    request_id=None, allow_conflicts=False, confirm_replace=False
+    request_id=None, allow_conflicts=False, confirm_replace=False,
+    session_type=None, second_person_name=None, second_person_email=None
 ):
     """The one place that creates a pack: records the period and schedule,
     inserts every session and creates its Google Calendar event.
@@ -247,17 +236,25 @@ def create_pack(
     with the list is raised; with True ("Crear igualmente") everything is
     created and nothing is silently dropped.
 
-    Returns {"plan_name", "total_sessions", "session_dates", "sessions",
-    "calendar_failed", "calendar_errors"} where sessions is
+    session_type: individual (default) | dual. A dual pack needs the second person's name and email. The price
+    per session and the total come from pricing.py (never from the caller) and are stored on the pack now.
+
+    Returns {"plan_name", "total_sessions", "session_dates", "sessions", "session_type",
+    "price_per_session", "total_price", "calendar_failed", "calendar_errors"} where sessions is
     [{"id", "start" (Madrid datetime), "trainer", "number"}]. Sessions whose
     calendar event could not be created are still created (and flagged).
     """
-    plan = plan_facts(cursor, plan_id)
-    if not plan or not plan["weeks"]:
+    session_type = pricing.normalize_type(session_type)
+    second_person_name, second_person_email = pricing.second_person(session_type, second_person_name, second_person_email)
+
+    cursor.execute("SELECT nome, duration_weeks, duracao_meses FROM plans WHERE id = %s", (plan_id,))
+    plan = cursor.fetchone()
+    if not plan or not plan[1]:
         raise HTTPException(status_code=404, detail="Plan not found")
-    plan_name, weeks = plan["name"], plan["weeks"]
+    plan_name, weeks, months = plan
 
     total_sessions = weeks * sessions_per_week
+    quote = pricing.pack_quote(cursor, session_type, months, total_sessions)
     session_dates = generate_session_dates(start_date, preferred_days, total_sessions)
 
     replaced = sessions_to_replace(cursor, user_id, start_date)
@@ -277,7 +274,7 @@ def create_pack(
     cursor.execute(
         """
         UPDATE user_plans
-        SET active = FALSE,
+        SET active = FALSE, status = 'sustituido', replaced_at = NOW(),
             end_date = CASE WHEN end_date IS NOT NULL AND end_date >= %s::date
                             THEN (%s::date - 1) ELSE end_date END
         WHERE user_id = %s AND active
@@ -299,12 +296,14 @@ def create_pack(
         """
         INSERT INTO user_plans
         (user_id, plan_id, active, start_date, end_date, sessions_per_week,
-         preferred_days, preferred_time, trainer_id)
-        VALUES (%s, %s, TRUE, %s, %s, %s, %s, %s, %s)
+         preferred_days, preferred_time, trainer_id, session_type, second_person_name, second_person_email,
+         price_per_session, total_price, status, created_at, duration_months)
+        VALUES (%s, %s, TRUE, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'activo', NOW(), %s)
         RETURNING id
         """,
         (user_id, plan_id, session_dates[0], session_dates[-1], sessions_per_week,
-         preferred_days, preferred_time, trainer_id)
+         preferred_days, preferred_time, trainer_id, session_type, second_person_name, second_person_email,
+         quote["price_per_session"], quote["total_price"], months)
     )
     pack_id = cursor.fetchone()[0]
 
@@ -347,7 +346,12 @@ def create_pack(
         "pack_id": pack_id,
         "conflicts": conflicts,
         "plan_name": plan_name,
-        "plan": plan,
+        "session_type": session_type,
+        "second_person_name": second_person_name,
+        "second_person_email": second_person_email,
+        "price_per_session": quote["price_per_session"],
+        "total_price": quote["total_price"],
+        "duration_weeks": weeks,
         "total_sessions": total_sessions,
         "session_dates": session_dates,
         "sessions": sessions,
@@ -414,11 +418,15 @@ def email_pack(created, *, client_name, client_email, days, sessions_per_week, t
             "client_name": client_name,
             "client_email": client_email,
             "plan_name": created["plan_name"],
-            "plan": created.get("plan"),
             "sessions_per_week": sessions_per_week,
             "days": days,
             "trainer": trainer_name,
             "sessions": created["sessions"],
+            "session_type": created["session_type"],
+            "second_person_name": created["second_person_name"],
+            "price_per_session": created["price_per_session"],
+            "total_price": created["total_price"],
+            "duration_weeks": created.get("duration_weeks"),
         }
         if to_client:
             summary["calendar_links"] = calendar_feed.links_for_email(client_email)
@@ -463,8 +471,27 @@ def ensure_pack_columns():
     cursor = conn.cursor()
     try:
         cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_plan_id INTEGER")
-        # individual (1 to 1) or dual (in pairs): the confirmation email says which one
-        cursor.execute("ALTER TABLE plans ADD COLUMN IF NOT EXISTS tipo TEXT NOT NULL DEFAULT 'individual'")
+        # The history of packs (nothing is ever deleted): how long the pack is, how it ended, and when.
+        #   status: activo | sustituido are written when they happen; finalizado | cancelado are worked out when read
+        #   (pack_view.pack_state) because they depend on the sessions and the date.
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE")
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS status TEXT")
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS created_at TIMESTAMP")
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS replaced_at TIMESTAMP")
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS duration_months INTEGER")
+        # Older packs: only what the data really says. The duration is the one of their plan; a pack that is no longer
+        # active and has a LATER pack was replaced (that was the only way a pack stopped being active). When it was
+        # created or replaced is unknown and stays empty.
+        cursor.execute(
+            "UPDATE user_plans up SET duration_months = p.duracao_meses FROM plans p WHERE p.id = up.plan_id AND up.duration_months IS NULL"
+        )
+        cursor.execute(
+            """
+            UPDATE user_plans up SET status = 'sustituido'
+            WHERE up.status IS NULL AND NOT up.active
+              AND EXISTS (SELECT 1 FROM user_plans later WHERE later.user_id = up.user_id AND later.id > up.id)
+            """
+        )
         conn.commit()
     finally:
         cursor.close()

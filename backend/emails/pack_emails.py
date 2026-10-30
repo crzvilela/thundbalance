@@ -20,6 +20,7 @@ from calendar_titles import client_session_title, session_sequence
 from client_lang import resolve_client_lang
 from features import client_calendar_enabled
 from .recipients import clean_recipients
+from .session_kind import kind_rows
 from .template import Block, STUDIO_PLACE, button, heading, highlight_box, key_value, link_line, paragraph, sessions_table
 from .texts import localized_email, normalize_language, tr
 from .transport import send_email_async, validate_address
@@ -72,29 +73,6 @@ def _day_label(moment, lang):
     return f"{day.weekday(lang).capitalize()}, {day.date(lang)}"
 
 
-def _money(value, lang):
-    """65 -> "€65" (English) / "65 €" (Spanish, Catalan); decimals only when there are some ("62,50 €")."""
-    text = f"{float(value):.2f}"
-    text = text[:-3] if text.endswith(".00") else text
-    if lang == "en":
-        return f"€{text}"
-    return f"{text.replace('.', ',')} €"
-
-
-def _plan_rows(summary, lang, sessions):
-    """Type, duration, price per session and total of the plan (when the summary knows them)."""
-    plan = summary.get("plan") or {}
-    rows = []
-    if plan.get("type"):
-        rows.append((tr(lang, "lbl_type"), tr(lang, f"plan_type_{plan['type']}")))
-    if plan.get("weeks"):
-        rows.append((tr(lang, "lbl_duration"), tr(lang, "dur_weeks", n=plan["weeks"])))
-    if plan.get("price") is not None:
-        rows.append((tr(lang, "lbl_price_session"), _money(plan["price"], lang)))
-        rows.append((tr(lang, "lbl_price_total"), _money(plan["price"] * len(sessions), lang)))
-    return rows
-
-
 def render_pack_summary_block(summary, lang="en"):
     """Pack summary (key-value rows) followed by the table of every session, ordered by date, with the weekdays, months and
     dates in `lang` (en | es | ca). Returns one Block."""
@@ -103,12 +81,13 @@ def render_pack_summary_block(summary, lang="en"):
     return _join([
         key_value([
             (tr(lang, "lbl_plan"), summary.get("plan_name")),
-            *_plan_rows(summary, lang, sessions),
+            *([(tr(lang, "lbl_duration"), tr(lang, "dur_weeks", n=summary["duration_weeks"]))] if summary.get("duration_weeks") else []),
             (tr(lang, "lbl_start"), _day_label(sessions[0]["start"], lang)),
             (tr(lang, "lbl_end"), _day_label(sessions[-1]["start"], lang)),
             (tr(lang, "lbl_per_week"), summary.get("sessions_per_week")),
             (tr(lang, "lbl_days"), _day_names(summary.get("days") or [], lang)),
             (tr(lang, "lbl_total"), len(sessions)),
+            *kind_rows(lang, summary, total=True),
         ]),
         paragraph(tr(lang, "pack_sessions_title")),
         sessions_table([{"start": item["start"], "trainer": item.get("trainer")} for item in sessions], lang),

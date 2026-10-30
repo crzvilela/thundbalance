@@ -1,5 +1,6 @@
 import { resolveImageUrl } from '../api/landingPage'
 import { Icon } from './ui'
+import { TypeBadge } from './SessionKind'
 
 // A colour for every client, always the same one, derived from the email (hue 0-359)
 function hueOf(text) {
@@ -41,6 +42,7 @@ export function ClientRow({ client, onOpen, label, check = null, selected = fals
       >
         <ClientAvatar client={client} />
         <span className="min-w-0 flex-1 truncate text-base text-white">{client.email}</span>
+        {client.session_type === 'dual' && <TypeBadge type="dual" />}
         <Icon name="arrow" className="h-4 w-4 shrink-0 text-gray-600 transition group-hover:translate-x-0.5 group-hover:text-emerald-300" />
       </button>
     </li>

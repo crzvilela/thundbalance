@@ -26,6 +26,8 @@ from google_calendar import (
 )
 from landing_page_default import DEFAULT_LANDING_CONTENT
 from admin_api import register_admin_routes
+import plans_schema
+import pricing
 import trainer_area
 from client_lifecycle import ensure_columns as ensure_lifecycle_columns, register_client_lifecycle_routes
 import admin_calendar
@@ -45,7 +47,6 @@ from packs import (
 )
 import pack_view
 from emails import send_pack_summary_email, team_emails
-import client_accounts
 from emails import log as email_log
 from emails.texts import normalize_language
 import calendar_sync
@@ -475,7 +476,7 @@ def ensure_client_workflow_fields():
         cursor.execute("ALTER TABLE client_requests ALTER COLUMN created_at SET DEFAULT (NOW() AT TIME ZONE 'UTC')")
         cursor.execute("ALTER TABLE client_requests ALTER COLUMN status SET DEFAULT 'Pending'")
         cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE")
-        # Pack period and schedule, recorded when a pack is approved or renewed.
+        # Pack period and schedule, recorded when a pack is created (approved request, new pack, new client).
         cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS start_date DATE")
         cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS end_date DATE")
         cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS sessions_per_week INTEGER")
@@ -491,6 +492,11 @@ def ensure_client_workflow_fields():
         if column and column[0] != "text":
             cursor.execute("ALTER TABLE sessions ALTER COLUMN session_number TYPE TEXT USING session_number::text")
         cursor.execute("ALTER TABLE plans ADD COLUMN IF NOT EXISTS duration_weeks INTEGER")
+        plans_schema.price_column(cursor)              # the price column exists (under its real name); never a second one
+        pricing.ensure_schema(cursor)                  # the prices table (seeded once) and the Individual | Dual columns
+        unpriced = pricing.unpriced_plan_months(cursor)
+        if unpriced:
+            logging.getLogger("thundbalance").warning("plans with no price for some session type (months): %s", unpriced)
         cursor.execute("""
             UPDATE plans SET duration_weeks = CASE id
                 WHEN 1 THEN 4 WHEN 2 THEN 12 WHEN 3 THEN 24 ELSE 4 END
@@ -551,11 +557,10 @@ class TrialSessionCreate(BaseModel):
     session_date: str
     session_time: str
     trainer_id: int | None = None      # the trainer the visitor prefers (optional): must be free at that day and hour
-
-
-class AssignPlan(BaseModel):
-    user_id: int
-    plan_id: int
+    # individual (default) | dual; a dual trial needs the second person (the price is worked out by the server)
+    session_type: str | None = None
+    second_person_name: str | None = None
+    second_person_email: str | None = None
 
 
 class ClientRequestCreate(BaseModel):
@@ -565,6 +570,9 @@ class ClientRequestCreate(BaseModel):
     preferred_days: str
     preferred_time: str
     trainer_id: int | None = None      # the trainer the client prefers (optional): must work at that time on every chosen day
+    session_type: str | None = None
+    second_person_name: str | None = None
+    second_person_email: str | None = None
 
 
 class ApproveRequest(BaseModel):
@@ -583,13 +591,16 @@ class ApproveRequest(BaseModel):
     confirm_replace: bool = False
 
 
-class RenewPack(BaseModel):
+class NewPack(BaseModel):
     plan_id: int
     sessions_per_week: int
     preferred_days: str
     preferred_time: str
     trainer_id: int
     start_date: str
+    session_type: str | None = None
+    second_person_name: str | None = None
+    second_person_email: str | None = None
     email_client: bool = True
     email_extra: list[str] | None = None
     # create the sessions even when some collide (the panel asks first)
@@ -607,6 +618,7 @@ class PackPreview(BaseModel):
     preferred_time: str
     trainer_id: int
     start_date: str
+    session_type: str | None = None      # only to show the price in the preview
 
 
 class RejectRequest(BaseModel):
@@ -679,10 +691,13 @@ def get_plans():
 
     try:
 
+        # rows: [id, name, months, price per session (individual, from the prices table), weeks]
         cursor.execute(
             """
-            SELECT *
-            FROM plans
+            SELECT p.id, p.nome, p.duracao_meses, pr.price, p.duration_weeks
+            FROM plans p
+            LEFT JOIN pricing pr ON pr.kind = 'pack' AND pr.session_type = 'individual' AND pr.months = p.duracao_meses
+            ORDER BY p.id
             """
         )
 
@@ -690,6 +705,20 @@ def get_plans():
 
     finally:
 
+        cursor.close()
+        conn.close()
+
+
+@app.get("/pricing")
+def get_pricing():
+    """The prices (EUR per session) the site shows, public like the prices themselves:
+    {"packs": {"individual": {"1": 65, ...}, "dual": {...}}, "trial": {...}, "months": [1, 3, 6]}.
+    Read only; the server never trusts a price sent back by the browser."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        return pricing.catalog(cursor)
+    finally:
         cursor.close()
         conn.close()
 
@@ -1605,6 +1634,9 @@ def create_trial_session(
     if age is not None and not 10 <= age <= 100:
         raise validators.http_error(validators.FieldError("invalid_birth_date", "birth_date"))
 
+    session_type = pricing.normalize_type(trial.session_type)
+    second_name, second_email = pricing.second_person(session_type, trial.second_person_name, trial.second_person_email)
+
     chosen = trial.goals if trial.goals is not None else [g.strip() for g in trial.goal.split(",") if g.strip()]
     goals = [g for g in TRIAL_GOALS if g in chosen]
     if not goals:
@@ -1636,6 +1668,10 @@ def create_trial_session(
         if trial.trainer_id is not None and trial.trainer_id not in [trainer_id for trainer_id, _ in free]:
             raise trainer_choice.unavailable([{"id": trainer_id, "name": name} for trainer_id, name in free])
 
+        trial_price = pricing.trial_price(cursor, session_type)
+        if trial_price is None:
+            raise HTTPException(status_code=422, detail="No price is defined for this trial session.")
+
         existing = _active_trial_for_email(cursor, email)
         if existing:
             # Public answer: only what the visitor needs to see, no personal data.
@@ -1664,11 +1700,15 @@ def create_trial_session(
                 session_time,
                 status,
                 lang,
+                session_type,
+                second_person_name,
+                second_person_email,
+                price_per_session,
                 trainer_id
             )
 
             VALUES
-            (%s,%s,%s,%s,%s,%s,%s,%s,%s,'Pending',%s,%s)
+            (%s,%s,%s,%s,%s,%s,%s,%s,%s,'Pending',%s,%s,%s,%s,%s,%s)
 
             RETURNING id
             """,
@@ -1683,6 +1723,10 @@ def create_trial_session(
                 session_date,
                 trial.session_time,
                 client_lang,
+                session_type,
+                second_name,
+                second_email,
+                trial_price,
                 trial.trainer_id
             )
         )
@@ -1701,9 +1745,14 @@ def create_trial_session(
             "experience": trial.experience.strip()[:60],
             "session_date": session_date.isoformat(),
             "session_time": trial.session_time,
+            "session_type": session_type,
+            "second_person_name": second_name,
+            "second_person_email": second_email,
+            "price_per_session": pricing.number(trial_price),       # a plain number: the dict is sent as JSON
         })
         mailer.send_trial_received(email, full_name.split()[0] if full_name.split() else full_name,
-                                   session_date.isoformat(), trial.session_time, client_lang, reference=trial_id)
+                                   session_date.isoformat(), trial.session_time, client_lang, reference=trial_id,
+                                   details={"session_type": session_type, "second_person_name": second_name, "price_per_session": pricing.number(trial_price)})
 
         return {
             "message": "Trial session requested",
@@ -1736,107 +1785,6 @@ def _after_pack_commit(created):
         print(f"Replaced events could not be removed: {type(error).__name__}")
 
 
-def _assign_plan_email(user_id):
-    """The confirmation email of "Asignar plan" (it was never sent): the client's active pack and its sessions, to the client
-    and the team's default addresses, like the other two paths. None when there is nothing to summarize (a plan without
-    sessions). Never raises."""
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("SELECT nome, email FROM users WHERE id = %s", (user_id,))
-            user = cursor.fetchone()
-            summary = client_accounts._pack_summary(cursor, user_id) if user else None
-        finally:
-            cursor.close()
-            conn.close()
-        if not summary:
-            return None
-        summary["client_name"], summary["client_email"] = user
-        summary["calendar_links"] = calendar_feed.links_for_email(user[1])
-        extra = clean_pack_recipients(None, user[1])
-        result = send_pack_summary_email(summary, to_client=True, extra_recipients=extra)
-        return {"sent_to": result.sent_to, "failed": result.failed, "problem": result.problem}
-    except Exception as error:  # noqa: BLE001
-        print(f"Assign-plan email could not be prepared: {type(error).__name__}")
-        return {"sent_to": [], "failed": [], "problem": "error"}
-
-
-@app.post("/admin/assign-plan", dependencies=[Depends(require_admin)])
-def admin_assign_plan(
-    data: AssignPlan
-):
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    try:
-
-        cursor.execute("SELECT 1 FROM plans WHERE id = %s", (data.plan_id,))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Plan not found")
-
-        # Changing the pack type keeps the current period and schedule; a client
-        # without an active pack simply gets one.
-        cursor.execute(
-            """
-            UPDATE user_plans SET plan_id = %s
-            WHERE id = (
-                SELECT id FROM user_plans
-                WHERE user_id = %s AND active
-                ORDER BY id DESC LIMIT 1
-            )
-            """,
-            (data.plan_id, data.user_id)
-        )
-        if cursor.rowcount == 0:
-            cursor.execute(
-                "INSERT INTO user_plans (user_id, plan_id) VALUES (%s, %s)",
-                (data.user_id, data.plan_id)
-            )
-
-        conn.commit()
-
-        # the client's inbox: "your pack has been approved" (one per pack and plan, never raises)
-        try:
-            cursor.execute(
-                "SELECT up.id, p.nome FROM user_plans up JOIN plans p ON p.id = up.plan_id "
-                "WHERE up.user_id = %s AND up.active ORDER BY up.id DESC LIMIT 1", (data.user_id,))
-            assigned = cursor.fetchone()
-            if assigned:
-                inbox.on_pack_created(data.user_id, assigned[0], assigned[1], state=f"plan{data.plan_id}")
-        except Exception:  # noqa: BLE001 - the inbox never breaks the assignment
-            pass
-
-        # The pack name is part of every event description: bring the client's
-        # future events to the new pack. A calendar failure never undoes the
-        # change; it is reported (and "Sincronizar con calendario" retries it).
-        calendar = None
-        try:
-            calendar = calendar_sync.sync_client(data.user_id)
-        except Exception:  # noqa: BLE001
-            traceback.print_exc()
-
-        return {
-            "message": "Plan assigned successfully",
-            "calendar": calendar,
-            "email": _assign_plan_email(data.user_id),
-        }
-
-    except Exception as e:
-
-        conn.rollback()
-
-        return {
-            "error": str(e)
-        }
-
-    finally:
-
-        cursor.close()
-        conn.close()
-
-
 @app.get("/client/workflow", dependencies=[Depends(require_client)])
 def client_workflow(authorization: str | None = Header(default=None)):
     claims = require_client(authorization)
@@ -1850,7 +1798,9 @@ def client_workflow(authorization: str | None = Header(default=None)):
         user_id = user[0]
         cursor.execute("""
             SELECT cr.id, cr.status, cr.rejection_reason, p.nome, cr.sessions_per_week,
-                   cr.preferred_days, cr.preferred_time, t.nome, cr.start_date, cr.created_at
+                   cr.preferred_days, cr.preferred_time, t.nome, cr.start_date,
+                   cr.session_type, cr.second_person_name,
+                   cr.created_at
             FROM client_requests cr
             LEFT JOIN plans p ON p.id = cr.plan_id
             LEFT JOIN trainers t ON t.id = cr.trainer_id
@@ -1879,7 +1829,8 @@ def client_workflow(authorization: str | None = Header(default=None)):
                          "package": request[3], "sessions_per_week": request[4],
                          "preferred_days": request[5], "preferred_time": request[6],
                          "trainer": request[7], "start_date": request[8],
-                         "created_at": request[9].isoformat() if request[9] else None} if request else None),
+                         "session_type": request[9], "second_person_name": request[10],
+                         "created_at": request[11].isoformat() if request[11] else None} if request else None),
             "plan": ({"name": plan[0], "trainer": plan[1], "id": plan[2],
                       "end_date": str(plan[3]) if plan[3] else None} if plan else None),
             # all the packs that are running, each with its own counters
@@ -1888,7 +1839,9 @@ def client_workflow(authorization: str | None = Header(default=None)):
                  "start_date": str(p["start_date"]) if p["start_date"] else None,
                  "end_date": str(p["end_date"]) if p["end_date"] else None,
                  "sessions_per_week": p["sessions_per_week"],
-                 "done": p["done"], "remaining": p["remaining"], "total": p["total"]}
+                 "done": p["done"], "remaining": p["remaining"], "total": p["total"],
+                 "session_type": p["session_type"], "second_person_name": p["second_person_name"],
+                 "price_per_session": pricing.number(p["price_per_session"]), "total_price": pricing.number(p["total_price"])}
                 for p in active_packs
             ],
             "sessions": [{"id": s[0], "date": str(s[1]), "time": str(s[2]), "trainer": s[3],
@@ -1917,6 +1870,9 @@ def create_client_request(
         if not user:
             raise HTTPException(status_code=404, detail="Client profile not found")
         user_id = user[0]
+
+        session_type = pricing.normalize_type(request.session_type)
+        second_name, second_email = pricing.second_person(session_type, request.second_person_name, request.second_person_email)
 
         offered = weekly_start_times(cursor)
         chosen_days = [day.strip() for day in request.preferred_days.split(",") if day.strip()]
@@ -1953,11 +1909,14 @@ def create_client_request(
                 sessions_per_week,
                 preferred_days,
                 preferred_time,
+                session_type,
+                second_person_name,
+                second_person_email,
                 trainer_id
             )
 
             VALUES
-            (%s,%s,%s,%s,%s,%s)
+            (%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             (
                 user_id,
@@ -1965,6 +1924,9 @@ def create_client_request(
                 request.sessions_per_week,
                 request.preferred_days,
                 request.preferred_time,
+                session_type,
+                second_name,
+                second_email,
                 request.trainer_id
             )
         )
@@ -1991,7 +1953,7 @@ def create_client_request(
 @app.get("/admin/client-requests", dependencies=[Depends(require_admin)])
 def admin_client_requests(archived: str = "exclude"):
     """Training requests as rows [id, client, plan, per week, days, time, status,
-    reason, archived_at]. archived=exclude (default) hides archived ones,
+    reason, archived_at, session type, second person name, second person email, plan months]. archived=exclude (default) hides archived ones,
     only returns just the archived ones, include returns everything."""
     if archived not in ("exclude", "only", "include"):
         raise HTTPException(status_code=422, detail="archived must be exclude, only or include")
@@ -2020,6 +1982,10 @@ def admin_client_requests(archived: str = "exclude"):
                 cr.status,
                 cr.rejection_reason,
                 cr.archived_at,
+                cr.session_type,
+                cr.second_person_name,
+                cr.second_person_email,
+                p.duracao_meses,
                 cr.trainer_id,
                 tr.nome
 
@@ -2044,7 +2010,7 @@ def admin_client_requests(archived: str = "exclude"):
         )
 
         return [
-            [*row[:8], row[8].isoformat() if row[8] else None, row[9], row[10]]
+            [*row[:8], row[8].isoformat() if row[8] else None, *row[9:]]
             for row in cursor.fetchall()
         ]
 
@@ -2064,7 +2030,7 @@ def admin_preview_pack(data: PackPreview):
         return preview_pack(
             cursor, user_id=data.client_id, plan_id=data.plan_id, trainer_id=data.trainer_id,
             sessions_per_week=data.sessions_per_week, preferred_days=data.preferred_days,
-            preferred_time=data.preferred_time, start_date=data.start_date,
+            preferred_time=data.preferred_time, start_date=data.start_date, session_type=data.session_type,
         )
     finally:
         cursor.close()
@@ -2095,7 +2061,10 @@ def approve_request(
                 plan_id,
                 sessions_per_week,
                 preferred_days,
-                preferred_time
+                preferred_time,
+                session_type,
+                second_person_name,
+                second_person_email
             FROM client_requests
             WHERE id = %s AND LOWER(status) = 'pending'
             FOR UPDATE
@@ -2137,6 +2106,7 @@ def approve_request(
             preferred_time=preferred_time, start_date=data.start_date,
             request_id=data.request_id, allow_conflicts=data.allow_conflicts,
             confirm_replace=data.confirm_replace,
+            session_type=request[5], second_person_name=request[6], second_person_email=request[7],
         )
 
         cursor.execute(
@@ -2204,7 +2174,7 @@ def approve_request(
 
 
 @app.post("/admin/clients/{client_id}/renew-pack", dependencies=[Depends(require_admin)])
-def admin_renew_pack(client_id: int, data: RenewPack):
+def admin_new_pack(client_id: int, data: NewPack):
     """Adds a new pack to a client, on any start date, WITHOUT touching the packs
     the client already has (they run in parallel). Creates its sessions
     (database rows first, then Google Calendar events), then emails the client
@@ -2235,6 +2205,8 @@ def admin_renew_pack(client_id: int, data: RenewPack):
             sessions_per_week=data.sessions_per_week, preferred_days=",".join(days),
             preferred_time=data.preferred_time, start_date=data.start_date,
             allow_conflicts=data.allow_conflicts, confirm_replace=data.confirm_replace,
+            session_type=data.session_type, second_person_name=data.second_person_name,
+            second_person_email=data.second_person_email,
         )
 
         conn.commit()
@@ -2248,10 +2220,13 @@ def admin_renew_pack(client_id: int, data: RenewPack):
         )
 
         return {
-            "message": "Pack renewed successfully",
+            "message": "Pack created successfully",
             "total_sessions": created["total_sessions"],
             "start_date": created["session_dates"][0],
             "end_date": created["session_dates"][-1],
+            "session_type": created["session_type"],
+            "price_per_session": pricing.number(created["price_per_session"]),
+            "total_price": pricing.number(created["total_price"]),
             "calendar": {"failed": created["calendar_failed"], "errors": created["calendar_errors"]},
             "email": email,
         }
@@ -2266,7 +2241,7 @@ def admin_renew_pack(client_id: int, data: RenewPack):
         traceback.print_exc()
         raise HTTPException(
             status_code=500,
-            detail=f"Could not renew the pack: {type(error).__name__}: {str(error)[:300]}"
+            detail=f"Could not create the pack: {type(error).__name__}: {str(error)[:300]}"
         ) from error
 
     finally:

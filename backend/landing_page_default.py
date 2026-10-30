@@ -100,8 +100,6 @@ def make_default_pricing_plan():
     return {
         "name": "New Plan",
         "nameStyle": _text_style(),
-        "price": "\u20ac0",
-        "priceStyle": _text_style(),
         "period": _ml("/session", "/sesi\u00f3n", "/sessi\u00f3"),
         "periodStyle": _text_style(),
         "description": "Describe this plan.",
@@ -270,8 +268,6 @@ DEFAULT_LANDING_CONTENT = {
                 {
                     "name": _ml("Monthly Plan", "Plan Mensual", "Pla Mensual"),
                     "nameStyle": _text_style(),
-                    "price": "\u20ac65",
-                    "priceStyle": _text_style(),
                     "period": _ml("/session", "/sesi\u00f3n", "/sessi\u00f3"),
                     "periodStyle": _text_style(),
                     "description": _ml(
@@ -292,8 +288,6 @@ DEFAULT_LANDING_CONTENT = {
                 {
                     "name": _ml("Quarterly Plan", "Plan Trimestral", "Pla Trimestral"),
                     "nameStyle": _text_style(),
-                    "price": "\u20ac60",
-                    "priceStyle": _text_style(),
                     "period": _ml("/session", "/sesi\u00f3n", "/sessi\u00f3"),
                     "periodStyle": _text_style(),
                     "description": _ml(
@@ -315,8 +309,6 @@ DEFAULT_LANDING_CONTENT = {
                 {
                     "name": _ml("Semiannual Plan", "Plan Semestral", "Pla Semestral"),
                     "nameStyle": _text_style(),
-                    "price": "\u20ac55",
-                    "priceStyle": _text_style(),
                     "period": _ml("/session", "/sesi\u00f3n", "/sessi\u00f3"),
                     "periodStyle": _text_style(),
                     "description": _ml(

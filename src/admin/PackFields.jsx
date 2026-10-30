@@ -5,12 +5,16 @@ import { WEEKDAYS, firstMismatch, hoursSummary } from './availability'
 import { Field, SelectInput, TextInput } from './ui'
 import { Icon } from './ui'
 import { PACK_TIMES as TIMES, packHasDaysAndTime, packMinStart } from './packForm'
+import { PriceBox, SessionTypeFields } from './SessionKind'
+import { formatMoney, packPricePerSession, totalPrice } from '../utils/pricing'
+import { usePricing } from '../utils/usePricing'
 
 // The pack form: type, sessions per week, days, time, start date and trainer,
-// with the number of sessions it will create. Used by "Renovar pack" and by
+// with the number of sessions it will create. Used by "Nuevo pack" and by
 // "Añadir cliente" (state comes from usePackForm).
 export default function PackFields({ form, set, plans, trainers, pack = null, busy = false, preview = null, serverConflicts = null }) {
   const { t, language, dayFull, dayLabel } = useAdminText()
+  const { prices } = usePricing()
   const today = dateKey(new Date())
   const suggestion = packMinStart(pack)
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
@@ -19,6 +23,11 @@ export default function PackFields({ form, set, plans, trainers, pack = null, bu
   const toggleDay = (day) => set({ days: form.days.includes(day) ? form.days.filter(item => item !== day) : [...form.days, day] })
   const chosenPlan = plans.find(plan => String(plan[0]) === form.plan)
   const estimate = chosenPlan?.[4] && form.perWeek ? chosenPlan[4] * Number(form.perWeek) : null
+  // The price: the server's own figure when the preview has arrived, otherwise the table's (the server works it out again on save)
+  const sessionsCount = preview?.data?.total_sessions ?? estimate
+  const perSession = preview?.data ? preview.data.price_per_session : packPricePerSession(prices, form.type, chosenPlan?.[2])
+  const total = preview?.data ? preview.data.total_price : totalPrice(perSession, sessionsCount)
+  const priceMissing = !!chosenPlan && !!prices && perSession == null
 
   const trainerOptions = useMemo(() => trainers.map(trainer => ({
     trainer,
@@ -28,10 +37,18 @@ export default function PackFields({ form, set, plans, trainers, pack = null, bu
 
   return (
     <>
+      <SessionTypeFields
+        value={{ type: form.type, name: form.secondName, email: form.secondEmail }} disabled={busy}
+        onChange={patch => set({
+          ...(patch.type !== undefined ? { type: patch.type } : {}),
+          ...(patch.name !== undefined ? { secondName: patch.name } : {}),
+          ...(patch.email !== undefined ? { secondEmail: patch.email } : {})
+        })}
+      />
       <div className="grid gap-x-8 md:grid-cols-2">
         <Field label={t('pk_type')}>
           <SelectInput value={form.plan} onChange={event => set({ plan: event.target.value })} disabled={busy}>
-            <option value="">{t('cl_assign_ph')}</option>
+            <option value="">{t('pk_plan_ph')}</option>
             {plans.map(plan => <option key={plan[0]} value={plan[0]}>{plan[1]}</option>)}
           </SelectInput>
         </Field>
@@ -84,6 +101,20 @@ export default function PackFields({ form, set, plans, trainers, pack = null, bu
           ))}
         </SelectInput>
       </Field>
+
+      {chosenPlan && (
+        <div className="mb-4">
+          <PriceBox
+            title={t('ty_summary')}
+            warning={priceMissing ? t('ty_no_price') : undefined}
+            rows={[
+              { label: t('ty_type_row'), value: form.type === 'dual' ? t('ty_dual') : t('ty_individual') },
+              { label: t('ty_price_session'), value: formatMoney(perSession) },
+              { label: t('ty_price_total'), value: formatMoney(total), strong: true }
+            ]}
+          />
+        </div>
+      )}
 
       {preview?.data?.replaces?.count > 0 && (
         <div role="status" className="mb-4 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-100">

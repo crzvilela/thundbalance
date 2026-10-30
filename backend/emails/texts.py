@@ -12,6 +12,9 @@ from .template import render_email
 logger = logging.getLogger("thundbalance.emails")
 
 TEXTS_ES = {
+    "lbl_type": "Tipo", "lbl_second_person": "Segunda persona", "lbl_second_email": "Email de la segunda persona",
+    "lbl_price_session": "Precio por sesión", "lbl_price_total": "Total del pack",
+    "type_individual": "Individual", "type_dual": "Dual",
     "greeting": "Hola {name},",
     "view_site": "Ver en la web",
     # client: trial session
@@ -41,6 +44,9 @@ TEXTS_ES = {
     "staff_trial_title": "Nueva solicitud de sesión de prueba",
     "staff_trial_pre": "{name} ha pedido una sesión de prueba para el {date} a las {time}.",
     "staff_trial_manage": "Gestiónala desde el panel de administración.",
+    "staff_trial_request_subject": "Nueva solicitud de Trial Session - {name}",
+    "staff_trial_request_button": "Ver en el panel de administración",
+    "staff_lbl_when_requested": "Día y hora solicitados",
     "staff_trial_button": "Abrir el panel",
     "staff_confirmed_subject": "Sesión de prueba CONFIRMADA: {name} — {date} {time}",
     "staff_confirmed_title": "El cliente ha confirmado su sesión de prueba",
@@ -66,8 +72,7 @@ TEXTS_ES = {
     "cal_delay_note": "Google puede tardar hasta 24 horas en reflejar los cambios de un calendario suscrito. Para verlas ya, usa el archivo adjunto.",
     "pack_sessions_title": "Tus sesiones",
     "lbl_plan": "Plan", "lbl_start": "Empieza", "lbl_end": "Termina (última sesión)",
-    "lbl_type": "Tipo", "lbl_duration": "Duración", "lbl_price_session": "Precio por sesión", "lbl_price_total": "Precio total",
-    "plan_type_individual": "Individual (1 a 1)", "plan_type_dual": "Dual (en pareja)", "dur_weeks": "{n} semanas",
+    "lbl_duration": "Duración", "dur_weeks": "{n} semanas",
     "lbl_per_week": "Sesiones por semana", "lbl_days": "Días de entrenamiento", "lbl_total": "Total de sesiones",
     # welcome (new client created by the admin)
     "welcome_subject": "Tu perfil en ThundBalance",
@@ -99,6 +104,9 @@ TEXTS_EN = {
     "greeting": "Hi {name},",
     "view_site": "View on the website",
     "lbl_place": "Place",
+    "lbl_type": "Type", "lbl_second_person": "Second person", "lbl_second_email": "Second person email",
+    "lbl_price_session": "Price per session", "lbl_price_total": "Pack total",
+    "type_individual": "Individual", "type_dual": "Dual",
     "place_value": "ThundBalance, Carrer de Pallars 286, 08005 Barcelona",
     "trial_received_subject": "We received your request",
     "trial_received_title": "Request received",
@@ -129,8 +137,7 @@ TEXTS_EN = {
     "cal_delay_note": "Google can take up to 24 hours to show changes to a subscribed calendar. To see them right away, use the attached file.",
     "pack_sessions_title": "Your sessions",
     "lbl_plan": "Plan", "lbl_start": "Starts", "lbl_end": "Ends (last session)",
-    "lbl_type": "Type", "lbl_duration": "Duration", "lbl_price_session": "Price per session", "lbl_price_total": "Total price",
-    "plan_type_individual": "Individual (1 to 1)", "plan_type_dual": "Dual (in pairs)", "dur_weeks": "{n} weeks",
+    "lbl_duration": "Duration", "dur_weeks": "{n} weeks",
     "lbl_per_week": "Sessions per week", "lbl_days": "Training days", "lbl_total": "Total sessions",
     "welcome_subject": "Your ThundBalance profile",
     "welcome_title": "Your profile is ready",
@@ -155,6 +162,9 @@ TEXTS_EN = {
 TEXTS_CA = {
     "greeting": "Hola {name},",
     "lbl_place": "Lloc",
+    "lbl_type": "Tipus", "lbl_second_person": "Segona persona", "lbl_second_email": "Correu de la segona persona",
+    "lbl_price_session": "Preu per sessió", "lbl_price_total": "Total del pack",
+    "type_individual": "Individual", "type_dual": "Dual",
     "place_value": "ThundBalance, Carrer de Pallars 286, 08005 Barcelona",
     "trial_received_subject": "Hem rebut la teva sol·licitud",
     "trial_received_title": "Sol·licitud rebuda",
@@ -190,8 +200,7 @@ TEXTS_CA = {
     "cal_delay_note": "Google pot trigar fins a 24 hores a mostrar els canvis d'un calendari subscrit. Per veure'ls ja, fes servir el fitxer adjunt.",
     "pack_sessions_title": "Les teves sessions",
     "lbl_plan": "Pla", "lbl_start": "Comença", "lbl_end": "Acaba (última sessió)",
-    "lbl_type": "Tipus", "lbl_duration": "Durada", "lbl_price_session": "Preu per sessió", "lbl_price_total": "Preu total",
-    "plan_type_individual": "Individual (1 a 1)", "plan_type_dual": "Dual (en parella)", "dur_weeks": "{n} setmanes",
+    "lbl_duration": "Durada", "dur_weeks": "{n} setmanes",
     "lbl_per_week": "Sessions per setmana", "lbl_days": "Dies d'entrenament", "lbl_total": "Total de sessions",
     # welcome (new client created by the admin)
     "welcome_subject": "El teu perfil a ThundBalance",

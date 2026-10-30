@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { adminRequest } from './api'
 import { dateKey, parseDateKey } from './requests'
+import { sessionTypeBody } from '../utils/pricing'
+import { secondPersonProblems } from '../utils/usePricing'
 
 export const PACK_TIMES = Array.from({ length: 14 }, (_, index) => `${String(index + 7).padStart(2, '0')}:00`)
 
@@ -23,11 +25,15 @@ export function packDefaults(pack) {
     days: pack?.preferred_days ? pack.preferred_days.split(',').map(day => day.trim()).filter(Boolean) : [],
     time: pack?.preferred_time ? String(pack.preferred_time).slice(0, 5) : '',
     trainer: pack?.trainer_id ? String(pack.trainer_id) : '',
-    start: packMinStart(pack)
+    start: packMinStart(pack),
+    // the type is chosen for every pack (a new pack does not inherit it): Individual unless Dual is picked
+    type: 'individual',
+    secondName: '',
+    secondEmail: ''
   }
 }
 
-// State of the pack form (shared by "Renovar pack" and "Añadir cliente").
+// State of the pack form (shared by "Nuevo pack" and "Añadir cliente").
 export function usePackForm(pack) {
   const [form, setForm] = useState(() => packDefaults(pack))
   const set = (patch) => setForm(current => ({ ...current, ...patch }))
@@ -35,7 +41,8 @@ export function usePackForm(pack) {
 }
 
 export const packHasDaysAndTime = (form) => form.days.length > 0 && !!form.time
-export const packIsComplete = (form) => !!form.plan && !!form.trainer && !!form.start && packHasDaysAndTime(form)
+export const packIsComplete = (form) => !!form.plan && !!form.trainer && !!form.start && packHasDaysAndTime(form) &&
+  Object.keys(secondPersonProblems({ type: form.type, name: form.secondName, email: form.secondEmail })).length === 0
 
 // Body fields the server expects for a pack.
 export const packPayload = (form) => ({
@@ -44,7 +51,9 @@ export const packPayload = (form) => ({
   preferred_days: form.days.join(','),
   preferred_time: form.time,
   trainer_id: Number(form.trainer),
-  start_date: form.start
+  start_date: form.start,
+  // only the kind of session: the server works the price out itself
+  ...sessionTypeBody({ type: form.type, name: form.secondName, email: form.secondEmail })
 })
 
 // What the pack would create and what would collide, asked to the server

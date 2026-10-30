@@ -7,6 +7,8 @@ import { useToast } from '../toastContext'
 import { parseDateKey } from '../requests'
 import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
 import { useBulkSelection } from '../bulk'
+import { TypeBadge } from '../SessionKind'
+import { formatMoney } from '../../utils/pricing'
 import SectionCard from '../../components/admin/SectionCard'
 import { canStart, hoursSummary, weekdayOf } from '../availability'
 import {
@@ -33,6 +35,7 @@ export default function TrialSessions() {
   const [declining, setDeclining] = useState(null)
   const [cancelling, setCancelling] = useState(null)
   const [trainerId, setTrainerId] = useState('')
+  const [when, setWhen] = useState({ date: '', time: '' })   // the day / hour the trial is approved for (the admin may adjust them)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [working, setWorking] = useState('')   // 'resend-12' | 'calendar-12' while a card button runs
@@ -41,9 +44,10 @@ export default function TrialSessions() {
   // Only trainers who work on the requested weekday and hour can be chosen.
   const trainerOptions = useMemo(() => {
     if (!approving) return []
-    const day = weekdayOf(approving.date)
-    return trainers.map(trainer => ({ trainer, day, ok: canStart(trainer, day, approving.time), summary: hoursSummary(trainer, [day]) }))
-  }, [trainers, approving])
+    const day = weekdayOf(when.date || approving.date)
+    const time = when.time || approving.time
+    return trainers.map(trainer => ({ trainer, day, time, ok: canStart(trainer, day, time), summary: hoursSummary(trainer, [day]) }))
+  }, [trainers, approving, when])
   const nobodyFits = approving && trainerOptions.length > 0 && trainerOptions.every(option => !option.ok)
 
   const counts = useMemo(() => ({
@@ -90,17 +94,26 @@ export default function TrialSessions() {
   }
 
   // The answer says how the email went: the approval itself is never undone, but
-  // a problem is shown, not hidden. Approving puts nothing on the calendar: the
-  // event is created when the client confirms.
+  // a problem is shown, not hidden. Approving puts the trial on the calendar at once as
+  // "Pendiente"; the client's confirmation turns that same event into the confirmed one.
+  const startApproving = (trial) => {
+    setTrainerId(trial.trainer_id ? String(trial.trainer_id) : ''); setFormError(''); setWhen({ date: trial.date, time: trial.time }); setApproving(trial)
+  }
+
   const approve = async () => {
     if (!trainerId) { setFormError(t('select_trainer')); return }
+    if (!when.date || !when.time) { setFormError(t('tr_when_required')); return }
     setBusy(true)
     setFormError('')
     try {
-      const result = await adminRequest('POST', `/admin/trial-sessions/${approving.id}/approve`, { trainer_id: Number(trainerId) })
+      const body = { trainer_id: Number(trainerId) }
+      if (when.date !== approving.date || when.time !== approving.time) { body.session_date = when.date; body.session_time = when.time }
+      const result = await adminRequest('POST', `/admin/trial-sessions/${approving.id}/approve`, body)
       setApproving(null)
       if (result.email && !result.email.sent) {
         toast.push(`${t('tr_approved_email_failed')} (${emailProblem(result.email.problem)}).`, 'warning')
+      } else if (result.calendar && !result.calendar.ok) {
+        toast.push(t('tr_approved_calendar_failed'), 'warning')
       } else {
         toast.push(t('tr_approved_ok'))
       }
@@ -235,6 +248,8 @@ export default function TrialSessions() {
                       {trial.experience && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{trial.experience}</span>}
                       {trial.age && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{trial.age}</span>}
                       {trial.trainer && <span className="rounded-md border border-sky-400/20 bg-sky-400/10 px-2 py-0.5 text-xs text-sky-200">{t(trial.status === 'pending' ? 'tr_trainer_requested' : 'tr_trainer')}: {trial.trainer}</span>}
+                      <TypeBadge type={trial.session_type} secondName={trial.second_person_name} />
+                      {trial.price_per_session != null && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{t('ty_trial_price')}: {formatMoney(trial.price_per_session)}</span>}
                     </div>
                     <SectionCard className="mt-4 !p-4" title={t('fx_tab_activity')} collapsible defaultOpen={(trial.received_email?.status === 'failed' || trial.approval_email?.status === 'failed' || trial.calendar_missing)}>
                     <p className={`mb-3 text-sm ${trial.received_email?.status === 'failed' ? 'text-red-300' : 'text-gray-400'}`}>
@@ -273,7 +288,7 @@ export default function TrialSessions() {
                       </Button>
                     )}
                     {trial.status === 'pending' && <>
-                      <Button variant="primary" onClick={() => { setTrainerId(trial.trainer_id ? String(trial.trainer_id) : ''); setFormError(''); setApproving(trial) }}><Icon name="check" className="h-4 w-4" />{t('req_approve')}</Button>
+                      <Button variant="primary" onClick={() => startApproving(trial)}><Icon name="check" className="h-4 w-4" />{t('req_approve')}</Button>
                       <Button variant="danger" onClick={() => { setReason(''); setFormError(''); setDeclining(trial) }}>{t('req_reject')}</Button>
                     </>}
                     {trial.status === 'approved' && (
@@ -302,22 +317,35 @@ export default function TrialSessions() {
         </>}
       >
         <p className="mb-6 text-sm text-gray-400">{t('tr_approve_sub')}</p>
+        {approving?.session_type === 'dual' && (
+          <p className="mb-4 text-sm text-gray-300"><TypeBadge type="dual" /> {t('ty_second_person')}: <strong>{approving.second_person_name}</strong> · {approving.second_person_email}</p>
+        )}
         {approving && (
           <div className="mb-6 rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3 text-sm text-emerald-100">
-            {parseDateKey(approving.date).toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' })} · {approving.time}
+            {when.date ? parseDateKey(when.date).toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' }) : '—'} · {when.time}
+          </div>
+        )}
+        {approving && (
+          <div className="mb-5 grid grid-cols-2 gap-3">
+            <Field label={t('tr_when_date')}>
+              <TextInput type="date" value={when.date} onChange={event => setWhen(current => ({ ...current, date: event.target.value }))} disabled={busy} />
+            </Field>
+            <Field label={t('tr_when_time')}>
+              <TextInput type="time" value={when.time} onChange={event => setWhen(current => ({ ...current, time: event.target.value }))} disabled={busy} />
+            </Field>
           </div>
         )}
         {approving && (
           <p className={`mb-5 rounded-xl border px-4 py-3 text-sm ${nobodyFits ? 'border-red-400/25 bg-red-400/10 text-red-200' : 'border-sky-400/20 bg-sky-400/5 text-sky-100'}`}>
-            {nobodyFits ? t('av_none') : `${t('av_hint')} ${dayFull(weekdayOf(approving.date))} · ${approving.time}`}
+            {nobodyFits ? t('av_none') : `${t('av_hint')} ${dayFull(weekdayOf(when.date || approving.date))} · ${when.time || approving.time}`}
           </p>
         )}
         <Field label={t('trainer')}>
           <SelectInput value={trainerId} onChange={event => setTrainerId(event.target.value)} disabled={busy}>
             <option value="">{t('select_trainer')}</option>
-            {trainerOptions.map(({ trainer, day, ok, summary }) => (
+            {trainerOptions.map(({ trainer, day, time, ok, summary }) => (
               <option key={trainer.id} value={trainer.id} disabled={!ok}>
-                {trainer.name}{ok ? ` — ${summary}` : ` — ${t('av_unavailable')} ${dayFull(day)} ${approving.time}${summary ? ` (${t('av_works')} ${summary})` : ''}`}
+                {trainer.name}{ok ? ` — ${summary}` : ` — ${t('av_unavailable')} ${dayFull(day)} ${time}${summary ? ` (${t('av_works')} ${summary})` : ''}`}
               </option>
             ))}
           </SelectInput>

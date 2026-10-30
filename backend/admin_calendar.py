@@ -131,7 +131,7 @@ def _iso(day, moment):
 
 def session_event(row, now):
     (session_id, day, moment, status, rescheduled, number, user_id, name, email, phone, code,
-     trainer_id, trainer, color, pack, sync_status, sync_error, change_id, change_status) = row
+     trainer_id, trainer, color, pack, sync_status, sync_error, change_id, change_status, session_type, second_name) = row
     start, end = _iso(day, moment)
     number = str(number or "").strip()
     email = str(email or "").strip()
@@ -147,17 +147,24 @@ def session_event(row, now):
             "phone": _phone(phone, code), "trainerId": trainer_id, "trainer": trainer or "", "color": color or "",
             "rescheduled": bool(rescheduled), "syncStatus": sync_status, "syncError": sync_error,
             "changeRequestId": change_id, "changeRequestStatus": change_status,     # open reschedule request, if any
+            "sessionType": session_type or "individual", "secondPersonName": second_name or "",
         },
     }
 
 
+def trial_title_text(email, pending):
+    """"Trial - ana@x.com", or "Trial (Pendiente) - ana@x.com" while the client has not confirmed."""
+    base = "Trial (Pendiente)" if pending else "Trial"
+    return f"{base} - {email}" if email else base
+
+
 def trial_event(row):
-    trial_id, day, moment, status, token, name, email, phone, trainer_id, trainer, color, goal, sync_status, sync_error = row
+    trial_id, day, moment, status, token, name, email, phone, trainer_id, trainer, color, goal, sync_status, sync_error, session_type, second_name = row
     start, end = _iso(day, moment)
     email = str(email or "").strip()
     return {
         "id": f"t{trial_id}",
-        "title": f"Trial - {email}" if email else "Trial",
+        "title": trial_title_text(email, trial_status(status, token) == "approved"),
         "start": start,
         "end": end,
         "extendedProps": {
@@ -165,6 +172,7 @@ def trial_event(row):
             "clientName": name or "", "email": email, "phone": str(phone or ""),
             "trainerId": trainer_id, "trainer": trainer or "", "color": color or "", "goal": goal or "",
             "syncStatus": sync_status, "syncError": sync_error,
+            "sessionType": session_type or "individual", "secondPersonName": second_name or "",
         },
     }
 
@@ -194,7 +202,8 @@ def calendar_events(cursor, first, last, email=None, trainer_ids=None, kind="all
                    s.trainer_id, t.nome, t.color, COALESCE(p1.nome, p2.nome),
                    s.calendar_sync_status, s.calendar_sync_error,
                    (SELECT rr.id FROM reschedule_requests rr WHERE rr.session_id = s.id AND rr.status IN ('pending', 'counter_proposed') LIMIT 1),
-                   (SELECT rr.status FROM reschedule_requests rr WHERE rr.session_id = s.id AND rr.status IN ('pending', 'counter_proposed') LIMIT 1)
+                   (SELECT rr.status FROM reschedule_requests rr WHERE rr.session_id = s.id AND rr.status IN ('pending', 'counter_proposed') LIMIT 1),
+                   up.session_type, up.second_person_name
             FROM sessions s
             LEFT JOIN users u ON u.id = s.user_id
             LEFT JOIN trainers t ON t.id = s.trainer_id
@@ -225,7 +234,7 @@ def calendar_events(cursor, first, last, email=None, trainer_ids=None, kind="all
             f"""
             SELECT ts.id, ts.session_date, ts.session_time, ts.status, ts.confirmation_token,
                    ts.full_name, ts.email, ts.phone, ts.trainer_id, t.nome, t.color, ts.goal,
-                   ts.calendar_sync_status, ts.calendar_sync_error
+                   ts.calendar_sync_status, ts.calendar_sync_error, ts.session_type, ts.second_person_name
             FROM trial_sessions ts
             LEFT JOIN trainers t ON t.id = ts.trainer_id
             WHERE {' AND '.join(where)}

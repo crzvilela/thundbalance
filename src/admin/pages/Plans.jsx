@@ -5,14 +5,16 @@ import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
 import { useBulkSelection } from '../bulk'
-import { Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon, PageHeader, SelectInput, Skeleton, TextInput } from '../ui'
+import { Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon, PageHeader, Skeleton, TextInput } from '../ui'
+import { formatMoney, packPricePerSession } from '../../utils/pricing'
+import { usePricing } from '../../utils/usePricing'
 
-const EMPTY = { name: '', months: '', weeks: '', price: '', type: 'individual' }
+const EMPTY = { name: '', months: '', weeks: '' }
 const planKey = plan => plan[0]
 
-// /plans rows: [id, name, months, price, weeks]
+// /plans rows: [id, name, months, price, weeks]; the price is not edited here (it comes from the prices table)
 function toForm(plan) {
-  return { name: plan[1], months: String(plan[2] ?? ''), weeks: String(plan[4] ?? ''), price: String(plan[3] ?? ''), type: plan[5] === 'dual' ? 'dual' : 'individual' }
+  return { name: plan[1], months: String(plan[2] ?? ''), weeks: String(plan[4] ?? '') }
 }
 
 export default function Plans() {
@@ -20,6 +22,7 @@ export default function Plans() {
   const toast = useToast()
   const resource = useAdminResource('/plans')
   const plans = useMemo(() => resource.data || [], [resource.data])
+  const { prices } = usePricing()
 
   const selection = useBulkSelection(plans, planKey)
   const [editing, setEditing] = useState(null) // null | 'new' | plan row
@@ -35,11 +38,9 @@ export default function Plans() {
     const payload = {
       nome: form.name.trim(),
       duracao_meses: Number(form.months),
-      duration_weeks: Number(form.weeks),
-      preco: Number(form.price),
-      tipo: form.type
+      duration_weeks: Number(form.weeks)
     }
-    const valid = payload.nome && payload.duracao_meses >= 1 && payload.duration_weeks >= 1 && form.price !== '' && payload.preco >= 0
+    const valid = payload.nome && payload.duracao_meses >= 1 && payload.duration_weeks >= 1
     if (!valid) { setFormError(t('pl_invalid')); return }
 
     setBusy(true)
@@ -100,11 +101,23 @@ export default function Plans() {
               <Card className={`group relative h-full overflow-hidden p-6 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-400/30 ${selection.chosen.has(plan[0]) ? '!border-emerald-400/50' : ''}`}>
                 <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-emerald-400/5 blur-2xl" />
                 <div className="relative flex items-center justify-between gap-2">
-                  <span className="flex flex-wrap gap-2"><Badge tone="emerald">{plan[2]} {t('pl_months_short')} · {plan[4]} {t('pl_weeks_short')}</Badge><Badge tone={plan[5] === 'dual' ? 'sky' : 'neutral'}>{t(plan[5] === 'dual' ? 'pl_type_dual' : 'pl_type_individual')}</Badge></span>
+                  <Badge tone="emerald">{plan[2]} {t('pl_months_short')} · {plan[4]} {t('pl_weeks_short')}</Badge>
                   <RowCheck selection={selection} id={plan[0]} label={t('bk_select_one').replace('{name}', plan[1])} />
                 </div>
                 <h2 className="mt-4 text-xl font-semibold">{plan[1]}</h2>
-                <p className="mt-2 text-4xl font-semibold tabular-nums">€{Number(plan[3]).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                <dl className="mt-4 space-y-1.5">
+                  {['individual', 'dual'].map(type => {
+                    const price = packPricePerSession(prices, type, plan[2])
+                    return (
+                      <div key={type} className="flex items-baseline justify-between gap-3">
+                        <dt className="text-sm text-gray-400">{t(`pl_price_${type}`)}</dt>
+                        <dd className={`tabular-nums ${price == null && prices ? 'text-sm text-red-300' : 'text-2xl font-semibold'}`}>
+                          {price == null ? (prices ? t('pl_no_price') : '—') : <>{formatMoney(price)} <span className="text-sm font-normal text-gray-500">{t('pl_per_session')}</span></>}
+                        </dd>
+                      </div>
+                    )
+                  })}
+                </dl>
                 <div className="mt-6 flex gap-2">
                   <Button variant="secondary" className="flex-1" onClick={() => openEdit(plan)}>{t('pl_edit_title')}</Button>
                   <Button variant="danger" onClick={() => setDeleting(plan)} aria-label={`${t('pl_delete')} ${plan[1]}`}>{t('pl_delete')}</Button>
@@ -137,13 +150,7 @@ export default function Plans() {
           <div className="md:col-span-2"><Field label={t('pl_name')}><TextInput value={form.name} onChange={set('name')} maxLength={80} disabled={busy} /></Field></div>
           <Field label={t('pl_months')}><TextInput type="number" min="1" value={form.months} onChange={set('months')} disabled={busy} /></Field>
           <Field label={t('pl_weeks')} hint={t('pl_weeks_hint')}><TextInput type="number" min="1" value={form.weeks} onChange={set('weeks')} disabled={busy} /></Field>
-          <Field label={t('pl_price')}><TextInput type="number" min="0" step="0.01" value={form.price} onChange={set('price')} disabled={busy} /></Field>
-          <Field label={t('pl_type')}>
-            <SelectInput value={form.type} onChange={set('type')} disabled={busy}>
-              <option value="individual">{t('pl_type_individual')}</option>
-              <option value="dual">{t('pl_type_dual')}</option>
-            </SelectInput>
-          </Field>
+          <p className="text-xs text-gray-500 md:col-span-2">{t('pl_prices_note')}</p>
         </div>
         {formError && <p role="alert" className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{formError}</p>}
       </Drawer>

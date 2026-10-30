@@ -9,6 +9,7 @@ from .dates import format_date_bilingual, parse_madrid
 from .ics import build_ics
 from calendar_titles import client_trial_title
 from features import client_calendar_enabled
+from .session_kind import kind_rows
 from .template import (
     STUDIO_PLACE, button, heading, key_value, link_line, notice, paragraph, sessions_table, site_url,
 )
@@ -47,6 +48,7 @@ def _staff_rows(trial, day):
         (tr("es", "lbl_trainer"), trial.get("trainer")),
         (tr("es", "lbl_date"), f"{day.weekday_es} {day.date_es}"),
         (tr("es", "lbl_time"), day.time),
+        *kind_rows("es", trial, staff=True),
     ]
 
 
@@ -54,19 +56,34 @@ def _trial_day(trial):
     return format_date_bilingual(parse_madrid(trial.get("session_date"), trial.get("session_time") or "00:00"))
 
 
+def _first_and_last(full_name):
+    """"Ana Maria Prueba Lopez" -> "Ana Lopez" (first name and last surname)."""
+    parts = str(full_name or "").split()
+    return parts[0] if len(parts) == 1 else (f"{parts[0]} {parts[-1]}" if parts else "")
+
+
 def staff_trial_requested(trial):
-    """(subject, html, text) for pt@: a visitor asked for a trial session.
+    """(subject, html, text) for the team: a visitor asked for a trial session. Spanish only.
     `trial` is the dict built in create_trial_session."""
     day = _trial_day(trial)
     name = _one_line(trial.get("full_name"))
-    subject = tr("es", "staff_trial_subject", name=name, date=trial.get("session_date") or "", time=trial.get("session_time") or "")
+    subject = tr("es", "staff_trial_request_subject", name=_one_line(_first_and_last(trial.get("full_name"))))
+    rows = [
+        (tr("es", "lbl_name"), trial.get("full_name")),
+        (tr("es", "lbl_email"), trial.get("email")),
+        (tr("es", "lbl_phone"), trial.get("phone")),
+        (tr("es", "lbl_goals"), trial.get("goal")),
+        (tr("es", "lbl_experience"), trial.get("experience")),
+        (tr("es", "staff_lbl_when_requested"), day.es),                 # "lunes 2 de noviembre de 2026, 09:00"
+        *kind_rows("es", trial, staff=True),                              # type, second person, price per session
+    ]
 
     def build():
         return [
             heading(tr("es", "staff_trial_title")),
-            key_value(_staff_rows(trial, day)),
+            key_value(rows),
             paragraph(tr("es", "staff_trial_manage"), muted=True),
-            button(tr("es", "staff_trial_button"), "", f"{site_url()}/admin/trials", only="es"),
+            button(tr("es", "staff_trial_request_button"), "", f"{site_url()}/admin/trials", only="es"),
         ]
 
     return spanish_email(subject, build, preheader=tr("es", "staff_trial_pre", name=name, date=day.date_es, time=day.time))
@@ -117,7 +134,7 @@ def _link(lang, key, url):
     return link_line("", "", url, label=tr(lang, key))
 
 
-def client_trial_received(name, start, lang=None):
+def client_trial_received(name, start, lang=None, details=None):
     """We got the request; the team will be in touch. Shows the day and time asked for."""
     lang = normalize_language(lang) or "en"
     day = format_date_bilingual(start)
@@ -127,12 +144,12 @@ def client_trial_received(name, start, lang=None):
             heading(tr(l, "trial_received_title")),
             paragraph(tr(l, "greeting", name=name)),
             paragraph(tr(l, "trial_received_body")),
-            key_value([(tr(l, "trial_received_asked"), day.full(l))]),
+            key_value([(tr(l, "trial_received_asked"), day.full(l)), *kind_rows(l, details)]),
         ]
     return localized_email(lang, "trial_received_subject", build, title_key="trial_received_title")
 
 
-def client_trial_approved(name, start, trainer, token, lang=None):
+def client_trial_approved(name, start, trainer, token, lang=None, details=None):
     """Approved by the admin: asks the client to confirm (primary) or say they can't come."""
     lang = normalize_language(lang) or "en"
 
@@ -142,7 +159,7 @@ def client_trial_approved(name, start, trainer, token, lang=None):
             paragraph(tr(l, "greeting", name=name)),
             paragraph(tr(l, "trial_approved_body")),
             sessions_table([{"start": start, "trainer": trainer}], l),
-            key_value([(tr(l, "lbl_place"), STUDIO_PLACE)]),
+            key_value([*kind_rows(l, details), (tr(l, "lbl_place"), STUDIO_PLACE)]),
             _button(lang, "trial_approved_confirm", confirmation_url(token, lang=lang)),
             _link(lang, "trial_approved_decline", confirmation_url(token, "decline", lang=lang)),
             paragraph(tr(l, "trial_approved_note"), muted=True),
@@ -150,7 +167,7 @@ def client_trial_approved(name, start, trainer, token, lang=None):
     return localized_email(lang, "trial_approved_subject", build, title_key="trial_approved_title")
 
 
-def client_trial_confirmed(name, start, trainer, trial_id, lang=None):
+def client_trial_confirmed(name, start, trainer, trial_id, lang=None, details=None):
     """Confirmation with the calendar file. Returns (subject, html, text, ics_text)."""
     lang = normalize_language(lang) or "en"
 
@@ -161,7 +178,7 @@ def client_trial_confirmed(name, start, trainer, trial_id, lang=None):
             # the sentence that mentions the attached event only exists with the client calendar on
             paragraph(tr(l, "trial_confirmed_body" if client_calendar_enabled() else "trial_confirmed_body_plain")),
             sessions_table([{"start": start, "trainer": trainer}], l),
-            key_value([(tr(l, "lbl_place"), STUDIO_PLACE)]),
+            key_value([*kind_rows(l, details), (tr(l, "lbl_place"), STUDIO_PLACE)]),
             paragraph(tr(l, "trial_confirmed_note"), muted=True),
         ]
     subject, html, text = localized_email(lang, "trial_confirmed_subject", build, title_key="trial_confirmed_title")

@@ -6,10 +6,17 @@ import TempPasswordNotice from '../components/TempPasswordNotice'
 import TrainerChoice from '../components/forms/TrainerChoice'
 import { API_URL } from '../config'
 import { useI18n } from '../i18n/I18nContext'
+import SessionTypeSection, { PriceSummary } from '../components/forms/SessionTypeSection'
+import { formatMoney, packQuote, sessionTypeBody } from '../utils/pricing'
+import { secondPersonProblems, usePricing } from '../utils/usePricing'
+import { formText } from '../i18n/formText'
 
 function TrainingRequest() {
   const navigate = useNavigate()
-  const { t } = useI18n()
+  const { t, language } = useI18n()
+  const { prices } = usePricing()
+  const [kind, setKind] = useState({ type: 'individual', name: '', email: '' })
+  const [kindErrors, setKindErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [plans, setPlans] = useState([])
   const [planId, setPlanId] = useState('1')
@@ -60,6 +67,11 @@ function TrainingRequest() {
       .catch(() => setPlans([]))
   }, [])
 
+  // What the pack would cost: preview only, the server works the price out again
+  const chosenPlan = plans.find(plan => String(plan[0]) === planId)
+  const sessions = chosenPlan?.[4] ? chosenPlan[4] * Number(sessionsPerWeek) : 0
+  const quote = packQuote(prices, kind.type, chosenPlan?.[2], sessions)
+
   const handleDayChange = (day) => {
 
     if (preferredDays.includes(day)) {
@@ -87,6 +99,12 @@ function TrainingRequest() {
     setProblem('')
     if (!preferredDays.length) { setProblem('tr_choose_day'); return }
     if (!effectiveTime) { setProblem('tr_no_time'); return }
+    const second = secondPersonProblems(kind)
+    if (second.name || second.email) {
+      setKindErrors({ name: second.name && formText(language, second.name), email: second.email && formText(language, second.email) })
+      return
+    }
+    if (quote.perSession == null) { setProblem('st_no_price'); return }
     setSubmitting(true)
 
     try {
@@ -112,7 +130,9 @@ function TrainingRequest() {
 
             preferred_time: effectiveTime,
 
-            trainer_id: trainerId || null
+            trainer_id: trainerId || null,
+            // only the kind of session: the server works the price out itself
+            ...sessionTypeBody(kind)
 
           })
 
@@ -126,17 +146,20 @@ function TrainingRequest() {
         if (response.status === 409 && body.detail?.code === 'trainer_unavailable') {
           setTrainerRefresh(count => count + 1)      // somebody took that trainer a moment ago: read the free ones again
           setProblem('tc_race')
-        } else {
-          setProblem(typeof body.detail === 'string' ? `msg:${body.detail}` : 'tr_err_send')
+          return
         }
+        const field = body.detail?.field
+        if (field === 'second_person_name' || field === 'second_person_email') {
+          setKindErrors({ [field === 'second_person_name' ? 'name' : 'email']: String(body.detail.message || '') })
+          return
+        }
+        setProblem(typeof body.detail === 'string' ? `msg:${body.detail}` : 'tr_err_send')
 
         return
 
       }
 
-      const data = await response.json()
-
-      console.log(data)
+      await response.json()
 
       navigate('/dashboard')
 
@@ -170,6 +193,13 @@ function TrainingRequest() {
         </h1>
 
         <div className="border border-white/10 p-5 sm:p-10 rounded-2xl">
+
+          <div className="mb-8">
+            <SessionTypeSection
+              value={kind} errors={kindErrors} disabled={submitting}
+              onChange={patch => { setKind(current => ({ ...current, ...patch })); setKindErrors({}) }}
+            />
+          </div>
 
           <div className="mb-8">
 
@@ -280,6 +310,20 @@ function TrainingRequest() {
               selectClass="w-full bg-black border border-white/20 p-4 text-white"
             />
 
+          </div>
+
+          <div className="mb-8">
+            <PriceSummary
+              title={t('st_summary')}
+              rows={[
+                { label: t('st_package'), value: chosenPlan?.[1] || '—' },
+                { label: t('st_type_row'), value: t(kind.type === 'dual' ? 'st_dual' : 'st_individual') },
+                { label: t('st_sessions'), value: sessions },
+                { label: t('st_price_session'), value: formatMoney(quote.perSession) },
+                { label: t('st_price_total'), value: formatMoney(quote.total), strong: true }
+              ]}
+              note={quote.perSession == null && prices ? t('st_no_price') : (kind.type === 'dual' ? t('st_price_both') : undefined)}
+            />
           </div>
 
           {problem && (

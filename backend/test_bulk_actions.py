@@ -152,7 +152,7 @@ class Bulk(unittest.TestCase):
     def test_cancelling_several_sessions_removes_all_their_google_events(self):
         user_id = self.user("ana", "Ana María Ruiz")
         main_route = [r for r in main.app.routes if getattr(r, "path", "") == "/admin/clients/{client_id}/renew-pack"][0]
-        main_route.endpoint(user_id, main.RenewPack(
+        main_route.endpoint(user_id, main.NewPack(
             plan_id=self.plan_id, sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="10:00",
             trainer_id=self.trainer_id, start_date=monday(10).isoformat(), email_extra=[], allow_conflicts=True, confirm_replace=True))
         rows = self.query("SELECT id, google_event_id FROM sessions WHERE user_id = %s ORDER BY session_date, session_time, id", (user_id,))

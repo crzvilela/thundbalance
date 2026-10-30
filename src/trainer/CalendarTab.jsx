@@ -42,10 +42,10 @@ export default function CalendarTab({ source, text, color }) {
 
   // FullCalendar asks for the events of what it shows through ONE stable function.
   const sourceRef = useRef(source)
-  const labelsRef = useRef({ trial: t('tr_cal_trial'), free: t('tr_cal_free') })
+  const labelsRef = useRef({ trial: t('tr_cal_trial') })
   useEffect(() => {
     sourceRef.current = source
-    labelsRef.current = { trial: t('tr_cal_trial'), free: t('tr_cal_free') }
+    labelsRef.current = { trial: t('tr_cal_trial') }
     calendar.current?.getApi().refetchEvents()
   }, [source, t])
 
@@ -85,7 +85,7 @@ export default function CalendarTab({ source, text, color }) {
   }
   const renderEvent = (arg) => {
     const props = arg.event.extendedProps
-    if (props.kind === 'free') return <div className="tr-free-inner">{arg.timeText && <span className="ac-ev-time">{arg.timeText}</span>}{arg.event.title}</div>
+    if (props.kind === 'free') return <div className="tr-free-inner" />          // a free hour is only the quiet dashed block: no text
     return (
       <div className="ac-ev-inner">
         <div className="ac-ev-title">{arg.timeText && <span className="ac-ev-time">{arg.timeText}</span>}{arg.event.title}</div>

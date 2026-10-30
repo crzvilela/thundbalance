@@ -11,7 +11,7 @@ El envío usa un Google Apps Script (funciona en Render gratis y no necesita acc
 5. En Render → servicio del backend → **Environment**, añade:
    - `TRIAL_EMAIL_WEBHOOK_URL` = la URL `/exec`
    - `TRIAL_EMAIL_WEBHOOK_SECRET` = la misma clave del paso 2
-   - (opcional) `TEAM_NOTIFICATION_EMAILS` = destinatarios de TODOS los avisos internos (separados por comas); por defecto `pt@thundbalance.com`. Las variables antiguas `TRIAL_NOTIFY_TO`, `CONTACT_NOTIFY_TO` y `TEAM_EMAILS` ya no hacen falta (bórralas en Render si existen)
+   - (opcional) `TEAM_NOTIFICATION_EMAILS` = quién recibe el aviso de «Nueva solicitud de Trial Session» (direcciones separadas por comas, un solo correo con todas en «Para»); por defecto solo `pt@thundbalance.com` (`info@` ya no se usa). Rige TODOS los avisos internos. Una dirección inválida se ignora y, si ninguna es válida, se usa la de por defecto. Las variables antiguas `TRIAL_NOTIFY_TO`, `CONTACT_NOTIFY_TO` y `TEAM_EMAILS` ya no hacen falta.
 6. Guarda y redeploya. Pide al jefe que marque el remitente como seguro para que no vaya a spam.
 
 Si las variables no están definidas, no se envía nada y las reservas funcionan igual.
@@ -22,7 +22,7 @@ El script `docs/trial-email.gs` ahora entiende dos formatos: el nuevo (asunto, H
 
 1. script.google.com → abre el proyecto existente → sustituye el código por el de `docs/trial-email.gs` (conserva tu `SECRET`).
 2. **Implementar → Gestionar implementaciones → editar (lápiz) → Versión: Nueva versión → Implementar.** La URL `/exec` no cambia.
-3. No hay variables nuevas en Render. Opcional: `SITE_URL` (p. ej. `https://thundbalance.vercel.app`) para los enlaces y el logo de los emails.
+3. No hay variables nuevas en Render. Opcional: `FRONTEND_URL` (por defecto `https://thundbalance.vercel.app`; `SITE_URL`, el nombre anterior, sigue funcionando) para los enlaces y el logo de los emails. El logo es el PNG `public/email-logo.png` (600 px, blanco sobre transparente, mostrado a 200 px) en `{FRONTEND_URL}/email-logo.png`; una dirección que no sea https pública (localhost, relativa, `data:`) se ignora. Para comprobarlo tras el deploy: `python scripts/check_email_logo.py` (desde `backend/`).
 4. Prueba: `python send_test_email.py tu@correo.com` desde la carpeta `backend` con `TRIAL_EMAIL_WEBHOOK_URL` y `TRIAL_EMAIL_WEBHOOK_SECRET` definidas en tu terminal.
 
 ## Emails al renovar o asignar un pack

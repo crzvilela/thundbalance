@@ -5,10 +5,12 @@ protected by the same require_admin dependency as the other /admin/* routes.
 """
 
 import traceback
+from typing import Optional
 
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 
+import pricing
 from database import get_connection
 from datetime import datetime, timedelta
 
@@ -34,6 +36,7 @@ import validators
 from emails import log as email_log
 from emails import health as email_health
 from emails.dates import to_madrid
+import plans_schema
 from admin_calendar import ensure_columns_once as ensure_calendar_columns
 from trial_confirmation import (
     approve_trial, panel_status, remove_trial_event, resend_approval, resend_received, sync_calendar_event,
@@ -44,8 +47,7 @@ class PlanPayload(BaseModel):
     nome: str = Field(min_length=1, max_length=80)
     duracao_meses: int = Field(ge=1, le=60)
     duration_weeks: int = Field(ge=1, le=260)
-    preco: float = Field(ge=0, le=100000)
-    tipo: str = Field(default="individual", pattern="^(individual|dual)$")
+    preco: float | None = Field(default=None, ge=0, le=100000)      # ignored: prices live in pricing.py / the pricing table
 
 
 class HoursWindow(BaseModel):
@@ -77,6 +79,8 @@ class BillingPayload(BaseModel):
 
 class TrialApprovePayload(BaseModel):
     trainer_id: int
+    session_date: Optional[str] = Field(default=None, max_length=10)     # the admin may adjust the day / hour
+    session_time: Optional[str] = Field(default=None, max_length=5)
 
 
 class EmailTestPayload(BaseModel):
@@ -133,14 +137,16 @@ def register_admin_routes(app, require_admin):
                     ),
                     u.tax_id, u.morada,
                     pl.packs,
-                    u.archived_at
+                    u.archived_at,
+                    pl.dual
                 FROM users u
                 LEFT JOIN LATERAL (
                     -- all active packs: name of the newest, the latest end date, how many
                     SELECT (array_agg(p.id ORDER BY up.id DESC))[1] AS id,
                            (array_agg(p.nome ORDER BY up.id DESC))[1] AS nome,
                            MAX(up.end_date) AS end_date,
-                           COUNT(*) AS packs
+                           COUNT(*) AS packs,
+                           BOOL_OR(up.session_type = 'dual') AS dual
                     FROM user_plans up JOIN plans p ON p.id = up.plan_id
                     WHERE up.user_id = u.id AND up.active
                 ) pl ON TRUE
@@ -172,6 +178,7 @@ def register_admin_routes(app, require_admin):
                     "billing_missing": not (r[14] and str(r[15] or "").strip()),
                     "packs_active": r[16] or 0,
                     "archived_at": _iso(r[17]),
+                    "session_type": "dual" if r[18] else "individual",       # dual when any active pack is dual
                 }
                 for r in cursor.fetchall()
             ]
@@ -232,11 +239,16 @@ def register_admin_routes(app, require_admin):
                     "trainer_id": p["trainer_id"], "trainer": p["trainer"],
                     "status": _pack_status(p["plan_id"], p["end_date"]),
                     "total": p["total"], "done": p["done"], "remaining": p["remaining"],
+                    # what was stored when the pack was created (None for packs from before prices)
+                    "session_type": p["session_type"], "second_person_name": p["second_person_name"],
+                    "second_person_email": p["second_person_email"],
+                    "price_per_session": pricing.number(p["price_per_session"]),
+                    "total_price": pricing.number(p["total_price"]),
                 }
                 for p in packs
             ]
             shown = [p for p in packs_out if p["shown"]]
-            pack = shown[-1] if shown else None          # the newest card: defaults of "Renovar pack"
+            pack = shown[-1] if shown else None          # the newest card: defaults of "Nuevo pack"
             plan = pack
 
             return {
@@ -256,6 +268,31 @@ def register_admin_routes(app, require_admin):
                 "packs": packs_out,
                 "sessions": sessions,
             }
+        finally:
+            cursor.close()
+            conn.close()
+
+    @app.get("/admin/clients/{client_id}/packs", dependencies=admin)
+    def admin_client_pack_history(client_id: int):
+        """The whole history of a client's packs, newest first, each with its sessions (x/y, date, status). Read only,
+        admin only: nothing is deleted and the client never gets this."""
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT 1 FROM users WHERE id = %s", (client_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Client not found")
+            return [
+                {
+                    **pack,
+                    "start_date": _iso(pack["start_date"]), "end_date": _iso(pack["end_date"]),
+                    "created_at": _iso(pack["created_at"]), "replaced_at": _iso(pack["replaced_at"]),
+                    "price_per_session": pricing.number(pack["price_per_session"]),
+                    "total_price": pricing.number(pack["total_price"]),
+                    "sessions": [{**item, "date": _iso(item["date"])} for item in pack["sessions"]],
+                }
+                for pack in pack_view.pack_history(cursor, client_id)
+            ]
         finally:
             cursor.close()
             conn.close()
@@ -436,12 +473,16 @@ def register_admin_routes(app, require_admin):
         conn = get_connection()
         cursor = conn.cursor()
         try:
+            # The real price lives in the pricing table. The old column of `plans` (it is NOT NULL) only gets the
+            # individual price of that duration so it never disagrees with it; nothing reads it for a price.
+            price = plans_schema.price_column(cursor)
+            legacy = pricing.price_per_session(cursor, pricing.PACK, pricing.INDIVIDUAL, plan.duracao_meses) or 0
             cursor.execute(
-                """
-                INSERT INTO plans (nome, duracao_meses, preco, duration_weeks, tipo)
-                VALUES (%s, %s, %s, %s, %s) RETURNING id
+                f"""
+                INSERT INTO plans (nome, duracao_meses, {price}, duration_weeks)
+                VALUES (%s, %s, %s, %s) RETURNING id
                 """,
-                (plan.nome.strip(), plan.duracao_meses, plan.preco, plan.duration_weeks, plan.tipo),
+                (plan.nome.strip(), plan.duracao_meses, legacy, plan.duration_weeks),
             )
             plan_id = cursor.fetchone()[0]
             conn.commit()
@@ -465,10 +506,10 @@ def register_admin_routes(app, require_admin):
             cursor.execute(
                 """
                 UPDATE plans
-                SET nome = %s, duracao_meses = %s, preco = %s, duration_weeks = %s, tipo = %s
+                SET nome = %s, duracao_meses = %s, duration_weeks = %s
                 WHERE id = %s RETURNING id
                 """,
-                (plan.nome.strip(), plan.duracao_meses, plan.preco, plan.duration_weeks, plan.tipo, plan_id),
+                (plan.nome.strip(), plan.duracao_meses, plan.duration_weeks, plan_id),
             )
             if not cursor.fetchone():
                 raise HTTPException(status_code=404, detail="Plan not found")
@@ -526,7 +567,8 @@ def register_admin_routes(app, require_admin):
                        ts.experience, ts.session_date, ts.session_time, ts.status,
                        ts.trainer_id, t.nome, ts.rejection_reason, ts.created_at,
                        ts.birth_date, ts.confirmation_token, ts.google_event_id, ts.calendar_error,
-                       ts.approved_at, ts.confirmed_at, ts.declined_at
+                       ts.approved_at, ts.confirmed_at, ts.declined_at,
+                       ts.session_type, ts.second_person_name, ts.second_person_email, ts.price_per_session
                 FROM trial_sessions ts
                 LEFT JOIN trainers t ON t.id = ts.trainer_id
                 ORDER BY ts.id DESC
@@ -558,11 +600,13 @@ def register_admin_routes(app, require_admin):
                     "approved_at": _iso(r[18]) if r[18] else None,
                     "confirmed_at": _iso(r[19]) if r[19] else None,
                     "declined_at": _iso(r[20]) if r[20] else None,
+                    "session_type": r[21], "second_person_name": r[22], "second_person_email": r[23],
+                    "price_per_session": pricing.number(r[24]),
                     # Confirmed by the client but with no event on the calendar: the panel
                     # offers "Crear evento en el calendario" (calendar_failed = the last
                     # attempt errored). An approved session has no event by design.
-                    "calendar_missing": status == "confirmed" and not r[16],
-                    "calendar_failed": status == "confirmed" and not r[16] and bool(r[17]),
+                    "calendar_missing": status in ("approved", "confirmed") and not r[16],
+                    "calendar_failed": status in ("approved", "confirmed") and not r[16] and bool(r[17]),
                     # Newest approval email, from email_log (None: none was ever sent)
                     "approval_email": ({
                         "status": "sent" if sent["status"] == email_log.SENT else "failed",
@@ -586,9 +630,10 @@ def register_admin_routes(app, require_admin):
     def admin_approve_trial(trial_id: int, data: TrialApprovePayload):
         """Approves the request. Everything (status, token, email in the saved
         language) happens in approve_trial(), the only approval path. Approving
-        creates NO calendar event: it is created when the client confirms."""
+        puts the trial on the calendar at once as "Trial (Pendiente)"; the client's
+        confirmation turns that same event into the confirmed one."""
         try:
-            result = approve_trial(trial_id, data.trainer_id)
+            result = approve_trial(trial_id, data.trainer_id, data.session_date, data.session_time)
         except HTTPException:
             raise
         except Exception as error:
@@ -628,7 +673,7 @@ def register_admin_routes(app, require_admin):
 
     @app.post("/admin/trial-sessions/{trial_id}/calendar-event", dependencies=admin)
     def admin_trial_calendar_event(trial_id: int):
-        """Creates the calendar event of a CONFIRMED trial session if it is
+        """Creates the calendar event of an APPROVED or CONFIRMED trial session if it is
         missing (or refreshes the existing one: it never makes a second event).
         The panel button "Crear evento en el calendario"."""
         conn = get_connection()
@@ -642,10 +687,10 @@ def register_admin_routes(app, require_admin):
         if not row:
             raise HTTPException(status_code=404, detail="Trial session not found")
         status = panel_status(row[0], row[1])
-        if status != "confirmed":
+        if status not in ("approved", "confirmed"):
             raise HTTPException(
                 status_code=409,
-                detail="Only trial sessions confirmed by the client have a calendar event",
+                detail="Only approved or confirmed trial sessions have a calendar event",
             )
         ok = sync_calendar_event(trial_id)
         return {"calendar": {"ok": ok}}
@@ -751,10 +796,12 @@ def register_admin_routes(app, require_admin):
             try:
                 cursor.execute(
                     """
-                    SELECT s.google_event_id, s.id, u.id, u.nome, t.nome, s.status, s.session_number
+                    SELECT s.google_event_id, s.id, u.id, u.nome, t.nome, s.status, s.session_number,
+                           up.session_type, up.second_person_name
                     FROM sessions s
                     LEFT JOIN users u ON u.id = s.user_id
                     LEFT JOIN trainers t ON t.id = s.trainer_id
+                    LEFT JOIN user_plans up ON up.id = s.user_plan_id
                     WHERE s.google_event_id = ANY(%s)
                     """,
                     (ids,),
@@ -762,7 +809,7 @@ def register_admin_routes(app, require_admin):
                 sessions = {row[0]: row for row in cursor.fetchall()}
                 cursor.execute(
                     """
-                    SELECT ts.google_event_id, ts.id, ts.full_name, t.nome, ts.status
+                    SELECT ts.google_event_id, ts.id, ts.full_name, t.nome, ts.status, ts.session_type, ts.second_person_name
                     FROM trial_sessions ts
                     LEFT JOIN trainers t ON t.id = ts.trainer_id
                     WHERE ts.google_event_id = ANY(%s)
@@ -796,12 +843,12 @@ def register_admin_routes(app, require_admin):
                 item.update(
                     kind="session", session_id=session[1], client_id=session[2],
                     client=session[3], trainer=session[4], status=session[5],
-                    number=session[6],
+                    number=session[6], session_type=session[7] or "individual", second_person_name=session[8],
                 )
             elif trial:
                 item.update(
                     kind="trial", trial_id=trial[1], client=trial[2],
-                    trainer=trial[3], status=trial[4],
+                    trainer=trial[3], status=trial[4], session_type=trial[5] or "individual", second_person_name=trial[6],
                 )
             result.append(item)
         return result
