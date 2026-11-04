@@ -9,9 +9,11 @@ import PackFields from './PackFields'
 import { TypeBadge } from './SessionKind'
 import { formatMoney } from '../utils/pricing'
 import { packIsComplete, packPayload, startIsInThePast, usePackForm, usePackPreview } from './packForm'
-import EmailRecipients from './EmailRecipients'
-import { recipientsPayload, reportEmailResult, useEmailRecipients } from './recipientsState'
+import RecipientsBox, { SendsTo } from './RecipientsBox'
+import { extraBody } from './recipients'
+import { reportEmailResult } from './recipientsState'
 import { reportCalendarResult } from './calendarSync'
+import { OverlapAsk } from './OverlapWarning'
 
 const STATUS_TONE = { active: 'emerald', expiring: 'amber', expired: 'red', none: 'neutral' }
 
@@ -21,9 +23,8 @@ export function PackStatusBadge({ status }) {
   return <Badge tone={STATUS_TONE[status]}>{t(`pk_status_${status}`)}</Badge>
 }
 
-// The client's packs: the active one (period, schedule, trainer and done /
-// left) and the previous one while it still has sessions to come. A client has
-// ONE active pack: a new pack replaces the current one from its start date.
+// The client's packs: every ACTIVE pack (period, schedule, trainer and done / left). A client can have several at once:
+// a new pack never touches the others, each one runs and counts on its own.
 export function PackSummary({ packs = [], onNewPack }) {
   const { t, language, dayLabel } = useAdminText()
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
@@ -144,35 +145,36 @@ export function TrainingCalendar({ sessions }) {
   )
 }
 
-export function NewPackDrawer({ client, pack, plans, trainers, onClose, onDone }) {
+export function NewPackDrawer({ client, pack, packs, trainers, onClose, onDone }) {
   const { t } = useAdminText()
   const toast = useToast()
   const [form, set] = usePackForm(pack)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [recipients, setRecipients] = useEmailRecipients()
+  const [extra, setExtra] = useState([])                           // more recipients of the pack email (BCC); the client always gets it
   const [askPast, setAskPast] = useState(false)
   const [askConflicts, setAskConflicts] = useState(false)
   const [serverConflicts, setServerConflicts] = useState(null)
-  const [askReplace, setAskReplace] = useState(false)
-  const [serverReplaces, setServerReplaces] = useState(null)
+  const [askOverlaps, setAskOverlaps] = useState(false)             // the client gets two sessions at the same time: a warning first
+  const [serverOverlaps, setServerOverlaps] = useState(null)
+  const [trainerOk, setTrainerOk] = useState(false)                   // the admin already accepted the trainer's collisions
   const preview = usePackPreview(client.id, form)
   const conflicts = serverConflicts || preview.data?.conflicts || []
-  // Sessions of the current pack that this one cancels (the preview tells before anything is sent).
-  const replaces = serverReplaces || preview.data?.replaces || null
+  // Sessions of the client at the same time as a session of another of their packs (the preview tells before anything is sent).
+  const overlaps = serverOverlaps || preview.data?.overlaps || []
 
   // Changing the form invalidates any list the server sent before.
-  const update = (patch) => { setServerConflicts(null); setServerReplaces(null); setAskConflicts(false); setAskReplace(false); set(patch) }
+  const update = (patch) => { setServerConflicts(null); setServerOverlaps(null); setAskConflicts(false); setAskOverlaps(false); setTrainerOk(false); set(patch) }
 
-  const send = async (allowConflicts, confirmReplace = false) => {
+  const send = async (allowConflicts, allowOverlaps = false) => {
     setBusy(true)
     setError('')
     try {
       const result = await adminRequest('POST', `/admin/clients/${client.id}/renew-pack`, {
-        ...recipientsPayload(recipients),
+        ...extraBody(extra),
         ...packPayload(form),
         allow_conflicts: allowConflicts,
-        confirm_replace: confirmReplace
+        allow_overlaps: allowOverlaps
       })
       toast.push(t('pk_created'))
       reportEmailResult(toast, t, result.email)
@@ -182,9 +184,9 @@ export function NewPackDrawer({ client, pack, plans, trainers, onClose, onDone }
       if (err.code === 'conflicts') {            // the server found collisions the preview had not shown yet
         setServerConflicts(err.conflicts)
         setAskConflicts(true)
-      } else if (err.code === 'replaces_pack') { // the server wants the admin's confirmation first
-        setServerReplaces(err.detail)
-        setAskReplace(true)
+      } else if (err.code === 'client_overlap') { // two sessions of the client at the same time: warn, then continue if the admin says so
+        setServerOverlaps(err.detail?.overlaps || [])
+        setAskOverlaps(true)
       } else {
         setError(err.message)
       }
@@ -193,15 +195,14 @@ export function NewPackDrawer({ client, pack, plans, trainers, onClose, onDone }
     }
   }
 
-  // 1) a date in the past asks first, 2) replacing the current pack asks (with
-  // the number of sessions that are cancelled), 3) collisions are listed first,
-  // 4) then it is created.
-  const submit = (confirmedPast = false, confirmedReplace = false) => {
+  // 1) a date in the past asks first, 2) the trainer's collisions are listed first, 3) the client's own sessions at the
+  // same time as another pack are a warning ("Continuar igualmente"), 4) then it is created.
+  const submit = (confirmedPast = false) => {
     if (!packIsComplete(form)) { setError(t('pk_fill')); return }
     if (startIsInThePast(form) && !confirmedPast) { setAskPast(true); return }
-    if (replaces?.count > 0 && !confirmedReplace) { setAskReplace(true); return }
-    if (conflicts.length > 0) { setAskConflicts(true); return }
-    send(false, replaces?.count > 0)
+    if (conflicts.length > 0 && !trainerOk) { setAskConflicts(true); return }
+    if (overlaps.length > 0) { setAskOverlaps(true); return }
+    send(trainerOk, false)
   }
 
   return (
@@ -214,16 +215,20 @@ export function NewPackDrawer({ client, pack, plans, trainers, onClose, onDone }
       </>}
     >
       <p className="mb-6 text-sm text-gray-400">{t('pk_new_sub')}</p>
-      <PackFields form={form} set={update} plans={plans} trainers={trainers} pack={pack} busy={busy} preview={preview} serverConflicts={serverConflicts} />
-      <EmailRecipients value={recipients} onChange={setRecipients} disabled={busy} />
+      <PackFields form={form} set={update} packs={packs} trainers={trainers} pack={pack} busy={busy} preview={preview} serverConflicts={serverConflicts} serverOverlaps={serverOverlaps} />
+      <RecipientsBox clientEmail={client.email} value={extra} onChange={setExtra} disabled={busy} />
+      <SendsTo clientEmail={client.email} extra={extra} />
       {askConflicts && conflicts.length > 0 && (
         <div role="alert" className="mt-5 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-amber-100">
           <p className="mb-3 text-sm">{t('cf_question')}</p>
           <div className="flex flex-wrap gap-3">
             <Button variant="secondary" onClick={() => setAskConflicts(false)} disabled={busy}>{t('cf_change')}</Button>
-            <Button variant="primary" onClick={() => { setAskConflicts(false); send(true, replaces?.count > 0) }} loading={busy}>{t('cf_create_anyway')}</Button>
+            <Button variant="primary" onClick={() => { setAskConflicts(false); setTrainerOk(true); if (overlaps.length > 0) setAskOverlaps(true); else send(true, false) }} loading={busy}>{t('cf_create_anyway')}</Button>
           </div>
         </div>
+      )}
+      {askOverlaps && !askConflicts && (
+        <OverlapAsk overlaps={overlaps} busy={busy} onChange={() => setAskOverlaps(false)} onContinue={() => { setAskOverlaps(false); send(trainerOk, true) }} />
       )}
       {busy && <p className="mt-4 text-sm text-amber-300">{t('approving_hint')}</p>}
       {error && <p role="alert" className="mt-4 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</p>}
@@ -232,13 +237,6 @@ export function NewPackDrawer({ client, pack, plans, trainers, onClose, onDone }
         title={t('pk_past_title')} text={t('pk_past_text')}
         confirmLabel={t('pk_past_ok')} cancelLabel={t('cancel')}
         onConfirm={() => { setAskPast(false); submit(true) }} onCancel={() => setAskPast(false)}
-      />
-      <ConfirmDialog
-        open={askReplace && replaces?.count > 0} tone="danger" icon="calendar"
-        title={t('pk_replace_title')}
-        text={`${t('pk_replace_text')} ${replaces?.count} (${replaces?.first_date} → ${replaces?.last_date})`}
-        confirmLabel={t('pk_replace_ok')} cancelLabel={t('cancel')} busy={busy}
-        onConfirm={() => { setAskReplace(false); submit(true, true) }} onCancel={() => setAskReplace(false)}
       />
     </Drawer>
   )

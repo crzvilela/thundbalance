@@ -49,6 +49,7 @@ _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="email")
 class EmailResult:
     ok: bool
     error: str = ""   # short, safe reason; never contains addresses, URLs or secrets
+    bcc_dropped: bool = False   # the message went to its main recipient but NOT to the extra (BCC) ones
 
     def __bool__(self):
         return self.ok
@@ -81,7 +82,7 @@ def mask(address):
     return f"{name[:1]}***@{domain}" if domain else "***"
 
 
-def build_payload(to, subject, html, text, reply_to=None, attachments=None, cc=None, extra=None, language=None):
+def build_payload(to, subject, html, text, reply_to=None, attachments=None, cc=None, extra=None, language=None, bcc=None):
     """Validated JSON for the Apps Script. Raises ValueError on bad input."""
     recipients = _addresses(to, "to")
     if not recipients:
@@ -103,6 +104,7 @@ def build_payload(to, subject, html, text, reply_to=None, attachments=None, cc=N
         "secret": os.getenv("TRIAL_EMAIL_WEBHOOK_SECRET", "").strip(),
         "to": ",".join(recipients),
         "cc": ",".join(_addresses(cc, "cc")),
+        "bcc": ",".join(_addresses(bcc, "bcc")),         # the extra recipients: hidden from the main recipient and from each other
         "subject": subject,
         "html": html,
         "text": text,
@@ -117,14 +119,14 @@ def build_payload(to, subject, html, text, reply_to=None, attachments=None, cc=N
     return payload
 
 
-def _deliver(to, subject, html, text, reply_to=None, attachments=None, cc=None, extra=None, kind="", lang=""):
+def _deliver(to, subject, html, text, reply_to=None, attachments=None, cc=None, extra=None, kind="", lang="", bcc=None):
     """Does the sending (see send_email). Returns an EmailResult; never raises."""
     url = os.getenv("TRIAL_EMAIL_WEBHOOK_URL", "").strip()
     if not url:
         logger.warning("Email not sent: TRIAL_EMAIL_WEBHOOK_URL is not set")
         return EmailResult(False, "not_configured")
     try:
-        payload = build_payload(to, subject, html, text, reply_to, attachments, cc, extra, language=lang if lang in ("en", "es", "ca") else None)
+        payload = build_payload(to, subject, html, text, reply_to, attachments, cc, extra, language=lang if lang in ("en", "es", "ca") else None, bcc=bcc)
     except (ValueError, KeyError, TypeError) as error:
         logger.error("Email rejected before sending: %s", error)
         return EmailResult(False, "invalid_input")
@@ -170,7 +172,7 @@ def _deliver(to, subject, html, text, reply_to=None, attachments=None, cc=None, 
 
 
 def send_email(to, subject, html, text, reply_to=None, attachments=None, cc=None, extra=None,
-               kind="", lang="", reference=None):
+               kind="", lang="", reference=None, bcc=None):
     """Send now (blocking, up to 20 s) and report; never raises.
 
     kind / lang label the log line, and kind / reference (for example the trial
@@ -178,16 +180,25 @@ def send_email(to, subject, html, text, reply_to=None, attachments=None, cc=None
     email with a kind: sent or failed, with a short error code.
 
     attachments: list of {"filename", "content_type", "data" (bytes)}.
+    bcc: extra recipients added by the admin, in blind copy. If the message is refused WITH them, it is sent once more
+    WITHOUT them, so a problem with an extra address never stops the main recipient from getting it
+    (the result says bcc_dropped).
     extra: additional JSON fields for the script (used to keep the old
     trial-notice format working until the script is updated).
     """
-    result = _deliver(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang)
+    result = _deliver(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang, bcc)
     attempts = 1
-    while not result.ok and result.error in RETRYABLE and attempts < MAX_ATTEMPTS:
+    # a refusal WITH extra recipients is not retried as it is: it goes straight to the fallback below (without them)
+    while not result.ok and result.error in RETRYABLE and attempts < MAX_ATTEMPTS and not (bcc and result.error == "rejected"):
         logger.warning("Email attempt %s failed (%s); retrying once", attempts, result.error)
         time.sleep(RETRY_DELAY_SECONDS)
         attempts += 1
-        result = _deliver(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang)
+        result = _deliver(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang, bcc)
+    if not result.ok and bcc and result.error in ("rejected", "invalid_input"):
+        logger.warning("Email refused with extra recipients (%s); sending it without them", result.error)
+        result = _deliver(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang, None)
+        if result.ok:
+            result = EmailResult(True, bcc_dropped=True)
     if kind:
         recipient = to if isinstance(to, str) else ",".join(str(item) for item in (to or []))
         email_log.record(kind, reference, recipient, result.ok, result.error, lang=lang or None)

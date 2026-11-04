@@ -20,7 +20,7 @@ export function packMinStart(pack) {
 
 export function packDefaults(pack) {
   return {
-    plan: pack?.plan_id ? String(pack.plan_id) : '',
+    plan: pack?.catalog_pack_id ? String(pack.catalog_pack_id) : '',      // a pack of the catalogue (chosen again for every pack)
     perWeek: String(pack?.sessions_per_week || 1),
     days: pack?.preferred_days ? pack.preferred_days.split(',').map(day => day.trim()).filter(Boolean) : [],
     time: pack?.preferred_time ? String(pack.preferred_time).slice(0, 5) : '',
@@ -46,7 +46,7 @@ export const packIsComplete = (form) => !!form.plan && !!form.trainer && !!form.
 
 // Body fields the server expects for a pack.
 export const packPayload = (form) => ({
-  plan_id: Number(form.plan),
+  pack_id: Number(form.plan),
   sessions_per_week: Number(form.perWeek),
   preferred_days: form.days.join(','),
   preferred_time: form.time,

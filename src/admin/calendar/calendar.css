@@ -1,86 +1,167 @@
-/* FullCalendar inside the admin panel: dark by default, light under .admin-light.
+/* FullCalendar inside the admin panel, drawn like Google Calendar: dark by default, light under .admin-light.
    FullCalendar reads these --fc-* variables. */
 .admin-fc {
   --fc-page-bg-color: transparent;
   --fc-neutral-bg-color: rgba(255, 255, 255, 0.04);
   --fc-neutral-text-color: #9ca3af;
-  --fc-border-color: rgba(255, 255, 255, 0.08);
-  --fc-today-bg-color: rgba(52, 211, 153, 0.06);
-  --fc-now-indicator-color: #34d399;
+  --fc-border-color: rgba(255, 255, 255, 0.1);
+  --ac-minor-line: rgba(255, 255, 255, 0.05);          /* the half-hour line: fainter than the hour line */
+  --fc-today-bg-color: rgba(52, 211, 153, 0.05);       /* today's column: a subtle tint */
+  --fc-now-indicator-color: #ea4335;                   /* Google's red */
   --fc-non-business-color: rgba(255, 255, 255, 0.02);
   --fc-more-link-bg-color: rgba(255, 255, 255, 0.08);
   --fc-button-text-color: #e5e7eb;
   --fc-button-bg-color: transparent;
   --fc-button-border-color: rgba(255, 255, 255, 0.16);
   --fc-button-hover-bg-color: rgba(255, 255, 255, 0.08);
-  --fc-button-hover-border-color: rgba(255, 255, 255, 0.32);
-  --fc-button-active-bg-color: rgba(52, 211, 153, 0.2);
-  --fc-button-active-border-color: rgba(52, 211, 153, 0.55);
-  --ac-ink: #06100c;                 /* text on a coloured event */
+  --fc-button-hover-border-color: rgba(255, 255, 255, 0.24);
+  --fc-button-active-bg-color: rgba(52, 211, 153, 0.18);
+  --fc-button-active-border-color: rgba(52, 211, 153, 0.5);
+  --ac-ink: #06100c;                 /* text on a coloured event (each event overrides it with --ev-ink) */
   --ac-soft-text: #e5e7eb;           /* text on a dashed (trial) event */
-  --ac-today-ring: rgba(52, 211, 153, 0.7);
+  --ac-accent: #34d399;              /* today: the circle around the day number */
+  --ac-accent-ink: #06100c;
 }
 
 .admin-light .admin-fc {
   --fc-neutral-bg-color: rgba(15, 23, 42, 0.04);
   --fc-neutral-text-color: #5b6677;
   --fc-border-color: rgba(15, 23, 42, 0.12);
-  --fc-today-bg-color: rgba(16, 185, 129, 0.08);
-  --fc-now-indicator-color: #059669;
+  --ac-minor-line: rgba(15, 23, 42, 0.06);
+  --fc-today-bg-color: rgba(16, 185, 129, 0.06);
   --fc-more-link-bg-color: rgba(15, 23, 42, 0.08);
   --fc-button-text-color: #1e293b;
   --fc-button-border-color: rgba(15, 23, 42, 0.2);
   --fc-button-hover-bg-color: rgba(15, 23, 42, 0.07);
-  --fc-button-hover-border-color: rgba(15, 23, 42, 0.35);
-  --fc-button-active-bg-color: rgba(16, 185, 129, 0.18);
-  --fc-button-active-border-color: rgba(5, 150, 105, 0.6);
+  --fc-button-hover-border-color: rgba(15, 23, 42, 0.3);
+  --fc-button-active-bg-color: rgba(16, 185, 129, 0.16);
+  --fc-button-active-border-color: rgba(5, 150, 105, 0.55);
   --ac-soft-text: #0f172a;
-  --ac-today-ring: rgba(5, 150, 105, 0.75);
+  --ac-accent: #059669;
+  --ac-accent-ink: #ffffff;
 }
 
-/* the calendar takes the height of the screen; the hours scroll inside it */
+/* the frame: its height comes from the window on a computer (Calendar.jsx), this is the fallback */
 .admin-fc .ac-frame { height: max(520px, calc(100vh - 21rem)); }
 .admin-fc .fc { font-family: inherit; font-size: 0.875rem; color: inherit; }
-.admin-fc .fc-toolbar { gap: 0.75rem; flex-wrap: wrap; }
-.admin-fc .fc-toolbar-title { font-family: 'Bebas Neue', Inter, sans-serif; font-size: 1.9rem; letter-spacing: 0.03em; text-transform: capitalize; font-weight: 400; }
-.admin-fc .fc-button { border-radius: 0.75rem; font-weight: 600; text-transform: capitalize; padding: 0.5rem 0.9rem; box-shadow: none !important; min-height: 40px; }
-.admin-fc .fc-button-primary:disabled { opacity: 0.45; }
-.admin-fc .fc-button-group > .fc-button:not(:first-child) { margin-left: -1px; }
-.admin-fc .fc-col-header-cell-cushion, .admin-fc .fc-timegrid-slot-label-cushion { color: var(--fc-neutral-text-color); text-transform: capitalize; font-weight: 500; }
 .admin-fc .fc-theme-standard td, .admin-fc .fc-theme-standard th, .admin-fc .fc-theme-standard .fc-scrollgrid { border-color: var(--fc-border-color); }
-.admin-fc .fc-timegrid-slot { height: 2.6rem; }
-.admin-fc .fc-timegrid-slot-minor { border-top-style: dotted; }
-.admin-fc .fc-timegrid-now-indicator-line { border-width: 2px 0 0; }
+.admin-fc .fc-theme-standard .fc-scrollgrid { border-left: 0; border-right: 0; }
 
-/* today: green outline in the month grid, a tinted column in week and day views */
-.admin-fc .fc-daygrid-day.fc-day-today { box-shadow: inset 0 0 0 2px var(--ac-today-ring); }
-.admin-fc .fc-day-today .fc-daygrid-day-number { font-weight: 700; }
-.admin-fc .fc-timegrid-col.fc-day-today { box-shadow: inset 2px 0 0 var(--ac-today-ring), inset -2px 0 0 var(--ac-today-ring); }
+/* ---- top bar, compact: [Hoy] ‹ › Month Year ........ [Día | Semana | Mes] ---- */
+.admin-fc .fc-toolbar { gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem !important; }
+.admin-fc .fc-toolbar-chunk { display: flex; align-items: center; gap: 0.25rem; }
+.admin-fc .fc-toolbar-title { font-family: inherit; font-size: 1.25rem; font-weight: 500; letter-spacing: 0; margin-left: 0.5rem; }
+.admin-fc .fc-toolbar-title::first-letter { text-transform: uppercase; }
+.admin-fc .fc-button {
+  border-radius: 0.5rem; font-weight: 500; text-transform: none; font-size: 0.8125rem;
+  padding: 0 0.85rem; min-height: 34px; box-shadow: none !important;
+}
+.admin-fc .fc-button-primary:disabled { opacity: 0.45; }
+.admin-fc .fc-button:focus-visible { outline: 2px solid var(--ac-accent); outline-offset: 2px; }
+.admin-fc .fc-today-button { border-radius: 999px; text-transform: none; }
+/* the two arrows: round, no frame, like Google's chevrons */
+.admin-fc .fc-prev-button, .admin-fc .fc-next-button {
+  width: 34px; padding: 0; border-color: transparent; border-radius: 999px; background: transparent; margin: 0 !important;
+}
+.admin-fc .fc-prev-button:hover, .admin-fc .fc-next-button:hover { background: var(--fc-button-hover-bg-color); border-color: transparent; }
+.admin-fc .fc-toolbar-chunk .fc-button-group { gap: 0; }
+/* Día | Semana | Mes: one segmented control */
+.admin-fc .fc-toolbar-chunk:last-child .fc-button-group { border: 1px solid var(--fc-button-border-color); border-radius: 0.5rem; overflow: hidden; }
+.admin-fc .fc-toolbar-chunk:last-child .fc-button-group > .fc-button { border: 0; border-radius: 0; margin: 0; min-height: 32px; }
+.admin-fc .fc-toolbar-chunk:last-child .fc-button-group > .fc-button + .fc-button { border-left: 1px solid var(--fc-button-border-color); }
 
-/* events: the colour of the trainer */
+/* ---- column headers: SHORT NAME in small capitals, the number big under it; today's number in a circle ---- */
+.admin-fc .fc-col-header-cell { border-bottom: 1px solid var(--fc-border-color); }
+.admin-fc .fc-col-header-cell-cushion { padding: 0; width: 100%; color: var(--fc-neutral-text-color); font-weight: 500; text-transform: uppercase; }
+.admin-fc .fc-timegrid .fc-col-header-cell-cushion { text-decoration: none; }
+.admin-fc .ac-dh { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0 4px; }
+.admin-fc .ac-dh-name { font-size: 0.68rem; letter-spacing: 0.08em; line-height: 1; }
+.admin-fc .ac-dh-num {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 2.1rem; height: 2.1rem; border-radius: 999px;
+  font-size: 1.35rem; font-weight: 400; letter-spacing: 0; line-height: 1; color: inherit;
+}
+.admin-fc .ac-dh-today { background: var(--ac-accent); color: var(--ac-accent-ink); font-weight: 600; }
+.admin-fc .fc-day-today .fc-col-header-cell-cushion { color: var(--ac-accent); }
+.admin-fc .fc-day-today .ac-dh-num.ac-dh-today { color: var(--ac-accent-ink); }
+/* month view: plain weekday names in small capitals */
+.admin-fc .fc-dayGridMonth-view .fc-col-header-cell-cushion { font-size: 0.7rem; letter-spacing: 0.08em; padding: 6px 0; }
+
+/* ---- the time grid ---- */
+.admin-fc .fc-timegrid-slot { height: 2.6rem; border-top-color: var(--fc-border-color); }
+.admin-fc .fc-timegrid-slot-minor { border-top-style: solid; border-top-color: var(--ac-minor-line); }   /* the half hour: a fainter line */
+.admin-fc .fc-timegrid-slot-lane { border-right: 0; }
+.admin-fc .fc-timegrid-col { border-right-color: var(--fc-border-color); }
+/* the hour labels sit in the left gutter, centred ON the line (not inside the cell under it), right-aligned, small and grey */
+.admin-fc .fc-timegrid-axis { width: 3.4rem; border-top-color: transparent; }
+.admin-fc .fc-timegrid-slot-label { border-top-color: transparent; vertical-align: top; position: relative; overflow: visible; border-right-color: var(--fc-border-color); }
+.admin-fc .fc-timegrid-slot-label-frame { text-align: right; overflow: visible; }
+.admin-fc .fc-timegrid-slot-label-cushion {
+  display: inline-block; min-width: 2.9rem; text-align: right; padding: 0 0.5rem 0 0; font-size: 0.68rem; line-height: 1; font-weight: 400; text-transform: none;
+  color: var(--fc-neutral-text-color); transform: translateY(-50%); white-space: nowrap;
+}
+/* the first hour would be cut by the header: hidden (the grid starts there) */
+.admin-fc .fc-timegrid-slots tr:first-child .fc-timegrid-slot-label-cushion { visibility: hidden; }
+/* time-zone label in the top-left corner: GMT+01 / GMT+02 (the value comes from Calendar.jsx) */
+.admin-fc .fc-timegrid .fc-col-header .fc-timegrid-axis { vertical-align: bottom; text-align: right; }
+.admin-fc .fc-timegrid .fc-col-header .fc-timegrid-axis::after {
+  content: var(--ac-tz, ''); display: block; padding: 0 0.5rem 6px 0; font-size: 0.65rem; color: var(--fc-neutral-text-color); white-space: nowrap;
+}
+.admin-fc .fc-timegrid-axis-cushion { display: none; }
+
+/* now: a thin red line with a dot, on today's column (day and week views) */
+.admin-fc .fc-timegrid-now-indicator-line { border-width: 1px 0 0; border-color: var(--fc-now-indicator-color); z-index: 4; }
+.admin-fc .fc-timegrid-now-indicator-line::before {
+  content: ''; position: absolute; left: -5px; top: -6px; width: 11px; height: 11px; border-radius: 50%; background: var(--fc-now-indicator-color);
+}
+.admin-fc .fc-timegrid-now-indicator-arrow { display: none; }
+
+/* ---- month view: numbers at the top of each day, today's in a circle ---- */
+.admin-fc .fc-daygrid-day.fc-day-today { background: var(--fc-today-bg-color); }
+.admin-fc .fc-daygrid-day-top { flex-direction: row; justify-content: center; padding-top: 2px; }
+.admin-fc .fc-daygrid-day-number { padding: 0; width: 1.65rem; height: 1.65rem; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; font-size: 0.78rem; color: inherit; margin: 2px 0; }
+.admin-fc .fc-day-today .fc-daygrid-day-number { background: var(--ac-accent); color: var(--ac-accent-ink); font-weight: 600; }
+.admin-fc .fc-day-other .fc-daygrid-day-top { opacity: 0.45; }
+.admin-fc .fc-daygrid-event { margin: 1px 4px 0; }
+.admin-fc .fc-daygrid-more-link { font-size: 0.72rem; font-weight: 600; color: var(--fc-neutral-text-color); margin: 1px 4px; padding: 0 4px; border-radius: 4px; }
+.admin-fc .fc-daygrid-more-link:hover { background: var(--fc-more-link-bg-color); }
+.admin-fc .fc-daygrid-dot-event { padding: 0; }
+
+/* ---- events: solid trainer colour, rounded 5px, no thick borders; title bold, time under it ---- */
 .admin-fc .fc-event.ac-ev {
   --ev: #9ca3af;
-  border-radius: 0.5rem;
-  border: 1px solid var(--ev);
+  --ev-ink: var(--ac-ink);
+  border-radius: 5px;
+  border: 0;
   background: var(--ev);
-  color: var(--ac-ink);
+  color: var(--ev-ink);
   cursor: pointer;
-  box-shadow: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ev) 40%, #000);        /* a hairline that also separates events that touch */
   font-weight: 600;
 }
-.admin-fc .fc-event.ac-ev:focus-visible, .admin-fc .fc-event.ac-ev:hover { outline: 2px solid #fff; outline-offset: 1px; }
-.admin-light .admin-fc .fc-event.ac-ev:focus-visible, .admin-light .admin-fc .fc-event.ac-ev:hover { outline-color: #0f172a; }
-.admin-fc .ac-ev-inner { padding: 1px 4px; overflow: hidden; line-height: 1.25; }
-.admin-fc .ac-ev-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.admin-fc .ac-ev-time { margin-right: 0.35em; opacity: 0.8; font-weight: 700; }
+.admin-fc .fc-event.ac-ev .fc-event-main { color: inherit; }                       /* FullCalendar paints it white by default */
+.admin-fc .fc-event.ac-ev:focus-visible, .admin-fc .fc-event.ac-ev:hover { outline: 2px solid var(--ac-accent); outline-offset: 1px; }
+.admin-fc .ac-ev-inner { padding: 2px 6px; overflow: hidden; line-height: 1.25; }
+.admin-fc .ac-ev-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.admin-fc .ac-ev-time { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; font-size: 0.72rem; opacity: 0.85; }
 .admin-fc .ac-ev-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.72rem; font-weight: 500; opacity: 0.9; }
+/* a short event (about one row high on a small screen): the title alone, on one line, never spilling out of the box */
+.admin-fc .fc-timegrid-event .fc-event-main { overflow: hidden; }
+.admin-fc .fc-timegrid-event-short .ac-ev-inner { padding: 0 4px; line-height: 1.1; }
+.admin-fc .fc-timegrid-event-short .ac-ev-time { display: none; }
+/* in the month grid an event is one small bar: time and title on one line */
+.admin-fc .fc-daygrid-event .ac-ev-inner { display: flex; align-items: baseline; gap: 0.35em; padding: 0 5px; font-size: 0.72rem; line-height: 1.5; }
+.admin-fc .fc-daygrid-event .ac-ev-time { order: -1; flex: none; font-size: inherit; opacity: 0.85; }
+.admin-fc .fc-daygrid-event .ac-ev-sub { display: none; }
+.admin-fc .fc-daygrid-event .ac-ev-title { font-weight: 600; min-width: 0; }
 
-/* trial sessions: dashed border, a light fill of the trainer's colour (grey when unassigned) */
+/* trial sessions: a light fill of the trainer's colour inside a thin dashed edge (grey while "Pendiente") */
 .admin-fc .fc-event.ac-trial {
-  background: color-mix(in srgb, var(--ev) 22%, transparent);
-  border: 2px dashed var(--ev);
+  background: color-mix(in srgb, var(--ev) 26%, transparent);
+  box-shadow: none;
+  outline: 1.5px dashed var(--ev); outline-offset: -1.5px;
   color: var(--ac-soft-text);
 }
+.admin-fc .fc-event.ac-trial:focus-visible, .admin-fc .fc-event.ac-trial:hover { outline: 2px solid var(--ac-accent); outline-offset: 1px; }
 .admin-fc .fc-event.ac-trial.ac-pending { opacity: 0.6; }                                       /* not approved yet */
 .admin-fc .fc-event.ac-trial.ac-approved { opacity: 0.85; }                                      /* "Pendiente": approved, grey (--ev is set in Calendar.jsx) */
 .admin-fc .fc-event.ac-trial.ac-declined, .admin-fc .fc-event.ac-trial.ac-rejected, .admin-fc .fc-event.ac-trial.ac-cancelled { opacity: 0.4; text-decoration: line-through; }
@@ -89,13 +170,15 @@
 .admin-fc .fc-event.ac-session.ac-completed { opacity: 0.7; }
 .admin-fc .fc-event.ac-session.ac-cancelled { opacity: 0.4; text-decoration: line-through; }
 
-/* phones: compact header and readable events */
+/* phones: the grid may scroll; a readable minimum height for the hours */
 @media (max-width: 767px) {
   .admin-fc .ac-frame { height: max(480px, calc(100vh - 18rem)); }
-  .admin-fc .fc-toolbar-title { font-size: 1.35rem; }
-  .admin-fc .fc-toolbar.fc-header-toolbar { margin-bottom: 0.75rem; }
+  .admin-fc .fc-toolbar-title { font-size: 1.05rem; margin-left: 0.25rem; }
+  .admin-fc .fc-toolbar.fc-header-toolbar { margin-bottom: 0.5rem !important; }
   .admin-fc .fc-toolbar.fc-footer-toolbar { margin-top: 0.75rem; justify-content: center; }
-  .admin-fc .fc-button { padding: 0.45rem 0.7rem; }
+  .admin-fc .fc-button { padding: 0 0.7rem; }
+  .admin-fc .fc-timegrid-axis { width: 2.8rem; }
+  .admin-fc .ac-dh-num { min-width: 1.9rem; height: 1.9rem; font-size: 1.15rem; }
   .admin-fc .ac-ev-title { white-space: normal; }
 }
 
@@ -104,15 +187,13 @@
    fill it; these are the smallest sizes. Phones keep the roomier layout above (they may scroll). ---- */
 @media (min-width: 768px) {
   .admin-fc .fc-timegrid-slot { height: 1rem; line-height: 1.1; }       /* a row may shrink to ~16px (the line-height stops its text making it 21px); the grid goes hourly before 30-minute rows would be under 20px */
-  .admin-fc .fc-toolbar { gap: 0.5rem; margin-bottom: 0.5rem !important; }
-  .admin-fc .fc-toolbar-title { font-size: 1.4rem; }
-  .admin-fc .fc-button { min-height: 32px; padding: 0.2rem 0.75rem; font-size: 0.8rem; }
-  .admin-fc .fc-timegrid .fc-col-header-cell-cushion { padding: 2px 4px; font-size: 0.78rem; }
-  .admin-fc .fc-timegrid-slot-label-cushion, .admin-fc .fc-timegrid-axis-cushion { font-size: 0.7rem; line-height: 1.1; padding: 0 0.3rem; }
-  .admin-fc .fc-timegrid-event .ac-ev-inner { padding: 0 3px; font-size: 0.72rem; line-height: 1.15; }
+  .admin-fc .fc-toolbar { margin-bottom: 0.4rem !important; }
+  .admin-fc .fc-button { min-height: 32px; }
+  .admin-fc .ac-dh { padding: 3px 0 2px; gap: 1px; }
+  .admin-fc .ac-dh-num { min-width: 1.8rem; height: 1.8rem; font-size: 1.15rem; }
+  .admin-fc .fc-timegrid-event .ac-ev-inner { padding: 1px 5px; font-size: 0.75rem; line-height: 1.2; }
+  .admin-fc .fc-timegrid-event .ac-ev-time { font-size: 0.68rem; }
   .admin-fc .fc-timegrid-event .ac-ev-sub { display: none; }            /* the title already says "Trial" */
-  .admin-fc .fc-timegrid-event { border-radius: 0.35rem; }
-  .admin-fc .fc-timegrid-event .ac-ev-title { white-space: nowrap; }
 }
 /* a short window: the title block above the calendar gives its space to the calendar */
 @media (min-width: 768px) and (max-height: 860px) {

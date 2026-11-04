@@ -6,13 +6,15 @@ import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { parseDateKey } from '../requests'
 import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
-import { useBulkSelection } from '../bulk'
+import { useBulkSelection, SELECTING_CLASS, selectableProps } from '../bulk'
 import { TypeBadge } from '../SessionKind'
+import RecipientsBox, { SendsTo } from '../RecipientsBox'
+import SendConfirm from '../SendConfirm'
+import { extraBody } from '../recipients'
 import { formatMoney } from '../../utils/pricing'
-import SectionCard from '../../components/admin/SectionCard'
 import { canStart, hoursSummary, weekdayOf } from '../availability'
 import {
-  Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon,
+  Badge, Button, Card, Drawer, EmptyState, ErrorState, Field, Icon,
   PageHeader, SelectInput, Skeleton, TextArea, TextInput
 } from '../ui'
 
@@ -34,6 +36,8 @@ export default function TrialSessions() {
   const [approving, setApproving] = useState(null)
   const [declining, setDeclining] = useState(null)
   const [cancelling, setCancelling] = useState(null)
+  const [resending, setResending] = useState(null)         // { kind: 'approval' | 'received', trial }: asks who else gets it
+  const [extra, setExtra] = useState([])                   // more recipients of the approval email (BCC); the client always gets it
   const [trainerId, setTrainerId] = useState('')
   const [when, setWhen] = useState({ date: '', time: '' })   // the day / hour the trial is approved for (the admin may adjust them)
   const [reason, setReason] = useState('')
@@ -97,7 +101,7 @@ export default function TrialSessions() {
   // a problem is shown, not hidden. Approving puts the trial on the calendar at once as
   // "Pendiente"; the client's confirmation turns that same event into the confirmed one.
   const startApproving = (trial) => {
-    setTrainerId(trial.trainer_id ? String(trial.trainer_id) : ''); setFormError(''); setWhen({ date: trial.date, time: trial.time }); setApproving(trial)
+    setTrainerId(trial.trainer_id ? String(trial.trainer_id) : ''); setFormError(''); setExtra([]); setWhen({ date: trial.date, time: trial.time }); setApproving(trial)
   }
 
   const approve = async () => {
@@ -106,7 +110,7 @@ export default function TrialSessions() {
     setBusy(true)
     setFormError('')
     try {
-      const body = { trainer_id: Number(trainerId) }
+      const body = { trainer_id: Number(trainerId), ...extraBody(extra) }
       if (when.date !== approving.date || when.time !== approving.time) { body.session_date = when.date; body.session_time = when.time }
       const result = await adminRequest('POST', `/admin/trial-sessions/${approving.id}/approve`, body)
       setApproving(null)
@@ -126,10 +130,10 @@ export default function TrialSessions() {
     }
   }
 
-  const resend = async (trial) => {
+  const resend = async (trial, extraList = []) => {
     setWorking(`resend-${trial.id}`)
     try {
-      const result = await adminRequest('POST', `/admin/trial-sessions/${trial.id}/resend-approval`)
+      const result = await adminRequest('POST', `/admin/trial-sessions/${trial.id}/resend-approval`, extraBody(extraList))
       if (result.email?.sent) toast.push(t('tr_resend_ok'))
       else toast.push(`${t('tr_resend_failed')} (${emailProblem(result.email?.problem)}).`, 'warning')
       trialsResource.reload()
@@ -140,10 +144,10 @@ export default function TrialSessions() {
     }
   }
 
-  const resendReceived = async (trial) => {
+  const resendReceived = async (trial, extraList = []) => {
     setWorking(`received-${trial.id}`)
     try {
-      const result = await adminRequest('POST', `/admin/trial-sessions/${trial.id}/resend-received`)
+      const result = await adminRequest('POST', `/admin/trial-sessions/${trial.id}/resend-received`, extraBody(extraList))
       if (result.email?.sent) toast.push(t('tr_received_resend_ok'))
       else toast.push(`${t('tr_received_resend_failed')} (${emailProblem(result.email?.problem)}).`, 'warning')
       trialsResource.reload()
@@ -172,8 +176,8 @@ export default function TrialSessions() {
   const decline = () => run(
     () => adminRequest('POST', `/admin/trial-sessions/${declining.id}/reject`, { reason: reason.trim() }),
     'tr_rejected_ok', () => setDeclining(null))
-  const cancel = () => run(
-    () => adminRequest('POST', `/admin/trial-sessions/${cancelling.id}/cancel`),
+  const cancel = (extraList = []) => run(
+    () => adminRequest('POST', `/admin/trial-sessions/${cancelling.id}/cancel`, extraBody(extraList)),
     'tr_cancelled_ok', () => setCancelling(null))
 
   const filters = [
@@ -224,7 +228,7 @@ export default function TrialSessions() {
         <ul className="space-y-3">
           {visible.map(trial => (
             <li key={trial.id}>
-              <Card className={`p-5 transition hover:border-white/20 ${selection.chosen.has(trial.id) ? '!border-emerald-400/40' : ''}`}>
+              <Card {...selectableProps(selection, trial.id, canCancelTrial(trial))} className={`p-5 transition hover:border-white/20 ${selection.chosen.has(trial.id) ? '!border-emerald-400/40' : ''} ${selection.active && canCancelTrial(trial) ? SELECTING_CLASS : ''}`}>
                 <div className="flex flex-wrap items-start gap-4">
                   {canCancelTrial(trial) && <RowCheck selection={selection} id={trial.id} label={t('bk_select_one').replace('{name}', trial.name)} />}
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-400/25 to-sky-700/10 text-base font-semibold text-sky-200">
@@ -251,8 +255,8 @@ export default function TrialSessions() {
                       <TypeBadge type={trial.session_type} secondName={trial.second_person_name} />
                       {trial.price_per_session != null && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{t('ty_trial_price')}: {formatMoney(trial.price_per_session)}</span>}
                     </div>
-                    <SectionCard className="mt-4 !p-4" title={t('fx_tab_activity')} collapsible defaultOpen={(trial.received_email?.status === 'failed' || trial.approval_email?.status === 'failed' || trial.calendar_missing)}>
-                    <p className={`mb-3 text-sm ${trial.received_email?.status === 'failed' ? 'text-red-300' : 'text-gray-400'}`}>
+                    <div className="mt-4 space-y-2 border-t border-white/[0.06] pt-3">
+                    <p className={`text-sm ${trial.received_email?.status === 'failed' ? 'text-red-300' : 'text-gray-400'}`}>
                       {t('tr_received_label')}:{' '}
                       {trial.received_email
                         ? trial.received_email.status === 'sent'
@@ -261,7 +265,7 @@ export default function TrialSessions() {
                         : <span>{t('tr_email_none')}</span>}
                     </p>
                     {(trial.status === 'approved' || trial.approval_email) && (
-                      <p className={`mt-3 text-sm ${trial.approval_email?.status === 'failed' ? 'text-red-300' : 'text-gray-400'}`}>
+                      <p className={`text-sm ${trial.approval_email?.status === 'failed' ? 'text-red-300' : 'text-gray-400'}`}>
                         {t('tr_email_label')}:{' '}
                         {trial.approval_email
                           ? trial.approval_email.status === 'sent'
@@ -278,12 +282,12 @@ export default function TrialSessions() {
                         </Button>
                       </div>
                     )}
-                    </SectionCard>
+                    </div>
                     {trial.reason && <p className="mt-2 text-sm text-red-300/90">{t('req_reason')}: {trial.reason}</p>}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {['pending', 'approved', 'confirmed'].includes(trial.status) && (
-                      <Button variant="secondary" onClick={() => resendReceived(trial)} loading={working === `received-${trial.id}`}>
+                      <Button variant="secondary" onClick={() => setResending({ kind: 'received', trial })} loading={working === `received-${trial.id}`}>
                         {working === `received-${trial.id}` ? t('tr_resending') : t('tr_received_resend')}
                       </Button>
                     )}
@@ -292,7 +296,7 @@ export default function TrialSessions() {
                       <Button variant="danger" onClick={() => { setReason(''); setFormError(''); setDeclining(trial) }}>{t('req_reject')}</Button>
                     </>}
                     {trial.status === 'approved' && (
-                      <Button variant="secondary" onClick={() => resend(trial)} loading={working === `resend-${trial.id}`}>
+                      <Button variant="secondary" onClick={() => setResending({ kind: 'approval', trial })} loading={working === `resend-${trial.id}`}>
                         {working === `resend-${trial.id}` ? t('tr_resending') : t('tr_resend')}
                       </Button>
                     )}
@@ -350,6 +354,8 @@ export default function TrialSessions() {
             ))}
           </SelectInput>
         </Field>
+        <RecipientsBox clientEmail={approving?.email || ''} value={extra} onChange={setExtra} disabled={busy} />
+        <SendsTo clientEmail={approving?.email || ''} extra={extra} />
         {formError && <p role="alert" className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{formError}</p>}
       </Drawer>
 
@@ -377,11 +383,22 @@ export default function TrialSessions() {
         }]}
       />
 
-      <ConfirmDialog
-        open={!!cancelling} busy={busy}
+      <SendConfirm
+        open={!!cancelling} busy={busy} clientEmail={cancelling?.email || ''}
         title={t('tr_cancel_title')} text={t('tr_cancel_text')}
         confirmLabel={t('tr_cancel_do')} cancelLabel={t('tr_cancel_keep')}
         onConfirm={cancel} onCancel={() => setCancelling(null)}
+      />
+      <SendConfirm
+        open={!!resending} busy={!!working} tone="neutral" icon="send" clientEmail={resending?.trial.email || ''}
+        title={t(resending?.kind === 'received' ? 'tr_received_resend' : 'tr_resend')} text={resending?.trial.name || ''}
+        confirmLabel={t(resending?.kind === 'received' ? 'tr_received_resend' : 'tr_resend')} cancelLabel={t('cancel')}
+        onConfirm={async (list) => {
+          const { kind, trial } = resending
+          setResending(null)
+          await (kind === 'received' ? resendReceived(trial, list) : resend(trial, list))
+        }}
+        onCancel={() => setResending(null)}
       />
     </div>
   )

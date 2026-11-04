@@ -12,7 +12,7 @@ import { useAdminResource } from '../useAdminResource'
 import { Button, Card, Icon, PageHeader } from '../ui'
 import CalendarFilters from '../calendar/CalendarFilters'
 import EventDetail from '../calendar/EventDetail'
-import { MOBILE_QUERY, NEUTRAL_COLOR, dayKey, madridWallClock, slotDurationFor, studioHours } from '../calendar/calendarConfig'
+import { MOBILE_QUERY, NEUTRAL_COLOR, dayKey, inkOn, madridOffsetLabel, madridWallClock, slotDurationFor, studioHours } from '../calendar/calendarConfig'
 import { useCalendarFilters } from '../calendar/useCalendarFilters'
 import '../calendar/calendar.css'
 
@@ -65,6 +65,7 @@ export default function Calendar() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [count, setCount] = useState(null)
+  const [offset, setOffset] = useState(() => madridOffsetLabel())     // "GMT+01", top-left corner of the hours
   const lastPosition = useRef('')
 
   // FullCalendar asks for events through ONE stable function that reads the current filters.
@@ -107,7 +108,7 @@ export default function Calendar() {
 
   const headerToolbar = mobile
     ? { left: 'prev,next', center: 'title', right: 'today' }
-    : { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' }
+    : { left: 'today prev,next title', center: '', right: 'timeGridDay,timeGridWeek,dayGridMonth' }
   const footerToolbar = mobile ? { center: 'timeGridDay,timeGridWeek,dayGridMonth' } : false
 
   const classNames = (arg) => {
@@ -122,7 +123,9 @@ export default function Calendar() {
     const props = info.event.extendedProps
     // a trial the client has not confirmed yet is grey, like its "Trial (Pendiente)" event in Google
     const pending = props.kind === 'trial' && props.status === 'approved'
-    info.el.style.setProperty('--ev', pending ? NEUTRAL_COLOR : (props.color || NEUTRAL_COLOR))
+    const color = pending ? NEUTRAL_COLOR : (props.color || NEUTRAL_COLOR)
+    info.el.style.setProperty('--ev', color)
+    info.el.style.setProperty('--ev-ink', inkOn(color))              // readable text on the trainer's colour
     info.el.title = info.event.title                      // the full title, whatever is cut by the width
   }
 
@@ -133,8 +136,22 @@ export default function Calendar() {
       : ''
     return (
       <div className="ac-ev-inner">
-        <div className="ac-ev-title">{arg.timeText && <span className="ac-ev-time">{arg.timeText}</span>}{arg.event.title}</div>
+        <div className="ac-ev-title">{arg.event.title}</div>
+        {arg.timeText && <div className="ac-ev-time">{arg.timeText}</div>}
         {sub && <div className="ac-ev-sub">{sub}</div>}
+      </div>
+    )
+  }
+
+  // Column headers as in Google Calendar: SHORT DAY NAME in small capitals and the day number big below it (a circle
+  // on today). Only the day and week views; the month grid keeps the plain weekday names.
+  const dayHeader = (arg) => {
+    if (arg.view.type === 'dayGridMonth') return undefined
+    const name = new Intl.DateTimeFormat(language === 'es' ? 'es-ES' : 'en-GB', { weekday: 'short', timeZone: 'UTC' }).format(arg.date).replace('.', '')
+    return (
+      <div className="ac-dh">
+        <span className="ac-dh-name">{name}</span>
+        <span className={`ac-dh-num${arg.isToday ? ' ac-dh-today' : ''}`}>{arg.date.getUTCDate()}</span>
       </div>
     )
   }
@@ -148,7 +165,7 @@ export default function Calendar() {
 
       <CalendarFilters filters={filters} setFilters={setFilters} clear={clear} active={active} trainers={trainers} />
 
-      <ul aria-label={t('ac_legend')} className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-gray-300">
+      <ul aria-label={t('ac_legend')} className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-gray-400">
         {trainers.map(trainer => (
           <li key={trainer.id} className="flex items-center gap-2"><span aria-hidden="true" className="h-3 w-3 rounded-full" style={{ background: trainer.color || NEUTRAL_COLOR }} />{trainer.name}</li>
         ))}
@@ -167,7 +184,7 @@ export default function Calendar() {
           </div>
         )}
         {loading && !error && <p role="status" className="absolute right-4 top-4 z-10 rounded-full bg-black/60 px-3 py-1 text-xs text-gray-300">{t('ac_loading')}</p>}
-        <div ref={frame} className="ac-frame" style={fitHeight ? { height: fitHeight } : undefined}>
+        <div ref={frame} className="ac-frame" style={{ ...(fitHeight ? { height: fitHeight } : {}), '--ac-tz': `"${offset}"` }}>
           <FullCalendar
             ref={calendar}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
@@ -201,8 +218,13 @@ export default function Calendar() {
             eventClassNames={classNames}
             eventDidMount={mounted}
             eventContent={renderEvent}
+            dayHeaderContent={dayHeader}
+            titleFormat={{ year: 'numeric', month: 'long' }}
+            views={{ timeGridDay: { titleFormat: { year: 'numeric', month: 'long', day: 'numeric' } } }}
+            dayHeaderFormat={{ weekday: 'short' }}
             eventClick={(info) => { info.jsEvent.preventDefault(); setSelected(info.event) }}
             datesSet={(info) => {
+              setOffset(madridOffsetLabel(info.start))
               const key = `${info.view.type}|${dayKey(info.view.currentStart)}`
               if (key !== lastPosition.current) { lastPosition.current = key; setPosition(info.view.type, dayKey(info.view.currentStart)) }
             }}

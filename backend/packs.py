@@ -1,20 +1,20 @@
-"""Creating a pack: the single implementation shared by renewing a pack,
-approving a client's request and creating a client from the admin panel.
+"""Creating a pack: the single implementation shared by buying a new pack, approving a client's request and creating
+a client from the admin panel.
 
-A client has ONE active pack. A new pack replaces the previous one from its
-start date (any day): the previous pack's sessions that are still to come from
-that date on are cancelled and their calendar events deleted, but only once
-the admin has confirmed it (the preview says how many first; without
-confirm_replace the request is answered with a 409 "replaces_pack"). Sessions
-that already happened are never touched and the numbers (x/n) of every
-session stay fixed: cancelling never renumbers.
-Each pack has its own period, schedule and numbering, and its sessions carry
-sessions.user_plan_id (sessions from before that column existed are matched to
-a pack by date when they are read, never rewritten).
+A client can have SEVERAL active packs at once (for example a 1-month pack and, later, a 3-month one). Creating a pack
+never touches the others: their sessions stay as they are and each pack runs, is numbered (x/y, y = the total of THAT pack)
+and counts on its own. The start date of a new pack may be any day.
 
-Database rows go in first and Google Calendar events afterwards; the caller
-owns the transaction and the list of created event ids, so everything can be
-rolled back together.
+Conflicts: the TRAINER being busy or outside their hours blocks the pack (409 "conflicts") unless the admin creates it
+anyway (allow_conflicts). The CLIENT ending up with two sessions at the same time (from different packs) is allowed, but the
+admin is warned first, with the list (date, time and the pack the other session belongs to): 409 "client_overlap" until
+the admin continues (allow_overlaps).
+
+Each pack has its own period, schedule and numbering, and its sessions carry sessions.user_plan_id (sessions from before
+that column existed are matched to a pack by date when they are read, never rewritten).
+
+Database rows go in first and Google Calendar events afterwards; the caller owns the transaction and the list of created
+event ids, so everything can be rolled back together.
 """
 import traceback
 import logging
@@ -23,9 +23,10 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException
 
 from availability import has_conflict, slot_problem, weekday_name, within_hours
+import pack_catalog
 import pricing
 from database import get_connection
-from emails import clean_recipients, send_pack_summary_email, team_emails
+from emails import clean_recipients, parse_extra, send_pack_summary_email
 from emails.dates import parse_madrid
 import calendar_feed
 import calendar_sync
@@ -78,107 +79,71 @@ def generate_session_dates(
     return dates
 
 
-def sessions_to_replace(cursor, user_id, start_date):
-    """The client's Booked sessions that a pack starting on `start_date` would
-    replace: those still to come (today or later) from that date on. Returns
-    [{"id", "date", "event_id"}], oldest first. Nothing is written."""
-    if not user_id:
-        return []
-    cursor.execute(
-        """
-        SELECT id, session_date, google_event_id FROM sessions
-        WHERE user_id = %s AND status = 'Booked'
-          AND session_date >= GREATEST(%s::date, CURRENT_DATE)
-        ORDER BY session_date, session_time, id
-        """,
-        (user_id, start_date),
-    )
-    return [{"id": row[0], "date": str(row[1]), "event_id": row[2]} for row in cursor.fetchall()]
-
-
-def replacement_summary(replaced):
-    """What the panel shows before confirming: how many sessions of the
-    previous pack will be cancelled, and between which dates."""
-    return {
-        "count": len(replaced),
-        "first_date": replaced[0]["date"] if replaced else None,
-        "last_date": replaced[-1]["date"] if replaced else None,
-    }
-
-
-def find_conflicts(cursor, *, user_id, trainer_id, session_dates, preferred_time, ignore_session_ids=None):
-    """Sessions of a planned pack that collide with something. Returns a list of
-    {"date", "time", "kind", "message"}; kind is one of
-      client_busy    the client already has a (non-cancelled) session at that day and hour
+def find_conflicts(cursor, *, trainer_id, session_dates, preferred_time):
+    """Sessions of a planned pack that collide with the TRAINER. Returns a list of {"date", "time", "kind", "message"};
+    kind is one of
       trainer_busy   the trainer already has another session then
       trainer_hours  the trainer does not work at that day / hour
-    ignore_session_ids: sessions the new pack is replacing (they will be
-    cancelled, so they collide with nothing). Nothing is written."""
+    These block the pack (unless the admin creates it anyway). Nothing is written."""
     time = str(preferred_time)[:5]
-    ignored = list(ignore_session_ids or [])
-    busy_days = set()
-    if user_id:
-        cursor.execute(
-            """
-            SELECT session_date FROM sessions
-            WHERE user_id = %s AND status = 'Booked' AND session_date = ANY(%s::date[])
-              AND to_char(session_time, 'HH24:MI') = %s
-              AND id <> ALL(%s::int[])
-            """,
-            (user_id, list(session_dates), time, ignored),
-        )
-        busy_days = {str(row[0]) for row in cursor.fetchall()}
-
     conflicts = []
     for day in session_dates:
-        if str(day) in busy_days:
-            conflicts.append({
-                "date": str(day), "time": time, "kind": "client_busy",
-                "message": "The client already has a session at that day and time.",
-            })
-        problem = slot_problem(cursor, trainer_id, day, time, ignore_session_ids=ignored)
+        problem = slot_problem(cursor, trainer_id, day, time)
         if problem:
             hours_ok = within_hours(cursor, trainer_id, weekday_name(day), time)
-            kind = (
-                "trainer_busy"
-                if hours_ok and has_conflict(cursor, trainer_id, day, time, ignore_session_ids=ignored)
-                else "trainer_hours"
-            )
+            kind = "trainer_busy" if hours_ok and has_conflict(cursor, trainer_id, day, time) else "trainer_hours"
             conflicts.append({"date": str(day), "time": time, "kind": kind, "message": problem})
     return conflicts
 
 
-def preview_pack(cursor, *, user_id, plan_id, trainer_id, sessions_per_week, preferred_days, preferred_time, start_date,
-                 session_type=None):
-    """What a pack would create, without creating anything: the sessions and the
-    conflicts (see find_conflicts). The start date may be any day."""
-    cursor.execute("SELECT nome, duration_weeks, duracao_meses FROM plans WHERE id = %s", (plan_id,))
-    plan = cursor.fetchone()
-    if not plan or not plan[1]:
-        raise HTTPException(status_code=404, detail="Plan not found")
+def find_overlaps(cursor, *, user_id, session_dates, preferred_time):
+    """Sessions of a planned pack that fall at the same day and hour as a session the CLIENT already has (from another
+    pack). Allowed, but the admin is warned: [{"date", "time", "kind": "client_busy", "pack": name(s) of the other pack}].
+    Nothing is written."""
+    if not user_id:
+        return []
+    time = str(preferred_time)[:5]
+    cursor.execute(
+        """
+        SELECT s.session_date, COALESCE(string_agg(DISTINCT p.nome, ' + '), '')
+        FROM sessions s
+        LEFT JOIN user_plans up ON up.id = s.user_plan_id
+        LEFT JOIN plans p ON p.id = up.plan_id
+        WHERE s.user_id = %s AND s.status = 'Booked' AND s.session_date = ANY(%s::date[])
+          AND to_char(s.session_time, 'HH24:MI') = %s
+        GROUP BY s.session_date
+        """,
+        (user_id, list(session_dates), time),
+    )
+    busy = {str(row[0]): row[1] for row in cursor.fetchall()}
+    return [
+        {"date": str(day), "time": time, "kind": "client_busy", "pack": busy[str(day)],
+         "message": "The client already has a session at that day and time."}
+        for day in session_dates if str(day) in busy
+    ]
+
+
+def preview_pack(cursor, *, user_id, catalog_pack_id, trainer_id, sessions_per_week, preferred_days, preferred_time, start_date):
+    """What a pack would create, without creating anything: the sessions, the price and the
+    conflicts (see find_conflicts). The start date may be any day. `catalog_pack_id` is a catalogue pack."""
     _, days = validate_pack_request(
         cursor, trainer_id=trainer_id, sessions_per_week=sessions_per_week,
         preferred_days=preferred_days, start_date=start_date,
     )
-    total = plan[1] * sessions_per_week
+    sale = pack_catalog.sale(cursor, catalog_pack_id, sessions_per_week)
+    total = sale["total_sessions"]
     dates = generate_session_dates(start_date, ",".join(days), total)
-    replaced = sessions_to_replace(cursor, user_id, start_date)
-    try:       # the price is shown, never invented: no price for this duration = no figures (create_pack refuses it)
-        quote = pricing.pack_quote(cursor, pricing.normalize_type(session_type), plan[2], total)
-    except HTTPException:
-        quote = {"price_per_session": None, "total_price": None}
+    quote = {"price_per_session": sale["price_per_session"], "total_price": sale["total_price"]}
     return {
+        "session_type": sale["pack"]["session_type"],
         "total_sessions": total,
         "price_per_session": pricing.number(quote["price_per_session"]),
         "total_price": pricing.number(quote["total_price"]),
         "dates": dates,
         "first_date": dates[0],
         "last_date": dates[-1],
-        "replaces": replacement_summary(replaced),
-        "conflicts": find_conflicts(
-            cursor, user_id=user_id, trainer_id=trainer_id, session_dates=dates, preferred_time=preferred_time,
-            ignore_session_ids=[item["id"] for item in replaced],
-        ),
+        "conflicts": find_conflicts(cursor, trainer_id=trainer_id, session_dates=dates, preferred_time=preferred_time),
+        "overlaps": find_overlaps(cursor, user_id=user_id, session_dates=dates, preferred_time=preferred_time),
     }
 
 
@@ -195,26 +160,28 @@ def conflict_error(conflicts, trainer_name):
     )
 
 
-def replace_error(summary):
-    """The 409 the panel turns into the "this cancels N sessions" confirmation."""
+def overlap_error(overlaps):
+    """The 409 the panel turns into the warning "the client has two sessions at the same time" with "Continuar igualmente"."""
     return HTTPException(
         status_code=409,
         detail={
-            "code": "replaces_pack",
-            "message": (
-                f"{summary['count']} session(s) of the current pack would be cancelled. "
-                "Confirm to replace it."
-            ),
-            **summary,
+            "code": "client_overlap",
+            "message": f"{len(overlaps)} session(s) fall at the same time as another session of the client. Continue anyway?",
+            "overlaps": overlaps,
         },
     )
 
 
+def session_type_sent(value):
+    """True when the caller named a session type (None or empty means "whatever the pack is")."""
+    return value is not None and str(value).strip() != ""
+
+
 def create_pack(
-    cursor, created_event_ids, *, user_id, client_name, client_email, plan_id, trainer_id,
+    cursor, created_event_ids, *, user_id, client_name, client_email, catalog_pack_id, trainer_id,
     trainer_name, sessions_per_week, preferred_days, preferred_time, start_date,
-    request_id=None, allow_conflicts=False, confirm_replace=False,
-    session_type=None, second_person_name=None, second_person_email=None
+    request_id=None, allow_conflicts=False, allow_overlaps=False,
+    session_type=None, second_person_name=None, second_person_email=None, extra_emails=None
 ):
     """The one place that creates a pack: records the period and schedule,
     inserts every session and creates its Google Calendar event.
@@ -224,68 +191,41 @@ def create_pack(
     delete them if anything fails later (before or at commit). Nothing is
     committed here.
 
-    The client keeps ONE active pack: the previous one is replaced from
-    `start_date`. Its sessions still to come from that date on are cancelled
-    in the database here, and their Google events are listed in
-    created["replaced"]["events"] to be deleted AFTER the commit with
-    remove_replaced_events(). With sessions to cancel and
-    confirm_replace=False nothing is created and a 409 "replaces_pack" with
-    the count is raised.
-    allow_conflicts: with colliding sessions (client busy, trainer busy or
-    outside their hours) and allow_conflicts=False nothing is created and a 409
-    with the list is raised; with True ("Crear igualmente") everything is
-    created and nothing is silently dropped.
-
-    session_type: individual (default) | dual. A dual pack needs the second person's name and email. The price
-    per session and the total come from pricing.py (never from the caller) and are stored on the pack now.
+    The client's other packs are never touched (they run in parallel, each with its own x/y).
+    allow_conflicts: with the TRAINER busy or outside their hours and allow_conflicts=False nothing is created and a 409
+    with the list is raised; with True ("Crear igualmente") everything is created and nothing is silently dropped.
+    allow_overlaps: the same for the client's own sessions at the same time (409 "client_overlap" with the list, the
+    other pack named, until the admin continues). Other packs are never touched.
+    catalog_pack_id: the CATALOGUE pack being sold (pack_catalog.py). Its type, weeks and price decide everything: the price per
+    session, the total, the weeks and the type are worked out from the catalogue (never from the caller) and COPIED onto
+    the client's pack now, so a later edit of the catalogue never changes a pack already sold.
+    session_type: when given it must be the pack's own type; a dual pack needs the second person's name and email.
 
     Returns {"plan_name", "total_sessions", "session_dates", "sessions", "session_type",
     "price_per_session", "total_price", "calendar_failed", "calendar_errors"} where sessions is
     [{"id", "start" (Madrid datetime), "trainer", "number"}]. Sessions whose
     calendar event could not be created are still created (and flagged).
     """
-    session_type = pricing.normalize_type(session_type)
+    session_type_arg = session_type
+    sale = pack_catalog.sale(cursor, catalog_pack_id, sessions_per_week)
+    session_type = sale["pack"]["session_type"]
+    if session_type_sent(session_type_arg) and pricing.normalize_type(session_type_arg) != session_type:
+        raise HTTPException(status_code=422, detail={
+            "code": "invalid_session_type", "field": "session_type",
+            "message": "El tipo de sesión no coincide con el pack. / The session type does not match the pack.",
+        })
     second_person_name, second_person_email = pricing.second_person(session_type, second_person_name, second_person_email)
-
-    cursor.execute("SELECT nome, duration_weeks, duracao_meses FROM plans WHERE id = %s", (plan_id,))
-    plan = cursor.fetchone()
-    if not plan or not plan[1]:
-        raise HTTPException(status_code=404, detail="Plan not found")
-    plan_name, weeks, months = plan
-
-    total_sessions = weeks * sessions_per_week
-    quote = pricing.pack_quote(cursor, session_type, months, total_sessions)
+    plan_id, plan_name, weeks, months = sale["pack"]["plan_id"], sale["pack"]["name"], sale["weeks"], sale["months"]
+    total_sessions = sale["total_sessions"]
+    quote = {"price_per_session": sale["price_per_session"], "total_price": sale["total_price"]}
     session_dates = generate_session_dates(start_date, preferred_days, total_sessions)
 
-    replaced = sessions_to_replace(cursor, user_id, start_date)
-    if replaced and not confirm_replace:
-        raise replace_error(replacement_summary(replaced))
-
-    conflicts = find_conflicts(
-        cursor, user_id=user_id, trainer_id=trainer_id, session_dates=session_dates,
-        preferred_time=preferred_time, ignore_session_ids=[item["id"] for item in replaced],
-    )
+    conflicts = find_conflicts(cursor, trainer_id=trainer_id, session_dates=session_dates, preferred_time=preferred_time)
     if conflicts and not allow_conflicts:
         raise conflict_error(conflicts, trainer_name)
-
-    # The new pack takes over: the previous active pack(s) stop being active
-    # (their period ends the day before the new start) and their sessions from
-    # the start date on are cancelled, keeping their numbers.
-    cursor.execute(
-        """
-        UPDATE user_plans
-        SET active = FALSE, status = 'sustituido', replaced_at = NOW(),
-            end_date = CASE WHEN end_date IS NOT NULL AND end_date >= %s::date
-                            THEN (%s::date - 1) ELSE end_date END
-        WHERE user_id = %s AND active
-        """,
-        (start_date, start_date, user_id),
-    )
-    if replaced:
-        cursor.execute(
-            "UPDATE sessions SET status = 'Cancelled', feed_sequence = feed_sequence + 1 WHERE id = ANY(%s::int[])",
-            ([item["id"] for item in replaced],),
-        )
+    overlaps = find_overlaps(cursor, user_id=user_id, session_dates=session_dates, preferred_time=preferred_time)
+    if overlaps and not allow_overlaps:
+        raise overlap_error(overlaps)
 
     # The event of every session is described from the client's profile.
     cursor.execute("SELECT nome, email, telefone FROM users WHERE id = %s", (user_id,))
@@ -297,13 +237,14 @@ def create_pack(
         INSERT INTO user_plans
         (user_id, plan_id, active, start_date, end_date, sessions_per_week,
          preferred_days, preferred_time, trainer_id, session_type, second_person_name, second_person_email,
-         price_per_session, total_price, status, created_at, duration_months)
-        VALUES (%s, %s, TRUE, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'activo', NOW(), %s)
+         price_per_session, total_price, status, created_at, duration_months, catalog_pack_id, weeks, extra_emails)
+        VALUES (%s, %s, TRUE, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'activo', NOW(), %s, %s, %s, %s)
         RETURNING id
         """,
         (user_id, plan_id, session_dates[0], session_dates[-1], sessions_per_week,
          preferred_days, preferred_time, trainer_id, session_type, second_person_name, second_person_email,
-         quote["price_per_session"], quote["total_price"], months)
+         quote["price_per_session"], quote["total_price"], months, catalog_pack_id, weeks,
+         list(extra_emails) if extra_emails else None)
     )
     pack_id = cursor.fetchone()[0]
 
@@ -344,7 +285,10 @@ def create_pack(
 
     return {
         "pack_id": pack_id,
+        "catalog_pack_id": catalog_pack_id,
+        "plan_id": plan_id,
         "conflicts": conflicts,
+        "overlaps": overlaps,
         "plan_name": plan_name,
         "session_type": session_type,
         "second_person_name": second_person_name,
@@ -357,36 +301,7 @@ def create_pack(
         "sessions": sessions,
         "calendar_failed": len(calendar_errors),
         "calendar_errors": sorted(set(calendar_errors)),
-        "replaced": {
-            **replacement_summary(replaced),
-            "events": [(item["id"], item["event_id"]) for item in replaced if item["event_id"]],
-        },
     }
-
-
-def remove_replaced_events(created):
-    """Deletes from the calendar the events of the sessions a new pack
-    cancelled. Call it AFTER the commit (nothing is deleted in Google for a
-    pack that did not get saved). A failure never undoes the pack: it is
-    recorded on the session and added to created["calendar_failed"] /
-    ["calendar_errors"] so the panel warns. Returns `created`."""
-    events = (created.get("replaced") or {}).get("events") or []
-    if not events:
-        return created
-    conn = get_connection()
-    cursor = conn.cursor()
-    try:
-        # the replaced sessions are Cancelled in the database: the central rule deletes their events
-        for item in calendar_sync.sync_sessions_to_google(cursor, [session_id for session_id, _ in events]):
-            if item["action"] == "failed":
-                created["calendar_failed"] += 1
-                if item["error"] not in created["calendar_errors"]:
-                    created["calendar_errors"].append(item["error"])
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
-    return created
 
 
 def delete_created_events(created_event_ids):
@@ -398,15 +313,10 @@ def delete_created_events(created_event_ids):
             traceback.print_exc()
 
 
-def clean_pack_recipients(email_extra, client_email):
-    """Extra recipients for the pack email (None = the team's default
-    addresses). Checked before anything is created, so a typo is reported
-    without side effects."""
-    wanted = team_emails() if email_extra is None else email_extra
-    try:
-        return clean_recipients(wanted, exclude=[client_email])
-    except ValueError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
+def clean_pack_recipients(extra_recipients, client_email):
+    """The extra recipients of the pack email (the client always gets it; these get it in BCC): valid, lower case, no
+    duplicates, at most 5. Checked before anything is created, so a typo is reported without side effects."""
+    return parse_extra(extra_recipients, client_email)
 
 
 def email_pack(created, *, client_name, client_email, days, sessions_per_week, trainer_name, to_client, extra):
@@ -471,26 +381,19 @@ def ensure_pack_columns():
     cursor = conn.cursor()
     try:
         cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_plan_id INTEGER")
-        # The history of packs (nothing is ever deleted): how long the pack is, how it ended, and when.
-        #   status: activo | sustituido are written when they happen; finalizado | cancelado are worked out when read
-        #   (pack_view.pack_state) because they depend on the sessions and the date.
+        # The history of packs (nothing is ever deleted): how long the pack is and when it was created. The state of a pack
+        # (activo | finalizado | cancelado) is worked out when read (pack_view.pack_state) from its sessions and the date.
+        # `status` and `replaced_at` are only read by older rows: a pack no longer replaces another.
         cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE")
         cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS status TEXT")
         cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS created_at TIMESTAMP")
         cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS replaced_at TIMESTAMP")
         cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS duration_months INTEGER")
-        # Older packs: only what the data really says. The duration is the one of their plan; a pack that is no longer
-        # active and has a LATER pack was replaced (that was the only way a pack stopped being active). When it was
-        # created or replaced is unknown and stays empty.
+        # the extra recipients the admin added when the pack was created (BCC of its email); kept for the calendar invitations
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS extra_emails TEXT[]")
+        # Older packs: only what the data really says. The duration is the one of their plan.
         cursor.execute(
             "UPDATE user_plans up SET duration_months = p.duracao_meses FROM plans p WHERE p.id = up.plan_id AND up.duration_months IS NULL"
-        )
-        cursor.execute(
-            """
-            UPDATE user_plans up SET status = 'sustituido'
-            WHERE up.status IS NULL AND NOT up.active
-              AND EXISTS (SELECT 1 FROM user_plans later WHERE later.user_id = up.user_id AND later.id > up.id)
-            """
         )
         conn.commit()
     finally:

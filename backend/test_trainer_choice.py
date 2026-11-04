@@ -5,6 +5,7 @@
 The local database is used; the trainers, clients and requests it creates are removed. Google Calendar is a fake.
 """
 import unittest
+
 from datetime import date, timedelta
 
 from fastapi import HTTPException
@@ -57,6 +58,8 @@ class Choice(unittest.TestCase):
         self.other_id = cur.fetchone()[0]
         cur.execute("SELECT id FROM plans ORDER BY id LIMIT 1")
         self.plan_id = cur.fetchone()[0]
+        cur.execute("SELECT id FROM pack_catalog WHERE session_type = 'individual' AND active ORDER BY id LIMIT 1")
+        self.pack_ids = {"individual": cur.fetchone()[0]}
         conn.commit()
         conn.close()
         self.monday = future_monday()
@@ -202,7 +205,7 @@ class Choice(unittest.TestCase):
         main.require_client = lambda authorization: {"sub": "uid-choice", "email": f"c{DOMAIN}"}
         try:
             return main.create_client_request(
-                main.ClientRequestCreate(plan_id=self.plan_id, sessions_per_week=len(days.split(",")), preferred_days=days, preferred_time=time,
+                main.ClientRequestCreate(pack_id=self.pack_ids["individual"], sessions_per_week=len(days.split(",")), preferred_days=days, preferred_time=time,
                                          trainer_id=trainer), authorization="Bearer x")
         finally:
             main.require_client = real

@@ -7,7 +7,7 @@ import TrainerChoice from '../components/forms/TrainerChoice'
 import { API_URL } from '../config'
 import { useI18n } from '../i18n/I18nContext'
 import SessionTypeSection, { PriceSummary } from '../components/forms/SessionTypeSection'
-import { formatMoney, packQuote, sessionTypeBody } from '../utils/pricing'
+import { formatMoney, packQuote, packsOfType, sessionTypeBody } from '../utils/pricing'
 import { secondPersonProblems, usePricing } from '../utils/usePricing'
 import { formText } from '../i18n/formText'
 
@@ -18,8 +18,7 @@ function TrainingRequest() {
   const [kind, setKind] = useState({ type: 'individual', name: '', email: '' })
   const [kindErrors, setKindErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
-  const [plans, setPlans] = useState([])
-  const [planId, setPlanId] = useState('1')
+  const [packId, setPackId] = useState('')                 // a pack of the catalogue (the first one of the type until another is chosen)
 
   const [sessionsPerWeek, setSessionsPerWeek] = useState('1')
 
@@ -54,23 +53,15 @@ function TrainingRequest() {
       : [...new Set(offeredDays.flatMap(day => schedule[day]))].sort()
   const effectiveTime = timeOptions.includes(preferredTime) ? preferredTime : (timeOptions[0] || '')
 
-  useEffect(() => {
-    fetch(`${API_URL}/plans`)
-      .then(response => {
-        if (!response.ok) throw new Error('Could not load packages')
-        return response.json()
-      })
-      .then(data => {
-        setPlans(data)
-        if (data.length) setPlanId(String(data[0][0]))
-      })
-      .catch(() => setPlans([]))
-  }, [])
+  // Only the packs ON SALE of the chosen type (the catalogue, edited in Admin > Packs); the sessions per week are the ones the pack offers.
+  const typePacks = packsOfType(prices, kind.type)
+  const chosenPack = typePacks.find(pack => String(pack.id) === packId) || typePacks[0] || null
+  const perWeekOptions = chosenPack ? chosenPack.sessions_per_week_options : []
+  const effectivePerWeek = perWeekOptions.includes(Number(sessionsPerWeek)) ? sessionsPerWeek : String(perWeekOptions[0] || 1)
 
   // What the pack would cost: preview only, the server works the price out again
-  const chosenPlan = plans.find(plan => String(plan[0]) === planId)
-  const sessions = chosenPlan?.[4] ? chosenPlan[4] * Number(sessionsPerWeek) : 0
-  const quote = packQuote(prices, kind.type, chosenPlan?.[2], sessions)
+  const quote = packQuote(chosenPack, effectivePerWeek)
+  const sessions = quote.sessions
 
   const handleDayChange = (day) => {
 
@@ -104,7 +95,7 @@ function TrainingRequest() {
       setKindErrors({ name: second.name && formText(language, second.name), email: second.email && formText(language, second.email) })
       return
     }
-    if (quote.perSession == null) { setProblem('st_no_price'); return }
+    if (!chosenPack || quote.perSession == null) { setProblem('st_no_price'); return }
     setSubmitting(true)
 
     try {
@@ -122,9 +113,9 @@ function TrainingRequest() {
 
           body: JSON.stringify({
 
-            plan_id: parseInt(planId),
+            pack_id: chosenPack.id,
 
-            sessions_per_week: parseInt(sessionsPerWeek),
+            sessions_per_week: parseInt(effectivePerWeek),
 
             preferred_days: preferredDays.join(','),
 
@@ -208,13 +199,13 @@ function TrainingRequest() {
             </label>
 
             <select
-              value={planId}
+              value={chosenPack ? String(chosenPack.id) : ''}
               onChange={(e) =>
-                setPlanId(e.target.value)
+                setPackId(e.target.value)
               }
               className="w-full bg-black border border-white/20 p-4"
             >
-              {plans.map(plan => <option key={plan[0]} value={plan[0]}>{plan[1]}</option>)}
+              {typePacks.map(pack => <option key={pack.id} value={pack.id}>{pack.name}</option>)}
 
             </select>
 
@@ -227,7 +218,7 @@ function TrainingRequest() {
             </label>
 
             <select
-              value={sessionsPerWeek}
+              value={effectivePerWeek}
               onChange={(e) =>
                 setSessionsPerWeek(
                   e.target.value
@@ -235,11 +226,7 @@ function TrainingRequest() {
               }
               className="w-full bg-black border border-white/20 p-4"
             >
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-              <option value="5">5</option>
+              {(perWeekOptions.length ? perWeekOptions : [1]).map(value => <option key={value} value={value}>{value}</option>)}
             </select>
 
           </div>
@@ -316,7 +303,7 @@ function TrainingRequest() {
             <PriceSummary
               title={t('st_summary')}
               rows={[
-                { label: t('st_package'), value: chosenPlan?.[1] || '—' },
+                { label: t('st_package'), value: chosenPack?.name || '—' },
                 { label: t('st_type_row'), value: t(kind.type === 'dual' ? 'st_dual' : 'st_individual') },
                 { label: t('st_sessions'), value: sessions },
                 { label: t('st_price_session'), value: formatMoney(quote.perSession) },
@@ -332,10 +319,10 @@ function TrainingRequest() {
 
           <button
             onClick={handleSubmit}
-            disabled={submitting || plans.length === 0 || trainerStatus === 'busy' || trainerStatus === 'none'}
+            disabled={submitting || !chosenPack || trainerStatus === 'busy' || trainerStatus === 'none'}
             className="w-full sm:w-auto bg-white text-black px-8 py-4 uppercase tracking-[3px] hover:bg-gray-300 transition duration-300"
           >
-            {submitting ? t('tr_submitting') : plans.length ? t('tr_submit') : t('tr_unavailable')}
+            {submitting ? t('tr_submitting') : chosenPack ? t('tr_submit') : t('tr_unavailable')}
           </button>
 
         </div>

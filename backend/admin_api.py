@@ -10,6 +10,7 @@ from typing import Optional
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 
+import pack_catalog
 import pricing
 from database import get_connection
 from datetime import datetime, timedelta
@@ -24,6 +25,7 @@ from availability import (
     trainer_usage, validate_hours,
 )
 import mailer
+from emails.recipients import extra_scope, parse_extra
 from bulk_actions import BulkPayload, run_each, unknown_action
 from google_calendar import delete_calendar_event, list_calendar_events
 from datetime import timezone
@@ -36,18 +38,26 @@ import validators
 from emails import log as email_log
 from emails import health as email_health
 from emails.dates import to_madrid
-import plans_schema
 from admin_calendar import ensure_columns_once as ensure_calendar_columns
 from trial_confirmation import (
     approve_trial, panel_status, remove_trial_event, resend_approval, resend_received, sync_calendar_event,
 )
 
 
-class PlanPayload(BaseModel):
-    nome: str = Field(min_length=1, max_length=80)
-    duracao_meses: int = Field(ge=1, le=60)
-    duration_weeks: int = Field(ge=1, le=260)
-    preco: float | None = Field(default=None, ge=0, le=100000)      # ignored: prices live in pricing.py / the pricing table
+class PackPayload(BaseModel):
+    """A pack of the catalogue (pack_catalog.py checks every value again)."""
+    # every value is checked by pack_catalog.clean (one answer in the same format whatever is wrong), so the types are open
+    name: str | None = Field(default=None, max_length=200)
+    session_type: str | None = Field(default=None, max_length=20)
+    weeks: int | str | None = None
+    sessions_per_week_options: list[int | str] = Field(default_factory=list, max_length=20)
+    price_per_session: float | str | None = None
+    price_per_pack: float | str | None = None
+
+
+class TrialPricesPayload(BaseModel):
+    individual: float | str | None = None
+    dual: float | str | None = None
 
 
 class HoursWindow(BaseModel):
@@ -77,8 +87,14 @@ class BillingPayload(BaseModel):
     country: str | None = None
 
 
+class ExtraRecipients(BaseModel):
+    """The extra recipients of an action that sends an email: the client always gets it, these get it in BCC (max 5)."""
+    extra_recipients: list[str] | None = Field(default=None, max_length=20)
+
+
 class TrialApprovePayload(BaseModel):
     trainer_id: int
+    extra_recipients: list[str] | None = Field(default=None, max_length=20)
     session_date: Optional[str] = Field(default=None, max_length=10)     # the admin may adjust the day / hour
     session_time: Optional[str] = Field(default=None, max_length=5)
 
@@ -124,7 +140,7 @@ def register_admin_routes(app, require_admin):
         cursor = conn.cursor()
         try:
             cursor.execute(
-                """
+                f"""
                 SELECT
                     u.id, u.nome, u.email, u.telefone, u.cidade, u.foto,
                     pl.id, pl.nome,
@@ -141,14 +157,14 @@ def register_admin_routes(app, require_admin):
                     pl.dual
                 FROM users u
                 LEFT JOIN LATERAL (
-                    -- all active packs: name of the newest, the latest end date, how many
+                    -- all ACTIVE packs (any number of them): name of the newest, the latest end date, how many
                     SELECT (array_agg(p.id ORDER BY up.id DESC))[1] AS id,
                            (array_agg(p.nome ORDER BY up.id DESC))[1] AS nome,
                            MAX(up.end_date) AS end_date,
                            COUNT(*) AS packs,
                            BOOL_OR(up.session_type = 'dual') AS dual
                     FROM user_plans up JOIN plans p ON p.id = up.plan_id
-                    WHERE up.user_id = u.id AND up.active
+                    WHERE up.user_id = u.id AND {pack_view.ACTIVE_PACK_CONDITION}
                 ) pl ON TRUE
                 LEFT JOIN LATERAL (
                     SELECT
@@ -286,7 +302,7 @@ def register_admin_routes(app, require_admin):
                 {
                     **pack,
                     "start_date": _iso(pack["start_date"]), "end_date": _iso(pack["end_date"]),
-                    "created_at": _iso(pack["created_at"]), "replaced_at": _iso(pack["replaced_at"]),
+                    "created_at": _iso(pack["created_at"]),
                     "price_per_session": pricing.number(pack["price_per_session"]),
                     "total_price": pricing.number(pack["total_price"]),
                     "sessions": [{**item, "date": _iso(item["date"])} for item in pack["sessions"]],
@@ -415,13 +431,6 @@ def register_admin_routes(app, require_admin):
             raise unknown_action(data.action)
         return run_each("trial-sessions", "cancel", data.ids, admin_cancel_trial)
 
-    @app.post("/admin/plans/bulk", dependencies=admin)
-    def bulk_plans(data: BulkPayload):
-        """delete several plans (the ones in use are refused one by one, like the single action)."""
-        if data.action != "delete":
-            raise unknown_action(data.action)
-        return run_each("plans", "delete", data.ids, admin_delete_plan)
-
     @app.post("/admin/trainers/bulk", dependencies=admin)
     def bulk_trainers(data: BulkPayload):
         """remove several trainers (refused when they still have upcoming sessions; archived when they have history)."""
@@ -468,53 +477,15 @@ def register_admin_routes(app, require_admin):
             cursor.close()
             conn.close()
 
-    @app.post("/admin/plans", dependencies=admin)
-    def admin_create_plan(plan: PlanPayload):
+    # ---- Admin > Packs: the catalogue. Every endpoint is admin only (the `admin` dependency checks the Firebase token and
+    # the admin role); the values are validated again by pack_catalog and no price sent by a client is ever trusted.
+    def _in_catalog(work):
         conn = get_connection()
         cursor = conn.cursor()
         try:
-            # The real price lives in the pricing table. The old column of `plans` (it is NOT NULL) only gets the
-            # individual price of that duration so it never disagrees with it; nothing reads it for a price.
-            price = plans_schema.price_column(cursor)
-            legacy = pricing.price_per_session(cursor, pricing.PACK, pricing.INDIVIDUAL, plan.duracao_meses) or 0
-            cursor.execute(
-                f"""
-                INSERT INTO plans (nome, duracao_meses, {price}, duration_weeks)
-                VALUES (%s, %s, %s, %s) RETURNING id
-                """,
-                (plan.nome.strip(), plan.duracao_meses, legacy, plan.duration_weeks),
-            )
-            plan_id = cursor.fetchone()[0]
+            result = work(cursor)
             conn.commit()
-            return {"id": plan_id}
-        except Exception as error:
-            conn.rollback()
-            traceback.print_exc()
-            raise HTTPException(
-                status_code=500,
-                detail=f"Could not create the plan: {type(error).__name__}: {str(error)[:200]}",
-            ) from error
-        finally:
-            cursor.close()
-            conn.close()
-
-    @app.put("/admin/plans/{plan_id}", dependencies=admin)
-    def admin_update_plan(plan_id: int, plan: PlanPayload):
-        conn = get_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                """
-                UPDATE plans
-                SET nome = %s, duracao_meses = %s, duration_weeks = %s
-                WHERE id = %s RETURNING id
-                """,
-                (plan.nome.strip(), plan.duracao_meses, plan.duration_weeks, plan_id),
-            )
-            if not cursor.fetchone():
-                raise HTTPException(status_code=404, detail="Plan not found")
-            conn.commit()
-            return {"id": plan_id}
+            return result
         except HTTPException:
             conn.rollback()
             raise
@@ -522,39 +493,41 @@ def register_admin_routes(app, require_admin):
             conn.rollback()
             traceback.print_exc()
             raise HTTPException(
-                status_code=500,
-                detail=f"Could not update the plan: {type(error).__name__}: {str(error)[:200]}",
+                status_code=500, detail=f"Could not save the pack: {type(error).__name__}",
             ) from error
         finally:
             cursor.close()
             conn.close()
 
-    @app.delete("/admin/plans/{plan_id}", dependencies=admin)
-    def admin_delete_plan(plan_id: int):
-        conn = get_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("SELECT 1 FROM user_plans WHERE plan_id = %s LIMIT 1", (plan_id,))
-            in_use = cursor.fetchone()
-            if not in_use:
-                cursor.execute("SELECT 1 FROM client_requests WHERE plan_id = %s LIMIT 1", (plan_id,))
-                in_use = cursor.fetchone()
-            if in_use:
-                raise HTTPException(
-                    status_code=409,
-                    detail="This plan is used by clients or requests and cannot be deleted.",
-                )
-            cursor.execute("DELETE FROM plans WHERE id = %s RETURNING id", (plan_id,))
-            if not cursor.fetchone():
-                raise HTTPException(status_code=404, detail="Plan not found")
-            conn.commit()
-            return {"id": plan_id}
-        except HTTPException:
-            conn.rollback()
-            raise
-        finally:
-            cursor.close()
-            conn.close()
+    @app.get("/admin/pack-catalog", dependencies=admin)
+    def admin_pack_catalog():
+        """Every pack of the catalogue (archived ones too, with how many times each was sold) and the trial prices."""
+        return _in_catalog(lambda cursor: {
+            "packs": pack_catalog.list_packs(cursor), "trial": pack_catalog.trial_prices(cursor),
+        })
+
+    @app.post("/admin/pack-catalog", dependencies=admin)
+    def admin_create_pack(data: PackPayload):
+        return _in_catalog(lambda cursor: pack_catalog.create(cursor, data.model_dump()))
+
+    @app.put("/admin/pack-catalog/{pack_id}", dependencies=admin)
+    def admin_update_pack(pack_id: int, data: PackPayload):
+        """Edits a pack of the catalogue. The packs already sold keep their own price, weeks and type."""
+        return _in_catalog(lambda cursor: pack_catalog.update(cursor, pack_id, data.model_dump()))
+
+    @app.post("/admin/pack-catalog/{pack_id}/archive", dependencies=admin)
+    def admin_archive_pack(pack_id: int):
+        """Takes a pack off sale. Nothing is deleted: the packs already sold keep working and it can be restored."""
+        return _in_catalog(lambda cursor: pack_catalog.set_archived(cursor, pack_id, True))
+
+    @app.post("/admin/pack-catalog/{pack_id}/restore", dependencies=admin)
+    def admin_restore_pack(pack_id: int):
+        return _in_catalog(lambda cursor: pack_catalog.set_archived(cursor, pack_id, False))
+
+    @app.put("/admin/trial-prices", dependencies=admin)
+    def admin_trial_prices(data: TrialPricesPayload):
+        """The price of a trial session, individual and dual (the trial form reads them from GET /pricing)."""
+        return _in_catalog(lambda cursor: pack_catalog.set_trial_prices(cursor, data.individual, data.dual))
 
     @app.get("/admin/trial-sessions", dependencies=admin)
     def admin_trial_sessions():
@@ -633,7 +606,7 @@ def register_admin_routes(app, require_admin):
         puts the trial on the calendar at once as "Trial (Pendiente)"; the client's
         confirmation turns that same event into the confirmed one."""
         try:
-            result = approve_trial(trial_id, data.trainer_id, data.session_date, data.session_time)
+            result = approve_trial(trial_id, data.trainer_id, data.session_date, data.session_time, data.extra_recipients)
         except HTTPException:
             raise
         except Exception as error:
@@ -645,9 +618,9 @@ def register_admin_routes(app, require_admin):
         return {"message": "Trial session approved", **result}
 
     @app.post("/admin/trial-sessions/{trial_id}/resend-received", dependencies=admin)
-    def admin_resend_trial_received(trial_id: int):
-        """Sends the "request received" email to the client again. One per minute."""
-        return resend_received(trial_id)
+    def admin_resend_trial_received(trial_id: int, data: ExtraRecipients | None = None):
+        """Sends the "request received" email to the client again (and, in BCC, to the extra recipients). One per minute."""
+        return resend_received(trial_id, data.extra_recipients if data else None)
 
     @app.get("/admin/email/health", dependencies=admin)
     def admin_email_health():
@@ -667,9 +640,9 @@ def register_admin_routes(app, require_admin):
         return {"sent": result.ok, "problem": result.error}
 
     @app.post("/admin/trial-sessions/{trial_id}/resend-approval", dependencies=admin)
-    def admin_resend_trial_approval(trial_id: int):
+    def admin_resend_trial_approval(trial_id: int, data: ExtraRecipients | None = None):
         """Same email, same link (token unchanged). One resend per minute."""
-        return resend_approval(trial_id)
+        return resend_approval(trial_id, data.extra_recipients if data else None)
 
     @app.post("/admin/trial-sessions/{trial_id}/calendar-event", dependencies=admin)
     def admin_trial_calendar_event(trial_id: int):
@@ -720,7 +693,7 @@ def register_admin_routes(app, require_admin):
             conn.close()
 
     @app.post("/admin/trial-sessions/{trial_id}/cancel", dependencies=admin)
-    def admin_cancel_trial(trial_id: int):
+    def admin_cancel_trial(trial_id: int, data: ExtraRecipients | None = None):
         conn = get_connection()
         cursor = conn.cursor()
         try:
@@ -734,6 +707,7 @@ def register_admin_routes(app, require_admin):
                 raise HTTPException(status_code=404, detail="Trial session not found")
             if str(row[1]).lower() not in ("approved", "confirmed"):
                 raise HTTPException(status_code=409, detail="Only approved or confirmed trial sessions can be cancelled")
+            extra = parse_extra(data.extra_recipients if data else None, row[2])      # refused before anything is cancelled
             # the event id is kept until Google confirms the deletion (remove_trial_event below)
             cursor.execute(
                 "UPDATE trial_sessions SET status = 'Cancelled', feed_sequence = feed_sequence + 1 WHERE id = %s "
@@ -745,11 +719,12 @@ def register_admin_routes(app, require_admin):
             first_name = (str(row[3]).split() or [""])[0]
             # the client had it in their calendar only if they had confirmed it
             confirmed = str(row[1]).lower() == "confirmed" or (str(row[1]).lower() == "approved" and row[7])
-            mailer.send_trial_cancelled(
-                row[2], first_name, str(row[4]), str(row[5])[:5], row[6], reference=trial_id,
-                trial_id=trial_id if confirmed else None, trainer=row[8], sequence=sequence,
-            )
-            return {"message": "Trial session cancelled"}
+            with extra_scope(extra):
+                mailer.send_trial_cancelled(
+                    row[2], first_name, str(row[4]), str(row[5])[:5], row[6], reference=trial_id,
+                    trial_id=trial_id if confirmed else None, trainer=row[8], sequence=sequence,
+                )
+            return {"message": "Trial session cancelled", "extra_recipients": extra}
         except HTTPException:
             conn.rollback()
             raise

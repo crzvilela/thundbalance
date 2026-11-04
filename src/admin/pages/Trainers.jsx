@@ -4,7 +4,7 @@ import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
-import { useBulkSelection } from '../bulk'
+import { useBulkSelection, SELECTING_CLASS, selectableProps } from '../bulk'
 import { WEEKDAYS } from '../availability'
 import TrainerAccess from '../TrainerAccess'
 import { NEUTRAL_COLOR, TRAINER_PALETTE } from '../calendar/calendarConfig'
@@ -111,7 +111,7 @@ function HoursEditor({ hours, setHours }) {
 
 const hoursInvalid = (hours) => WEEKDAYS.some(day => hours[day] && hours[day].start >= hours[day].end)
 
-function TrainerCard({ trainer, onChanged, check = null, selected = false }) {
+function TrainerCard({ trainer, onChanged, check = null, selected = false, selection = null }) {
   const { t } = useAdminText()
   const toast = useToast()
   const [hours, setHours] = useState(trainer.hours)
@@ -154,7 +154,7 @@ function TrainerCard({ trainer, onChanged, check = null, selected = false }) {
   }
 
   return (
-    <Card className={`p-6 ${selected ? '!border-emerald-400/50' : ''}`}>
+    <Card {...(selection ? selectableProps(selection, trainer.id) : {})} className={`p-6 ${selected ? '!border-emerald-400/50' : ''} ${selection?.active ? SELECTING_CLASS : ''}`}>
       <div className="mb-5 flex flex-wrap items-center gap-4">
         {check}
         <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400/25 to-emerald-700/10 text-xl font-semibold text-emerald-200">
@@ -272,7 +272,7 @@ export default function Trainers() {
             {trainers.map(trainer => (
               // The key includes the saved hours so a saved card re-reads them.
               <TrainerCard key={`${trainer.id}-${JSON.stringify(trainer.hours)}`} trainer={trainer} onChanged={resource.reload}
-                selected={selection.chosen.has(trainer.id)}
+                selected={selection.chosen.has(trainer.id)} selection={selection}
                 check={<RowCheck selection={selection} id={trainer.id} label={t('bk_select_one').replace('{name}', trainer.name)} />} />
             ))}
           </div>

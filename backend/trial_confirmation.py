@@ -36,6 +36,7 @@ from emails import log as email_log
 from emails.dates import now_madrid, parse_madrid
 import calendar_sync
 import inbox
+from emails.recipients import extra_scope, parse_extra
 from google_calendar import (
     create_trial_session_event, delete_calendar_event, describe_error, update_trial_session_event,
 )
@@ -65,6 +66,8 @@ def ensure_confirmation_fields():
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMP")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS declined_at TIMESTAMP")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS calendar_error TEXT")
+        # the extra recipients the admin added when approving (BCC of the emails); kept for the calendar invitations
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS extra_emails TEXT[]")
         # ok | failed (NULL = unknown, for rows from before): the same pair sessions have
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS calendar_sync_status TEXT")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS calendar_sync_error TEXT")
@@ -343,7 +346,7 @@ def _email_result(future):
         return False, "timeout"
 
 
-def approve_trial(trial_id, trainer_id, session_date=None, session_time=None):
+def approve_trial(trial_id, trainer_id, session_date=None, session_time=None, extra_recipients=None):
     """THE way a trial session becomes "Pendiente de confirmación del cliente".
 
     1. status -> Approved, trainer and a new token saved (nothing else can
@@ -352,6 +355,9 @@ def approve_trial(trial_id, trainer_id, session_date=None, session_time=None):
     2. the trial goes onto the calendar at once as "Trial (Pendiente) - ..." (sync_calendar_event);
        the hour is blocked for the trainer from here (availability.py);
     3. the approval email goes out in the language saved with the booking.
+
+    extra_recipients: addresses the admin adds; the CLIENT always gets the email and the extra ones get it in BCC (stored as
+    extra_emails). A bad address or more than 5 is refused before anything changes.
 
     An email or calendar failure does not undo the approval. They are reported in the return
     value ({"email": {"sent", "problem"}, "calendar": {"ok"}}), in email_log and in calendar_error."""
@@ -375,6 +381,7 @@ def approve_trial(trial_id, trainer_id, session_date=None, session_time=None):
         trainer = cursor.fetchone()
         if not trainer:
             raise HTTPException(status_code=404, detail="Trainer not found")
+        extra = parse_extra(extra_recipients, trial[1])
 
         day, time = str(trial[2])[:10], str(trial[3])[:5]
         if session_date or session_time:
@@ -394,10 +401,10 @@ def approve_trial(trial_id, trainer_id, session_date=None, session_time=None):
             """
             UPDATE trial_sessions
             SET status = 'Approved', trainer_id = %s, confirmation_token = %s, session_date = %s, session_time = %s,
-                approved_at = NOW(), rejection_reason = NULL
+                approved_at = NOW(), rejection_reason = NULL, extra_emails = %s
             WHERE id = %s
             """,
-            (trainer_id, token, day, time, trial_id),
+            (trainer_id, token, day, time, extra, trial_id),
         )
         conn.commit()
     except HTTPException:
@@ -415,21 +422,37 @@ def approve_trial(trial_id, trainer_id, session_date=None, session_time=None):
     calendar_ok = sync_calendar_event(trial_id)                 # the pending event; a failure is kept in calendar_error
     inbox.on_trial_approved(trial_id, email, day, time)         # the inbox message: parallel to the e-mail, never raises
     try:
-        future = mailer.send_trial_approved(
-            email, _first_name(full_name), str(day)[:10], str(time)[:5], trainer[0], token, lang,
-            reference=trial_id,
-            details={"session_type": session_type, "second_person_name": second_name, "price_per_session": price},
-        )
+        with extra_scope(extra):
+            future = mailer.send_trial_approved(
+                email, _first_name(full_name), str(day)[:10], str(time)[:5], trainer[0], token, lang,
+                reference=trial_id,
+                details={"session_type": session_type, "second_person_name": second_name, "price_per_session": price},
+            )
     except Exception as error:  # noqa: BLE001 - building the email failed
         logger.error("approval email of trial %s could not be built (%s)", trial_id, type(error).__name__)
         email_log.record("trial_approved", trial_id, email, False, "error")
         future = None
 
     sent, problem = _email_result(future) if future is not None else (False, "error")
-    return {"email": {"sent": sent, "problem": problem}, "calendar": {"ok": calendar_ok}}
+    return {"email": {"sent": sent, "problem": problem}, "calendar": {"ok": calendar_ok}, "extra_recipients": extra}
 
 
-def resend_approval(trial_id):
+def _store_extra(trial_id, extra):
+    """Keeps the extra recipients of the latest action with the trial (for the calendar invitations)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE trial_sessions SET extra_emails = %s WHERE id = %s", (extra, trial_id))
+        conn.commit()
+    except Exception as error:  # noqa: BLE001 - the email has been sent; only the note is lost
+        conn.rollback()
+        logger.error("extra recipients of trial %s could not be stored (%s)", trial_id, type(error).__name__)
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def resend_approval(trial_id, extra_recipients=None):
     """Sends the approval email again with the SAME link (the token does not
     change and stays valid). At most once a minute per session."""
     conn = get_connection()
@@ -466,15 +489,19 @@ def resend_approval(trial_id):
             f"Espera {wait} s antes de volver a reenviar el email.",
             f"Wait {wait} s before resending the email."))
 
-    future = mailer.send_trial_approved(
-        email, _first_name(full_name), str(day)[:10], str(time)[:5], trainer, token, lang, reference=trial_id,
-        details={"session_type": session_type, "second_person_name": second_name, "price_per_session": price},
-    )
+    extra = parse_extra(extra_recipients, email)
+    with extra_scope(extra):
+        future = mailer.send_trial_approved(
+            email, _first_name(full_name), str(day)[:10], str(time)[:5], trainer, token, lang, reference=trial_id,
+            details={"session_type": session_type, "second_person_name": second_name, "price_per_session": price},
+        )
     sent, problem = _email_result(future)
-    return {"email": {"sent": sent, "problem": problem}}
+    if extra:
+        _store_extra(trial_id, extra)
+    return {"email": {"sent": sent, "problem": problem}, "extra_recipients": extra}
 
 
-def resend_received(trial_id):
+def resend_received(trial_id, extra_recipients=None):
     """Sends the "request received" email to the client again, in the language
     saved with the booking. Allowed while the session is still alive (pending,
     approved or confirmed); at most once a minute per session."""
@@ -503,12 +530,14 @@ def resend_received(trial_id):
         raise HTTPException(status_code=429, detail=_bilingual(
             f"Espera {wait} s antes de volver a reenviar el email.",
             f"Wait {wait} s before resending the email."))
-    future = mailer.send_trial_received(
-        email, _first_name(full_name), str(day)[:10], str(time)[:5], lang, reference=trial_id,
-        details={"session_type": session_type, "second_person_name": second_name, "price_per_session": price},
-    )
+    extra = parse_extra(extra_recipients, email)
+    with extra_scope(extra):
+        future = mailer.send_trial_received(
+            email, _first_name(full_name), str(day)[:10], str(time)[:5], lang, reference=trial_id,
+            details={"session_type": session_type, "second_person_name": second_name, "price_per_session": price},
+        )
     sent, problem = _email_result(future)
-    return {"email": {"sent": sent, "problem": problem}}
+    return {"email": {"sent": sent, "problem": problem}, "extra_recipients": extra}
 
 
 def _remove_event(row):

@@ -30,7 +30,7 @@ const EMPTY = {
 // temporary password (emailed to the client, never shown here), and optionally
 // a first pack. If the welcome email fails the client still exists and this
 // window offers "Reenviar credenciales".
-export default function AddClientDrawer({ plans, trainers, onClose, onCreated }) {
+export default function AddClientDrawer({ packs, trainers, onClose, onCreated }) {
   const { t, language } = useAdminText()
   const [fieldErrors, setFieldErrors] = useState({})
   const formRef = useRef(null)
@@ -209,7 +209,7 @@ export default function AddClientDrawer({ plans, trainers, onClose, onCreated })
         <p className="mt-2 text-sm text-gray-500">{t('cc_pack_hint')}</p>
         {withPack && (
           <div className="mt-6 border-t border-white/10 pt-6">
-            <PackFields form={pack} set={updatePack} plans={plans} trainers={trainers} busy={busy} preview={preview} serverConflicts={serverConflicts} />
+            <PackFields form={pack} set={updatePack} packs={packs} trainers={trainers} busy={busy} preview={preview} serverConflicts={serverConflicts} />
           </div>
         )}
       </section>

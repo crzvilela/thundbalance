@@ -202,7 +202,7 @@ export function Drawer({ open, onClose, title, subtitle, children, footer, busy 
 
 // Small centered confirmation for destructive actions.
 // tone "danger" (default) for destructive actions; "neutral" for harmless ones such as archiving.
-export function ConfirmDialog({ open, title, text, confirmLabel, cancelLabel, onConfirm, onCancel, busy = false, tone = 'danger', icon = 'alert' }) {
+export function ConfirmDialog({ open, title, text, confirmLabel, cancelLabel, onConfirm, onCancel, busy = false, tone = 'danger', icon = 'alert', children = null }) {
   const panel = useRef(null)
   useFocusTrap(panel, open)
   useEffect(() => {
@@ -216,10 +216,11 @@ export function ConfirmDialog({ open, title, text, confirmLabel, cancelLabel, on
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => { if (!busy) onCancel() }} />
-      <div ref={panel} role="alertdialog" aria-modal="true" aria-label={title} className="admin-toast relative w-full max-w-lg rounded-3xl border border-white/10 bg-[#0d1110] p-8 shadow-2xl">
+      <div ref={panel} role="alertdialog" aria-modal="true" aria-label={title} className="admin-toast relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-white/10 bg-[#0d1110] p-6 shadow-2xl sm:p-8">
         <span className={`mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border ${tone === 'danger' ? 'border-red-400/25 bg-red-400/10 text-red-300' : 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300'}`}><Icon name={icon} /></span>
         <h2 className="text-2xl font-semibold text-white">{title}</h2>
         {text && <p className="mt-2 text-base text-gray-400">{text}</p>}
+        {children}
         <div className="mt-6 flex gap-3">
           <Button variant="secondary" className="flex-1" onClick={onCancel} disabled={busy}>{cancelLabel}</Button>
           <Button variant={tone === 'danger' ? 'danger' : 'primary'} className="flex-1" onClick={onConfirm} loading={busy}>{confirmLabel}</Button>

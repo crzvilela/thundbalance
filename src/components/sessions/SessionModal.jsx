@@ -87,7 +87,8 @@ export default function SessionModal({
     }
   }
 
-  const facts = [[t('ms_date'), formatDay(session.date, locale)], [t('ms_time'), formatTime(session.time)], [t('ms_trainer'), session.trainer || '—']]
+  const facts = [[t('ms_date'), formatDay(session.date, locale)], [t('ms_time'), formatTime(session.time)], [t('ms_trainer'), session.trainer || '—'],
+    ...(session.packName ? [[t('ms_pack'), `${session.packName}${session.number ? ` · ${session.number}` : ''}`]] : [])]
   const when = (day, time) => ({ date: formatDay(day, locale), time: formatTime(time) })
   const back = () => { setMode('view'); setError('') }
 

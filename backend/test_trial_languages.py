@@ -30,11 +30,11 @@ DOMAIN = "@test-lang.example"
 
 # words that only appear in one language of the trial emails
 MARKERS = {
-    "en": {"received": "We have received your trial session request", "approved": "Confirm my session",
+    "en": {"received": "successfully received your trial session request", "approved": "Confirm my session",
            "confirmed": "All set!", "subject_received": "We received your request"},
-    "es": {"received": "Hemos recibido tu solicitud de sesión de prueba", "approved": "Confirmar mi sesión",
+    "es": {"received": "Hemos recibido correctamente tu solicitud de sesión de prueba", "approved": "Confirmar mi sesión",
            "confirmed": "¡Todo listo!", "subject_received": "Hemos recibido tu solicitud"},
-    "ca": {"received": "Hem rebut la teva sol·licitud de sessió de prova", "approved": "Confirmar la meva sessió",
+    "ca": {"received": "Hem rebut correctament la teva sol·licitud de sessió de prova", "approved": "Confirmar la meva sessió",
            "confirmed": "Tot a punt!", "subject_received": "Hem rebut la teva sol·licitud"},
 }
 

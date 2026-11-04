@@ -10,7 +10,7 @@ import { useAdminText } from '../useAdminText'
 import { useToast } from '../toastContext'
 import { adminRequest } from '../api'
 import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
-import { useBulkSelection } from '../bulk'
+import { useBulkSelection, SELECTING_CLASS, selectableProps } from '../bulk'
 import { Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon, PageHeader, Skeleton, TextArea, TextInput } from '../ui'
 
 // Videos are upload-only: video_source is always 'upload' for anything saved
@@ -133,7 +133,7 @@ export default function Videos() {
         <ul className="space-y-3">
           {videos.map((video, index) => (
             <li key={video.id}>
-              <Card className={`flex flex-col gap-4 p-4 transition hover:border-white/20 sm:flex-row sm:items-center ${selection.chosen.has(video.id) ? '!border-emerald-400/50' : ''}`}>
+              <Card {...selectableProps(selection, video.id)} className={`flex flex-col gap-4 p-4 transition hover:border-white/20 sm:flex-row sm:items-center ${selection.chosen.has(video.id) ? '!border-emerald-400/50' : ''} ${selection.active ? SELECTING_CLASS : ''}`}>
                 <RowCheck selection={selection} id={video.id} label={t('bk_select_one').replace('{name}', resolveText(video.title, language))} />
                 <div className="w-full shrink-0 overflow-hidden rounded-xl sm:w-40">
                   <TrainingVideoPlayer source={video.video_source} url={video.video_url} compact />

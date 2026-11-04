@@ -12,7 +12,7 @@ import logging
 import os
 
 from client_lang import resolve_client_lang
-from emails import send_email_async
+from emails import client_extra, send_email_async
 from emails.reschedule_emails import (
     client_reschedule_approved, client_reschedule_counter, client_reschedule_rejected, client_session_moved,
     language_of, staff_counter_answer, staff_reschedule_requested,
@@ -50,7 +50,11 @@ def _client(build, ctx, kind):
         to = validate_address(ctx.get("client_email"), "client email")
         ctx["lang"] = resolve_client_lang(booking_lang=ctx.get("lang"), email=to)     # the request's own, else the profile's, else English
         subject, html, text = build()
-        return send_email_async(to, subject, html, text, kind=kind, lang=language_of(ctx), reference=ctx.get("id"))
+        options = {}
+        extra = [a for a in client_extra() if a != to.lower()]
+        if extra:                              # the extra recipients the admin added to this answer (BCC)
+            options["bcc"] = extra
+        return send_email_async(to, subject, html, text, kind=kind, lang=language_of(ctx), reference=ctx.get("id"), **options)
     except Exception as error:  # noqa: BLE001
         logger.error("client email %s could not be built (%s)", kind, type(error).__name__)
         return None

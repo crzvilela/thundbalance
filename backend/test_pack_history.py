@@ -7,6 +7,8 @@ endpoint lists every pack newest first with its sessions, packs from before thes
 says, and the endpoint is admin only. Google is faked; the local database is used and cleaned up.
 """
 import unittest
+
+import catalog_testing
 from datetime import date, timedelta
 
 import testsafety
@@ -42,6 +44,7 @@ class History(unittest.TestCase):
         cls.trainer_id = cur.fetchone()[0]
         cur.execute(f"INSERT INTO plans (nome, {plans_schema.price_column(cur)}, duracao_meses, duration_weeks) VALUES ('TEST history', 0, 1, 2) RETURNING id")
         cls.plan_id = cur.fetchone()[0]
+        cls.pack_ids = catalog_testing.make_pair(cur, cls.plan_id)
         conn.commit()
         conn.close()
 
@@ -50,6 +53,7 @@ class History(unittest.TestCase):
         cls.cleanup()
         conn = get_connection()
         cur = conn.cursor()
+        catalog_testing.drop(cur)
         cur.execute("DELETE FROM plans WHERE id = %s", (cls.plan_id,))
         conn.commit()
         conn.close()
@@ -88,9 +92,9 @@ class History(unittest.TestCase):
         for route in main.app.routes:
             if getattr(route, "path", None) == "/admin/clients/{client_id}/renew-pack" and "POST" in route.methods:
                 return route.endpoint(self.user_id, main.NewPack(
-                    plan_id=self.plan_id, sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="09:00",
+                    pack_id=self.pack_ids[session_type or "individual"], sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="09:00",
                     trainer_id=self.trainer_id, start_date=weekday_after(start_offset).isoformat(), email_extra=[],
-                    email_client=False, allow_conflicts=True, confirm_replace=True,
+                    email_client=False, allow_conflicts=True, allow_overlaps=True,
                     session_type=session_type, second_person_name=name, second_person_email=email))
 
     def history(self):
@@ -98,44 +102,36 @@ class History(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
-    def test_a_new_pack_replaces_the_current_one_and_both_stay_in_the_history(self):
+    def test_a_new_pack_does_not_replace_the_current_one_both_are_active_and_each_keeps_its_own_numbers(self):
         self.new_pack(10)
         self.new_pack(30, "dual", "Beatriz Prueba", f"b{DOMAIN}")
         packs_list = self.history()
         self.assertEqual(len(packs_list), 2)                                    # nothing was lost
         newest, oldest = packs_list                                              # newest first
-        self.assertEqual((newest["status"], oldest["status"]), ("activo", "sustituido"))
-        self.assertIsNone(newest["replaced_at"])
-        self.assertIsNotNone(oldest["replaced_at"])
+        self.assertEqual((newest["status"], oldest["status"]), ("activo", "activo"))
+        self.assertNotIn("replaced_at", newest)                                  # nothing is "replaced" any more
         self.assertIsNotNone(newest["created_at"])
         self.assertEqual((newest["session_type"], newest["price_per_session"], newest["total_price"]), ("dual", 80, 80 * 4))
         self.assertEqual((oldest["session_type"], oldest["price_per_session"], oldest["total_price"]), ("individual", 65, 65 * 4))
         self.assertEqual((newest["duration_months"], newest["sessions_per_week"]), (1, 2))
-        self.assertEqual((newest["planned"], newest["used"], len(newest["sessions"])), (4, 0, 4))
+        for pack in (newest, oldest):                                            # y is the total of THAT pack, x counts from 1
+            self.assertEqual((pack["planned"], pack["used"], len(pack["sessions"])), (4, 0, 4))
+            self.assertEqual([item["number"] for item in pack["sessions"]], ["1/4", "2/4", "3/4", "4/4"])
+            self.assertEqual({item["status"] for item in pack["sessions"]}, {"Booked"})
 
-    def test_the_replaced_packs_future_sessions_are_listed_as_cancelled_not_lost(self):
-        self.new_pack(10)
-        self.new_pack(11)                                                         # replaces from a date inside the first pack
-        newest, oldest = self.history()
-        self.assertEqual(oldest["planned"], 4)                                    # every session is still there
-        self.assertEqual(oldest["cancelled"] + oldest["remaining"] + oldest["used"], 4)
-        self.assertGreater(oldest["cancelled"], 0)
-        self.assertEqual(oldest["sessions"][0]["number"], "1/4")
-
-    def test_old_packs_get_only_what_the_data_says(self):
+    def test_old_packs_get_only_what_the_data_says_and_a_stored_sustituido_is_read_from_the_sessions(self):
         conn = get_connection()
         cur = conn.cursor()
         past = date.today() - timedelta(days=60)
-        for active, start in ((False, past), (True, past + timedelta(days=30))):
-            cur.execute("INSERT INTO user_plans (user_id, plan_id, active, start_date, end_date) VALUES (%s, %s, %s, %s, %s)",
-                        (self.user_id, self.plan_id, active, start, start + timedelta(days=20)))
+        for active, start, status in ((False, past, "sustituido"), (True, past + timedelta(days=30), None)):
+            cur.execute("INSERT INTO user_plans (user_id, plan_id, active, start_date, end_date, status) VALUES (%s, %s, %s, %s, %s, %s)",
+                        (self.user_id, self.plan_id, active, start, start + timedelta(days=20), status))
         conn.commit()
         packs.ensure_pack_columns()                                              # what happens at the next start
         conn.close()
         newest, oldest = self.history()
-        self.assertEqual(oldest["status"], "sustituido")                         # inactive and followed by a later pack
-        self.assertIsNone(oldest["replaced_at"])                                 # when is unknown: not invented
-        self.assertIsNone(oldest["created_at"])
+        self.assertEqual(oldest["status"], "finalizado")                         # the old 'sustituido' state is not used any more
+        self.assertIsNone(oldest["created_at"])                                  # when is unknown: not invented
         self.assertIsNone(oldest["price_per_session"])
         self.assertEqual(oldest["duration_months"], 1)                           # the one of its plan
         self.assertEqual(newest["status"], "finalizado")                         # active flag, no sessions, period over
@@ -143,10 +139,11 @@ class History(unittest.TestCase):
     def test_the_state_rules(self):
         today = date.today()
         state = pack_view.pack_state
-        self.assertEqual(state("sustituido", False, 8, 3, 0, today, today), "sustituido")
-        self.assertEqual(state(None, True, 8, 3, 5, today, today), "activo")
+        self.assertEqual(state("sustituido", False, 8, 3, 0, today, today), "finalizado")   # an old stored state is ignored
+        self.assertEqual(state(None, False, 8, 3, 5, today, today), "activo")               # sessions still to come
         self.assertEqual(state("activo", False, 8, 8, 0, today - timedelta(days=1), today), "finalizado")
         self.assertEqual(state("activo", False, 8, 0, 0, today, today), "cancelado")
+        self.assertEqual(state(None, True, 0, 0, 0, today + timedelta(days=3), today), "activo")   # not started, no sessions yet
 
     def test_only_an_admin_can_read_it_and_the_client_has_no_such_endpoint(self):
         main.app.dependency_overrides.clear()

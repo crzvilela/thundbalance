@@ -56,6 +56,9 @@ class Logo(unittest.TestCase):
         self.assertGreater(len(emails), 30)
         header = template.email_header()
         for name, html in emails.items():
+            if name.startswith("client trial_received "):                        # the one plain note signed by David: no logo, no images
+                self.assertEqual(html.count("<img"), 0, name)
+                continue
             self.assertEqual(html.count("<img"), 1, name)
             self.assertIn(header, html, name)                                   # the very same piece, in all of them
             image = re.search(r"<img[^>]*>", html).group(0)

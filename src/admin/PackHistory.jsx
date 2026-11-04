@@ -6,7 +6,7 @@ import { formatMoney } from '../utils/pricing'
 import { TypeBadge } from './SessionKind'
 import { Badge, Button, ErrorState, Skeleton } from './ui'
 
-const STATE_TONE = { activo: 'emerald', finalizado: 'neutral', sustituido: 'amber', cancelado: 'red' }
+const STATE_TONE = { activo: 'emerald', finalizado: 'neutral', cancelado: 'red' }
 
 // What a session of a pack is: cancelled, already done, or still to come.
 function sessionState(session, today) {
@@ -15,14 +15,15 @@ function sessionState(session, today) {
 }
 const SESSION_TONE = { cancelled: 'red', done: 'neutral', upcoming: 'emerald' }
 
-function PackRow({ pack, highlight }) {
-  const { t, language } = useAdminText()
+function PackRow({ pack, highlight, extra = null }) {
+  const { t, language, dayLabel } = useAdminText()
   const [open, setOpen] = useState(false)
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
   const today = dateKey(new Date())
   const fmt = (key, options = { day: 'numeric', month: 'short', year: 'numeric' }) => (key ? parseDateKey(String(key).slice(0, 10)).toLocaleDateString(locale, options) : '—')
   const percent = pack.planned ? Math.round((pack.used / pack.planned) * 100) : 0
   const panelId = `pack-history-${pack.id}`
+  const state = STATE_TONE[pack.status] ? pack.status : 'finalizado'      // a state an older version stored is read as finished
 
   return (
     <li className={`rounded-2xl border p-4 sm:p-5 ${highlight ? 'border-emerald-400/40 bg-emerald-400/[0.06]' : 'border-white/[0.08] bg-white/[0.03]'}`}>
@@ -34,10 +35,11 @@ function PackRow({ pack, highlight }) {
             {pack.sessions_per_week ? ` · ${pack.sessions_per_week} ${t('req_per_week')}` : ''}
             {pack.trainer ? ` · ${pack.trainer}` : ''}
           </p>
+          {extra?.preferred_days && <p className="mt-0.5 text-sm text-gray-500">{String(extra.preferred_days).split(',').map(day => dayLabel(day.trim())).join(', ')}{extra.preferred_time ? ` · ${String(extra.preferred_time).slice(0, 5)}` : ''}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <TypeBadge type={pack.session_type} secondName={pack.second_person_name} />
-          <Badge tone={STATE_TONE[pack.status] || 'neutral'}>{t(`hh_status_${pack.status}`)}</Badge>
+          <Badge tone={STATE_TONE[state]}>{t(`hh_status_${state}`)}</Badge>
         </div>
       </div>
 
@@ -46,7 +48,6 @@ function PackRow({ pack, highlight }) {
         <div><dt className="text-gray-500">{t('ty_price_total')}</dt><dd className="text-base">{pack.total_price != null ? formatMoney(pack.total_price) : '—'}</dd></div>
         <div className="col-span-2"><dt className="text-gray-500">{t('pk_period')}</dt><dd className="text-base">{fmt(pack.start_date)} → {fmt(pack.end_date)}</dd></div>
         {pack.created_at && <div><dt className="text-gray-500">{t('hh_created')}</dt><dd>{fmt(pack.created_at)}</dd></div>}
-        {pack.replaced_at && <div><dt className="text-gray-500">{t('hh_replaced_on')}</dt><dd>{fmt(pack.replaced_at)}</dd></div>}
       </dl>
 
       <div className="mt-4">
@@ -58,7 +59,7 @@ function PackRow({ pack, highlight }) {
           </span>
         </div>
         <div role="progressbar" aria-valuemin={0} aria-valuemax={pack.planned} aria-valuenow={pack.used} aria-label={`${pack.used}/${pack.planned} ${t('hh_sessions')}`} className="h-2 overflow-hidden rounded-full bg-white/10">
-          <div className={`h-full rounded-full ${pack.status === 'activo' ? 'bg-emerald-400' : 'bg-gray-400'}`} style={{ width: `${percent}%` }} />
+          <div className={`h-full rounded-full ${state === 'activo' ? 'bg-emerald-400' : 'bg-gray-400'}`} style={{ width: `${percent}%` }} />
         </div>
       </div>
 
@@ -93,9 +94,10 @@ function PackRow({ pack, highlight }) {
   )
 }
 
-// "Historial de packs": every pack the client has had, the active one first and highlighted. Admin only (the
+// "Historial de packs": every pack the client has had. ALL the active packs come first, highlighted, each with its own
+// progress (x/y); the finished and cancelled ones are below. Admin only (the
 // endpoint is); the client has no such page. `version` changes when a pack is created, so the list reloads.
-export default function PackHistory({ clientId, version = '' }) {
+export default function PackHistory({ clientId, version = '', extras = [] }) {
   const { t } = useAdminText()
   const resource = useAdminResource(`/admin/clients/${clientId}/packs?v=${version}`)
 
@@ -109,20 +111,20 @@ export default function PackHistory({ clientId, version = '' }) {
   if (list.length === 0) {
     return <p className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-5 text-gray-400">{t('hh_empty')}</p>
   }
-  const current = list.find(pack => pack.status === 'activo')
-  const others = list.filter(pack => pack !== current)
+  const current = list.filter(pack => pack.status === 'activo')
+  const others = list.filter(pack => pack.status !== 'activo')
   return (
     <div className="max-w-3xl space-y-6">
-      {current && (
+      {current.length > 0 && (
         <section aria-label={t('hh_current')}>
-          <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-emerald-300">{t('hh_current')}</h3>
-          <ul><PackRow pack={current} highlight /></ul>
+          <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-emerald-300">{t('hh_current')} ({current.length})</h3>
+          <ul className="space-y-3">{current.map(pack => <PackRow key={pack.id} pack={pack} highlight extra={extras.find(item => item.id === pack.id)} />)}</ul>
         </section>
       )}
       {others.length > 0 && (
         <section aria-label={t('hh_previous')}>
           <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">{t('hh_previous')} ({others.length})</h3>
-          <ul className="space-y-3">{others.map(pack => <PackRow key={pack.id} pack={pack} />)}</ul>
+          <ul className="space-y-3">{others.map(pack => <PackRow key={pack.id} pack={pack} extra={extras.find(item => item.id === pack.id)} />)}</ul>
         </section>
       )}
     </div>

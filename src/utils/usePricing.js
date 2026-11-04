@@ -22,6 +22,11 @@ export function loadPricing() {
   return pending
 }
 
+// The catalogue changed (Admin > Packs saved something): the next component that asks gets the new one.
+export function refreshPricing() {
+  pending = null
+}
+
 // { prices, failed }: prices is null until they arrive.
 export function usePricing() {
   const [state, setState] = useState({ prices: null, failed: false })

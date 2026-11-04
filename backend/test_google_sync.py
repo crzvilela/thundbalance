@@ -10,6 +10,8 @@ import threading
 import time
 import unittest
 
+import catalog_testing
+
 import plans_schema
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
@@ -63,6 +65,7 @@ class Sync(unittest.TestCase):
         cls.trainer_id = cur.fetchone()[0]
         cur.execute(f"INSERT INTO plans (nome, {plans_schema.price_column(cur)}, duracao_meses, duration_weeks) VALUES ('TEST gsync 3 weeks', 0, 1, 3) RETURNING id")
         cls.plan_id = cur.fetchone()[0]
+        cls.pack_ids = catalog_testing.make_pair(cur, cls.plan_id)
         conn.commit()
         conn.close()
 
@@ -71,6 +74,7 @@ class Sync(unittest.TestCase):
         cls.cleanup()
         conn = get_connection()
         cur = conn.cursor()
+        catalog_testing.drop(cur)
         cur.execute("DELETE FROM plans WHERE id = %s", (cls.plan_id,))
         conn.commit()
         conn.close()
@@ -107,8 +111,8 @@ class Sync(unittest.TestCase):
     def renew(self, start=None):
         start = start or next_weekday(10, 0)
         return route("/admin/clients/{client_id}/renew-pack", "POST").endpoint(self.user_id, main.NewPack(
-            plan_id=self.plan_id, sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="10:00",
-            trainer_id=self.trainer_id, start_date=start.isoformat(), email_extra=[], allow_conflicts=True, confirm_replace=True))
+            pack_id=self.pack_ids["individual"], sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="10:00",
+            trainer_id=self.trainer_id, start_date=start.isoformat(), email_extra=[], allow_conflicts=True, allow_overlaps=True))
 
     def sessions(self):
         conn = get_connection()

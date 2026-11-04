@@ -5,6 +5,8 @@ client declined.  To the client (Spanish, then English): request received,
 approved (with the confirm / can't-attend links), confirmed (with the .ics),
 cancelled.
 """
+from html import escape
+
 from .dates import format_date_bilingual, parse_madrid
 from .ics import build_ics
 from calendar_titles import client_trial_title
@@ -134,19 +136,35 @@ def _link(lang, key, url):
     return link_line("", "", url, label=tr(lang, key))
 
 
-def client_trial_received(name, start, lang=None, details=None):
-    """We got the request; the team will be in touch. Shows the day and time asked for."""
+def client_trial_received(name, start=None, lang=None, details=None):
+    """"We received your request": a plain note signed by David, in ONE language (the booking's). Nothing decorative: no
+    logo, no images, no links, no footer; white background, dark text, the system font. (subject, html, text).
+    `start` and `details` are not used any more (the email does not repeat the booking); they stay so every caller keeps working."""
     lang = normalize_language(lang) or "en"
-    day = format_date_bilingual(start)
-
-    def build(l):
-        return [
-            heading(tr(l, "trial_received_title")),
-            paragraph(tr(l, "greeting", name=name)),
-            paragraph(tr(l, "trial_received_body")),
-            key_value([(tr(l, "trial_received_asked"), day.full(l)), *kind_rows(l, details)]),
-        ]
-    return localized_email(lang, "trial_received_subject", build, title_key="trial_received_title")
+    subject = tr(lang, "trial_received_subject")
+    heading_text = tr(lang, "trial_received_heading")
+    hello = tr(lang, "trial_received_hi", name=_one_line(name, 60))
+    body = tr(lang, "trial_received_body")
+    regards = tr(lang, "trial_received_regards")
+    signoff = tr(lang, "trial_received_signoff")
+    page = (
+        '<!doctype html><html lang="{lang}"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<meta http-equiv="Content-Language" content="{lang}"><title>{subject}</title></head>'
+        '<body style="margin:0;padding:24px 20px;background:#ffffff;color:#1f2933;'
+        'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;">'
+        '<div style="max-width:560px;margin:0 auto;">'
+        '<h1 style="margin:0 0 20px;font-size:20px;line-height:1.3;font-weight:600;color:#1f2933;">{heading}</h1>'
+        '<p style="margin:0 0 16px;">{hello}</p>'
+        '<p style="margin:0 0 16px;">{body}</p>'
+        '<p style="margin:24px 0 0;">{regards}<br>{signoff}</p>'
+        '</div></body></html>'
+    ).format(
+        lang=lang, subject=escape(subject), heading=escape(heading_text), hello=escape(hello),
+        body=escape(body), regards=escape(regards), signoff=escape(signoff),
+    )
+    text = f"{heading_text}\n\n{hello}\n\n{body}\n\n{regards}\n{signoff}\n"
+    return subject, page, text
 
 
 def client_trial_approved(name, start, trainer, token, lang=None, details=None):

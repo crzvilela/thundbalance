@@ -6,6 +6,8 @@ Each bulk endpoint calls the SAME function as the single action, answers per ite
 accepts at most 200 ids and is admin only. Google Calendar and Firebase are fakes; the local database is used and cleaned.
 """
 import unittest
+
+import catalog_testing
 from datetime import date, timedelta
 
 from fastapi import HTTPException
@@ -14,6 +16,7 @@ import bulk_actions
 import client_lifecycle
 import google_fakes
 import main
+import plans_schema
 import testsafety
 from database import get_connection
 
@@ -21,7 +24,7 @@ DOMAIN = "@test-bulk.example"
 ADMIN_CLAIMS = {"sub": "admin-uid", "email": main.ADMIN_EMAIL}
 BULK_PATHS = (
     "/admin/clients/bulk", "/admin/sessions/bulk", "/admin/trial-sessions/bulk", "/admin/client-requests/bulk",
-    "/admin/messages/bulk", "/admin/plans/bulk", "/admin/trainers/bulk", "/admin/training-videos/bulk", "/admin/contact-messages/bulk",
+    "/admin/messages/bulk", "/admin/trainers/bulk", "/admin/training-videos/bulk", "/admin/contact-messages/bulk",
 )
 
 
@@ -62,8 +65,9 @@ class Bulk(unittest.TestCase):
         cur = conn.cursor()
         cur.execute("SELECT id FROM trainers WHERE active ORDER BY id LIMIT 1")
         cls.trainer_id = cur.fetchone()[0]
-        cur.execute("INSERT INTO plans (nome, preco, duracao_meses, duration_weeks) VALUES ('TEST bulk 3 weeks', 0, 1, 3) RETURNING id")
+        cur.execute("INSERT INTO plans (nome, " + plans_schema.price_column(cur) + ", duracao_meses, duration_weeks) VALUES ('TEST bulk 3 weeks', 0, 1, 3) RETURNING id")
         cls.plan_id = cur.fetchone()[0]
+        cls.pack_ids = catalog_testing.make_pair(cur, cls.plan_id)
         conn.commit()
         conn.close()
 
@@ -72,6 +76,7 @@ class Bulk(unittest.TestCase):
         cls.cleanup()
         conn = get_connection()
         cur = conn.cursor()
+        catalog_testing.drop(cur)
         cur.execute("DELETE FROM plans WHERE nome LIKE 'TEST bulk%'")
         conn.commit()
         conn.close()
@@ -136,10 +141,10 @@ class Bulk(unittest.TestCase):
 
     def test_nothing_chosen_too_many_and_unknown_actions_are_refused(self):
         with self.assertRaises(HTTPException) as caught:
-            call("/admin/plans/bulk", action="delete", ids=[])
+            call("/admin/trainers/bulk", action="remove", ids=[])
         self.assertEqual(caught.exception.status_code, 422)
         with self.assertRaises(HTTPException) as caught:
-            call("/admin/plans/bulk", action="delete", ids=list(range(1, bulk_actions.MAX_IDS + 2)))
+            call("/admin/trainers/bulk", action="remove", ids=list(range(1, bulk_actions.MAX_IDS + 2)))
         self.assertEqual(caught.exception.status_code, 422)
         self.assertEqual(bulk_actions.MAX_IDS, 200)
         for path in BULK_PATHS[:-1]:
@@ -153,8 +158,8 @@ class Bulk(unittest.TestCase):
         user_id = self.user("ana", "Ana María Ruiz")
         main_route = [r for r in main.app.routes if getattr(r, "path", "") == "/admin/clients/{client_id}/renew-pack"][0]
         main_route.endpoint(user_id, main.NewPack(
-            plan_id=self.plan_id, sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="10:00",
-            trainer_id=self.trainer_id, start_date=monday(10).isoformat(), email_extra=[], allow_conflicts=True, confirm_replace=True))
+            pack_id=self.pack_ids["individual"], sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="10:00",
+            trainer_id=self.trainer_id, start_date=monday(10).isoformat(), email_extra=[], allow_conflicts=True, allow_overlaps=True))
         rows = self.query("SELECT id, google_event_id FROM sessions WHERE user_id = %s ORDER BY session_date, session_time, id", (user_id,))
         self.assertEqual(len(rows), 6)
         self.assertEqual(len(self.google.events), 6)
@@ -248,22 +253,7 @@ class Bulk(unittest.TestCase):
         self.assertEqual(self.query("SELECT COUNT(*) FROM users WHERE id = ANY(%s)", ([first, second],))[0][0], 0)
         self.assertEqual(sorted(self.firebase_deleted), ["uid-d1", "uid-d2"])
 
-    # ----- plans, requests, trial sessions
-    def test_plans_in_use_fail_and_the_others_are_deleted(self):
-        user_id = self.user("p1")
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("INSERT INTO plans (nome, preco, duracao_meses, duration_weeks) VALUES ('TEST bulk free', 0, 1, 1) RETURNING id")
-        free = cur.fetchone()[0]
-        cur.execute("INSERT INTO user_plans (user_id, plan_id, active) VALUES (%s, %s, TRUE)", (user_id, self.plan_id))
-        conn.commit()
-        conn.close()
-        answer = call("/admin/plans/bulk", action="delete", ids=[self.plan_id, free])
-        self.assertEqual((answer["done"], answer["failed"]), (1, 1))
-        self.assertEqual(next(item for item in answer["results"] if item["id"] == self.plan_id)["ok"], False)
-        self.assertEqual(self.query("SELECT COUNT(*) FROM plans WHERE id = %s", (free,))[0][0], 0)
-        self.assertEqual(self.query("SELECT COUNT(*) FROM plans WHERE id = %s", (self.plan_id,))[0][0], 1)
-
+    # ----- requests, trial sessions
     def test_requests_are_archived_and_restored_in_bulk(self):
         user_id = self.user("r1")
         conn = get_connection()

@@ -38,7 +38,7 @@ SEND_TIMEOUT = 40
 
 
 class ClientPack(BaseModel):
-    plan_id: int
+    pack_id: int                       # a pack of the catalogue
     sessions_per_week: int
     preferred_days: str
     preferred_time: str
@@ -240,7 +240,7 @@ def register_client_account_routes(app, require_admin, require_client):
                 created = create_pack(
                     cursor, created_event_ids,
                     user_id=user_id, client_name=name, client_email=email,
-                    plan_id=pack.plan_id, trainer_id=pack.trainer_id, trainer_name=trainer_name,
+                    catalog_pack_id=pack.pack_id, trainer_id=pack.trainer_id, trainer_name=trainer_name,
                     sessions_per_week=pack.sessions_per_week, preferred_days=",".join(days),
                     preferred_time=pack.preferred_time, start_date=pack.start_date,
                     allow_conflicts=pack.allow_conflicts, session_type=pack.session_type,
