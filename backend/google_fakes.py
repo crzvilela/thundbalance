@@ -27,22 +27,31 @@ class FakeGoogle:
         self.calls = []           # [("create" | "patch" | "delete", event_id)]
         self.fail = False         # True: every call raises (a Google outage)
         self.fail_for = set()     # event ids whose calls fail
+        self.guests_allowed = True   # False: like Google without the domain delegation (events are made without guests, a warning is noted)
         self._saved = None
 
     # ----- what the app calls
+    def _guests(self, body):
+        """The body as Google would store it: without the guests (and the warning noted) when the delegation is off."""
+        if body.get("attendees") and not self.guests_allowed:
+            gc.note_guest_warning()
+            return {key: value for key, value in body.items() if key not in gc.GUEST_FIELDS}
+        return body
+
     def _check(self, event_id):
         if self.fail or event_id in self.fail_for:
             raise RuntimeError("google down")
 
     def create(self, trainer, client_name, client_email, date, time, number=None, event_id=None, session_id=None,
-               client_phone=None, pack_name=None, session_type=None, second_person_name=None):
+               client_phone=None, pack_name=None, session_type=None, second_person_name=None, attendees=None):
         import event_format
         self.calls.append(("create", event_id))
         self._check(event_id)
         body = event_format.build_session_event(
             client_name=client_name, client_email=client_email, client_phone=client_phone, session_date=date,
             session_time=time, trainer_name=trainer, pack_name=pack_name, session_number=number, session_id=session_id,
-            session_type=session_type, second_person_name=second_person_name)
+            session_type=session_type, second_person_name=second_person_name, attendees=attendees)
+        body = self._guests(body)
         if event_id in self.events:
             return event_id, False                       # a 409: already there
         self.events[event_id] = body
@@ -53,7 +62,7 @@ class FakeGoogle:
         self._check(event_id)
         if event_id not in self.events:
             raise FakeHttpError(404)
-        self.events[event_id].update(body)
+        self.events[event_id].update(self._guests(body))
 
     def delete(self, event_id):
         self.calls.append(("delete", event_id))
@@ -63,7 +72,7 @@ class FakeGoogle:
         del self.events[event_id]
 
     def create_trial(self, full_name, email, phone, goal, experience, session_date, session_time, trainer_name=None,
-                     event_id=None, trial_id=None, session_type=None, second_person_name=None, pending=False):
+                     event_id=None, trial_id=None, session_type=None, second_person_name=None, pending=False, attendees=None):
         """google_calendar.create_trial_session_event: the real event body, the same "already there" rule."""
         import event_format
         self.calls.append(("create", event_id))
@@ -72,7 +81,8 @@ class FakeGoogle:
             self.events[event_id] = event_format.build_trial_event(
                 full_name=full_name, email=email, phone=phone, session_date=session_date, session_time=session_time,
                 trainer_name=trainer_name, goal=goal, experience=experience, trial_id=trial_id,
-                session_type=session_type, second_person_name=second_person_name, pending=pending)
+                session_type=session_type, second_person_name=second_person_name, pending=pending, attendees=attendees)
+            self.events[event_id] = self._guests(self.events[event_id])
         return event_id
 
     def list_events(self, time_min, time_max):

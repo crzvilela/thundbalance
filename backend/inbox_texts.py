@@ -22,6 +22,7 @@ TITLES_BODIES = {
         "reschedule_counter": ("New date proposed",
                                "The studio proposes to move your session {number} from {old_at} to {new_at}. Do you accept?{deadline_text}{note_text}"),
         "session_cancelled": ("Session cancelled", "The studio has cancelled your session {number} on {old_at}."),
+        "session_restored": ("Session restored", "Your session {number} has been restored for {new_at}."),
         "session_rescheduled": ("Session moved", "The studio moved your session {number} from {old_at} to {new_at}."),
     },
     "es": {
@@ -37,6 +38,7 @@ TITLES_BODIES = {
         "reschedule_counter": ("Propuesta de nueva fecha",
                                "El estudio propone mover tu sesión {number} del {old_at} al {new_at}. ¿Aceptas?{deadline_text}{note_text}"),
         "session_cancelled": ("Sesión cancelada", "El estudio ha cancelado tu sesión {number} del {old_at}."),
+        "session_restored": ("Sesión restaurada", "Tu sesión {number} ha sido restaurada para el {new_at}."),
         "session_rescheduled": ("Sesión cambiada de fecha", "El estudio ha movido tu sesión {number} del {old_at} al {new_at}."),
     },
     "ca": {
@@ -52,6 +54,7 @@ TITLES_BODIES = {
         "reschedule_counter": ("Proposta de nova data",
                                "L'estudi proposa moure la teva sessió {number} del {old_at} al {new_at}. Ho acceptes?{deadline_text}{note_text}"),
         "session_cancelled": ("Sessió cancel·lada", "L'estudi ha cancel·lat la teva sessió {number} del {old_at}."),
+        "session_restored": ("Sessió restaurada", "La teva sessió {number} ha estat restaurada per al {new_at}."),
         "session_rescheduled": ("Sessió canviada de data", "L'estudi ha mogut la teva sessió {number} del {old_at} al {new_at}."),
     },
 }

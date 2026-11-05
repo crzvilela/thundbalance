@@ -35,6 +35,7 @@ from database import get_connection
 from emails import log as email_log
 from emails.dates import now_madrid, parse_madrid
 import calendar_sync
+import google_calendar as gc_module
 import inbox
 from google_calendar import (
     create_trial_session_event, delete_calendar_event, describe_error, update_trial_session_event,
@@ -256,7 +257,12 @@ def _is_gone(error):
 
 
 def sync_calendar_event(trial_id):
-    """Makes the calendar event of an APPROVED or CONFIRMED trial session exist and match
+    """True when the trial's event exists and matches (see sync_calendar_event_detailed)."""
+    return sync_calendar_event_detailed(trial_id)["ok"]
+
+
+def sync_calendar_event_detailed(trial_id):
+    """{"ok": bool, "guests_warning": "delegation_missing" | None}. Makes the calendar event of an APPROVED or CONFIRMED trial session exist and match
     the session, and returns True when it does. (The trial counterpart of
     calendar_sync.sync_session_to_google: every trial event is written here and only here.)
 
@@ -266,6 +272,9 @@ def sync_calendar_event(trial_id):
     - event exists  -> updates THAT event (never a second one); if somebody
       deleted it in Google, it is created again;
     - any other status (pending request, declined, cancelled...) has no event: returns False.
+    - the client (when the admin left "Compartir en Google Calendar con el cliente" on) is a guest of the event, from the
+      pending one on and through the confirmation; without the domain delegation the event is made without the guest and
+      "guests_warning" says so.
 
     The session row is locked while this runs, so a double click on "Crear
     evento" or a confirmation at the same moment can not create two events.
@@ -278,7 +287,7 @@ def sync_calendar_event(trial_id):
             """
             SELECT ts.full_name, ts.email, ts.phone, ts.goal, ts.experience, ts.session_date,
                    ts.session_time, ts.google_event_id, t.nome, ts.session_type, ts.second_person_name,
-                   ts.status, ts.confirmation_token
+                   ts.status, ts.confirmation_token, ts.calendar_share, ts.calendar_extra
             FROM trial_sessions ts LEFT JOIN trainers t ON t.id = ts.trainer_id
             WHERE ts.id = %s FOR UPDATE OF ts
             """,
@@ -287,10 +296,13 @@ def sync_calendar_event(trial_id):
         row = cursor.fetchone()
         if not row or str(row[11] or "").lower() not in ("approved", "confirmed"):
             conn.rollback()
-            return False
+            return {"ok": False, "guests_warning": None}
         full_name, email, phone, goal, experience, day, time, event_id, trainer, session_type, second_name = row[:11]
         pending = is_pending(row[11], row[12])
         day, time = str(day)[:10], str(time)[:5]
+        guests = calendar_sync.guests_of({"calendar_share": row[13], "calendar_extra": row[14]}, email)
+        warning = None
+        gc_module.consume_guest_warning()
         try:
             key = calendar_sync.instance_key(cursor)
             wanted_id = calendar_sync.trial_event_id_for(key, trial_id)
@@ -299,8 +311,10 @@ def sync_calendar_event(trial_id):
                     update_trial_session_event(
                         event_id, full_name, email, phone, goal, experience, day, time, trainer,
                         trial_id=trial_id, session_type=session_type, second_person_name=second_name,
-                        pending=pending,
+                        pending=pending, attendees=guests or None,
                     )
+                    if guests:
+                        warning = gc_module.consume_guest_warning()
                 except Exception as error:  # noqa: BLE001
                     if not _is_gone(error):
                         raise
@@ -309,15 +323,17 @@ def sync_calendar_event(trial_id):
                 event_id = create_trial_session_event(
                     full_name, email, phone, goal, experience, day, time, trainer,
                     event_id=wanted_id, trial_id=trial_id, session_type=session_type, second_person_name=second_name,
-                    pending=pending,
+                    pending=pending, attendees=guests or None,
                 )
+                if guests:
+                    warning = gc_module.consume_guest_warning()
             cursor.execute(
                 "UPDATE trial_sessions SET google_event_id = %s, calendar_error = NULL, "
                 "calendar_sync_status = 'ok', calendar_sync_error = NULL WHERE id = %s",
                 (event_id, trial_id),
             )
             conn.commit()
-            return True
+            return {"ok": True, "guests_warning": warning}
         except Exception as error:  # noqa: BLE001
             conn.rollback()
             reason = describe_error(error)
@@ -328,7 +344,7 @@ def sync_calendar_event(trial_id):
                 (reason[:200], reason[:200], trial_id),
             )
             conn.commit()
-            return False
+            return {"ok": False, "guests_warning": None}
     finally:
         cursor.close()
         conn.close()
@@ -343,7 +359,7 @@ def _email_result(future):
         return False, "timeout"
 
 
-def approve_trial(trial_id, trainer_id, session_date=None, session_time=None):
+def approve_trial(trial_id, trainer_id, session_date=None, session_time=None, share_calendar=True):
     """THE way a trial session becomes "Pendiente de confirmación del cliente".
 
     1. status -> Approved, trainer and a new token saved (nothing else can
@@ -394,10 +410,10 @@ def approve_trial(trial_id, trainer_id, session_date=None, session_time=None):
             """
             UPDATE trial_sessions
             SET status = 'Approved', trainer_id = %s, confirmation_token = %s, session_date = %s, session_time = %s,
-                approved_at = NOW(), rejection_reason = NULL
+                approved_at = NOW(), rejection_reason = NULL, calendar_share = %s
             WHERE id = %s
             """,
-            (trainer_id, token, day, time, trial_id),
+            (trainer_id, token, day, time, bool(share_calendar), trial_id),
         )
         conn.commit()
     except HTTPException:
@@ -412,7 +428,7 @@ def approve_trial(trial_id, trainer_id, session_date=None, session_time=None):
 
     # From here on the session IS approved, whatever happens to the email or the calendar.
     full_name, email, _requested_day, _requested_time, lang, session_type, second_name, price = trial
-    calendar_ok = sync_calendar_event(trial_id)                 # the pending event; a failure is kept in calendar_error
+    calendar = sync_calendar_event_detailed(trial_id)           # the pending event; a failure is kept in calendar_error
     inbox.on_trial_approved(trial_id, email, day, time)         # the inbox message: parallel to the e-mail, never raises
     try:
         future = mailer.send_trial_approved(
@@ -426,7 +442,7 @@ def approve_trial(trial_id, trainer_id, session_date=None, session_time=None):
         future = None
 
     sent, problem = _email_result(future) if future is not None else (False, "error")
-    return {"email": {"sent": sent, "problem": problem}, "calendar": {"ok": calendar_ok}}
+    return {"email": {"sent": sent, "problem": problem}, "calendar": {"ok": calendar["ok"], "guests_warning": calendar["guests_warning"]}}
 
 
 def resend_approval(trial_id):

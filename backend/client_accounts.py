@@ -49,6 +49,7 @@ class ClientPack(BaseModel):
     session_type: str | None = None
     second_person_name: str | None = None
     second_person_email: str | None = None
+    share_calendar: bool = True      # the client sees the events in THEIR Google Calendar (a guest of each event)
 
 
 class CreateClient(BaseModel):
@@ -245,6 +246,7 @@ def register_client_account_routes(app, require_admin, require_client):
                     preferred_time=pack.preferred_time, start_date=pack.start_date,
                     allow_conflicts=pack.allow_conflicts, session_type=pack.session_type,
                     second_person_name=pack.second_person_name, second_person_email=pack.second_person_email,
+                    calendar_share=pack.share_calendar,
                 )
                 pack_summary = {
                     "client_name": name, "client_email": email, "plan_name": created["plan_name"],
@@ -257,6 +259,7 @@ def register_client_account_routes(app, require_admin, require_client):
                     "total_sessions": created["total_sessions"],
                     "calendar_failed": created["calendar_failed"],
                     "calendar_errors": created["calendar_errors"],
+                    "calendar_guests_warning": created.get("calendar_guests_warning"),
                     "start_date": created["session_dates"][0],
                     "end_date": created["session_dates"][-1],
                     "session_type": created["session_type"], "price_per_session": pricing.number(created["price_per_session"]),

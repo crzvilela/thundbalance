@@ -10,7 +10,7 @@ const EMAIL = /^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$/
 // email and the list of extra addresses (pre-filled with the team's, which the
 // server can override with TEAM_EMAILS).
 export function useEmailRecipients() {
-  const [state, setState] = useState({ toClient: true, extra: FALLBACK_TEAM })
+  const [state, setState] = useState({ toClient: true, shareCalendar: true, extra: FALLBACK_TEAM })
   const defaults = useRef(FALLBACK_TEAM)
 
   useEffect(() => {
@@ -29,13 +29,14 @@ export function useEmailRecipients() {
   }, [])
 
   // Back to the defaults (client on, team addresses), e.g. when a modal opens again.
-  const reset = useCallback(() => setState({ toClient: true, extra: defaults.current }), [])
+  const reset = useCallback(() => setState({ toClient: true, shareCalendar: true, extra: defaults.current }), [])
 
   return [state, setState, reset]
 }
 
 // Body to merge into the request.
-export const recipientsPayload = (state) => ({ email_client: state.toClient, email_extra: state.extra })
+// share_calendar: the client (and the extra addresses) are guests of the events in THEIR Google Calendar.
+export const recipientsPayload = (state) => ({ email_client: state.toClient, email_extra: state.extra, share_calendar: state.shareCalendar !== false })
 
 // Shows the result of the send: confirmation with recipients, or a clear warning.
 export function reportEmailResult(toast, t, email) {

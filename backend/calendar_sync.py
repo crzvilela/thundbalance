@@ -20,6 +20,7 @@ anything about a session, only written to.
 """
 import logging
 import secrets
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 
@@ -35,6 +36,8 @@ MAX_PARALLEL = 4                     # at most this many requests to Google at t
 BASE32HEX = "0123456789abcdefghijklmnopqrstuv"      # the only characters Google accepts in an event id
 KEY_SETTING = "calendar_instance_key"
 EVENT_FIELDS = ("summary", "description", "start", "end", "extendedProperties")
+GUEST_FIELDS = ("attendees", *event_format.GUEST_FLAGS)         # sent only when the event has guests
+INVITE_PAUSE_SECONDS = 0.15           # a short pause after each event with guests: Google limits how fast guests can be added
 
 
 def ensure_columns():
@@ -44,6 +47,16 @@ def ensure_columns():
     try:
         cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS calendar_sync_status TEXT")
         cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS calendar_sync_error TEXT")
+        # the guests of the events: the client (and the extra addresses) see them in THEIR Google Calendar. Saved with the pack
+        # and the trial session so every later update (reschedule, cancel, restore, confirm) keeps the same guests.
+        for table in ("user_plans", "trial_sessions"):
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS calendar_share BOOLEAN NOT NULL DEFAULT FALSE")
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS calendar_extra TEXT")
+        # who cancelled a session and when, and who restored it and when (nothing is ever deleted: soft only)
+        cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP")
+        cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS cancelled_by TEXT")
+        cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS restored_at TIMESTAMP")
+        cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS restored_by TEXT")
         # trial sessions get the same two columns (rows from before stay NULL = unknown)
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS calendar_sync_status TEXT")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS calendar_sync_error TEXT")
@@ -96,6 +109,27 @@ def record(cursor, session_id, ok, error=None, event_id=None):
         )
 
 
+def split_extra(text):
+    """The extra guest addresses saved as one text ("a@x.com,b@y.com") as a list."""
+    return [part.strip() for part in str(text or "").split(",") if part.strip()]
+
+
+def owner_addresses():
+    """The addresses that are the calendar itself (the organizer): they are never invited to their own events."""
+    owners = [gc.impersonate_email()]
+    try:
+        owners.append(gc.get_calendar_id())
+    except Exception:  # noqa: BLE001 - not configured: nothing is written anyway
+        pass
+    return owners
+
+
+def guests_of(pack, client_email):
+    """The attendees of the events of a pack: the client + the extra addresses saved with it, when the pack is shared."""
+    pack = pack or {}
+    return event_format.guest_list(client_email, split_extra(pack.get("calendar_extra")), bool(pack.get("calendar_share")), owner_addresses())
+
+
 def _pack_fields(pack):
     """What an event says about the pack of a session: its name and, for a dual pack, the second person."""
     pack = pack or {}
@@ -134,6 +168,7 @@ def load_sessions(cursor, user_id, *, session_id=None, only_future=False):
             "id": row[0], "date": str(row[1])[:10], "time": str(row[2])[:5], "number": row[3],
             "event_id": row[4], "sync_status": row[5], "client_name": row[6], "client_email": row[7],
             "client_phone": row[8], "trainer": row[9], **_pack_fields(names.get(assignment.get(row[0]))),
+            "guests": guests_of(names.get(assignment.get(row[0])), row[7]),
         }
         for row in rows
     ]
@@ -147,7 +182,7 @@ def event_body(session):
         session_time=session["time"], trainer_name=session["trainer"],
         pack_name=session["pack_name"], session_number=session["number"],
         session_id=session["id"], session_type=session.get("session_type"),
-        second_person_name=session.get("second_person_name"),
+        second_person_name=session.get("second_person_name"), attendees=session.get("guests"),
     )
 
 
@@ -200,8 +235,20 @@ def load_states(cursor, session_ids):
             "id": row[0], "user_id": row[1], "status": str(row[2]), "date": str(row[3])[:10], "time": str(row[4])[:5],
             "number": row[5], "event_id": row[6], "sync_status": row[7], "client_name": row[8], "client_email": row[9],
             "client_phone": row[10], "trainer": row[11], **_pack_fields(names.get(assignment.get(row[0]))),
+            "guests": guests_of(names.get(assignment.get(row[0])), row[9]),
         }
     return states
+
+
+def _with_guest_notes(step, guests):
+    """Adds "guests_warning": "delegation_missing" when the event could not get its guests, and pauses a moment after an event with
+    guests (so a big pack does not hit Google's rate limits)."""
+    if guests:
+        warning = gc.consume_guest_warning()
+        if warning:
+            step["guests_warning"] = warning
+        time.sleep(INVITE_PAUSE_SECONDS)
+    return step
 
 
 def _google_step(state, key):
@@ -223,10 +270,13 @@ def _google_step(state, key):
             return {"action": "deleted", "event_id": stored}
 
         body = event_body(state)
+        guests = state.get("guests") or []
+        gc.consume_guest_warning()                      # a warning is only about the event written below
         if stored:
             try:
-                gc.patch_calendar_event(stored, {field: body[field] for field in EVENT_FIELDS})
-                return {"action": "updated", "event_id": stored}
+                gc.patch_calendar_event(stored, {
+                    **{field: body[field] for field in EVENT_FIELDS + GUEST_FIELDS if field in body}, "status": "confirmed"})
+                return _with_guest_notes({"action": "updated", "event_id": stored}, guests)
             except Exception as error:  # noqa: BLE001
                 if gc.http_status(error) not in (404, 410):
                     raise
@@ -236,8 +286,9 @@ def _google_step(state, key):
             state["number"], event_id=wanted, session_id=session_id,
             client_phone=state["client_phone"], pack_name=state["pack_name"],
             session_type=state.get("session_type"), second_person_name=state.get("second_person_name"),
+            attendees=guests or None,
         )
-        return {"action": "created" if created else "updated", "event_id": new_id}
+        return _with_guest_notes({"action": "created" if created else "updated", "event_id": new_id}, guests)
     except Exception as error:  # noqa: BLE001 - a Google failure never stops the operation in the app
         reason = gc.describe_error(error)
         logger.error("calendar sync of session %s failed: %s", session_id, reason)
@@ -397,6 +448,7 @@ def sync_client(client_id):
                         item["number"], event_id=event_id, session_id=session_id,
                         client_phone=item["client_phone"], pack_name=item["pack_name"],
                         session_type=item.get("session_type"), second_person_name=item.get("second_person_name"),
+                        attendees=item.get("guests") or None,
                     )
                     record(cursor, session_id, True, event_id=new_id)
                     result["created" if created else "already_ok"] += 1

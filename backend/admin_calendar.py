@@ -55,6 +55,11 @@ def ensure_columns():
     cursor = conn.cursor()
     try:
         cursor.execute("ALTER TABLE trainers ADD COLUMN IF NOT EXISTS color TEXT")
+        # who cancelled a session and when, and who restored it and when (nothing is ever deleted: soft only)
+        cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP")
+        cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS cancelled_by TEXT")
+        cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS restored_at TIMESTAMP")
+        cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS restored_by TEXT")
         # the calendar shows the Google sync state of each session / trial (also created by calendar_sync)
         for table in ("sessions", "trial_sessions"):
             cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS calendar_sync_status TEXT")
@@ -131,7 +136,8 @@ def _iso(day, moment):
 
 def session_event(row, now):
     (session_id, day, moment, status, rescheduled, number, user_id, name, email, phone, code,
-     trainer_id, trainer, color, pack, sync_status, sync_error, change_id, change_status, session_type, second_name) = row
+     trainer_id, trainer, color, pack, sync_status, sync_error, change_id, change_status, session_type, second_name,
+     cancelled_at, cancelled_by, restored_at, restored_by) = row
     start, end = _iso(day, moment)
     number = str(number or "").strip()
     email = str(email or "").strip()
@@ -148,6 +154,9 @@ def session_event(row, now):
             "rescheduled": bool(rescheduled), "syncStatus": sync_status, "syncError": sync_error,
             "changeRequestId": change_id, "changeRequestStatus": change_status,     # open reschedule request, if any
             "sessionType": session_type or "individual", "secondPersonName": second_name or "",
+            # only meaningful while the session is cancelled (the modal shows who and when, and offers "Restaurar sesión")
+            "cancelledAt": cancelled_at.isoformat() if cancelled_at else None, "cancelledBy": cancelled_by or "",
+            "restoredAt": restored_at.isoformat() if restored_at else None, "restoredBy": restored_by or "",
         },
     }
 
@@ -203,7 +212,8 @@ def calendar_events(cursor, first, last, email=None, trainer_ids=None, kind="all
                    s.calendar_sync_status, s.calendar_sync_error,
                    (SELECT rr.id FROM reschedule_requests rr WHERE rr.session_id = s.id AND rr.status IN ('pending', 'counter_proposed') LIMIT 1),
                    (SELECT rr.status FROM reschedule_requests rr WHERE rr.session_id = s.id AND rr.status IN ('pending', 'counter_proposed') LIMIT 1),
-                   up.session_type, up.second_person_name
+                   up.session_type, up.second_person_name,
+                   s.cancelled_at, s.cancelled_by, s.restored_at, s.restored_by
             FROM sessions s
             LEFT JOIN users u ON u.id = s.user_id
             LEFT JOIN trainers t ON t.id = s.trainer_id
@@ -222,8 +232,9 @@ def calendar_events(cursor, first, last, email=None, trainer_ids=None, kind="all
         where = ["ts.session_date IS NOT NULL", "ts.session_time IS NOT NULL", "ts.session_date >= %s", "ts.session_date < %s"]
         params = [first, last]
         if kind == "all":
+            # "Canceladas" also brings the cancelled trial sessions (they have no Google event and cannot be restored)
             where.append("LOWER(ts.status) = ANY(%s)")
-            params.append(list(LIVE_TRIAL_STATUSES))
+            params.append(list(LIVE_TRIAL_STATUSES) + (["cancelled"] if show_cancelled else []))
         if email:
             where.append("LOWER(ts.email) = %s")
             params.append(email)

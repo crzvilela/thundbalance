@@ -31,6 +31,10 @@ export default function EmailRecipients({ value, onChange, disabled = false }) {
         <input type="checkbox" checked={value.toClient} onChange={event => onChange({ ...value, toClient: event.target.checked })} className="h-4 w-4 accent-emerald-400" />
         {t('em_client')}
       </label>
+      <label className="mb-4 flex cursor-pointer items-center gap-3 text-base">
+        <input type="checkbox" checked={value.shareCalendar !== false} onChange={event => onChange({ ...value, shareCalendar: event.target.checked })} className="h-4 w-4 accent-emerald-400" />
+        {t('gc_share')}
+      </label>
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 focus-within:border-emerald-400/70">
         {value.extra.map(address => (
           <span key={address} className="flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 py-1 pl-3 pr-1.5 text-sm text-emerald-100">

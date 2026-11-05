@@ -12,12 +12,23 @@ calendar with the service account (Configuración > Compartir con personas
 concretas > "Hacer cambios en eventos") and put its id in GOOGLE_CALENDAR_ID.
 
 Event titles and descriptions are built in event_format.py.
+
+GUESTS (the client sees the event in THEIR Google Calendar). Inviting people needs the service account to act as a real user of
+the Workspace (domain-wide delegation, done once in the Admin console with the account's Client ID and the scope
+https://www.googleapis.com/auth/calendar). The server then acts as GOOGLE_IMPERSONATE_EMAIL (default pt@thundbalance.com),
+the owner of the calendar. While the delegation is not active (token error "unauthorized_client") every event is created WITHOUT
+guests: only the kind of error is logged and callers learn it through consume_guest_warning() ("delegation_missing"), which the
+panel turns into a warning. The delegation is tried again every few minutes, so activating it needs no restart.
+SEND_CALENDAR_INVITE_EMAILS = none (default) | all decides whether Google e-mails the guests (sendUpdates): with "none" the event
+appears in their calendar without an invitation e-mail (no dozens of e-mails for a big pack).
 """
 import base64
 import json
 import logging
 import os
+import random
 import threading
+import time
 
 import google_auth_httplib2
 import httplib2
@@ -37,6 +48,11 @@ SCOPES = [
 TIMEOUT_SECONDS = 8
 
 CALENDAR_ENV = "GOOGLE_CALENDAR_ID"
+IMPERSONATE_ENV = "GOOGLE_IMPERSONATE_EMAIL"
+DEFAULT_IMPERSONATE = "pt@thundbalance.com"
+INVITES_ENV = "SEND_CALENDAR_INVITE_EMAILS"
+DELEGATION_RETRY_SECONDS = 300          # a failed delegation is tried again after this long (or after a restart)
+HTTP_RETRIES = 4                        # Google's own backoff for 429, 5xx and "rate limit exceeded" answers
 
 # Next to this file, so it works no matter which folder the server starts in.
 SERVICE_ACCOUNT_FILE = os.path.join(
@@ -175,13 +191,85 @@ def reset_service():
     with _credentials_lock:
         _credentials["value"] = None
         _credentials["raw"] = None
+    with _delegation_lock:
+        _delegation.update(base=None, subject=None, active=None, tried_at=0.0, credentials=None, error=None)
     _local.__dict__.clear()
+
+
+def impersonate_email():
+    """The Workspace user the server acts as when the delegation is on (the owner of the calendar)."""
+    value = _read_env(IMPERSONATE_ENV).strip().strip("'\"").strip()
+    return value or DEFAULT_IMPERSONATE
+
+
+def send_updates():
+    """Google's sendUpdates for every change of an event: "all" only when SEND_CALENDAR_INVITE_EMAILS says so, else "none"."""
+    return "all" if _read_env(INVITES_ENV).strip().strip("'\"").strip().lower() == "all" else "none"
+
+
+_delegation = {"base": None, "subject": None, "active": None, "tried_at": 0.0, "credentials": None, "error": None}
+_delegation_lock = threading.Lock()
+
+
+def _calendar_credentials():
+    """(credentials, delegated). The credentials of the calendar user (domain-wide delegation) once Google accepts them,
+    otherwise the plain service account (events without guests). A refusal is remembered for DELEGATION_RETRY_SECONDS."""
+    base = _shared_credentials()
+    subject = impersonate_email()
+    with _delegation_lock:
+        state = _delegation
+        if state["base"] is not base or state["subject"] != subject:
+            state.update(base=base, subject=subject, active=None, tried_at=0.0, credentials=None, error=None)
+        now = time.monotonic()
+        if state["active"] is None or (state["active"] is False and now - state["tried_at"] >= DELEGATION_RETRY_SECONDS):
+            state["tried_at"] = now
+            try:
+                candidate = base.with_subject(subject)
+                candidate.refresh(google_auth_httplib2.Request(httplib2.Http(timeout=TIMEOUT_SECONDS)))
+                state.update(active=True, credentials=candidate, error=None)
+                logger.info("domain-wide delegation is active")
+            except Exception as error:  # noqa: BLE001 - the app works without guests
+                kind = "unauthorized_client" if "unauthorized_client" in str(error) else type(error).__name__
+                state.update(active=False, credentials=None, error=kind)
+                logger.error("domain-wide delegation is not active (%s): events are created without guests", kind)
+        if state["active"]:
+            return state["credentials"], True
+        return base, False
+
+
+def delegation_active():
+    """True when Google accepts the delegation (guests can be invited). Never raises."""
+    try:
+        return _calendar_credentials()[1]
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def delegation_status():
+    """{"active": bool, "error": kind or None, "impersonating": email}: for the panel and the checks. Never the key."""
+    active = delegation_active()
+    return {"active": active, "error": None if active else _delegation["error"], "impersonating": impersonate_email()}
+
+
+_warning = threading.local()
+
+
+def note_guest_warning(code="delegation_missing"):
+    """The event being written could not get its guests (the thread that writes it reads this with consume_guest_warning)."""
+    _warning.code = code
+
+
+def consume_guest_warning():
+    """The guest warning of the last event written by THIS thread ("delegation_missing") or None; it is cleared when read."""
+    code = getattr(_warning, "code", None)
+    _warning.code = None
+    return code
 
 
 def get_calendar_service():
     """The Google Calendar client of this thread, built once. Requests time out after
     TIMEOUT_SECONDS; the token is reused until it expires."""
-    credentials = _shared_credentials()
+    credentials, _ = _calendar_credentials()
     if getattr(_local, "credentials", None) is not credentials or getattr(_local, "service", None) is None:
         http = google_auth_httplib2.AuthorizedHttp(credentials, http=httplib2.Http(timeout=TIMEOUT_SECONDS))
         _local.service = build("calendar", "v3", http=http, cache_discovery=False)
@@ -214,24 +302,64 @@ def check_access():
 # Events
 # ---------------------------------------------------------------------------
 
+GUEST_FIELDS = ("attendees", *event_format.GUEST_FLAGS)
+
+
+def _without_guests(body):
+    return {key: value for key, value in body.items() if key not in GUEST_FIELDS}
+
+
+def _prepare(body):
+    """The body to send: without the guests (and the warning noted) while the delegation is not active."""
+    if not body.get("attendees") or delegation_active():
+        return body
+    note_guest_warning()
+    return _without_guests(body)
+
+
+def _reason(error):
+    """Google's machine reason of an HttpError ("forbiddenForServiceAccounts", "rateLimitExceeded"...), or ""."""
+    try:
+        return str(json.loads(error.content.decode("utf-8"))["error"]["errors"][0]["reason"])
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _guests_refused(error, body):
+    """Google refused the GUESTS (a service account without delegation cannot invite): the event itself is fine."""
+    return bool(body.get("attendees")) and http_status(error) == 403 and _reason(error) == "forbiddenForServiceAccounts"
+
+
 def _insert(service, body, event_id):
     """Inserts an event with a deterministic id and returns (id, created).
 
     A 409 means "already there" (this very session was created before):
     nothing is duplicated and created is False. If somebody deleted it in
-    Google its id is still reserved, so it is brought back (created is True)."""
+    Google its id is still reserved, so it is brought back (created is True).
+    With guests the event is sent with sendUpdates=send_updates(); if Google refuses the guests it is created without them
+    (and the warning is noted)."""
     calendar_id = get_calendar_id()
+    body = _prepare(body)
     if event_id:
         body = {**body, "id": event_id}
+    send = send_updates()
     try:
-        created_event = service.events().insert(calendarId=calendar_id, body=body).execute()
+        try:
+            created_event = service.events().insert(calendarId=calendar_id, body=body, sendUpdates=send).execute(num_retries=HTTP_RETRIES)
+        except HttpError as error:
+            if not _guests_refused(error, body):
+                raise
+            logger.error("Google refused the guests of an event (%s)", _reason(error))
+            note_guest_warning()
+            body = _without_guests(body)
+            created_event = service.events().insert(calendarId=calendar_id, body=body, sendUpdates=send).execute(num_retries=HTTP_RETRIES)
     except HttpError as error:
         if http_status(error) == 409 and event_id:
-            existing = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+            existing = service.events().get(calendarId=calendar_id, eventId=event_id).execute(num_retries=HTTP_RETRIES)
             if existing.get("status") == "cancelled":
                 service.events().update(
-                    calendarId=calendar_id, eventId=event_id, body={**body, "status": "confirmed"}
-                ).execute()
+                    calendarId=calendar_id, eventId=event_id, body={**body, "status": "confirmed"}, sendUpdates=send
+                ).execute(num_retries=HTTP_RETRIES)
                 logger.info("calendar event restored (%s)", event_id)
                 return event_id, True
             logger.info("calendar event already existed (%s)", event_id)
@@ -253,9 +381,10 @@ def create_calendar_event_status(
     client_phone=None,
     pack_name=None,
     session_type=None,
-    second_person_name=None
+    second_person_name=None,
+    attendees=None
 ):
-    """Creates the event of a client session. Returns (event_id, created).
+    """Creates the event of a client session. Returns (event_id, created). `attendees` = event_format.guest_list(...).
 
     event_id (base32hex, derived from the session id) makes the call
     idempotent: a second call for the same session finds the event already
@@ -264,7 +393,7 @@ def create_calendar_event_status(
         client_name=client_name, client_email=client_email, client_phone=client_phone,
         session_date=session_date, session_time=session_time, trainer_name=trainer_name,
         pack_name=pack_name, session_number=session_number, session_id=session_id,
-        session_type=session_type, second_person_name=second_person_name,
+        session_type=session_type, second_person_name=second_person_name, attendees=attendees,
     )
     return _insert(get_calendar_service(), body, event_id)
 
@@ -286,10 +415,12 @@ def delete_calendar_event(
 
     service = get_calendar_service()
 
+    # the guest stops seeing the event; Google e-mails them a cancellation only with SEND_CALENDAR_INVITE_EMAILS=all
     service.events().delete(
         calendarId=get_calendar_id(),
-        eventId=event_id
-    ).execute()
+        eventId=event_id,
+        sendUpdates=send_updates()
+    ).execute(num_retries=HTTP_RETRIES)
 
     logger.info("calendar event deleted (%s)", event_id)
 
@@ -328,10 +459,18 @@ def update_calendar_event(
 
 
 def patch_calendar_event(event_id, body):
-    """Applies the fields of `body` (built by event_format) to an event."""
-    get_calendar_service().events().patch(
-        calendarId=get_calendar_id(), eventId=event_id, body=body
-    ).execute()
+    """Applies the fields of `body` (built by event_format) to an event, keeping its guests up to date (same sendUpdates rule)."""
+    body = _prepare(body)
+    send = send_updates()
+    service = get_calendar_service()
+    try:
+        service.events().patch(calendarId=get_calendar_id(), eventId=event_id, body=body, sendUpdates=send).execute(num_retries=HTTP_RETRIES)
+    except HttpError as error:
+        if not _guests_refused(error, body):
+            raise
+        logger.error("Google refused the guests of an event (%s)", _reason(error))
+        note_guest_warning()
+        service.events().patch(calendarId=get_calendar_id(), eventId=event_id, body=_without_guests(body), sendUpdates=send).execute(num_retries=HTTP_RETRIES)
     logger.info("calendar event updated (%s)", event_id)
 
 
@@ -353,17 +492,18 @@ def create_trial_session_event(
     trial_id=None,
     session_type=None,
     second_person_name=None,
-    pending=False
+    pending=False,
+    attendees=None
 ):
     """Creates the event of a trial session ("Trial (Pendiente) - Ana Ruiz" while pending, "Trial - Ana Ruiz"
     once confirmed) and returns its id. With a deterministic event_id calling it twice
-    finds the first event instead of creating a second one."""
+    finds the first event instead of creating a second one. `attendees` = event_format.guest_list(...)."""
 
     body = event_format.build_trial_event(
         full_name=full_name, email=email, phone=phone, session_date=session_date,
         session_time=session_time, trainer_name=trainer_name, goal=goal,
         experience=experience, trial_id=trial_id,
-        session_type=session_type, second_person_name=second_person_name, pending=pending,
+        session_type=session_type, second_person_name=second_person_name, pending=pending, attendees=attendees,
     )
     return _insert(get_calendar_service(), body, event_id)[0]
 
@@ -381,20 +521,21 @@ def update_trial_session_event(
     trial_id=None,
     session_type=None,
     second_person_name=None,
-    pending=False
+    pending=False,
+    attendees=None
 ):
     """Rewrites title, description, colour and time of an existing trial event (the
-    same event: confirming never creates a second one). Raises if the event
+    same event: confirming never creates a second one), keeping its guests. Raises if the event
     does not exist any more; the caller decides what to do then."""
 
     body = event_format.build_trial_event(
         full_name=full_name, email=email, phone=phone, session_date=session_date,
         session_time=session_time, trainer_name=trainer_name, goal=goal,
         experience=experience, trial_id=trial_id,
-        session_type=session_type, second_person_name=second_person_name, pending=pending,
+        session_type=session_type, second_person_name=second_person_name, pending=pending, attendees=attendees,
     )
     patch_calendar_event(event_id, {
-        key: body[key] for key in ("summary", "description", "start", "end", "colorId", "extendedProperties")
+        key: body[key] for key in ("summary", "description", "start", "end", "colorId", "extendedProperties", *GUEST_FIELDS) if key in body
     })
 
 
@@ -423,7 +564,8 @@ def clear_calendar():
 
                 service.events().delete(
                     calendarId=calendar_id,
-                    eventId=event["id"]
+                    eventId=event["id"],
+                    sendUpdates="none"
                 ).execute()
 
                 deleted += 1

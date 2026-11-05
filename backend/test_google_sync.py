@@ -132,7 +132,8 @@ class Sync(unittest.TestCase):
             self.assertEqual(row[5], "ok")
             self.assertIsNone(row[6])
             self.assertEqual(event["extendedProperties"]["private"]["app"], "thundbalance")
-            self.assertNotIn("attendees", event)                         # nobody is ever invited
+            self.assertEqual(event["attendees"], [{"email": f"ana{DOMAIN}"}])   # the client is the only guest (the admin left sharing on)
+            self.assertFalse(event["guestsCanSeeOtherGuests"] or event["guestsCanModify"] or event["guestsCanInviteOthers"])
             for line in ("Cliente: Ana María Ruiz", f"Email: ana{DOMAIN}", "Teléfono: +34600111222", "Entrenador:", "Pack: TEST gsync"):
                 self.assertIn(line, event["description"])
 

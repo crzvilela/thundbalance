@@ -21,6 +21,7 @@ import { ADMIN_EMAIL } from '../../config'
 import { auth } from '../../firebase/auth'
 import { ArchiveDialog, DeleteDialog } from '../ClientLifecycleDialogs'
 import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
+import RestoreSessionDialog from '../RestoreSessionDialog'
 import { useBulkSelection } from '../bulk'
 import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Icon,
@@ -64,6 +65,7 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
   const detail = useAdminResource(`/admin/clients/${clientId}`)
   const [cancelTarget, setCancelTarget] = useState(null)
   const [cancelling, setCancelling] = useState(false)
+  const [restoreTarget, setRestoreTarget] = useState(null)          // a cancelled session being restored
   const [creatingPack, setCreatingPack] = useState(false)
   const [resending, setResending] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -325,6 +327,9 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
                       </span>
                     )}
                     <Badge tone={cancelled ? 'red' : past ? 'neutral' : 'emerald'}>{cancelled ? t('st_cancelled') : t('st_booked')}</Badge>
+                    {cancelled && (
+                      <button type="button" onClick={() => setRestoreTarget(session)} className="min-h-[44px] rounded-lg px-3 py-1.5 text-sm text-emerald-300 transition hover:bg-emerald-400/15">{t('cl_restore')}</button>
+                    )}
                     {!cancelled && !past && (
                       <button type="button" onClick={() => setCancelTarget(session)} className="min-h-[44px] rounded-lg px-3 py-1.5 text-sm text-red-300 transition hover:bg-red-500/15">{t('cl_cancel_session')}</button>
                     )}
@@ -516,6 +521,12 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
           client={client} pack={client.pack} plans={plans} trainers={trainers}
           onClose={() => setCreatingPack(false)}
           onDone={() => { setCreatingPack(false); detail.reload(); onChanged() }}
+        />
+      )}
+      {restoreTarget && (
+        <RestoreSessionDialog
+          session={restoreTarget} onClose={() => setRestoreTarget(null)}
+          onRestored={() => { setRestoreTarget(null); detail.reload(); onChanged() }}
         />
       )}
       <BulkBar

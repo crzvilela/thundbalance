@@ -214,7 +214,8 @@ def create_pack(
     cursor, created_event_ids, *, user_id, client_name, client_email, plan_id, trainer_id,
     trainer_name, sessions_per_week, preferred_days, preferred_time, start_date,
     request_id=None, allow_conflicts=False, confirm_replace=False,
-    session_type=None, second_person_name=None, second_person_email=None
+    session_type=None, second_person_name=None, second_person_email=None,
+    calendar_share=False, calendar_extra=()
 ):
     """The one place that creates a pack: records the period and schedule,
     inserts every session and creates its Google Calendar event.
@@ -283,7 +284,8 @@ def create_pack(
     )
     if replaced:
         cursor.execute(
-            "UPDATE sessions SET status = 'Cancelled', feed_sequence = feed_sequence + 1 WHERE id = ANY(%s::int[])",
+            "UPDATE sessions SET status = 'Cancelled', feed_sequence = feed_sequence + 1, "
+            "cancelled_at = NOW() AT TIME ZONE 'UTC', cancelled_by = 'new_pack' WHERE id = ANY(%s::int[])",
             ([item["id"] for item in replaced],),
         )
 
@@ -297,13 +299,14 @@ def create_pack(
         INSERT INTO user_plans
         (user_id, plan_id, active, start_date, end_date, sessions_per_week,
          preferred_days, preferred_time, trainer_id, session_type, second_person_name, second_person_email,
-         price_per_session, total_price, status, created_at, duration_months)
-        VALUES (%s, %s, TRUE, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'activo', NOW(), %s)
+         price_per_session, total_price, status, created_at, duration_months, calendar_share, calendar_extra)
+        VALUES (%s, %s, TRUE, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'activo', NOW(), %s, %s, %s)
         RETURNING id
         """,
         (user_id, plan_id, session_dates[0], session_dates[-1], sessions_per_week,
          preferred_days, preferred_time, trainer_id, session_type, second_person_name, second_person_email,
-         quote["price_per_session"], quote["total_price"], months)
+         quote["price_per_session"], quote["total_price"], months,
+         bool(calendar_share), ",".join(str(item).strip().lower() for item in (calendar_extra or ()) if str(item).strip()) or None)
     )
     pack_id = cursor.fetchone()[0]
 
@@ -327,11 +330,13 @@ def create_pack(
     # calendar_sync_error), shown in the panel, and "Sincronizar con Google" retries it.
     results = calendar_sync.sync_sessions_to_google(cursor, [session_id for session_id, _, _ in pending])
     calendar_errors = []
+    guests_warning = None
     for item in results:
         if item["action"] == "failed":
             calendar_errors.append(item["error"])
         elif item["event_id"]:
             created_event_ids.append(item["event_id"])
+        guests_warning = guests_warning or item.get("guests_warning")
     sessions = [
         {
             "id": session_id,
@@ -357,6 +362,7 @@ def create_pack(
         "sessions": sessions,
         "calendar_failed": len(calendar_errors),
         "calendar_errors": sorted(set(calendar_errors)),
+        "calendar_guests_warning": guests_warning,        # "delegation_missing": the events exist but the client was not invited
         "replaced": {
             **replacement_summary(replaced),
             "events": [(item["id"], item["event_id"]) for item in replaced if item["event_id"]],
@@ -471,6 +477,14 @@ def ensure_pack_columns():
     cursor = conn.cursor()
     try:
         cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_plan_id INTEGER")
+        # the guests of the pack's events (the client and the extra addresses see them in their Google Calendar)
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS calendar_share BOOLEAN NOT NULL DEFAULT FALSE")
+        cursor.execute("ALTER TABLE user_plans ADD COLUMN IF NOT EXISTS calendar_extra TEXT")
+        # who cancelled a session and when, and who restored it and when (nothing is ever deleted: soft only)
+        cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP")
+        cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS cancelled_by TEXT")
+        cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS restored_at TIMESTAMP")
+        cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS restored_by TEXT")
         # The history of packs (nothing is ever deleted): how long the pack is, how it ended, and when.
         #   status: activo | sustituido are written when they happen; finalizado | cancelado are worked out when read
         #   (pack_view.pack_state) because they depend on the sessions and the date.

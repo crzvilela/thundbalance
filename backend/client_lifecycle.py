@@ -247,8 +247,9 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
             )
             if cancelled_ids:
                 cursor.execute(
-                    "UPDATE sessions SET status = 'Cancelled', feed_sequence = feed_sequence + 1 WHERE id = ANY(%s::int[])",
-                    (cancelled_ids,),
+                    "UPDATE sessions SET status = 'Cancelled', feed_sequence = feed_sequence + 1, "
+                    "cancelled_at = NOW() AT TIME ZONE 'UTC', cancelled_by = %s WHERE id = ANY(%s::int[])",
+                    ((str(claims.get("email", ""))[:120] if isinstance(claims, dict) else "") or "admin", cancelled_ids),
                 )
             conn.commit()
 

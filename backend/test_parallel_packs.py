@@ -183,7 +183,7 @@ class Parallel(unittest.TestCase):          # "Parallel" is the old name; see th
 
         second = self.renew(per_week=2, days="Tuesday,Thursday", start=monday, time="10:00")
         self.assertEqual(second["total_sessions"], 4)
-        self.assertEqual(second["calendar"], {"failed": 0, "errors": []})
+        self.assertEqual(second["calendar"], {"failed": 0, "errors": [], "guests_warning": None})
 
         plans_after = self.plans_rows()
         self.assertEqual([row[1] for row in plans_after], [False, True])     # ONE active pack

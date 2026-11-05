@@ -4,6 +4,7 @@ import { adminRequest } from '../api'
 import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
+import { reportGuestsWarning } from '../calendarSync'
 import { parseDateKey } from '../requests'
 import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
 import { useBulkSelection } from '../bulk'
@@ -40,6 +41,7 @@ export default function TrialSessions() {
   const [busy, setBusy] = useState(false)
   const [working, setWorking] = useState('')   // 'resend-12' | 'calendar-12' while a card button runs
   const [formError, setFormError] = useState('')
+  const [share, setShare] = useState(true)       // the client is a guest of the event in their Google Calendar
 
   // Only trainers who work on the requested weekday and hour can be chosen.
   const trainerOptions = useMemo(() => {
@@ -97,7 +99,7 @@ export default function TrialSessions() {
   // a problem is shown, not hidden. Approving puts the trial on the calendar at once as
   // "Pendiente"; the client's confirmation turns that same event into the confirmed one.
   const startApproving = (trial) => {
-    setTrainerId(trial.trainer_id ? String(trial.trainer_id) : ''); setFormError(''); setWhen({ date: trial.date, time: trial.time }); setApproving(trial)
+    setTrainerId(trial.trainer_id ? String(trial.trainer_id) : ''); setFormError(''); setWhen({ date: trial.date, time: trial.time }); setShare(true); setApproving(trial)
   }
 
   const approve = async () => {
@@ -106,7 +108,7 @@ export default function TrialSessions() {
     setBusy(true)
     setFormError('')
     try {
-      const body = { trainer_id: Number(trainerId) }
+      const body = { trainer_id: Number(trainerId), share_calendar: share }
       if (when.date !== approving.date || when.time !== approving.time) { body.session_date = when.date; body.session_time = when.time }
       const result = await adminRequest('POST', `/admin/trial-sessions/${approving.id}/approve`, body)
       setApproving(null)
@@ -117,6 +119,7 @@ export default function TrialSessions() {
       } else {
         toast.push(t('tr_approved_ok'))
       }
+      reportGuestsWarning(toast, t, result.calendar?.guests_warning)
       trialsResource.reload()
     } catch (error) {
       setFormError(error.message)
@@ -350,7 +353,12 @@ export default function TrialSessions() {
             ))}
           </SelectInput>
         </Field>
-        {formError && <p role="alert" className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{formError}</p>}
+        <label className="mt-5 flex cursor-pointer items-center gap-3 text-base">
+          <input type="checkbox" checked={share} onChange={event => setShare(event.target.checked)} disabled={busy} className="h-4 w-4 accent-emerald-400" />
+          {t('gc_share')}
+        </label>
+        <p className="mt-1 text-sm text-gray-500">{t('gc_share_hint')}</p>
+        {formError && <p role="alert" className="mt-4 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{formError}</p>}
       </Drawer>
 
       <Drawer

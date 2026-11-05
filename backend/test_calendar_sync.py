@@ -46,7 +46,7 @@ class FakeCalendar:
 
     def _call(self, name, fn):
         class Call:
-            def execute(inner):
+            def execute(inner, num_retries=0):
                 with self.lock:
                     self.log.append(name)
                     if self.fail:
@@ -54,7 +54,7 @@ class FakeCalendar:
                     return fn()
         return Call()
 
-    def insert(self, calendarId, body):
+    def insert(self, calendarId, body, sendUpdates=None):
         def run():
             event_id = body.get("id")
             if event_id is None:
@@ -73,13 +73,13 @@ class FakeCalendar:
             return self.store[eventId]
         return self._call("get", run)
 
-    def update(self, calendarId, eventId, body):
+    def update(self, calendarId, eventId, body, sendUpdates=None):
         def run():
             self.store[eventId] = {**body, "id": eventId}
             return self.store[eventId]
         return self._call("update", run)
 
-    def patch(self, calendarId, eventId, body):
+    def patch(self, calendarId, eventId, body, sendUpdates=None):
         def run():
             if eventId not in self.store:
                 raise http_error(404)
@@ -87,7 +87,7 @@ class FakeCalendar:
             return self.store[eventId]
         return self._call("patch", run)
 
-    def delete(self, calendarId, eventId):
+    def delete(self, calendarId, eventId, sendUpdates=None):
         def run():
             if eventId not in self.store:
                 raise http_error(404)

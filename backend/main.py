@@ -33,6 +33,7 @@ from client_lifecycle import ensure_columns as ensure_lifecycle_columns, registe
 import admin_calendar
 import logging
 import client_lang
+import session_restore
 import trainer_choice
 from bulk_actions import BulkPayload, run_each, unknown_action
 import inbox
@@ -284,6 +285,7 @@ calendar_feed.register_calendar_feed_routes(app, require_admin, require_client, 
 reschedule_requests.register_reschedule_routes(app, require_admin, require_client, _own_user_id)
 inbox.register_inbox_routes(app, require_admin, require_inbox_user, _own_user_id, ADMIN_EMAIL)
 trainer_choice.register_trainer_choice_routes(app)
+session_restore.register_restore_routes(app, require_admin)
 client_lang.register_client_lang_routes(app, require_client, _own_user_id)
 
 
@@ -589,6 +591,8 @@ class ApproveRequest(BaseModel):
     # the admin confirmed that the client's current pack is replaced from the
     # start date (its future sessions from then on are cancelled)
     confirm_replace: bool = False
+    # the client sees the events in THEIR Google Calendar (a guest of each event); off = no guests
+    share_calendar: bool = True
 
 
 class NewPack(BaseModel):
@@ -608,6 +612,8 @@ class NewPack(BaseModel):
     # the admin confirmed that the client's current pack is replaced from the
     # start date (its future sessions from then on are cancelled)
     confirm_replace: bool = False
+    # the client sees the events in THEIR Google Calendar (a guest of each event); off = no guests
+    share_calendar: bool = True
 
 
 class PackPreview(BaseModel):
@@ -1023,10 +1029,11 @@ def cancel_session(session_id: int, claims=Depends(require_client)):
         cursor.execute(
             """
             UPDATE sessions
-            SET status = 'Cancelled', feed_sequence = feed_sequence + 1
+            SET status = 'Cancelled', feed_sequence = feed_sequence + 1,
+                cancelled_at = NOW() AT TIME ZONE 'UTC', cancelled_by = %s
             WHERE id = %s
             """,
-            (session_id,)
+            ((str(claims.get("email", ""))[:120] or "admin") if _is_admin(claims) else "client", session_id)
         )
 
         # The session is cancelled whatever Google answers: the central rule deletes its
@@ -2107,6 +2114,7 @@ def approve_request(
             request_id=data.request_id, allow_conflicts=data.allow_conflicts,
             confirm_replace=data.confirm_replace,
             session_type=request[5], second_person_name=request[6], second_person_email=request[7],
+            calendar_share=data.share_calendar, calendar_extra=extra,
         )
 
         cursor.execute(
@@ -2146,7 +2154,7 @@ def approve_request(
         return {
             "message": "Request approved successfully",
             "total_sessions": created["total_sessions"],
-            "calendar": {"failed": created["calendar_failed"], "errors": created["calendar_errors"]},
+            "calendar": {"failed": created["calendar_failed"], "errors": created["calendar_errors"], "guests_warning": created.get("calendar_guests_warning")},
             "email": email,
         }
 
@@ -2207,6 +2215,7 @@ def admin_new_pack(client_id: int, data: NewPack):
             allow_conflicts=data.allow_conflicts, confirm_replace=data.confirm_replace,
             session_type=data.session_type, second_person_name=data.second_person_name,
             second_person_email=data.second_person_email,
+            calendar_share=data.share_calendar, calendar_extra=extra,
         )
 
         conn.commit()
@@ -2227,7 +2236,7 @@ def admin_new_pack(client_id: int, data: NewPack):
             "session_type": created["session_type"],
             "price_per_session": pricing.number(created["price_per_session"]),
             "total_price": pricing.number(created["total_price"]),
-            "calendar": {"failed": created["calendar_failed"], "errors": created["calendar_errors"]},
+            "calendar": {"failed": created["calendar_failed"], "errors": created["calendar_errors"], "guests_warning": created.get("calendar_guests_warning")},
             "email": email,
         }
 

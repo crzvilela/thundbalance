@@ -40,6 +40,7 @@ import plans_schema
 from admin_calendar import ensure_columns_once as ensure_calendar_columns
 from trial_confirmation import (
     approve_trial, panel_status, remove_trial_event, resend_approval, resend_received, sync_calendar_event,
+    sync_calendar_event_detailed,
 )
 
 
@@ -81,6 +82,7 @@ class TrialApprovePayload(BaseModel):
     trainer_id: int
     session_date: Optional[str] = Field(default=None, max_length=10)     # the admin may adjust the day / hour
     session_time: Optional[str] = Field(default=None, max_length=5)
+    share_calendar: bool = True              # the client is a guest of the event in THEIR Google Calendar
 
 
 class EmailTestPayload(BaseModel):
@@ -208,7 +210,8 @@ def register_admin_routes(app, require_admin):
             cursor.execute(
                 """
                 SELECT s.id, s.session_number, s.session_date, s.session_time,
-                       t.nome, s.status, s.calendar_sync_status, s.calendar_sync_error
+                       t.nome, s.status, s.calendar_sync_status, s.calendar_sync_error,
+                       s.cancelled_at, s.cancelled_by, s.restored_at
                 FROM sessions s LEFT JOIN trainers t ON t.id = s.trainer_id
                 WHERE s.user_id = %s
                 ORDER BY s.session_date, s.session_time
@@ -222,6 +225,8 @@ def register_admin_routes(app, require_admin):
                     "trainer": r[4], "status": r[5],
                     # ok | failed | pending | None (unknown: from before this was recorded)
                     "calendar_sync_status": r[6], "calendar_sync_error": r[7],
+                    "cancelled_at": r[8].isoformat() if r[8] else None, "cancelled_by": r[9] or "",
+                    "restored_at": r[10].isoformat() if r[10] else None,
                     "pack_id": assignment.get(r[0]),
                 }
                 for r in cursor.fetchall()
@@ -402,11 +407,11 @@ def register_admin_routes(app, require_admin):
         return google_calendar.describe_target()
 
     @app.post("/admin/sessions/bulk", dependencies=admin)
-    def bulk_sessions(data: BulkPayload):
+    def bulk_sessions(data: BulkPayload, claims=Depends(require_admin)):
         """cancel several sessions: each through the single action (event removed from Google, sync recorded)."""
         if data.action != "cancel":
             raise unknown_action(data.action)
-        return run_each("sessions", "cancel", data.ids, admin_cancel_session)
+        return run_each("sessions", "cancel", data.ids, lambda session_id: admin_cancel_session(session_id, claims))
 
     @app.post("/admin/trial-sessions/bulk", dependencies=admin)
     def bulk_trial_sessions(data: BulkPayload):
@@ -430,7 +435,7 @@ def register_admin_routes(app, require_admin):
         return run_each("trainers", "remove", data.ids, admin_remove_trainer)
 
     @app.post("/admin/sessions/{session_id}/cancel", dependencies=admin)
-    def admin_cancel_session(session_id: int):
+    def admin_cancel_session(session_id: int, claims=Depends(require_admin)):
         conn = get_connection()
         cursor = conn.cursor()
         try:
@@ -446,8 +451,9 @@ def register_admin_routes(app, require_admin):
                 return {"message": "Session already cancelled"}
 
             cursor.execute(
-                "UPDATE sessions SET status = 'Cancelled', feed_sequence = feed_sequence + 1 WHERE id = %s",
-                (session_id,),
+                "UPDATE sessions SET status = 'Cancelled', feed_sequence = feed_sequence + 1, "
+                "cancelled_at = NOW() AT TIME ZONE 'UTC', cancelled_by = %s WHERE id = %s",
+                ((str(claims.get("email", ""))[:120] if isinstance(claims, dict) else "") or "admin", session_id),
             )
             # The session is cancelled whatever Google answers: the central rule deletes its
             # event ("it does not exist" counts as done) and records the outcome.
@@ -633,7 +639,7 @@ def register_admin_routes(app, require_admin):
         puts the trial on the calendar at once as "Trial (Pendiente)"; the client's
         confirmation turns that same event into the confirmed one."""
         try:
-            result = approve_trial(trial_id, data.trainer_id, data.session_date, data.session_time)
+            result = approve_trial(trial_id, data.trainer_id, data.session_date, data.session_time, data.share_calendar)
         except HTTPException:
             raise
         except Exception as error:
@@ -692,8 +698,8 @@ def register_admin_routes(app, require_admin):
                 status_code=409,
                 detail="Only approved or confirmed trial sessions have a calendar event",
             )
-        ok = sync_calendar_event(trial_id)
-        return {"calendar": {"ok": ok}}
+        result = sync_calendar_event_detailed(trial_id)
+        return {"calendar": {"ok": result["ok"], "guests_warning": result["guests_warning"]}}
 
     @app.post("/admin/trial-sessions/{trial_id}/reject", dependencies=admin)
     def admin_reject_trial(trial_id: int, data: TrialRejectPayload):

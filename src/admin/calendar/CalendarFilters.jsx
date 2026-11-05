@@ -103,10 +103,11 @@ export default function CalendarFilters({ filters, setFilters, clear, active, tr
           ))}
         </div>
 
-        <label className="flex min-h-[40px] cursor-pointer items-center gap-2.5 text-sm text-gray-300">
-          <input type="checkbox" role="switch" checked={filters.cancelled} onChange={(event) => setFilters({ cancelled: event.target.checked })} className={CHECK} />
+        <button type="button" aria-pressed={filters.cancelled} onClick={() => setFilters({ cancelled: !filters.cancelled })}
+          className={`flex min-h-[40px] items-center gap-2 rounded-xl border px-4 text-sm font-medium transition ${filters.cancelled ? 'border-red-400/50 bg-red-400/10 text-red-200' : 'border-white/10 bg-black/30 text-gray-300 hover:text-white'}`}>
+          <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${filters.cancelled ? 'bg-red-400' : 'bg-gray-500'}`} />
           {t('ac_show_cancelled')}
-        </label>
+        </button>
 
         <Button variant="secondary" onClick={clear} disabled={!active}>{t('ac_clear_filters')}</Button>
       </div>

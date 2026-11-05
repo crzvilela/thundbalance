@@ -15,6 +15,10 @@ The x/n of a pack session is the number stored when the pack was created
 the others.
 
 No tax id and no postal address ever go into an event.
+
+Guests: when the client shares the event (the admin leaves "Compartir en Google Calendar con el cliente" on), the client's
+e-mail and the extra addresses are the event's attendees (guest_list). The guests can not see each other, can not edit the
+event and can not invite anybody. The description only ever talks about THAT client's own session.
 """
 import time
 from datetime import datetime, timedelta
@@ -69,6 +73,31 @@ TRIAL_COLOR = "10"
 PENDING_COLOR = "8"          # Google's graphite: a trial that is approved but not confirmed yet
 
 _WEEKDAYS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+
+
+GUEST_FLAGS = {"guestsCanSeeOtherGuests": False, "guestsCanModify": False, "guestsCanInviteOthers": False}
+
+
+def guest_list(client_email, extra_emails=(), share=True, exclude=()):
+    """The attendees of an event: [{"email": ...}] with the client first, then the extras, lower-cased, without repeats and
+    without the addresses in `exclude` (the calendar's own owner is the organizer: it is not invited to its own event).
+    Empty when sharing is off or there is no valid address."""
+    if not share:
+        return []
+    skip = {str(item or "").strip().lower() for item in exclude}
+    result = []
+    for address in [client_email, *list(extra_emails or ())]:
+        text = str(address or "").strip().lower()
+        if "@" in text and " " not in text and "," not in text and text not in skip and text not in result:
+            result.append(text)
+    return [{"email": address} for address in result]
+
+
+def _with_guests(body, attendees):
+    """`body` plus the attendees and the three guest restrictions (nothing is added without attendees)."""
+    if attendees:
+        body = {**body, "attendees": [{"email": item["email"]} for item in attendees], **GUEST_FLAGS}
+    return body
 
 
 def display_name(full_name):
@@ -167,14 +196,14 @@ def event_times(session_date, session_time):
 
 def build_session_event(*, client_name, client_email=None, client_phone=None, session_date, session_time,
                         trainer_name=None, pack_name=None, session_number=None, session_id=None,
-                        session_type=None, second_person_name=None):
+                        session_type=None, second_person_name=None, attendees=None):
     """Body of the Google event of one pack session (no "id": the caller adds
-    the deterministic one)."""
+    the deterministic one). `attendees` = guest_list(...)."""
     start, end = event_times(session_date, session_time)
     private = {APP_PROPERTY: APP_VALUE}
     if session_id is not None:
         private[SESSION_PROPERTY] = str(session_id)
-    return {
+    return _with_guests({
         "summary": session_title(client_name, session_number),
         "location": LOCATION,
         "description": session_description(
@@ -185,19 +214,19 @@ def build_session_event(*, client_name, client_email=None, client_phone=None, se
         "start": start,
         "end": end,
         "extendedProperties": {"private": private},
-    }
+    }, attendees)
 
 
 def build_trial_event(*, full_name, email=None, phone=None, session_date, session_time,
                       trainer_name=None, goal=None, experience=None, trial_id=None,
-                      session_type=None, second_person_name=None, pending=False):
+                      session_type=None, second_person_name=None, pending=False, attendees=None):
     """Body of the Google event of a trial session: pending=True while it is approved and the client has not
     confirmed yet (grey, "Trial (Pendiente)"), False once confirmed."""
     start, end = event_times(session_date, session_time)
     private = {APP_PROPERTY: APP_VALUE}
     if trial_id is not None:
         private[TRIAL_PROPERTY] = str(trial_id)
-    return {
+    return _with_guests({
         "summary": trial_title(full_name, pending),
         "location": LOCATION,
         "description": trial_description(
@@ -208,7 +237,7 @@ def build_trial_event(*, full_name, email=None, phone=None, session_date, sessio
         "start": start,
         "end": end,
         "extendedProperties": {"private": private},
-    }
+    }, attendees)
 
 
 def differs(existing, wanted):

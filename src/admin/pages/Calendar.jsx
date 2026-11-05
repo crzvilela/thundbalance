@@ -122,7 +122,7 @@ export default function Calendar() {
     const props = info.event.extendedProps
     // a trial the client has not confirmed yet is grey, like its "Trial (Pendiente)" event in Google
     const pending = props.kind === 'trial' && props.status === 'approved'
-    info.el.style.setProperty('--ev', pending ? NEUTRAL_COLOR : (props.color || NEUTRAL_COLOR))
+    info.el.style.setProperty('--ev', pending || props.status === 'cancelled' ? NEUTRAL_COLOR : (props.color || NEUTRAL_COLOR))
     info.el.title = info.event.title                      // the full title, whatever is cut by the width
   }
 
@@ -130,7 +130,7 @@ export default function Calendar() {
     const props = arg.event.extendedProps
     const sub = props.kind === 'trial'
       ? [t(`ac_tr_${props.status}`), props.trainerId ? '' : t('ac_unassigned')].filter(Boolean).join(' · ')
-      : ''
+      : (props.status === 'cancelled' ? t('ac_cancelled_tag') : '')
     return (
       <div className="ac-ev-inner">
         <div className="ac-ev-title">{arg.timeText && <span className="ac-ev-time">{arg.timeText}</span>}{arg.event.title}</div>

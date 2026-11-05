@@ -96,7 +96,7 @@ export default function AddClientDrawer({ plans, trainers, onClose, onCreated })
         ...(withPack ? { pack: { ...packPayload(pack), allow_conflicts: allowConflicts } } : {})
       })
       onCreated(result)
-      reportCalendarResult(toast, t, result.pack && { failed: result.pack.calendar_failed })
+      reportCalendarResult(toast, t, result.pack && { failed: result.pack.calendar_failed, guests_warning: result.pack.calendar_guests_warning })
       if (result.email?.sent) {
         toast.push(`${t('cc_created')} ${t('cc_email_ok')} ${profile.email.trim().toLowerCase()}`)
         onClose()

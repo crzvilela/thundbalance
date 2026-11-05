@@ -25,7 +25,8 @@ def user_packs(cursor, user_id, today=None):
         SELECT up.id, up.plan_id, p.nome, up.active, up.start_date, up.end_date,
                up.sessions_per_week, up.preferred_days, up.preferred_time, up.trainer_id, t.nome,
                up.session_type, up.second_person_name, up.second_person_email, up.price_per_session, up.total_price,
-               up.status, up.created_at, up.replaced_at, COALESCE(up.duration_months, p.duracao_meses)
+               up.status, up.created_at, up.replaced_at, COALESCE(up.duration_months, p.duracao_meses),
+               up.calendar_share, up.calendar_extra
         FROM user_plans up
         JOIN plans p ON p.id = up.plan_id
         LEFT JOIN trainers t ON t.id = up.trainer_id
@@ -42,6 +43,8 @@ def user_packs(cursor, user_id, today=None):
             "session_type": r[11] or "individual", "second_person_name": r[12], "second_person_email": r[13],
             "price_per_session": r[14], "total_price": r[15],
             "stored_status": r[16], "created_at": r[17], "replaced_at": r[18], "duration_months": r[19],
+            # the client sees the pack's events in their own Google Calendar (the extra addresses are invited as well)
+            "calendar_share": bool(r[20]), "calendar_extra": r[21],
             "total": 0, "done": 0, "remaining": 0, "_dates": [],
         }
         for r in cursor.fetchall()
