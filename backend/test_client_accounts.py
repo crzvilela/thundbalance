@@ -6,6 +6,7 @@ Firebase and the Google Calendar are faked (no real account or event is
 created); Google Mail is a local fake server. The local database is used and
 cleaned up. Passwords must never appear in the database, logs or responses.
 """
+import pack_schedule
 import base64
 import os
 import io
@@ -174,8 +175,7 @@ class Accounts(unittest.TestCase):
             while start.weekday() != 0:
                 start += timedelta(days=1)
             pack_data = client_accounts.ClientPack(
-                pack_id=self.pack_ids["individual"], sessions_per_week=2, preferred_days="Monday,Wednesday",
-                preferred_time="09:00", trainer_id=self.trainer_id, start_date=start.isoformat())
+                pack_id=self.pack_ids["individual"], sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", self.trainer_id), start_date=start.isoformat())
         result = endpoint("/admin/clients", "POST")(client_accounts.CreateClient(
             name="Ana García", email=email, phone="600123456", country_code="+34",
             city="Barcelona", address="Carrer X 1", postal_code="08005", pack=pack_data, **extra))

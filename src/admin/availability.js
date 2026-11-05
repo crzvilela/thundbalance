@@ -25,12 +25,6 @@ export function weekdayOf(dateKey) {
   return WEEKDAYS[(new Date(year, month - 1, day).getDay() + 6) % 7]
 }
 
-// null when the trainer fits every day at that time, otherwise the first day
-// that does not work.
-export function firstMismatch(trainer, days, time) {
-  return days.find(day => !canStart(trainer, day, time)) || null
-}
-
 // Short "07:00–14:00" summary of a trainer's hours on the given days.
 export function hoursSummary(trainer, days) {
   const spans = [...new Set(days.map(day => trainer.hours?.[day]).filter(Boolean).map(window => `${window.start}–${window.end}`))]

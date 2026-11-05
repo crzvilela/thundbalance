@@ -3,8 +3,7 @@ import { adminRequest } from './api'
 import { dateKey, parseDateKey } from './requests'
 import { sessionTypeBody } from '../utils/pricing'
 import { secondPersonProblems } from '../utils/usePricing'
-
-export const PACK_TIMES = Array.from({ length: 14 }, (_, index) => `${String(index + 7).padStart(2, '0')}:00`)
+import { fromStored, isComplete, toBody } from '../utils/packSchedule'
 
 export function addDays(key, amount) {
   const date = parseDateKey(key)
@@ -22,9 +21,11 @@ export function packDefaults(pack) {
   return {
     plan: pack?.catalog_pack_id ? String(pack.catalog_pack_id) : '',      // a pack of the catalogue (chosen again for every pack)
     perWeek: String(pack?.sessions_per_week || 1),
-    days: pack?.preferred_days ? pack.preferred_days.split(',').map(day => day.trim()).filter(Boolean) : [],
-    time: pack?.preferred_time ? String(pack.preferred_time).slice(0, 5) : '',
-    trainer: pack?.trainer_id ? String(pack.trainer_id) : '',
+    // The schedule: one entry per training day, each with ITS hour and ITS trainer. A new pack starts from the previous one's
+    // days and trainers; the hours are chosen again (only free hours), so an old single-hour pack never carries its hour over.
+    entries: pack ? fromStored({ schedule: pack.schedule, days: pack.preferred_days, trainerId: pack.trainer_id }).entries
+      .map(entry => (pack.schedule?.length ? entry : { ...entry, time: '' })) : [],
+    legacy: !!pack && !(pack.schedule?.length) && !!pack.preferred_days,
     start: packMinStart(pack),
     // the type is chosen for every pack (a new pack does not inherit it): Individual unless Dual is picked
     type: 'individual',
@@ -40,17 +41,14 @@ export function usePackForm(pack) {
   return [form, set]
 }
 
-export const packHasDaysAndTime = (form) => form.days.length > 0 && !!form.time
-export const packIsComplete = (form) => !!form.plan && !!form.trainer && !!form.start && packHasDaysAndTime(form) &&
+export const packIsComplete = (form) => !!form.plan && !!form.start && isComplete(form.entries, form.perWeek) &&
   Object.keys(secondPersonProblems({ type: form.type, name: form.secondName, email: form.secondEmail })).length === 0
 
 // Body fields the server expects for a pack.
 export const packPayload = (form) => ({
   pack_id: Number(form.plan),
   sessions_per_week: Number(form.perWeek),
-  preferred_days: form.days.join(','),
-  preferred_time: form.time,
-  trainer_id: Number(form.trainer),
+  schedule: toBody(form.entries),           // one entry per day: weekday, hour and trainer (no single hour for the pack)
   start_date: form.start,
   // only the kind of session: the server works the price out itself
   ...sessionTypeBody({ type: form.type, name: form.secondName, email: form.secondEmail })

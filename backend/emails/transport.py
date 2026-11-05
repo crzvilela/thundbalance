@@ -8,6 +8,11 @@ same ones as before, values never logged):
   TRIAL_EMAIL_WEBHOOK_URL     the Apps Script web app URL. Unset = nothing is sent.
   TRIAL_EMAIL_WEBHOOK_SECRET  shared secret the script checks.
 
+Two providers (MAIL_PROVIDER, see gmail_api.py): 'legacy' is the Apps Script above (the default, until the other has been
+validated) and 'gmail_api' sends from pt@thundbalance.com through the Gmail API with the calendar's service account. With
+'gmail_api', an email whose delegation is refused (not switched on yet) goes out by the legacy provider instead and the admin
+sees a warning. send_email() is the one function every email goes through, with the same signature for both.
+
 A failed send never raises: send_email() returns an EmailResult and
 send_email_async() runs it on a small worker pool, so an email problem can not
 break the request that triggered it.
@@ -24,12 +29,13 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
+from . import gmail_api
 from . import log as email_log
 
 logger = logging.getLogger("thundbalance.emails")
 
 SENDER_NAME = "ThundBalance"
-DEFAULT_REPLY_TO = "pt@thundbalance.com"
+DEFAULT_REPLY_TO = "pt@thundbalance.com"   # MAIL_REPLY_TO overrides it (gmail_api.reply_to_default)
 MAX_SUBJECT = 200
 MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
 
@@ -50,6 +56,8 @@ class EmailResult:
     ok: bool
     error: str = ""   # short, safe reason; never contains addresses, URLs or secrets
     bcc_dropped: bool = False   # the message went to its main recipient but NOT to the extra (BCC) ones
+    provider: str = ""          # 'gmail_api' | 'legacy': the way this message actually left
+    fallback: bool = False      # 'gmail_api' was wanted but the delegation is not active: it went by 'legacy'
 
     def __bool__(self):
         return self.ok
@@ -108,8 +116,8 @@ def build_payload(to, subject, html, text, reply_to=None, attachments=None, cc=N
         "subject": subject,
         "html": html,
         "text": text,
-        "replyTo": validate_address(reply_to or DEFAULT_REPLY_TO, "reply_to"),
-        "name": SENDER_NAME,
+        "replyTo": validate_address(reply_to or gmail_api.reply_to_default(), "reply_to"),
+        "name": gmail_api.from_name() or SENDER_NAME,
         "attachments": files,
     }
     if language:
@@ -171,6 +179,49 @@ def _deliver(to, subject, html, text, reply_to=None, attachments=None, cc=None, 
     return EmailResult(False, "unauthorized" if reason == "unauthorized" else "rejected")
 
 
+def _gmail_deliver(to, subject, html, text, reply_to, attachments, cc, bcc, kind, lang):
+    """One attempt through the Gmail API. Returns an EmailResult (error 'delegation' = Google refuses to act as the sender)."""
+    try:
+        recipients = _addresses(to, "to")
+        if not recipients:
+            raise ValueError("to is empty")
+        subject = _clean_header(subject, "subject")
+        if not subject or len(subject) > MAX_SUBJECT:
+            raise ValueError("subject is empty or too long")
+        reply = validate_address(reply_to, "reply_to") if reply_to else None
+        copies, blind = _addresses(cc, "cc"), _addresses(bcc, "bcc")
+        files = [{"filename": _clean_header(item["filename"], "attachment name"),
+                  "content_type": _clean_header(item.get("content_type", "application/octet-stream"), "attachment type"),
+                  "data": item["data"]} for item in attachments or []]
+    except (ValueError, KeyError, TypeError) as error:
+        logger.error("Email rejected before sending: %s", error)
+        return EmailResult(False, "invalid_input", provider="gmail_api")
+    ok, error = gmail_api.deliver(recipients, subject, html, text, reply, files, copies, blind)
+    if ok:
+        line = f"Email sent: kind={kind or '-'} lang={lang or '-'} via=gmail_api to={mask(recipients[0])}"
+        print(line, flush=True)
+        logger.info(line)
+        return EmailResult(True, provider="gmail_api")
+    return EmailResult(False, error, provider="gmail_api")
+
+
+def _dispatch(to, subject, html, text, reply_to=None, attachments=None, cc=None, extra=None, kind="", lang="", bcc=None):
+    """One attempt with the provider MAIL_PROVIDER names. With 'gmail_api' and a refused delegation, THIS email goes by the
+    legacy provider and the fallback is remembered for the admin's warning (only the error type is logged)."""
+    if gmail_api.provider() != "gmail_api":
+        result = _deliver(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang, bcc)
+        return EmailResult(result.ok, result.error, result.bcc_dropped, "legacy", False)
+    result = _gmail_deliver(to, subject, html, text, reply_to, attachments, cc, bcc, kind, lang)
+    if result.error == "delegation":
+        gmail_api.note_fallback("delegation")
+        logger.warning("Email goes by the legacy provider (the domain delegation is not active)")
+        legacy = _deliver(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang, bcc)
+        return EmailResult(legacy.ok, legacy.error, legacy.bcc_dropped, "legacy", True)
+    if result.ok:
+        gmail_api.clear_fallback()
+    return result
+
+
 def send_email(to, subject, html, text, reply_to=None, attachments=None, cc=None, extra=None,
                kind="", lang="", reference=None, bcc=None):
     """Send now (blocking, up to 20 s) and report; never raises.
@@ -186,19 +237,19 @@ def send_email(to, subject, html, text, reply_to=None, attachments=None, cc=None
     extra: additional JSON fields for the script (used to keep the old
     trial-notice format working until the script is updated).
     """
-    result = _deliver(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang, bcc)
+    result = _dispatch(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang, bcc)
     attempts = 1
     # a refusal WITH extra recipients is not retried as it is: it goes straight to the fallback below (without them)
-    while not result.ok and result.error in RETRYABLE and attempts < MAX_ATTEMPTS and not (bcc and result.error == "rejected"):
+    while not result.ok and result.error in RETRYABLE and attempts < MAX_ATTEMPTS and not (bcc and result.error == "rejected") and result.provider != "gmail_api":
         logger.warning("Email attempt %s failed (%s); retrying once", attempts, result.error)
         time.sleep(RETRY_DELAY_SECONDS)
         attempts += 1
-        result = _deliver(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang, bcc)
+        result = _dispatch(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang, bcc)
     if not result.ok and bcc and result.error in ("rejected", "invalid_input"):
         logger.warning("Email refused with extra recipients (%s); sending it without them", result.error)
-        result = _deliver(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang, None)
+        result = _dispatch(to, subject, html, text, reply_to, attachments, cc, extra, kind, lang, None)
         if result.ok:
-            result = EmailResult(True, bcc_dropped=True)
+            result = EmailResult(True, bcc_dropped=True, provider=result.provider, fallback=result.fallback)
     if kind:
         recipient = to if isinstance(to, str) else ",".join(str(item) for item in (to or []))
         email_log.record(kind, reference, recipient, result.ok, result.error, lang=lang or None)

@@ -6,6 +6,7 @@ import { dateKey, parseDateKey } from './requests'
 import { WEEKDAYS } from './availability'
 import { Badge, Button, ConfirmDialog, Drawer } from './ui'
 import PackFields from './PackFields'
+import { scheduleLines } from './scheduleText'
 import { TypeBadge } from './SessionKind'
 import { formatMoney } from '../utils/pricing'
 import { packIsComplete, packPayload, startIsInThePast, usePackForm, usePackPreview } from './packForm'
@@ -68,7 +69,7 @@ export function PackSummary({ packs = [], onNewPack }) {
               )}
               <div className="col-span-2">
                 <dt className="text-sm text-gray-500">{t('pk_schedule')}</dt>
-                <dd>{pack.preferred_days ? `${pack.preferred_days.split(',').map(day => dayLabel(day.trim())).join(', ')} · ${String(pack.preferred_time || '').slice(0, 5)}` : '—'}</dd>
+                <dd>{scheduleLines(pack, { dayLabel, t }).map(line => <span key={line} className="block">{line}</span>)}{!scheduleLines(pack, { dayLabel, t }).length && '—'}</dd>
               </div>
             </dl>
           </div>
@@ -145,7 +146,7 @@ export function TrainingCalendar({ sessions }) {
   )
 }
 
-export function NewPackDrawer({ client, pack, packs, trainers, onClose, onDone }) {
+export function NewPackDrawer({ client, pack, packs, onClose, onDone }) {
   const { t } = useAdminText()
   const toast = useToast()
   const [form, set] = usePackForm(pack)
@@ -217,7 +218,7 @@ export function NewPackDrawer({ client, pack, packs, trainers, onClose, onDone }
       </>}
     >
       <p className="mb-6 text-sm text-gray-400">{t('pk_new_sub')}</p>
-      <PackFields form={form} set={update} packs={packs} trainers={trainers} pack={pack} busy={busy} preview={preview} serverConflicts={serverConflicts} serverOverlaps={serverOverlaps} />
+      <PackFields form={form} set={update} packs={packs} pack={pack} busy={busy} preview={preview} serverConflicts={serverConflicts} serverOverlaps={serverOverlaps} />
       <RecipientsBox clientEmail={client.email} value={extra} onChange={setExtra} disabled={busy} shareCalendar={share} onShareCalendar={setShare} />
       <SendsTo clientEmail={client.email} extra={extra} />
       {askConflicts && conflicts.length > 0 && (

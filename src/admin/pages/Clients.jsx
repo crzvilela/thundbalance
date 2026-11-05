@@ -59,7 +59,7 @@ function Detail({ label, children, wide = false }) {
   )
 }
 
-function ClientDrawer({ clientId, packs, trainers, onClose, onChanged }) {
+function ClientDrawer({ clientId, packs, onClose, onChanged }) {
   const { t, language } = useAdminText()
   const toast = useToast()
   const { clientCalendar } = useFeatures()      // CLIENT_CALENDAR_ENABLED: the client's calendar link and state
@@ -521,7 +521,7 @@ function ClientDrawer({ clientId, packs, trainers, onClose, onChanged }) {
       </Drawer>
       {creatingPack && client && (
         <NewPackDrawer
-          client={client} pack={client.pack} packs={packs} trainers={trainers}
+          client={client} pack={client.pack} packs={packs}
           onClose={() => setCreatingPack(false)}
           onDone={() => { setCreatingPack(false); detail.reload(); onChanged() }}
         />
@@ -580,7 +580,6 @@ export default function Clients() {
   // Archived clients are left out of the normal list; this one has only them.
   const archivedResource = useAdminResource('/admin/clients?archived=only')
   const packsResource = useAdminResource('/pricing')          // the catalogue: only the packs on sale (and the trial prices)
-  const trainersResource = useAdminResource('/admin/trainer-availability')
   const [query, setQuery] = useState('')
   const [shown, setShown] = useState(PAGE_SIZE)                 // how many rows are drawn (50 more each time)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -634,7 +633,6 @@ export default function Clients() {
   const archivedClients = useMemo(() => archivedResource.data || [], [archivedResource.data])
   const clients = filter === 'archived' ? archivedClients : activeClients
   const packs = useMemo(() => packsResource.data?.packs || [], [packsResource.data])
-  const trainers = useMemo(() => (Array.isArray(trainersResource.data) ? trainersResource.data : []), [trainersResource.data])
 
   const counts = useMemo(() => ({
     all: activeClients.length,
@@ -755,14 +753,14 @@ export default function Clients() {
 
       {adding && (
         <AddClientDrawer
-          packs={packs} trainers={trainers}
+          packs={packs}
           onClose={() => setAdding(false)} onCreated={() => reloadAll()}
         />
       )}
 
       {selectedId && (
         <ClientDrawer
-          key={selectedId} clientId={selectedId} packs={packs} trainers={trainers}
+          key={selectedId} clientId={selectedId} packs={packs}
           onClose={() => setSelectedId(null)} onChanged={reloadAll}
         />
       )}

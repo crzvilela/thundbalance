@@ -1,10 +1,12 @@
 import { useMemo } from 'react'
 import { useAdminText } from './useAdminText'
 import { dateKey, parseDateKey } from './requests'
-import { WEEKDAYS, firstMismatch, hoursSummary } from './availability'
 import { Field, SelectInput, TextInput } from './ui'
 import { Icon } from './ui'
-import { PACK_TIMES as TIMES, packHasDaysAndTime, packMinStart } from './packForm'
+import { packMinStart } from './packForm'
+import PackSchedulePicker from '../components/forms/PackSchedulePicker'
+import PackScheduleSummary from '../components/forms/PackScheduleSummary'
+import { usePackAvailability } from '../utils/usePackAvailability'
 import { PriceBox, SessionTypeFields } from './SessionKind'
 import { OverlapList } from './OverlapWarning'
 import { formatMoney, packQuote, packsOfType } from '../utils/pricing'
@@ -12,14 +14,11 @@ import { formatMoney, packQuote, packsOfType } from '../utils/pricing'
 // The pack form: type, sessions per week, days, time, start date and trainer,
 // with the number of sessions it will create. Used by "Nuevo pack" and by
 // "Añadir cliente" (state comes from usePackForm).
-export default function PackFields({ form, set, packs, trainers, pack = null, busy = false, preview = null, serverConflicts = null, serverOverlaps = null }) {
-  const { t, language, dayFull, dayLabel } = useAdminText()
+export default function PackFields({ form, set, packs, pack = null, busy = false, preview = null, serverConflicts = null, serverOverlaps = null }) {
+  const { t, language, dayLabel } = useAdminText()
   const today = dateKey(new Date())
   const suggestion = packMinStart(pack)
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
-  const ready = packHasDaysAndTime(form)
-
-  const toggleDay = (day) => set({ days: form.days.includes(day) ? form.days.filter(item => item !== day) : [...form.days, day] })
   // Only the packs ON SALE of the chosen type (archived ones are not offered); the sessions per week are the ones the pack offers
   const typePacks = useMemo(() => packsOfType({ packs }, form.type), [packs, form.type])
   const chosenPack = typePacks.find(pack => String(pack.id) === form.plan)
@@ -29,17 +28,14 @@ export default function PackFields({ form, set, packs, trainers, pack = null, bu
   // The price: the server's own figure when the preview has arrived, otherwise the catalogue's (the server works it out again on save)
   const perSession = preview?.data ? preview.data.price_per_session : quote.perSession
   const total = preview?.data ? preview.data.total_price : quote.total
+  const setEntries = (entries) => set({ entries })
+  // the free hours of every day for THIS pack: from the start date, for as many weeks as the pack lasts
+  const availability = usePackAvailability({ startDate: form.start, weeks: chosenPack?.weeks || 0 })
   const choosePack = (id) => {
     const pack = typePacks.find(item => String(item.id) === id)
     const keep = pack && pack.sessions_per_week_options.includes(Number(form.perWeek))
     set({ plan: id, ...(pack && !keep ? { perWeek: String(pack.sessions_per_week_options[0]) } : {}) })
   }
-
-  const trainerOptions = useMemo(() => trainers.map(trainer => ({
-    trainer,
-    badDay: ready ? firstMismatch(trainer, form.days, form.time) : null,
-    summary: hoursSummary(trainer, form.days.length ? form.days : WEEKDAYS)
-  })), [trainers, form.days, form.time, ready])
 
   return (
     <>
@@ -65,48 +61,27 @@ export default function PackFields({ form, set, packs, trainers, pack = null, bu
         </Field>
       </div>
 
-      <Field label={t('pk_days')}>
-        <div className="flex flex-wrap gap-2">
-          {WEEKDAYS.map(day => {
-            const on = form.days.includes(day)
-            return (
-              <button key={day} type="button" aria-pressed={on} onClick={() => toggleDay(day)} disabled={busy}
-                className={`rounded-full border px-4 py-2 text-sm transition ${on ? 'border-emerald-400/50 bg-emerald-400/15 text-emerald-200' : 'border-white/10 text-gray-400 hover:border-white/25 hover:text-white'}`}>
-                {dayLabel(day)}
-              </button>
-            )
-          })}
-        </div>
-      </Field>
-
-      <div className="grid gap-x-8 md:grid-cols-2">
-        <Field label={t('pk_time')}>
-          <SelectInput value={form.time} onChange={event => set({ time: event.target.value })} disabled={busy}>
-            <option value="">—</option>
-            {TIMES.map(time => <option key={time} value={time}>{time}</option>)}
-          </SelectInput>
-        </Field>
-        <Field
-          label={t('pk_start')}
-          hint={pack?.end_date && pack.end_date >= today
-            ? `${t('pk_start_hint')} ${parseDateKey(pack.end_date).toLocaleDateString(locale)} (${parseDateKey(suggestion).toLocaleDateString(locale)})`
-            : undefined}
-        >
-          {/* any day is allowed: today, inside the current pack, or in the past */}
-          <TextInput type="date" value={form.start} onChange={event => set({ start: event.target.value })} disabled={busy} />
-        </Field>
+      <div className="mb-5">
+        <PackSchedulePicker
+          value={form.entries} onChange={setEntries} perWeek={Number(form.perWeek)} availability={availability}
+          text={t} dayLabel={dayLabel} variant="admin" trainerRequired disabled={busy} legacy={form.legacy}
+        />
       </div>
 
-      <Field label={t('pk_trainer_f')} hint={ready ? undefined : t('pk_pick_days')}>
-        <SelectInput value={form.trainer} onChange={event => set({ trainer: event.target.value })} disabled={busy}>
-          <option value="">{t('select_trainer')}</option>
-          {trainerOptions.map(({ trainer, badDay, summary }) => (
-            <option key={trainer.id} value={trainer.id} disabled={!!badDay}>
-              {trainer.name}{badDay ? ` — ${t('av_unavailable')} ${dayFull(badDay)} ${form.time}` : summary ? ` — ${summary}` : ''}
-            </option>
-          ))}
-        </SelectInput>
+      <Field
+        label={t('pk_start')}
+        hint={pack?.end_date && pack.end_date >= today
+          ? `${t('pk_start_hint')} ${parseDateKey(pack.end_date).toLocaleDateString(locale)} (${parseDateKey(suggestion).toLocaleDateString(locale)})`
+          : undefined}
+      >
+        {/* any day is allowed: today, inside the current pack, or in the past */}
+        <TextInput type="date" value={form.start} onChange={event => set({ start: event.target.value })} disabled={busy} />
       </Field>
+
+      <PackScheduleSummary
+        className="mb-5 rounded-xl border border-white/10 p-4" value={form.entries} availability={availability.data}
+        start={form.start} total={quote.sessions} text={t} dayLabel={dayLabel} locale={locale}
+      />
 
       {chosenPack && (
         <div className="mb-4">

@@ -7,6 +7,7 @@ accepts at most 200 ids and is admin only. Google Calendar and Firebase are fake
 """
 import unittest
 
+import pack_schedule
 import catalog_testing
 from datetime import date, timedelta
 
@@ -158,8 +159,7 @@ class Bulk(unittest.TestCase):
         user_id = self.user("ana", "Ana María Ruiz")
         main_route = [r for r in main.app.routes if getattr(r, "path", "") == "/admin/clients/{client_id}/renew-pack"][0]
         main_route.endpoint(user_id, main.NewPack(
-            pack_id=self.pack_ids["individual"], sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="10:00",
-            trainer_id=self.trainer_id, start_date=monday(10).isoformat(), email_extra=[], allow_conflicts=True, allow_overlaps=True))
+            pack_id=self.pack_ids["individual"], sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "10:00", self.trainer_id), start_date=monday(10).isoformat(), email_extra=[], allow_conflicts=True, allow_overlaps=True))
         rows = self.query("SELECT id, google_event_id FROM sessions WHERE user_id = %s ORDER BY session_date, session_time, id", (user_id,))
         self.assertEqual(len(rows), 6)
         self.assertEqual(len(self.google.events), 6)

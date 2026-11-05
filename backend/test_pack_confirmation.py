@@ -8,6 +8,7 @@
 The email says the type (individual / dual), the duration, the price per session and the total, the start date and every
 session. send_email is replaced by a recorder (nothing leaves the machine) and Google Calendar by a fake.
 """
+import pack_schedule
 import logging
 import unittest
 
@@ -110,8 +111,7 @@ class Confirmation(unittest.TestCase):
     def new_pack(self, session_type=None, email_client=True, extra=None):
         kind = {"session_type": "dual", "second_person_name": "Beatriz Prueba", "second_person_email": SECOND} if session_type == "dual" else {}
         return self.route("/admin/clients/{client_id}/renew-pack")(self.user_id, main.NewPack(
-            pack_id=self.pack_ids[session_type or "individual"], sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="10:00",
-            trainer_id=self.trainer_id, start_date=self.monday.isoformat(), email_client=email_client,
+            pack_id=self.pack_ids[session_type or "individual"], sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "10:00", self.trainer_id), start_date=self.monday.isoformat(), email_client=email_client,
             allow_conflicts=True, allow_overlaps=True, extra_recipients=extra, **kind))
 
     def check_email(self, message, type_word, quote):
@@ -152,7 +152,7 @@ class Confirmation(unittest.TestCase):
         conn.commit()
         conn.close()
         answer = main.approve_request(main.ApproveRequest(
-            request_id=request_id, trainer_id=self.trainer_id, start_date=self.monday.isoformat(), allow_conflicts=True, allow_overlaps=True))
+            request_id=request_id, schedule=pack_schedule.uniform("Monday,Wednesday", "10:00", self.trainer_id), start_date=self.monday.isoformat(), allow_conflicts=True, allow_overlaps=True))
         self.assertIn(f"ana{DOMAIN}", answer["email"]["sent_to"])
         self.check_email(self.recorder.to(f"ana{DOMAIN}")[0], "Individual", self.individual)
 

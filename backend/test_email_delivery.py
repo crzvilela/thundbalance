@@ -261,7 +261,7 @@ class Delivery(unittest.TestCase):
         self.assertTrue(endpoint("/admin/email/health", "GET")()["email_ready"])
         with redirect_stdout(io.StringIO()):
             out = endpoint("/admin/email/test", "POST")(admin_api.EmailTestPayload(to=f"probe{DOMAIN}"))
-        self.assertEqual(out, {"sent": True, "problem": ""})
+        self.assertEqual((out["sent"], out["problem"], out["provider"], out["fallback"]), (True, "", "legacy", False))
         self.assertEqual(len([c for c in STATE["calls"] if f"probe{DOMAIN}" in c["to"]]), 1)
         with self.assertRaises(Exception) as caught:
             endpoint("/admin/email/test", "POST")(admin_api.EmailTestPayload(to="not-an-email"))

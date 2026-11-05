@@ -10,6 +10,7 @@ import threading
 import time
 import unittest
 
+import pack_schedule
 import catalog_testing
 
 import plans_schema
@@ -111,8 +112,7 @@ class Sync(unittest.TestCase):
     def renew(self, start=None):
         start = start or next_weekday(10, 0)
         return route("/admin/clients/{client_id}/renew-pack", "POST").endpoint(self.user_id, main.NewPack(
-            pack_id=self.pack_ids["individual"], sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="10:00",
-            trainer_id=self.trainer_id, start_date=start.isoformat(), email_extra=[], allow_conflicts=True, allow_overlaps=True))
+            pack_id=self.pack_ids["individual"], sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "10:00", self.trainer_id), start_date=start.isoformat(), email_extra=[], allow_conflicts=True, allow_overlaps=True))
 
     def sessions(self):
         conn = get_connection()

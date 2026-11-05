@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { auth } from '../firebase/auth'
 import Navbar from '../components/Navbar'
 import TempPasswordNotice from '../components/TempPasswordNotice'
-import TrainerChoice from '../components/forms/TrainerChoice'
+import PackSchedulePicker from '../components/forms/PackSchedulePicker'
+import PackScheduleSummary from '../components/forms/PackScheduleSummary'
+import { isComplete, toBody } from '../utils/packSchedule'
+import { usePackAvailability } from '../utils/usePackAvailability'
 import { API_URL } from '../config'
 import { useI18n } from '../i18n/I18nContext'
 import SessionTypeSection, { PriceSummary } from '../components/forms/SessionTypeSection'
@@ -22,36 +25,11 @@ function TrainingRequest() {
 
   const [sessionsPerWeek, setSessionsPerWeek] = useState('1')
 
-  const [preferredDays, setPreferredDays] = useState([])
-
-  const [preferredTime, setPreferredTime] = useState('18:00')
-
-  const [trainerId, setTrainerId] = useState('')               // the trainer asked for (optional)
-  const [trainerStatus, setTrainerStatus] = useState('idle')   // idle | checking | ok | busy | none
-  const [trainerRefresh, setTrainerRefresh] = useState(0)       // the server said the trainer was taken: check again
+  // The schedule: ONE ENTRY PER TRAINING DAY, each with its own hour (only free hours) and its own trainer (optional here: the
+  // studio assigns it when approving). There is no single hour for the whole pack.
+  const [entries, setEntries] = useState([])
+  const availability = usePackAvailability()
   const [problem, setProblem] = useState('')                    // a translation key, shown in the page (no alert boxes)
-
-  // Start times offered per weekday (only when at least one trainer works).
-  const [schedule, setSchedule] = useState(null)
-
-  useEffect(() => {
-    fetch(`${API_URL}/schedule`)
-      .then(response => (response.ok ? response.json() : null))
-      .then(data => setSchedule(data))
-      .catch(() => setSchedule(null))
-  }, [])
-
-  const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-  const offeredDays = schedule ? WEEKDAYS.filter(day => (schedule[day] || []).length > 0) : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
-  const FALLBACK_TIMES = Array.from({ length: 14 }, (_, index) => `${String(index + 7).padStart(2, '0')}:00`)
-
-  // Times that work on EVERY chosen day (the same time is used each day).
-  // With no day chosen yet, every time offered on any day is listed.
-  const timeOptions = !schedule ? FALLBACK_TIMES
-    : preferredDays.length
-      ? FALLBACK_TIMES.filter(time => preferredDays.every(day => (schedule[day] || []).includes(time)))
-      : [...new Set(offeredDays.flatMap(day => schedule[day]))].sort()
-  const effectiveTime = timeOptions.includes(preferredTime) ? preferredTime : (timeOptions[0] || '')
 
   // Only the packs ON SALE of the chosen type (the catalogue, edited in Admin > Packs); the sessions per week are the ones the pack offers.
   const typePacks = packsOfType(prices, kind.type)
@@ -63,33 +41,11 @@ function TrainingRequest() {
   const quote = packQuote(chosenPack, effectivePerWeek)
   const sessions = quote.sessions
 
-  const handleDayChange = (day) => {
-
-    if (preferredDays.includes(day)) {
-
-      setPreferredDays(
-        preferredDays.filter(
-          d => d !== day
-        )
-      )
-
-    } else {
-
-      setPreferredDays([
-        ...preferredDays,
-        day
-      ])
-
-    }
-
-  }
-
   const handleSubmit = async () => {
 
     if (!auth.currentUser) { navigate('/login'); return }
     setProblem('')
-    if (!preferredDays.length) { setProblem('tr_choose_day'); return }
-    if (!effectiveTime) { setProblem('tr_no_time'); return }
+    if (!isComplete(entries, effectivePerWeek, { trainerRequired: false })) { setProblem('ps_choose_hours'); return }
     const second = secondPersonProblems(kind)
     if (second.name || second.email) {
       setKindErrors({ name: second.name && formText(language, second.name), email: second.email && formText(language, second.email) })
@@ -117,11 +73,8 @@ function TrainingRequest() {
 
             sessions_per_week: parseInt(effectivePerWeek),
 
-            preferred_days: preferredDays.join(','),
-
-            preferred_time: effectiveTime,
-
-            trainer_id: trainerId || null,
+            // one entry per day: weekday, hour and (optionally) trainer
+            schedule: toBody(entries),
             // only the kind of session: the server works the price out itself
             ...sessionTypeBody(kind)
 
@@ -134,9 +87,9 @@ function TrainingRequest() {
 
         const body = await response.json().catch(() => ({}))
 
-        if (response.status === 409 && body.detail?.code === 'trainer_unavailable') {
-          setTrainerRefresh(count => count + 1)      // somebody took that trainer a moment ago: read the free ones again
-          setProblem('tc_race')
+        if (response.status === 409 && body.detail?.code === 'schedule_unavailable') {
+          availability.reload()                      // somebody took an hour or a trainer a moment ago: read the free ones again
+          setProblem('ps_race')
           return
         }
         const field = body.detail?.field
@@ -233,69 +186,16 @@ function TrainingRequest() {
 
           <div className="mb-8">
 
-            <label className="block mb-4 text-gray-400">
-              {t('tr_days')}
-            </label>
-
-            <div className="flex flex-wrap gap-4">
-
-              {offeredDays.map(day => (
-
-                <button
-                  key={day}
-                  onClick={() =>
-                    handleDayChange(day)
-                  }
-                  className={`min-h-[44px] px-4 py-2 rounded-lg border ${
-                    preferredDays.includes(day)
-                      ? 'bg-green-600 border-green-600'
-                      : 'border-white/20'
-                  }`}
-                >
-                  {t(`wd_${day}`)}
-                </button>
-
-              ))}
-
-            </div>
-
-          </div>
-
-          <div className="mb-8">
-
-            <label className="block mb-2 text-gray-400">
-              {t('tr_time')}
-            </label>
-
-            <select
-              value={effectiveTime}
-              onChange={(e) =>
-                setPreferredTime(
-                  e.target.value
-                )
-              }
-              disabled={timeOptions.length === 0}
-              className="w-full bg-black border border-white/20 p-4"
-            >
-              {timeOptions.map(time => <option key={time}>{time}</option>)}
-            </select>
-
-            <p className="mt-2 text-sm text-gray-500">
-              {timeOptions.length === 0
-                ? t('tr_no_time')
-                : t('tr_time_hint')}
-            </p>
-
-          </div>
-
-          <div className="mb-8">
-
-            <TrainerChoice
-              value={trainerId} onChange={setTrainerId} weekdays={preferredDays} time={effectiveTime}
-              refreshKey={trainerRefresh} onStatus={setTrainerStatus} disabled={submitting}
-              labelClass="block mb-2 text-gray-400"
-              selectClass="w-full bg-black border border-white/20 p-4 text-white"
+            <PackSchedulePicker
+              value={entries} onChange={setEntries} perWeek={Number(effectivePerWeek)} availability={availability}
+              text={t} dayLabel={day => t(`wd_${day}`)} variant="site" trainerRequired={false} disabled={submitting}
             />
+
+            <PackScheduleSummary
+              className="mt-6 rounded-xl border border-white/10 p-4" value={entries} availability={availability.data}
+              text={t} dayLabel={day => t(`wd_${day}`)} locale={language}
+            />
+            {entries.length > 0 && <p className="mt-2 text-sm text-gray-500">{t('ps_note')}</p>}
 
           </div>
 
@@ -319,7 +219,7 @@ function TrainingRequest() {
 
           <button
             onClick={handleSubmit}
-            disabled={submitting || !chosenPack || trainerStatus === 'busy' || trainerStatus === 'none'}
+            disabled={submitting || !chosenPack}
             className="w-full sm:w-auto bg-white text-black px-8 py-4 uppercase tracking-[3px] hover:bg-gray-300 transition duration-300"
           >
             {submitting ? t('tr_submitting') : chosenPack ? t('tr_submit') : t('tr_unavailable')}

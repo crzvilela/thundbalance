@@ -9,6 +9,7 @@ from datetime import date, timedelta
 
 from fastapi import HTTPException
 
+import pack_schedule
 import admin_calendar
 import google_fakes
 import catalog_testing
@@ -60,8 +61,7 @@ class Restore(unittest.TestCase):
         conn.close()
         self.monday = next_monday()
         call("/admin/clients/{client_id}/renew-pack", self.user_id, main.NewPack(
-            pack_id=self.pack_id, sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="10:00",
-            trainer_id=self.trainer_id, start_date=self.monday.isoformat(), email_client=False, email_extra=[],
+            pack_id=self.pack_id, sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "10:00", self.trainer_id), start_date=self.monday.isoformat(), email_client=False, email_extra=[],
             allow_conflicts=True))
         self.sessions = self.rows()
 

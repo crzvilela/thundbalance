@@ -13,6 +13,7 @@ import unittest
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+import pack_schedule
 import testsafety
 from fastapi import HTTPException
 
@@ -235,8 +236,7 @@ class Flows(unittest.TestCase):
         conn.commit()
         conn.close()
         result = endpoint("/admin/clients/{client_id}/renew-pack", "POST")(user_id, main.NewPack(
-            pack_id=self.pack_ids["individual"], sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="09:00",
-            trainer_id=self.trainer_id, start_date=weekday_after(10).isoformat(), extra_recipients=["PT@thundbalance.com", f"he{DOMAIN}"],
+            pack_id=self.pack_ids["individual"], sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", self.trainer_id), start_date=weekday_after(10).isoformat(), extra_recipients=["PT@thundbalance.com", f"he{DOMAIN}"],
             allow_conflicts=True, allow_overlaps=True))
         self.assertEqual(result["extra_recipients"], ["pt@thundbalance.com"])               # the client's own address is dropped
         mails = self.mails_to(f"he{DOMAIN}")
@@ -250,8 +250,7 @@ class Flows(unittest.TestCase):
         conn.close()
         with self.assertRaises(HTTPException) as caught:
             endpoint("/admin/clients/{client_id}/renew-pack", "POST")(user_id, main.NewPack(
-                pack_id=self.pack_ids["individual"], sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="09:00",
-                trainer_id=self.trainer_id, start_date=weekday_after(40).isoformat(), extra_recipients=["mal"]))
+                pack_id=self.pack_ids["individual"], sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", self.trainer_id), start_date=weekday_after(40).isoformat(), extra_recipients=["mal"]))
         self.assertEqual(caught.exception.status_code, 422)
 
     # ----- the reschedule answers

@@ -11,6 +11,7 @@ import os
 import threading
 import unittest
 
+import pack_schedule
 import catalog_testing
 
 import plans_schema
@@ -215,8 +216,7 @@ class PackFlow(unittest.TestCase):
         start = date.today() + timedelta(days=30)
         while start.weekday() != 0:
             start += timedelta(days=1)
-        base = dict(pack_id=self.pack_ids["individual"], sessions_per_week=2, preferred_days="Monday,Wednesday",
-                    preferred_time="09:00", trainer_id=self.trainer_id, start_date=start.isoformat())
+        base = dict(pack_id=self.pack_ids["individual"], sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", self.trainer_id), start_date=start.isoformat())
         base.update(changes)
         return main.NewPack(**base)
 
@@ -313,7 +313,7 @@ class PackFlow(unittest.TestCase):
         conn.close()
         start = self.payload().start_date
         result = endpoint("/admin/approve-request", "POST")(main.ApproveRequest(
-            request_id=request_id, trainer_id=self.trainer_id, start_date=start, email_extra=[]))
+            request_id=request_id, schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", self.trainer_id), start_date=start, email_extra=[]))
         self.assertEqual(result["total_sessions"], 4)
         self.assertEqual(self.count_sessions(), 4)
         self.assertEqual(len(self.events), 4)

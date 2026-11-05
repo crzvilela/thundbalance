@@ -29,7 +29,8 @@ from emails.dates import parse_madrid
 from emails.pack_emails import ICS_CONTENT_TYPE, ICS_FILENAME
 from emails.transport import validate_address
 from emails.welcome_emails import build_staff_client_created, build_welcome_email
-from packs import create_pack, delete_created_events, validate_pack_request
+import pack_schedule
+from packs import create_pack, delete_created_events
 from trial_notifications import studio_address
 
 logger = logging.getLogger("thundbalance.accounts")
@@ -40,9 +41,7 @@ SEND_TIMEOUT = 40
 class ClientPack(BaseModel):
     pack_id: int                       # a pack of the catalogue
     sessions_per_week: int
-    preferred_days: str
-    preferred_time: str
-    trainer_id: int
+    schedule: list[pack_schedule.ScheduleEntry]      # one entry per training day: weekday, hour and trainer
     start_date: str
     allow_conflicts: bool = False
     # individual (default) | dual; a dual pack needs the second person (the price is worked out by the server)
@@ -234,24 +233,19 @@ def register_client_account_routes(app, require_admin, require_client):
 
             if data.pack:
                 pack = data.pack
-                trainer_name, days = validate_pack_request(
-                    cursor, trainer_id=pack.trainer_id, sessions_per_week=pack.sessions_per_week,
-                    preferred_days=pack.preferred_days, start_date=pack.start_date,
-                )
                 created = create_pack(
                     cursor, created_event_ids,
                     user_id=user_id, client_name=name, client_email=email,
-                    catalog_pack_id=pack.pack_id, trainer_id=pack.trainer_id, trainer_name=trainer_name,
-                    sessions_per_week=pack.sessions_per_week, preferred_days=",".join(days),
-                    preferred_time=pack.preferred_time, start_date=pack.start_date,
+                    catalog_pack_id=pack.pack_id,
+                    sessions_per_week=pack.sessions_per_week, schedule=pack.schedule, start_date=pack.start_date,
                     allow_conflicts=pack.allow_conflicts, session_type=pack.session_type,
                     second_person_name=pack.second_person_name, second_person_email=pack.second_person_email,
                     calendar_share=pack.share_calendar,
                 )
                 pack_summary = {
                     "client_name": name, "client_email": email, "plan_name": created["plan_name"],
-                    "sessions_per_week": pack.sessions_per_week, "days": days,
-                    "trainer": trainer_name, "sessions": created["sessions"],
+                    "sessions_per_week": pack.sessions_per_week, "days": pack_schedule.weekdays(created["schedule"]),
+                    "trainer": created["trainer_label"], "sessions": created["sessions"],
                     "session_type": created["session_type"], "second_person_name": created["second_person_name"],
                     "price_per_session": created["price_per_session"], "total_price": created["total_price"],
                 }

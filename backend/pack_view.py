@@ -9,6 +9,8 @@ last wins when periods overlap). Nothing is ever rewritten here.
 """
 from datetime import date
 
+import pack_schedule
+
 
 def user_packs(cursor, user_id, today=None):
     """(packs, assignment).
@@ -29,7 +31,7 @@ def user_packs(cursor, user_id, today=None):
                up.session_type, up.second_person_name, up.second_person_email, up.price_per_session, up.total_price,
                up.status, up.created_at, up.replaced_at, COALESCE(up.duration_months, p.duracao_meses),
                COALESCE(up.weeks, p.duration_weeks), up.catalog_pack_id,
-               up.calendar_share, up.calendar_extra
+               up.calendar_share, up.calendar_extra, up.schedule
         FROM user_plans up
         JOIN plans p ON p.id = up.plan_id
         LEFT JOIN trainers t ON t.id = up.trainer_id
@@ -49,10 +51,15 @@ def user_packs(cursor, user_id, today=None):
             "weeks": r[20], "catalog_pack_id": r[21],
             # the client sees the pack's events in their own Google Calendar (the extra addresses are invited as well)
             "calendar_share": bool(r[22]), "calendar_extra": r[23],
+            # one entry per day (weekday, hour, trainer); [] for an old pack that only has a single hour (preferred_time)
+            "schedule": pack_schedule.loads(r[24]),
             "total": 0, "done": 0, "remaining": 0, "planned_all": 0, "_dates": [],
         }
         for r in cursor.fetchall()
     ]
+    names = pack_schedule.all_names(cursor)
+    for pack in packs:
+        pack["schedule"] = pack_schedule.named(pack["schedule"], names)
     by_id = {pack["id"]: pack for pack in packs}
 
     cursor.execute(
