@@ -17,7 +17,12 @@ export default function SentMessages() {
   const [params, setParams] = useSearchParams()
   const tab = params.get('tab') === 'sent' ? 'sent' : 'new'
   const highlight = Number.parseInt(params.get('highlight') || '', 10) || null
-  const [draft, setDraft] = useState(() => emptyDraft(language === 'es' ? 'es' : 'en'))
+  // ?to=email&name=… (from a client's file): the message is for that person
+  const [draft, setDraft] = useState(() => {
+    const base = emptyDraft(language === 'es' ? 'es' : 'en')
+    const to = params.get('to')
+    return to ? { ...base, audiences: ['user'], person: { email: to, name: params.get('name') || '' } } : base
+  })
 
   useLeaveGuard(isDirty(draft))
 

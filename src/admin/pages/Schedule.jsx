@@ -8,7 +8,9 @@ import { madridWallClock, NEUTRAL_COLOR } from '../calendar/calendarConfig'
 import { TABS, readParams, shortDate, statusesOf, tabByKey, tabCount, tabOfStatus } from '../scheduleRequests'
 import ScheduleCard from '../ScheduleCard'
 import { CounterDrawer, LateProposalDialog, RejectDrawer } from '../ScheduleDialogs'
-import { Button, Card, ConfirmDialog, EmptyState, ErrorState, Icon, PageHeader, Skeleton, TextInput } from '../ui'
+import SendConfirm from '../SendConfirm'
+import { extraBody } from '../recipients'
+import { Button, Card, EmptyState, ErrorState, Icon, PageHeader, Skeleton, TextInput } from '../ui'
 
 const PAGE_SIZE = 25
 const CHECK = 'h-4 w-4 accent-emerald-400'
@@ -116,9 +118,10 @@ export default function Schedule() {
   const [emailFailed, setEmailFailed] = useState({})  // request id -> true when the last email did not go out
   const [dialogError, setDialogError] = useState('')
   const [approving, setApproving] = useState(null)
+  const [resending, setResending] = useState(null)          // the request whose e-mail is sent again: asks who else gets it
   const [rejecting, setRejecting] = useState(null)
   const [countering, setCountering] = useState(null)
-  const [late, setLate] = useState(null)                  // a proposal the server refused for lack of notice: { item, date, time, note }
+  const [late, setLate] = useState(null)                  // a proposal the server refused for lack of notice: { item, date, time, note, extra }
 
   const refresh = useCallback(() => {
     setPinned(null)
@@ -157,9 +160,9 @@ export default function Schedule() {
     setEmailFailed(current => ({ ...current, [item.id]: failed }))
   }
 
-  const approve = async (item) => {
+  const approve = async (item, extra = []) => {
     await act(item, async () => {
-      const result = await adminRequest('POST', `/admin/reschedule-requests/${item.id}/approve`)
+      const result = await adminRequest('POST', `/admin/reschedule-requests/${item.id}/approve`, extraBody(extra))
       if (result.repeated) toast.push(t('sch_already'), 'warning')
       else {
         toast.push(t('sch_moved').replace('{date}', shortDate(item.requested_date)).replace('{time}', item.requested_time))
@@ -171,9 +174,9 @@ export default function Schedule() {
     setApproving(null)
   }
 
-  const reject = async (item, note) => {
+  const reject = async (item, note, extra = []) => {
     await act(item, async () => {
-      const result = await adminRequest('POST', `/admin/reschedule-requests/${item.id}/reject`, { note })
+      const result = await adminRequest('POST', `/admin/reschedule-requests/${item.id}/reject`, { note, ...extraBody(extra) })
       toast.push(result.repeated ? t('sch_already') : t('sch_rejected_ok'), result.repeated ? 'warning' : 'success')
       if (!result.repeated) afterEmail(item, result)
       setRejecting(null)
@@ -182,33 +185,33 @@ export default function Schedule() {
   }
 
   // confirmLate: the studio accepted that the client will not have the full notice (the client then answers until the session starts)
-  const counter = async (item, date, time, note, confirmLate = false) => {
+  const counter = async (item, date, time, note, confirmLate = false, extra = []) => {
     await act(item, async () => {
-      const result = await adminRequest('POST', `/admin/reschedule-requests/${item.id}/counter`, { date, time, note, confirm_late: confirmLate })
+      const result = await adminRequest('POST', `/admin/reschedule-requests/${item.id}/counter`, { date, time, note, confirm_late: confirmLate, ...extraBody(extra) })
       toast.push(t('sch_counter_ok'))
       afterEmail(item, result)
       setCountering(null); setLate(null)
       refresh()
     }, (message, error) => {
-      if (error?.code === 'too_late_for_client') setLate({ item, date, time, note })        // ask: send anyway, or move the session directly
+      if (error?.code === 'too_late_for_client') setLate({ item, date, time, note, extra })        // ask: send anyway, or move the session directly
       else { setLate(null); setDialogError(message) }
     })
   }
 
   // The studio moves the session directly to the hour it had chosen: no notice period, the client is told by e-mail.
   const moveDirectly = async () => {
-    const { item, date, time, note } = late
+    const { item, date, time, note, extra } = late
     await act(item, async () => {
-      await adminRequest('POST', `/admin/sessions/${item.session_id}/reschedule`, { session_date: date, session_time: time, note: note || null })
+      await adminRequest('POST', `/admin/sessions/${item.session_id}/reschedule`, { session_date: date, session_time: time, note: note || null, ...extraBody(extra || []) })
       toast.push(t('sch_moved').replace('{date}', shortDate(date)).replace('{time}', time))
       setCountering(null); setLate(null)
       refresh()
     }, (message) => { setLate(null); setDialogError(message) })
   }
 
-  const resend = async (item) => {
+  const resend = async (item, extra = []) => {
     await act(item, async () => {
-      const result = await adminRequest('POST', `/admin/reschedule-requests/${item.id}/resend-email`)
+      const result = await adminRequest('POST', `/admin/reschedule-requests/${item.id}/resend-email`, extraBody(extra))
       const sent = !!result.email?.sent
       toast.push(sent ? t('sch_resent') : t('sch_resend_failed'), sent ? 'success' : 'warning')
       setEmailFailed(current => ({ ...current, [item.id]: !sent }))
@@ -294,7 +297,7 @@ export default function Schedule() {
                 error={errors[item.id]} emailFailed={!!emailFailed[item.id]}
                 onApprove={setApproving} onReject={(target) => { setDialogError(''); setRejecting(target) }}
                 onCounter={(target) => { setDialogError(''); setCountering(target) }}
-                onResend={resend} onSync={syncGoogle}
+                onResend={setResending} onSync={syncGoogle}
               />
             ))}
           </ul>
@@ -309,18 +312,24 @@ export default function Schedule() {
         </nav>
       )}
 
-      <ConfirmDialog
-        open={!!approving} busy={dialogBusy} tone="neutral" icon="check"
+      <SendConfirm
+        open={!!approving} busy={dialogBusy} tone="neutral" icon="check" clientEmail={approving?.client_email || ''}
         title={t('sch_approve_title')}
         text={approving ? t('sch_approve_text').replace('{client}', approving.client_email)
           .replace('{from}', `${shortDate(approving.session_date)} ${approving.session_time}`)
           .replace('{to}', `${shortDate(approving.requested_date)} ${approving.requested_time}`) : ''}
         confirmLabel={t('sch_approve_do')} cancelLabel={t('sch_keep')}
-        onConfirm={() => approve(approving)} onCancel={() => setApproving(null)}
+        onConfirm={(extra) => approve(approving, extra)} onCancel={() => setApproving(null)}
       />
-      <RejectDrawer item={rejecting} busy={dialogBusy} error={dialogError} onClose={closeDialogs} onConfirm={(note) => reject(rejecting, note)} />
-      <CounterDrawer item={countering} busy={dialogBusy} error={dialogError} onClose={closeDialogs} onConfirm={(date, time, note) => counter(countering, date, time, note)} />
-      <LateProposalDialog info={late} busy={dialogBusy} onSend={() => counter(late.item, late.date, late.time, late.note, true)} onMove={moveDirectly} onCancel={() => setLate(null)} />
+      <SendConfirm
+        open={!!resending} busy={dialogBusy} tone="neutral" icon="send" clientEmail={resending?.client_email || ''}
+        title={t('sch_resend')} text={resending?.client_email || ''}
+        confirmLabel={t('sch_resend')} cancelLabel={t('cancel')}
+        onConfirm={async (extra) => { const item = resending; setResending(null); await resend(item, extra) }} onCancel={() => setResending(null)}
+      />
+      <RejectDrawer item={rejecting} busy={dialogBusy} error={dialogError} onClose={closeDialogs} onConfirm={(note, extra) => reject(rejecting, note, extra)} />
+      <CounterDrawer item={countering} busy={dialogBusy} error={dialogError} onClose={closeDialogs} onConfirm={(date, time, note, extra) => counter(countering, date, time, note, false, extra)} />
+      <LateProposalDialog info={late} busy={dialogBusy} onSend={() => counter(late.item, late.date, late.time, late.note, true, late.extra)} onMove={moveDirectly} onCancel={() => setLate(null)} />
     </div>
   )
 }

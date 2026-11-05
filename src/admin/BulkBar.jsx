@@ -6,8 +6,11 @@ import { Button, Icon } from './ui'
 import { fill, summarize } from './bulk'
 
 // Select several rows and act once, in every admin list that can delete, archive or cancel.
-//   <SelectAllRow selection={sel} />                   "Seleccionar todo" (the visible, filtered rows only)
-//   <RowCheck selection={sel} id={row.id} label="…"/>   the checkbox of a row (a comfortable touch area)
+// The checkboxes are HIDDEN by default. The "Seleccionar" button (SelectAllRow, at the top of the list) starts the selection
+// mode: the checkboxes appear, "Seleccionar todo" and the counter too, and a click on a row toggles it instead of opening it
+// (selectableProps / the row's own handler). "Cancelar" leaves the mode and clears the choice, and so does a finished action.
+//   <SelectAllRow selection={sel} />                   the button, and in the mode "Seleccionar todo" (visible, filtered rows only) + "N seleccionados"
+//   <RowCheck selection={sel} id={row.id} label="…"/>   the checkbox of a row (nothing outside the mode; a comfortable touch area)
 //   <BulkBar selection={sel} actions={[…]} labelOf={id => name} onDone={reload} />   the fixed bar + confirmation + result
 //
 // An action is { key, verb, label, tone: 'danger' | 'neutral', effects: [text], word?: 'ELIMINAR',
@@ -17,23 +20,35 @@ import { fill, summarize } from './bulk'
 export const CHECK = 'h-5 w-5 shrink-0 accent-emerald-400'
 
 export function RowCheck({ selection, id, label }) {
+  if (!selection.active) return null
   return (
-    <label className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center" onClick={event => event.stopPropagation()}>
+    <label className="bulk-in flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center" onClick={event => event.stopPropagation()}>
       <input type="checkbox" checked={selection.chosen.has(id)} onChange={() => selection.toggle(id)} className={CHECK} aria-label={label} />
     </label>
   )
 }
 
+// The top of the list: "Seleccionar" / "Cancelar", and in the mode "Seleccionar todo" and the counter.
 export function SelectAllRow({ selection }) {
   const { t } = useAdminText()
   if (selection.selectableCount === 0) return null
   return (
-    <div className="mb-2 flex min-h-[44px] items-center px-1">
-      <label className="flex min-h-[44px] cursor-pointer items-center gap-3 text-sm text-gray-300">
-        <input type="checkbox" checked={selection.allSelected} onChange={selection.toggleAll} className={CHECK} />
-        {t('bk_select_all')}
-        {selection.someSelected && <span className="text-emerald-300" role="status">· {fill(t('bk_selected'), { n: selection.count })}</span>}
-      </label>
+    <div className="mb-2 flex min-h-[44px] flex-wrap items-center gap-x-5 gap-y-1 px-1">
+      <button
+        type="button" onClick={selection.active ? selection.stop : selection.start} aria-pressed={selection.active}
+        className="inline-flex min-h-[44px] items-center rounded-xl border border-white/15 px-4 text-sm font-medium text-gray-100 transition hover:border-white/30 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+      >
+        {selection.active ? t('bk_stop') : t('bk_start')}
+      </button>
+      {selection.active && (
+        <>
+          <label className="bulk-in flex min-h-[44px] cursor-pointer items-center gap-3 text-sm text-gray-300">
+            <input type="checkbox" checked={selection.allSelected} onChange={selection.toggleAll} className={CHECK} />
+            {t('bk_select_all')}
+          </label>
+          <span className="bulk-in text-sm text-emerald-300" role="status">{fill(t('bk_selected'), { n: selection.count })}</span>
+        </>
+      )}
     </div>
   )
 }
@@ -121,7 +136,7 @@ export function BulkBar({ selection, actions, labelOf = id => `#${id}`, onDone }
       setPending(null)
       toast.push(fill(t('bk_result'), { done: answer.done, failed: answer.failed }), answer.failed ? 'warning' : 'success')
       if (answer.failed) setSummary(answer)
-      selection.clear()
+      selection.stop()                                // the mode ends with the action
       onDone?.(answer)
     } catch (error) {
       toast.push(error.message, 'error')            // the whole request was refused: nothing was done
@@ -141,7 +156,7 @@ export function BulkBar({ selection, actions, labelOf = id => `#${id}`, onDone }
               {actions.map(action => (
                 <Button key={action.key} variant={action.tone === 'danger' ? 'danger' : 'secondary'} className="min-h-[44px] flex-1 sm:flex-none" disabled={busy} onClick={() => setPending(action)}>{action.label}</Button>
               ))}
-              <Button variant="ghost" className="min-h-[44px] flex-1 sm:flex-none" disabled={busy} onClick={selection.clear}>{t('bk_clear')}</Button>
+              <Button variant="ghost" className="min-h-[44px] flex-1 sm:flex-none" disabled={busy} onClick={selection.stop}>{t('bk_stop')}</Button>
             </div>
           </div>
         </div>

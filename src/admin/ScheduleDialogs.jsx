@@ -5,6 +5,7 @@ import { API_URL } from '../config'
 import { useAdminText } from './useAdminText'
 import { dayKey, madridWallClock } from './calendar/calendarConfig'
 import { NOTE_MAX } from './scheduleRequests'
+import RecipientsBox, { SendsTo } from './RecipientsBox'
 import { Button, Drawer, Field, Icon, TextArea, TextInput } from './ui'
 
 // "The client may not have time to answer": the server refused the proposal because there is less notice left than the client
@@ -56,16 +57,19 @@ function ErrorLine({ message }) {
 function RejectBody({ item, busy, error, onClose, onConfirm }) {
   const { t } = useAdminText()
   const [note, setNote] = useState('')
+  const [extra, setExtra] = useState([])
   return (
     <Drawer
       open onClose={onClose} busy={busy} title={t('sch_reject_title')} subtitle={item ? subtitleOf(item) : ''}
       footer={<>
         <Button variant="secondary" className="flex-1" onClick={onClose} disabled={busy}>{t('cancel')}</Button>
-        <Button variant="danger" className="flex-[2]" onClick={() => onConfirm(note.trim())} loading={busy}>{busy ? t('sch_rejecting') : t('sch_reject_do')}</Button>
+        <Button variant="danger" className="flex-[2]" onClick={() => onConfirm(note.trim(), extra)} loading={busy}>{busy ? t('sch_rejecting') : t('sch_reject_do')}</Button>
       </>}
     >
       <p className="mb-6 text-sm text-gray-400">{t('sch_reject_sub')}</p>
       <NoteField value={note} onChange={setNote} busy={busy} focus />
+      <RecipientsBox clientEmail={item.client_email} value={extra} onChange={setExtra} disabled={busy} />
+      <SendsTo clientEmail={item.client_email} extra={extra} />
       <ErrorLine message={error} />
     </Drawer>
   )
@@ -84,6 +88,7 @@ function CounterBody({ item, busy, error, onClose, onConfirm }) {
   const [loading, setLoading] = useState(false)
   const [problem, setProblem] = useState('')
   const [note, setNote] = useState('')
+  const [extra, setExtra] = useState([])
   const latest = useRef(0)
 
   const pickDate = async (value) => {
@@ -113,7 +118,7 @@ function CounterBody({ item, busy, error, onClose, onConfirm }) {
       open onClose={onClose} busy={busy} title={t('sch_counter_title')} subtitle={subtitleOf(item)}
       footer={<>
         <Button variant="secondary" className="flex-1" onClick={onClose} disabled={busy}>{t('cancel')}</Button>
-        <Button variant="primary" className="flex-[2]" onClick={() => onConfirm(date, time, note.trim())} loading={busy} disabled={!date || !time}>
+        <Button variant="primary" className="flex-[2]" onClick={() => onConfirm(date, time, note.trim(), extra)} loading={busy} disabled={!date || !time}>
           {busy ? t('sch_counter_sending') : t('sch_counter_do')}
         </Button>
       </>}
@@ -135,6 +140,8 @@ function CounterBody({ item, busy, error, onClose, onConfirm }) {
         </div>
       )}
       <NoteField value={note} onChange={setNote} busy={busy} />
+      <RecipientsBox clientEmail={item.client_email} value={extra} onChange={setExtra} disabled={busy} />
+      <SendsTo clientEmail={item.client_email} extra={extra} />
       <ErrorLine message={error} />
     </Drawer>
   )

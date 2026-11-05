@@ -105,7 +105,7 @@ export const pageText = {
     ms_no_session_day: 'No session on this day.', ms_no_upcoming: 'You have no upcoming sessions.',
     ms_completed_sessions: 'Completed sessions', ms_session_n: 'Session {n}', ms_session: 'Session',
     ms_details: 'Session details', ms_dialog: 'Session details', ms_close: 'Close',
-    ms_date: 'Date', ms_time: 'Time', ms_trainer: 'Trainer', ms_status: 'Status',
+    ms_date: 'Date', ms_time: 'Time', ms_trainer: 'Trainer', ms_status: 'Status', ms_pack: 'Pack',
     ms_new_date: 'New date', ms_new_time: 'New time',
     ms_cancel_confirm: 'Cancel your session on <b>{date}</b> at <b>{time}</b>? This cannot be undone.',
     ms_reschedule: 'Reschedule', ms_cancel_session: 'Cancel session',
@@ -223,6 +223,7 @@ export const pageText = {
     st_second_note: 'We will not send any email to the second person.',
     st_summary: 'Summary', st_price_session: 'Price per session', st_price_total: 'Total', st_sessions: 'Sessions',
     st_price_both: 'one price for both people', st_trial_price: 'Trial session price',
+    st_weeks: '{n} weeks', st_per_week_one: '{n} sessions a week', st_per_week_options: 'choose {list} sessions a week', st_pack_total: 'Pack price {price}',
     st_trial_individual: 'Individual trial session', st_trial_dual: 'Dual trial session',
     st_package: 'Package', st_type_row: 'Type', st_no_price: 'This package has no price yet. Please contact us.',
     st_prices_for: 'Prices for', st_price_loading: 'Loading prices…', st_price_error: 'We could not load the prices.',
@@ -325,6 +326,7 @@ export const pageText = {
     pf_tax_id_other_format: 'The document must be 4 to 20 characters (letters and digits).',
     // Dashboard: several packs
     dash_pack_left: 'left',
+    dash_pack_done: '{done} of {total} sessions done',
   },
 
   es: {
@@ -424,7 +426,7 @@ export const pageText = {
     ms_no_session_day: 'No hay sesión este día.', ms_no_upcoming: 'No tienes sesiones próximas.',
     ms_completed_sessions: 'Sesiones completadas', ms_session_n: 'Sesión {n}', ms_session: 'Sesión',
     ms_details: 'Detalles de la sesión', ms_dialog: 'Detalles de la sesión', ms_close: 'Cerrar',
-    ms_date: 'Fecha', ms_time: 'Hora', ms_trainer: 'Entrenador', ms_status: 'Estado',
+    ms_date: 'Fecha', ms_time: 'Hora', ms_trainer: 'Entrenador', ms_status: 'Estado', ms_pack: 'Pack',
     ms_new_date: 'Nueva fecha', ms_new_time: 'Nueva hora',
     ms_cancel_confirm: '¿Cancelar tu sesión del <b>{date}</b> a las <b>{time}</b>? Esta acción no se puede deshacer.',
     ms_reschedule: 'Reprogramar', ms_cancel_session: 'Cancelar sesión',
@@ -540,6 +542,7 @@ export const pageText = {
     st_second_note: 'No enviaremos ningún email a la segunda persona.',
     st_summary: 'Resumen', st_price_session: 'Precio por sesión', st_price_total: 'Total', st_sessions: 'Sesiones',
     st_price_both: 'un solo precio para las dos personas', st_trial_price: 'Precio de la sesión de prueba',
+    st_weeks: '{n} semanas', st_per_week_one: '{n} sesiones por semana', st_per_week_options: 'elige {list} sesiones por semana', st_pack_total: 'Precio del pack {price}',
     st_trial_individual: 'Sesión de prueba individual', st_trial_dual: 'Sesión de prueba dual',
     st_package: 'Paquete', st_type_row: 'Tipo', st_no_price: 'Este paquete aún no tiene precio. Contáctanos.',
     st_prices_for: 'Precios para', st_price_loading: 'Cargando precios…', st_price_error: 'No pudimos cargar los precios.',
@@ -641,6 +644,7 @@ export const pageText = {
     pf_tax_id_other_format: 'El documento debe tener entre 4 y 20 caracteres (letras y números).',
     // Dashboard: varios packs
     dash_pack_left: 'restantes',
+    dash_pack_done: '{done} de {total} sesiones hechas',
   },
 
   ca: {
@@ -740,7 +744,7 @@ export const pageText = {
     ms_no_session_day: 'No hi ha cap sessió aquest dia.', ms_no_upcoming: 'No tens sessions properes.',
     ms_completed_sessions: 'Sessions completades', ms_session_n: 'Sessió {n}', ms_session: 'Sessió',
     ms_details: 'Detalls de la sessió', ms_dialog: 'Detalls de la sessió', ms_close: 'Tanca',
-    ms_date: 'Data', ms_time: 'Hora', ms_trainer: 'Entrenador', ms_status: 'Estat',
+    ms_date: 'Data', ms_time: 'Hora', ms_trainer: 'Entrenador', ms_status: 'Estat', ms_pack: 'Pack',
     ms_new_date: 'Nova data', ms_new_time: 'Nova hora',
     ms_cancel_confirm: 'Vols cancel·lar la teva sessió del <b>{date}</b> a les <b>{time}</b>? Aquesta acció no es pot desfer.',
     ms_reschedule: 'Reprogramar', ms_cancel_session: 'Cancel·lar sessió',
@@ -856,6 +860,7 @@ export const pageText = {
     st_second_note: 'No enviarem cap correu a la segona persona.',
     st_summary: 'Resum', st_price_session: 'Preu per sessió', st_price_total: 'Total', st_sessions: 'Sessions',
     st_price_both: 'un sol preu per a les dues persones', st_trial_price: 'Preu de la sessió de prova',
+    st_weeks: '{n} setmanes', st_per_week_one: '{n} sessions per setmana', st_per_week_options: 'tria {list} sessions per setmana', st_pack_total: 'Preu del pack {price}',
     st_trial_individual: 'Sessió de prova individual', st_trial_dual: 'Sessió de prova dual',
     st_package: 'Paquet', st_type_row: 'Tipus', st_no_price: 'Aquest paquet encara no té preu. Contacta amb nosaltres.',
     st_prices_for: 'Preus per a', st_price_loading: 'Carregant preus…', st_price_error: 'No hem pogut carregar els preus.',
@@ -957,5 +962,6 @@ export const pageText = {
     pf_tax_id_other_format: 'El document ha de tenir entre 4 i 20 caràcters (lletres i números).',
     // Dashboard: diversos packs
     dash_pack_left: 'restants',
+    dash_pack_done: '{done} de {total} sessions fetes',
   },
 }

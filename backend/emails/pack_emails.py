@@ -162,9 +162,8 @@ class PackEmailResult:
 
 
 def send_pack_summary_email(summary, to_client=True, extra_recipients=()):
-    """Sends the pack email: to the client (if to_client) and, in a second
-    message whose subject names the client, to the extra recipients. Both
-    messages carry the same .ics. Never raises; waits for the answer so the
+    """Sends the pack email to the client and, in BLIND copy of that same message, to the extra recipients (the client does not
+    see them). With no valid client address the extras get it as their own message. Never raises; waits for the answer so the
     caller can tell the admin what happened."""
     result = PackEmailResult()
     try:
@@ -181,8 +180,9 @@ def send_pack_summary_email(summary, to_client=True, extra_recipients=()):
             lang = resolve_client_lang(booking_lang=summary.get("lang"), email=client_email)     # the client's language, one language
             attachment = pack_ics_attachment(summary, lang)
             subject, html, text = build_pack_email(summary, lang=lang)
-            jobs.append(([client_email], send_email_async(client_email, subject, html, text, attachments=[attachment] if attachment else None, kind="pack_summary", lang=lang)))
-        if extras:
+            copies = {"bcc": extras} if extras else {}
+            jobs.append(([client_email, *extras], send_email_async(client_email, subject, html, text, attachments=[attachment] if attachment else None, kind="pack_summary", lang=lang, **copies)))
+        elif extras:
             attachment = pack_ics_attachment(summary, "es")
             subject, html, text = build_pack_email(summary, team_subject=True)               # the team's copy: Spanish
             jobs.append((extras, send_email_async(extras, subject, html, text, attachments=[attachment] if attachment else None, kind="pack_summary_team", lang="es")))

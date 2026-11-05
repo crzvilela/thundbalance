@@ -11,6 +11,8 @@ import os
 import threading
 import unittest
 
+import catalog_testing
+
 import plans_schema
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -92,27 +94,18 @@ class EmailPart(unittest.TestCase):
         self.assertIn("Carrer de Pallars 286\\, Barcelona", ics.replace("\r\n ", ""))
         self.assertLess(ics.index("session-1@"), ics.index("session-2@"))
 
-    def test_sends_client_and_team_messages(self):
+    def test_sends_one_message_to_the_client_with_the_extra_recipients_in_bcc(self):
         result = send_pack_summary_email(sample_summary(), True, ["pt@thundbalance.com", "ANA@example.com", "pt@thundbalance.com"])
         self.assertTrue(result.ok)
         self.assertEqual(result.sent_to, ["ana@example.com", "pt@thundbalance.com"])
-        self.assertEqual(len(RECEIVED), 2)
-        client = next(m for m in RECEIVED if m["to"] == "ana@example.com")
-        team = next(m for m in RECEIVED if m["to"] != "ana@example.com")
-        self.assertEqual(team["to"], "pt@thundbalance.com")
-        self.assertNotIn("Ana", client["subject"])
-        self.assertIn("Ana <García>", team["subject"])
+        self.assertEqual(len(RECEIVED), 1)                                  # ONE message: no separate copy for the team
+        client = RECEIVED[0]
+        self.assertEqual((client["to"], client["bcc"]), ("ana@example.com", "pt@thundbalance.com"))
         self.assertNotIn(" / ", client["subject"])
         self.assertEqual(client["subject"], "Your training pack")           # the summary has no language: English
-        self.assertEqual(team["subject"].split(" — ")[0], "Tu pack de entrenamiento")   # the team's copy: Spanish
-        for message in (client, team):
-            self.assertEqual(len(message["attachments"]), 1)
-            self.assertEqual(message["attachments"][0]["name"], "thundbalance-sesiones.ics")
-            self.assertIn("&lt;García&gt;", message["html"])
-        # same events (same UIDs and times); only the description is written in each reader's language
-        import base64
-        uids = lambda message: [l for l in base64.b64decode(message["attachments"][0]["data"]).decode().splitlines() if l.startswith(("UID:", "DTSTART"))]
-        self.assertEqual(uids(client), uids(team))
+        self.assertEqual(len(client["attachments"]), 1)
+        self.assertEqual(client["attachments"][0]["name"], "thundbalance-sesiones.ics")
+        self.assertIn("&lt;García&gt;", client["html"])
 
     def test_client_switch_off_and_no_recipients(self):
         result = send_pack_summary_email(sample_summary(), False, ["pt@thundbalance.com"])
@@ -178,6 +171,7 @@ class PackFlow(unittest.TestCase):
         cls.trainer_id = (row or cur.fetchone())[0]
         cur.execute(f"INSERT INTO plans (nome, {plans_schema.price_column(cur)}, duracao_meses, duration_weeks) VALUES ('TEST pack 2 weeks', 0, 1, 2) RETURNING id")
         cls.plan_id = cur.fetchone()[0]
+        cls.pack_ids = catalog_testing.make_pair(cur, cls.plan_id)
         cur.execute("INSERT INTO users (nome, email) VALUES ('Ana Test Pack', 'ana.pack.test@example.com') RETURNING id")
         cls.user_id = cur.fetchone()[0]
         conn.commit()
@@ -192,6 +186,7 @@ class PackFlow(unittest.TestCase):
         cur.execute("DELETE FROM sessions WHERE user_id = %s", (cls.user_id,))
         cur.execute("DELETE FROM user_plans WHERE user_id = %s", (cls.user_id,))
         cur.execute("DELETE FROM users WHERE id = %s", (cls.user_id,))
+        catalog_testing.drop(cur)
         cur.execute("DELETE FROM plans WHERE id = %s", (cls.plan_id,))
         conn.commit()
         conn.close()
@@ -220,7 +215,7 @@ class PackFlow(unittest.TestCase):
         start = date.today() + timedelta(days=30)
         while start.weekday() != 0:
             start += timedelta(days=1)
-        base = dict(plan_id=self.plan_id, sessions_per_week=2, preferred_days="Monday,Wednesday",
+        base = dict(pack_id=self.pack_ids["individual"], sessions_per_week=2, preferred_days="Monday,Wednesday",
                     preferred_time="09:00", trainer_id=self.trainer_id, start_date=start.isoformat())
         base.update(changes)
         return main.NewPack(**base)
@@ -243,7 +238,8 @@ class PackFlow(unittest.TestCase):
         self.assertEqual(len(self.events), 4)
         self.assertEqual(sorted(result["email"]["sent_to"]), ["ana.pack.test@example.com", "pt@thundbalance.com"])
         self.assertEqual(result["email"]["failed"], [])
-        self.assertEqual(len(RECEIVED), 2)
+        self.assertEqual(len(RECEIVED), 1)                                 # one message, the extra recipient in BCC
+        self.assertEqual(RECEIVED[0]["bcc"], "pt@thundbalance.com")
         ics = RECEIVED[0]["attachments"][0]["data"]
         import base64
         self.assertEqual(base64.b64decode(ics).decode().count("BEGIN:VEVENT"), 4)
@@ -289,19 +285,20 @@ class PackFlow(unittest.TestCase):
         cur.execute("SELECT calendar_sync_status, calendar_sync_error, google_event_id IS NULL FROM sessions WHERE user_id = %s ORDER BY id", (self.user_id,))
         rows = cur.fetchall()
         conn.close()
-        self.assertEqual([r[0] for r in rows], ["ok", "ok", "failed", "ok"])
-        self.assertEqual(rows[2][1:], ("RuntimeError", True))
+        # the events are created by a few workers at once, so WHICH session is the third call varies: one fails, three are ok
+        self.assertEqual(sorted(r[0] for r in rows), ["failed", "ok", "ok", "ok"])
+        self.assertEqual([r[1:] for r in rows if r[0] == "failed"], [("RuntimeError", True)])
         # the event ids are deterministic and distinct
         self.assertEqual(len(set(calls)), 4)
         self.assertTrue(all(c and c.startswith("tb") and len(c) == 18 for c in calls))
 
-    def test_client_switch_off_sends_only_to_extras(self):
+    def test_the_client_always_gets_the_email_even_if_an_older_caller_switches_it_off(self):
         if not self.plan_id:
             self.skipTest("no 2-week plan in the local database")
         result = endpoint("/admin/clients/{client_id}/renew-pack", "POST")(
-            self.user_id, self.payload(email_client=False, email_extra=["pt@thundbalance.com"]))
-        self.assertEqual(result["email"]["sent_to"], ["pt@thundbalance.com"])
-        self.assertIn("Ana Test Pack", RECEIVED[0]["subject"])
+            self.user_id, self.payload(email_client=False, extra_recipients=["pt@thundbalance.com"]))
+        self.assertEqual(result["email"]["sent_to"], ["ana.pack.test@example.com", "pt@thundbalance.com"])
+        self.assertEqual((RECEIVED[0]["to"], RECEIVED[0]["bcc"]), ("ana.pack.test@example.com", "pt@thundbalance.com"))
 
     def test_approving_a_request_uses_the_same_creation_and_email(self):
         if not self.plan_id:

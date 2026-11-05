@@ -1,16 +1,13 @@
-"""The ONE source of prices, and the session type (individual | dual).
+"""Session type (individual | dual) and the TRIAL prices. The prices of the PACKS live in the catalogue (pack_catalog.py).
 
-Prices are EUR PER SESSION and live in the `pricing` table, seeded once from SEED below (idempotent: a row that
-already exists is never overwritten, so a price edited in the database stays). Nothing else in the backend or the
-site holds a price: the server always works the price out from (kind, session type, months) and never trusts a
-value sent by the browser; the site reads the table through GET /pricing.
+Trial prices are EUR per session and live in the small `pricing` table (kind 'trial', months 0), seeded once from SEED
+below (idempotent: a row that already exists is never overwritten) and edited from Admin > Packs. The server always works
+the price out from there and never trusts a value sent by the browser; the site reads them through GET /pricing.
 
-    pack   months 1 | 3 | 6   individual 65 | 60 | 55      dual 80 | 75 | 70 (one price for BOTH people)
-    trial  (months 0)         individual 40                dual 50
+    trial  individual 40    dual 50
 
-Total of a pack = price per session x total number of sessions of the pack. The price per session and the total
-are stored on the pack (user_plans) when it is created: packs that already exist keep what they have (their columns
-stay empty) and nothing is ever recalculated.
+(The `pricing` table also still holds the old per-duration pack prices. They are no longer read: the catalogue was seeded
+from them once, and they are left as they were.)
 
 A DUAL session is two people in the same session, same hour, same trainer. The second person's name and email are
 required and kept on the pack / request / trial; nothing is ever sent to the second person.
@@ -26,10 +23,8 @@ SESSION_TYPES = (INDIVIDUAL, DUAL)
 PACK, TRIAL = "pack", "trial"
 TRIAL_MONTHS = 0          # a trial has no duration; 0 is its row in the table
 
-# (kind, session type, months, EUR per session)
+# (kind, session type, months, EUR per session): only the trial prices are seeded here
 SEED = (
-    (PACK, INDIVIDUAL, 1, 65), (PACK, INDIVIDUAL, 3, 60), (PACK, INDIVIDUAL, 6, 55),
-    (PACK, DUAL, 1, 80), (PACK, DUAL, 3, 75), (PACK, DUAL, 6, 70),
     (TRIAL, INDIVIDUAL, TRIAL_MONTHS, 40), (TRIAL, DUAL, TRIAL_MONTHS, 50),
 )
 
@@ -111,66 +106,14 @@ def second_person(session_type, name, email):
         raise validators.http_error(error) from None
 
 
-def price_per_session(cursor, kind, session_type, months):
-    """EUR per session for (kind, type, months), or None when no price is defined."""
+def trial_price(cursor, session_type):
+    """EUR of a trial session (None when the table has no row for it)."""
     cursor.execute(
         "SELECT price FROM pricing WHERE kind = %s AND session_type = %s AND months = %s",
-        (kind, session_type, months if kind == PACK else TRIAL_MONTHS),
+        (TRIAL, session_type, TRIAL_MONTHS),
     )
     row = cursor.fetchone()
     return row[0] if row else None
-
-
-def pack_quote(cursor, session_type, months, total_sessions):
-    """{"price_per_session", "total_price"} of a pack of `months` months with `total_sessions` sessions, worked out
-    here and nowhere else. A duration without a price is a 422 (no price is ever invented)."""
-    price = price_per_session(cursor, PACK, session_type, months)
-    if price is None:
-        raise HTTPException(status_code=422, detail={
-            "code": "price_missing", "field": "plan_id",
-            "message": f"No hay precio definido para {months} mes(es) ({session_type}). / No price is defined for {months} month(s) ({session_type}).",
-        })
-    return {"price_per_session": price, "total_price": price * int(total_sessions)}
-
-
-def trial_price(cursor, session_type):
-    """EUR of a trial session (None when the table has no row for it)."""
-    return price_per_session(cursor, TRIAL, session_type, TRIAL_MONTHS)
-
-
-def catalog(cursor):
-    """Everything the site needs to show prices:
-    {"packs": {"individual": {"1": 65, ...}, "dual": {...}}, "trial": {"individual": 40, "dual": 50}, "months": [1, 3, 6]}"""
-    cursor.execute("SELECT kind, session_type, months, price FROM pricing ORDER BY months")
-    packs = {kind: {} for kind in SESSION_TYPES}
-    trial = {}
-    months = set()
-    for kind, session_type, count, price in cursor.fetchall():
-        if kind == PACK and session_type in packs:
-            packs[session_type][str(count)] = number(price)
-            months.add(count)
-        elif kind == TRIAL:
-            trial[session_type] = number(price)
-    return {"packs": packs, "trial": trial, "months": sorted(months)}
-
-
-def unpriced_plan_months(cursor):
-    """Durations (months) of the plans that have no price for some session type: those plans can not be sold."""
-    cursor.execute(
-        """
-        SELECT DISTINCT p.duracao_meses FROM plans p
-        WHERE EXISTS (
-            SELECT 1 FROM unnest(%s::text[]) AS kind_type(session_type)
-            WHERE NOT EXISTS (
-                SELECT 1 FROM pricing x
-                WHERE x.kind = 'pack' AND x.session_type = kind_type.session_type AND x.months = p.duracao_meses
-            )
-        )
-        ORDER BY 1
-        """,
-        (list(SESSION_TYPES),),
-    )
-    return [row[0] for row in cursor.fetchall()]
 
 
 def type_label(session_type, second_name=None):

@@ -220,8 +220,9 @@ export default function BroadcastHistory({ highlight }) {
           <ul className="space-y-3">
             {items.map(item => (
               <li key={item.id} id={`sent-${item.id}`} className="flex items-start gap-1">
-                <span className="pt-4"><RowCheck selection={selection} id={item.id} label={t('bk_select_one').replace('{name}', item.title)} /></span>
-                <button type="button" onClick={() => setOpenId(item.id)} aria-label={fill(t('bx_h_open'), { title: item.title })}
+                <span className={selection.active ? 'pt-4' : ''}><RowCheck selection={selection} id={item.id} label={t('bk_select_one').replace('{name}', item.title)} /></span>
+                <button type="button" onClick={() => (selection.active ? selection.toggle(item.id) : setOpenId(item.id))}
+                  aria-label={selection.active ? t('bk_select_one').replace('{name}', item.title) : fill(t('bx_h_open'), { title: item.title })}
                   className={`block min-w-0 flex-1 rounded-2xl border bg-white/[0.03] p-5 text-left transition hover:border-white/25 hover:bg-white/[0.05] ${FOCUS} ${item.id === highlight ? 'border-emerald-400/60 ring-2 ring-emerald-400/30' : selection.chosen.has(item.id) ? 'border-emerald-400/40' : 'border-white/[0.08]'}`}>
                   <span className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
                     <span className="min-w-0 flex-1 basis-60 text-base font-semibold text-white [overflow-wrap:anywhere]">{item.title}</span>

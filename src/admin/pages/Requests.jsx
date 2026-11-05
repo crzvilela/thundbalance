@@ -1,19 +1,20 @@
 import { useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { adminRequest } from '../api'
-import EmailRecipients from '../EmailRecipients'
-import { recipientsPayload, reportEmailResult, useEmailRecipients } from '../recipientsState'
+import RecipientsBox, { SendsTo } from '../RecipientsBox'
+import { extraBody } from '../recipients'
+import { reportEmailResult } from '../recipientsState'
 import { reportCalendarResult } from '../calendarSync'
 import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { normalizeRequests } from '../requests'
 import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
-import { useBulkSelection } from '../bulk'
+import { useBulkSelection, SELECTING_CLASS, selectableProps } from '../bulk'
 import { PriceBox, TypeBadge } from '../SessionKind'
-import { formatMoney, packPricePerSession, totalPrice } from '../../utils/pricing'
-import { usePricing } from '../../utils/usePricing'
+import { formatMoney, packQuote, packsOfType } from '../../utils/pricing'
 import { firstMismatch, hoursSummary } from '../availability'
+import { OverlapAsk } from '../OverlapWarning'
 import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon, PageHeader,
   SelectInput, Skeleton, TextArea, TextInput
@@ -27,7 +28,7 @@ export default function Requests() {
   const toast = useToast()
   const { requests, requestsResource } = useOutletContext()
   const trainersResource = useAdminResource('/admin/trainer-availability')
-  const plansResource = useAdminResource('/plans')
+  const catalogResource = useAdminResource('/pricing')        // the catalogue: only the packs on sale
   // The layout's list leaves archived requests out; this one has only them.
   const archivedResource = useAdminResource('/admin/client-requests?archived=only')
   const archivedRequests = useMemo(() => normalizeRequests(archivedResource.data), [archivedResource.data])
@@ -40,10 +41,12 @@ export default function Requests() {
   const [form, setForm] = useState({ trainer: '', date: '', plan: '', perWeek: '' })
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
-  const [recipients, setRecipients, resetRecipients] = useEmailRecipients()
+  const [share, setShare] = useState(true)                // the client is a guest of the events in their Google Calendar
+  const [extra, setExtra] = useState([])                  // more recipients of the pack email (BCC); the client always gets it
   const [formError, setFormError] = useState('')
   const [conflicts, setConflicts] = useState([])
-  const [replaceInfo, setReplaceInfo] = useState(null)   // { count, first_date, last_date } the server asked to confirm
+  const [overlaps, setOverlaps] = useState([])            // the client would have two sessions at the same time as another pack
+  const [trainerOk, setTrainerOk] = useState(false)         // the admin already accepted the trainer's collisions
 
   const trainers = useMemo(() => (Array.isArray(trainersResource.data) ? trainersResource.data : []), [trainersResource.data])
 
@@ -54,8 +57,7 @@ export default function Requests() {
     return { trainer, badDay, summary: hoursSummary(trainer, approving.days) }
   }) : []), [trainers, approving])
   const nobodyFits = approving && trainerOptions.length > 0 && trainerOptions.every(option => option.badDay)
-  const plans = useMemo(() => plansResource.data || [], [plansResource.data])
-  const { prices } = usePricing()
+  const packs = useMemo(() => catalogResource.data?.packs || [], [catalogResource.data])
 
   const counts = useMemo(() => ({
     all: requests.length,
@@ -110,7 +112,10 @@ export default function Requests() {
     setForm({ trainer: request.trainerId ? String(request.trainerId) : '', date: '', plan: '', perWeek: String(request.perWeek || 1) })       // the one the client asked for is already chosen
     setFormError('')
     setConflicts([])
-    resetRecipients()
+    setOverlaps([])
+    setTrainerOk(false)
+    setExtra([])
+    setShare(true)
     setApproving(request)
   }
   const openDecline = (request) => {
@@ -119,37 +124,43 @@ export default function Requests() {
     setDeclining(request)
   }
 
-  // How many sessions the approval will create (plan weeks x sessions per week).
-  const sessionEstimate = useMemo(() => {
+  // The type is fixed by the request, so the packs offered are the ones on sale of that type. The pack that will be used is the
+  // one chosen here, else the one the client asked for (a request made before the catalogue is matched by its name).
+  const typePacks = useMemo(() => (approving ? packsOfType({ packs }, approving.sessionType) : []), [packs, approving])
+  const chosenPack = useMemo(() => {
     if (!approving) return null
-    const chosen = form.plan
-      ? plans.find(plan => String(plan[0]) === form.plan)
-      : plans.find(plan => plan[1] === approving.plan)
-    const weeks = chosen?.[4]
-    return weeks && form.perWeek ? weeks * Number(form.perWeek) : null
-  }, [approving, form.plan, form.perWeek, plans])
+    if (form.plan) return typePacks.find(pack => String(pack.id) === form.plan) || null
+    return packs.find(pack => pack.id === approving.catalogPackId) || typePacks.find(pack => pack.name === approving.plan) || null
+  }, [approving, form.plan, packs, typePacks])
+  const perWeekOptions = chosenPack ? chosenPack.sessions_per_week_options : [1, 2, 3, 4, 5, 6, 7]
 
-  // the type is fixed by the request; the price follows the plan that will be used
+  // How many sessions the approval will create (pack weeks x sessions per week) and what it costs.
+  const sessionEstimate = chosenPack && form.perWeek ? chosenPack.weeks * Number(form.perWeek) : null
   const approvalPrice = useMemo(() => {
-    if (!approving) return null
-    const chosen = form.plan ? plans.find(plan => String(plan[0]) === form.plan) : plans.find(plan => plan[1] === approving.plan)
-    const perSession = packPricePerSession(prices, approving.sessionType, chosen?.[2] ?? approving.months)
-    return { perSession, total: totalPrice(perSession, sessionEstimate) }
-  }, [approving, form.plan, plans, prices, sessionEstimate])
+    if (!approving || !chosenPack) return { perSession: null, total: null }
+    const quote = packQuote(chosenPack, form.perWeek)
+    return { perSession: quote.perSession, total: quote.total }
+  }, [approving, chosenPack, form.perWeek])
+  const choosePack = (id) => {
+    const pack = typePacks.find(item => String(item.id) === id)
+    const keep = !pack || pack.sessions_per_week_options.includes(Number(form.perWeek))
+    setForm({ ...form, plan: id, ...(keep ? {} : { perWeek: String(pack.sessions_per_week_options[0]) }) })
+  }
 
-  const approve = async (allowConflicts = false, confirmReplace = false) => {
+  const approve = async (allowConflicts = false, allowOverlaps = false) => {
     if (!form.trainer || !form.date) { setFormError(t('need_trainer_date')); return }
     setBusy(true)
     setFormError('')
     try {
       const result = await adminRequest('POST', '/admin/approve-request', {
-        ...recipientsPayload(recipients),
+        ...extraBody(extra),
+        share_calendar: share,
         request_id: approving.id,
         trainer_id: Number(form.trainer),
         start_date: form.date,
-        allow_conflicts: allowConflicts,
-        confirm_replace: confirmReplace,
-        ...(form.plan ? { plan_id: Number(form.plan) } : {}),
+        allow_conflicts: allowConflicts || trainerOk,
+        allow_overlaps: allowOverlaps,
+        ...(form.plan ? { pack_id: Number(form.plan) } : {}),
         ...(form.perWeek ? { sessions_per_week: Number(form.perWeek) } : {})
       })
       setApproving(null)
@@ -160,7 +171,7 @@ export default function Requests() {
       requestsResource.reload()
     } catch (error) {
       if (error.code === 'conflicts') setConflicts(error.conflicts || [])   // listed in the modal, with "Crear igualmente"
-      else if (error.code === 'replaces_pack') setReplaceInfo(error.detail)  // asks first: N sessions are cancelled
+      else if (error.code === 'client_overlap') setOverlaps(error.detail?.overlaps || [])   // a warning, with "Continuar igualmente"
       else setFormError(error.message || t('action_error'))
     } finally {
       setBusy(false)
@@ -225,7 +236,7 @@ export default function Requests() {
         <ul className="space-y-3">
           {visible.map(request => (
             <li key={request.id}>
-              <Card className={`p-5 transition hover:border-white/20 ${selection.chosen.has(request.id) ? '!border-emerald-400/40' : ''}`}>
+              <Card {...selectableProps(selection, request.id)} className={`p-5 transition hover:border-white/20 ${selection.chosen.has(request.id) ? '!border-emerald-400/40' : ''} ${selection.active ? SELECTING_CLASS : ''}`}>
                 <div className="flex flex-wrap items-center gap-4">
                   <RowCheck selection={selection} id={request.id} label={t('bk_select_one').replace('{name}', request.client)} />
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400/25 to-emerald-700/10 text-base font-semibold text-emerald-200">
@@ -283,14 +294,6 @@ export default function Requests() {
         onConfirm={archive} onCancel={() => setArchiving(null)}
       />
 
-      <ConfirmDialog
-        open={!!replaceInfo} busy={busy} tone="danger" icon="calendar"
-        title={t('pk_replace_title')}
-        text={replaceInfo ? `${t('pk_replace_text')} ${replaceInfo.count} (${replaceInfo.first_date} → ${replaceInfo.last_date})` : ''}
-        confirmLabel={t('pk_replace_ok')} cancelLabel={t('cancel')}
-        onConfirm={() => { setReplaceInfo(null); approve(false, true) }} onCancel={() => setReplaceInfo(null)}
-      />
-
       <Drawer
         open={!!approving} onClose={() => setApproving(null)} busy={busy}
         title={t('approve_title')} subtitle={approving ? `${approving.client} · ${approving.plan}` : ''}
@@ -315,14 +318,14 @@ export default function Requests() {
           <TextInput type="date" value={form.date} onChange={event => { setConflicts([]); setForm({ ...form, date: event.target.value }) }} disabled={busy} />
         </Field>
         <Field label={t('package')}>
-          <SelectInput value={form.plan} onChange={event => setForm({ ...form, plan: event.target.value })} disabled={busy}>
+          <SelectInput value={form.plan} onChange={event => choosePack(event.target.value)} disabled={busy}>
             <option value="">{t('package_keep')}{approving ? ` (${approving.plan})` : ''}</option>
-            {plans.map(plan => <option key={plan[0]} value={plan[0]}>{plan[1]}</option>)}
+            {typePacks.map(pack => <option key={pack.id} value={pack.id}>{pack.name}</option>)}
           </SelectInput>
         </Field>
         <Field label={t('frequency')}>
-          <SelectInput value={form.perWeek} onChange={event => setForm({ ...form, perWeek: event.target.value })} disabled={busy}>
-            {[1, 2, 3, 4, 5, 6, 7].map(value => <option key={value} value={value}>{value}</option>)}
+          <SelectInput value={form.perWeek} onChange={event => setForm({ ...form, perWeek: event.target.value })} disabled={busy || perWeekOptions.length === 1}>
+            {perWeekOptions.map(value => <option key={value} value={value}>{value}</option>)}
           </SelectInput>
         </Field>
         </div>
@@ -343,7 +346,7 @@ export default function Requests() {
             )}
             <PriceBox
               title={t('ty_summary')}
-              warning={prices && approvalPrice?.perSession == null ? t('ty_no_price') : undefined}
+              warning={catalogResource.data && approvalPrice?.perSession == null ? t('ty_no_price') : undefined}
               rows={[
                 { label: t('ty_price_session'), value: formatMoney(approvalPrice?.perSession) },
                 { label: t('ty_price_total'), value: formatMoney(approvalPrice?.total), strong: true }
@@ -356,7 +359,8 @@ export default function Requests() {
             {t('will_create')} <strong className="text-base">{sessionEstimate}</strong> {t('sessions_label')}
           </div>
         )}
-        <EmailRecipients value={recipients} onChange={setRecipients} disabled={busy} />
+        <RecipientsBox clientEmail={approving?.clientEmail || ''} value={extra} onChange={setExtra} disabled={busy} shareCalendar={share} onShareCalendar={setShare} />
+        <SendsTo clientEmail={approving?.clientEmail || ''} extra={extra} />
         {busy && <p className="mt-4 text-sm text-amber-300">{t('approving_hint')}</p>}
         {conflicts.length > 0 && (
           <div role="alert" className="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-amber-100">
@@ -368,10 +372,11 @@ export default function Requests() {
             </ul>
             <div className="flex flex-wrap gap-3">
               <Button variant="secondary" onClick={() => setConflicts([])} disabled={busy}>{t('cf_change')}</Button>
-              <Button variant="primary" onClick={() => approve(true)} loading={busy}>{t('cf_create_anyway')}</Button>
+              <Button variant="primary" onClick={() => { setTrainerOk(true); approve(true) }} loading={busy}>{t('cf_create_anyway')}</Button>
             </div>
           </div>
         )}
+        <OverlapAsk overlaps={overlaps} busy={busy} onChange={() => setOverlaps([])} onContinue={() => { setOverlaps([]); approve(trainerOk, true) }} />
         {formError && <p role="alert" className="mt-4 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{formError}</p>}
       </Drawer>
 

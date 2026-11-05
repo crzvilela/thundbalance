@@ -164,7 +164,8 @@ def session_description(client_name, client_email, client_phone, session_date, s
         ("Horario", _hours_text(session_time)),
         ("Entrenador", trainer_name),
         ("Pack", pack),
-        ("Tipo", type_line(session_type, second_person_name)),
+        # the type is always said (several packs can run at once, so the event tells which one it is)
+        ("Tipo", type_line(session_type, second_person_name) or "Individual"),
     ])
 
 

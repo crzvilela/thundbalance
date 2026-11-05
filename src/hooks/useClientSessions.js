@@ -13,10 +13,12 @@ import { madridNow, sessionStatus } from '../utils/sessionDates'
 // sessions, the open trial session, the pending pack request, their change requests and the rules the server states.
 // Shared by My Sessions and the dashboard calendar, so both show the same thing the same way.
 
-// Sessions come as rows: [id, 'YYYY-MM-DD', 'HH:MM:SS', trainerName, status, rescheduled, number]
+// Sessions come as rows: [id, 'YYYY-MM-DD', 'HH:MM:SS', trainerName, status, rescheduled, number, packId, packName]
+// (a client can have several packs at once: every session says which one it belongs to)
 const toSession = (row) => ({
   id: row[0], date: String(row[1]), time: String(row[2]).slice(0, 5),
-  trainer: row[3], status: row[4], rescheduled: !!row[5], number: row[6]
+  trainer: row[3], status: row[4], rescheduled: !!row[5], number: row[6],
+  packId: row[7] ?? null, packName: row[8] || ''
 })
 
 const EMPTY_REQUESTS = { items: [], max_per_session: 1, notice_hours: null, note_max: 300 }

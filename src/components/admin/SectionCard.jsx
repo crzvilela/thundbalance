@@ -6,8 +6,8 @@ import { Icon } from '../../admin/ui'
 export default function SectionCard({ title, actions, collapsible = false, defaultOpen = true, tone = 'neutral', children, className = '' }) {
   const [open, setOpen] = useState(defaultOpen)
   const bodyId = useId()
-  const border = tone === 'amber' ? 'border-amber-400/25 bg-amber-400/5' : 'border-white/[0.08] bg-white/[0.03]'
-  const heading = `text-sm font-medium uppercase tracking-wider ${tone === 'amber' ? 'text-amber-200' : 'text-gray-400'}`
+  const border = tone === 'amber' ? 'border-amber-400/25 bg-amber-400/5' : 'border-transparent bg-white/[0.035]'
+  const heading = `text-xs font-semibold uppercase tracking-wider ${tone === 'amber' ? 'text-amber-200' : 'text-gray-500'}`
   return (
     <section className={`rounded-2xl border p-5 ${border} ${className}`}>
       {(title || actions) && (

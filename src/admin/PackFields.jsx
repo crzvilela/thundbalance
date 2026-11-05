@@ -6,28 +6,34 @@ import { Field, SelectInput, TextInput } from './ui'
 import { Icon } from './ui'
 import { PACK_TIMES as TIMES, packHasDaysAndTime, packMinStart } from './packForm'
 import { PriceBox, SessionTypeFields } from './SessionKind'
-import { formatMoney, packPricePerSession, totalPrice } from '../utils/pricing'
-import { usePricing } from '../utils/usePricing'
+import { OverlapList } from './OverlapWarning'
+import { formatMoney, packQuote, packsOfType } from '../utils/pricing'
 
 // The pack form: type, sessions per week, days, time, start date and trainer,
 // with the number of sessions it will create. Used by "Nuevo pack" and by
 // "Añadir cliente" (state comes from usePackForm).
-export default function PackFields({ form, set, plans, trainers, pack = null, busy = false, preview = null, serverConflicts = null }) {
+export default function PackFields({ form, set, packs, trainers, pack = null, busy = false, preview = null, serverConflicts = null, serverOverlaps = null }) {
   const { t, language, dayFull, dayLabel } = useAdminText()
-  const { prices } = usePricing()
   const today = dateKey(new Date())
   const suggestion = packMinStart(pack)
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
   const ready = packHasDaysAndTime(form)
 
   const toggleDay = (day) => set({ days: form.days.includes(day) ? form.days.filter(item => item !== day) : [...form.days, day] })
-  const chosenPlan = plans.find(plan => String(plan[0]) === form.plan)
-  const estimate = chosenPlan?.[4] && form.perWeek ? chosenPlan[4] * Number(form.perWeek) : null
-  // The price: the server's own figure when the preview has arrived, otherwise the table's (the server works it out again on save)
-  const sessionsCount = preview?.data?.total_sessions ?? estimate
-  const perSession = preview?.data ? preview.data.price_per_session : packPricePerSession(prices, form.type, chosenPlan?.[2])
-  const total = preview?.data ? preview.data.total_price : totalPrice(perSession, sessionsCount)
-  const priceMissing = !!chosenPlan && !!prices && perSession == null
+  // Only the packs ON SALE of the chosen type (archived ones are not offered); the sessions per week are the ones the pack offers
+  const typePacks = useMemo(() => packsOfType({ packs }, form.type), [packs, form.type])
+  const chosenPack = typePacks.find(pack => String(pack.id) === form.plan)
+  const perWeekOptions = chosenPack ? chosenPack.sessions_per_week_options : [1, 2, 3, 4, 5, 6, 7]
+  const quote = packQuote(chosenPack, form.perWeek)
+  const estimate = quote.sessions || null
+  // The price: the server's own figure when the preview has arrived, otherwise the catalogue's (the server works it out again on save)
+  const perSession = preview?.data ? preview.data.price_per_session : quote.perSession
+  const total = preview?.data ? preview.data.total_price : quote.total
+  const choosePack = (id) => {
+    const pack = typePacks.find(item => String(item.id) === id)
+    const keep = pack && pack.sessions_per_week_options.includes(Number(form.perWeek))
+    set({ plan: id, ...(pack && !keep ? { perWeek: String(pack.sessions_per_week_options[0]) } : {}) })
+  }
 
   const trainerOptions = useMemo(() => trainers.map(trainer => ({
     trainer,
@@ -40,21 +46,21 @@ export default function PackFields({ form, set, plans, trainers, pack = null, bu
       <SessionTypeFields
         value={{ type: form.type, name: form.secondName, email: form.secondEmail }} disabled={busy}
         onChange={patch => set({
-          ...(patch.type !== undefined ? { type: patch.type } : {}),
+          ...(patch.type !== undefined ? { type: patch.type, plan: '' } : {}),          // each type has its own packs
           ...(patch.name !== undefined ? { secondName: patch.name } : {}),
           ...(patch.email !== undefined ? { secondEmail: patch.email } : {})
         })}
       />
       <div className="grid gap-x-8 md:grid-cols-2">
         <Field label={t('pk_type')}>
-          <SelectInput value={form.plan} onChange={event => set({ plan: event.target.value })} disabled={busy}>
+          <SelectInput value={chosenPack ? form.plan : ''} onChange={event => choosePack(event.target.value)} disabled={busy}>
             <option value="">{t('pk_plan_ph')}</option>
-            {plans.map(plan => <option key={plan[0]} value={plan[0]}>{plan[1]}</option>)}
+            {typePacks.map(pack => <option key={pack.id} value={pack.id}>{pack.name}</option>)}
           </SelectInput>
         </Field>
         <Field label={t('pk_per_week')}>
-          <SelectInput value={form.perWeek} onChange={event => set({ perWeek: event.target.value })} disabled={busy}>
-            {[1, 2, 3, 4, 5, 6, 7].map(value => <option key={value} value={value}>{value}</option>)}
+          <SelectInput value={form.perWeek} onChange={event => set({ perWeek: event.target.value })} disabled={busy || perWeekOptions.length === 1}>
+            {perWeekOptions.map(value => <option key={value} value={value}>{value}</option>)}
           </SelectInput>
         </Field>
       </div>
@@ -102,23 +108,16 @@ export default function PackFields({ form, set, plans, trainers, pack = null, bu
         </SelectInput>
       </Field>
 
-      {chosenPlan && (
+      {chosenPack && (
         <div className="mb-4">
           <PriceBox
             title={t('ty_summary')}
-            warning={priceMissing ? t('ty_no_price') : undefined}
             rows={[
               { label: t('ty_type_row'), value: form.type === 'dual' ? t('ty_dual') : t('ty_individual') },
               { label: t('ty_price_session'), value: formatMoney(perSession) },
               { label: t('ty_price_total'), value: formatMoney(total), strong: true }
             ]}
           />
-        </div>
-      )}
-
-      {preview?.data?.replaces?.count > 0 && (
-        <div role="status" className="mb-4 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-100">
-          {t('pk_replace_note')} <strong className="text-base">{preview.data.replaces.count}</strong> ({preview.data.replaces.first_date} → {preview.data.replaces.last_date})
         </div>
       )}
 
@@ -153,6 +152,7 @@ export default function PackFields({ form, set, plans, trainers, pack = null, bu
           </div>
         )
       })()}
+      <OverlapList overlaps={serverOverlaps || preview?.data?.overlaps || []} />
     </>
   )
 }

@@ -8,6 +8,8 @@ import { useFocusTrap } from '../useFocusTrap'
 import { Badge, Button, ConfirmDialog, Icon } from '../ui'
 import { TypeBadge } from '../SessionKind'
 import RestoreSessionDialog from '../RestoreSessionDialog'
+import RecipientsBox, { SendsTo } from '../RecipientsBox'
+import { extraBody } from '../recipients'
 import { NEUTRAL_COLOR, dayKey, describeWhen, madridWallClock } from './calendarConfig'
 
 const STATUS_TONE = { booked: 'emerald', completed: 'neutral', cancelled: 'red', rescheduled: 'amber', pending: 'amber', approved: 'sky', confirmed: 'emerald', declined: 'red', rejected: 'red' }
@@ -30,6 +32,7 @@ export default function EventDetail({ event, onClose, onChanged }) {
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
   const [mode, setMode] = useState('view')              // view | reschedule
   const [newDate, setNewDate] = useState('')
+  const [extra, setExtra] = useState([])               // more recipients of the e-mail that tells the client about the move (BCC)
   const [newTime, setNewTime] = useState('')
   const [times, setTimes] = useState([])
   const [loadingTimes, setLoadingTimes] = useState(false)
@@ -100,7 +103,7 @@ export default function EventDetail({ event, onClose, onChanged }) {
   const move = async () => {
     setSaving(true); setMessage('')
     try {
-      await adminRequest('POST', `/admin/sessions/${props.sessionId}/reschedule`, { session_date: newDate, session_time: newTime })
+      await adminRequest('POST', `/admin/sessions/${props.sessionId}/reschedule`, { session_date: newDate, session_time: newTime, ...extraBody(extra) })
       toast.push(t('ac_moved'))
       onChanged()
       onClose()
@@ -196,6 +199,8 @@ export default function EventDetail({ event, onClose, onChanged }) {
                     </div>
                   </div>
                 )}
+                <RecipientsBox clientEmail={props.email || ''} value={extra} onChange={setExtra} disabled={saving} />
+                <SendsTo clientEmail={props.email || ''} extra={extra} />
               </div>
             )}
 

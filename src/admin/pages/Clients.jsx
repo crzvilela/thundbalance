@@ -1,12 +1,13 @@
-import { useCallback, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { adminRequest } from '../api'
 import { useAdminText } from '../useAdminText'
 import { useFeatures } from '../../api/features'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { dateKey, parseDateKey } from '../requests'
-import { NewPackDrawer, PackSummary, TrainingCalendar } from '../PackPanel'
+import { formatMoney } from '../../utils/pricing'
+import { NewPackDrawer, TrainingCalendar } from '../PackPanel'
 import { ClientAvatar, ClientRow } from '../ClientRows'
 import { TypeBadge } from '../SessionKind'
 import PackHistory from '../PackHistory'
@@ -14,7 +15,6 @@ import AddClientDrawer from '../AddClientDrawer'
 import BillingSection from '../BillingSection'
 import { Tabs, TabPanel } from '../../components/admin/Tabs'
 import DetailHeader, { MoreMenu } from '../../components/admin/DetailHeader'
-import StatChip from '../../components/admin/StatChip'
 import SectionCard from '../../components/admin/SectionCard'
 import { formatPhone, toE164 } from '../../utils/validators'
 import { ADMIN_EMAIL } from '../../config'
@@ -22,7 +22,7 @@ import { auth } from '../../firebase/auth'
 import { ArchiveDialog, DeleteDialog } from '../ClientLifecycleDialogs'
 import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
 import RestoreSessionDialog from '../RestoreSessionDialog'
-import { useBulkSelection } from '../bulk'
+import { useBulkSelection, SELECTING_CLASS, selectableProps } from '../bulk'
 import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Icon,
   PageHeader, Skeleton, TextInput
@@ -44,7 +44,9 @@ function ProgressBar({ done, total }) {
   )
 }
 
-const TAB_IDS = ['resumen', 'sesiones', 'packs', 'historial', 'datos', 'facturacion', 'actividad']
+const TAB_IDS = ['resumen', 'packs', 'sesiones', 'datos', 'facturacion']
+// links and bookmarks from before the tabs were merged: the history lives in Packs, the activity in Resumen
+const LEGACY_TABS = { historial: 'packs', actividad: 'resumen' }
 const TAB_PREFIX = 'client-file'
 const sessionKey = session => session.id
 
@@ -57,16 +59,18 @@ function Detail({ label, children, wide = false }) {
   )
 }
 
-function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
+function ClientDrawer({ clientId, packs, trainers, onClose, onChanged }) {
   const { t, language } = useAdminText()
   const toast = useToast()
   const { clientCalendar } = useFeatures()      // CLIENT_CALENDAR_ENABLED: the client's calendar link and state
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   const detail = useAdminResource(`/admin/clients/${clientId}`)
   const [cancelTarget, setCancelTarget] = useState(null)
   const [cancelling, setCancelling] = useState(false)
   const [restoreTarget, setRestoreTarget] = useState(null)          // a cancelled session being restored
-  const [creatingPack, setCreatingPack] = useState(false)
+  // a link from the list (the "···" menu of a row) can ask for an action: the dialogs open when the file has loaded
+  const [creatingPack, setCreatingPack] = useState(() => searchParams.get('action') === 'newpack')
   const [resending, setResending] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [copyingLink, setCopyingLink] = useState(false)
@@ -74,7 +78,7 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
   const [editingBilling, setEditingBilling] = useState(null)   // null = follow billing_missing
   const [showDocument, setShowDocument] = useState(false)
   const [pendingLeave, setPendingLeave] = useState(null)       // a tab id, or '__close'
-  const [lifecycle, setLifecycle] = useState(null)             // 'archive' | 'delete'
+  const [lifecycle, setLifecycle] = useState(() => (['archive', 'delete'].includes(searchParams.get('action')) ? searchParams.get('action') : null))   // 'archive' | 'delete'
   const [restoring, setRestoring] = useState(false)
 
   const client = detail.data
@@ -110,21 +114,18 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
   const billingMissing = client ? [!client.tax_id && 'doc', !client.address && 'address', !client.country && 'country'].filter(Boolean) : []
 
   // ---------------------------------------------------------------- tabs
-  const hasActivity = !!client && ((clientCalendar && client.calendar_feed_generated) || client.must_change_password || failedSync + okSync + pendingSync > 0)
-  const tabs = useMemo(() => {
-    const list = [
-      { id: 'resumen', label: t('fx_tab_summary'), icon: 'overview' },
-      { id: 'sesiones', label: t('fx_tab_sessions'), icon: 'calendar' },
-      { id: 'packs', label: t('fx_tab_packs'), icon: 'bolt' },
-      { id: 'historial', label: t('fx_tab_history'), icon: 'doc' },
-      { id: 'datos', label: t('fx_tab_personal'), icon: 'clients' },
-      { id: 'facturacion', label: t('fx_tab_billing'), icon: 'doc', alert: billingMissing.length > 0, alertLabel: t('bl_missing') },
-    ]
-    if (hasActivity) list.push({ id: 'actividad', label: t('fx_tab_activity'), icon: 'pulse', alert: failedSync > 0, alertLabel: t('cs_session_warning') })
-    return list
-  }, [t, hasActivity, failedSync, billingMissing.length])
-  const requested = searchParams.get('tab')
-  const activeTab = TAB_IDS.includes(requested) && tabs.some(tab => tab.id === requested) ? requested : 'resumen'
+  // Resumen, Packs (the active ones first, then the history), Sesiones, Datos, Billing. The state of the calendar sync, which
+  // used to have a tab of its own, is a card of Resumen.
+  const hasActivity = !!client && ((clientCalendar && client.calendar_feed_generated) || failedSync + okSync + pendingSync > 0)
+  const tabs = useMemo(() => [
+    { id: 'resumen', label: t('fx_tab_summary'), icon: 'overview', alert: failedSync > 0, alertLabel: t('cs_session_warning') },
+    { id: 'packs', label: t('fx_tab_packs'), icon: 'bolt' },
+    { id: 'sesiones', label: t('fx_tab_sessions'), icon: 'calendar' },
+    { id: 'datos', label: t('fx_tab_personal'), icon: 'clients' },
+    { id: 'facturacion', label: t('fx_tab_billing'), icon: 'doc', alert: billingMissing.length > 0, alertLabel: t('bl_missing') },
+  ], [t, failedSync, billingMissing.length])
+  const requested = LEGACY_TABS[searchParams.get('tab')] || searchParams.get('tab')
+  const activeTab = TAB_IDS.includes(requested) ? requested : 'resumen'
 
   const applyTab = (id) => {
     setSearchParams(previous => {
@@ -148,11 +149,16 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
     setPendingLeave(null)
     setBillingDirty(false)
     if (target === '__close') onClose()
+    else if (target === '__message') openMessage()
     else if (target) applyTab(target)
   }
   const editing = editingBilling ?? !!client?.billing_missing
 
   // ------------------------------------------------------------- actions
+  // "Enviar mensaje": the composer of Mensajes enviados with this client already chosen
+  const openMessage = () => navigate(`/admin/sent-messages?to=${encodeURIComponent(client.email)}&name=${encodeURIComponent(client.name || '')}`)
+  const sendMessage = () => { if (billingDirty) setPendingLeave('__message'); else openMessage() }
+
   const copyCalendarLink = async () => {
     setCopyingLink(true)
     try {
@@ -231,7 +237,6 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
 
   // ------------------------------------------------------------- pieces
   const phoneText = client?.phone ? formatPhone(client.phone, client.country_code) : ''
-  const mainPack = client?.pack || null
   const meta = client && (
     <>
       <a href={`mailto:${client.email}`} className="inline-flex min-h-[32px] items-center truncate hover:text-emerald-300">{client.email}</a>
@@ -251,17 +256,13 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
   const badges = client && (
     <>
       {archivedClient && <Badge tone="amber">{t('lc_archived_badge')}</Badge>}
-      {mainPack ? <Badge tone="emerald">{mainPack.name}</Badge> : <Badge>{t('cl_no_plan')}</Badge>}
-      {mainPack && <TypeBadge type={mainPack.session_type} secondName={mainPack.second_person_name} />}
+      {shownPacks.length === 0
+        ? <Badge>{t('cl_no_plan')}</Badge>
+        : shownPacks.map(pack => <Badge key={pack.id} tone="emerald">{pack.name}{pack.session_type === 'dual' ? ` · ${t('ty_dual')}` : ''}</Badge>)}
+      {shownPacks.some(pack => pack.status === 'expiring' || pack.status === 'expired') && (
+        <Badge tone={shownPacks.every(pack => pack.status === 'expired') ? 'red' : 'amber'}>{t(`pk_status_${shownPacks.some(pack => pack.status === 'expired') ? 'expired' : 'expiring'}`)}</Badge>
+      )}
       {client.must_change_password && <Badge tone="amber">{t('fx_temp_badge')}</Badge>}
-    </>
-  )
-  const chips = client && (
-    <>
-      <StatChip label={t('cl_sessions')} value={`${done}/${active.length}`} tone="emerald" />
-      <StatChip label={t('fx_next_session')} value={nextSession ? `${fmtDate(nextSession.date, { day: 'numeric', month: 'short' })} · ${nextSession.time}` : t('cl_no_next')} />
-      <StatChip label={t('fx_active_pack')} value={mainPack ? `${mainPack.remaining} ${t('pk_left')}` : t('fx_none')} />
-      <StatChip label={t('fx_last_session')} value={lastSession ? fmtDate(lastSession.date, { day: 'numeric', month: 'short' }) : t('fx_none')} />
     </>
   )
   const restore = async () => {
@@ -277,23 +278,28 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
       setRestoring(false)
     }
   }
+  // The main actions are visible (New pack, send a message, archive / restore); the rest go in the "···" menu.
   const menuItems = client ? [
-    { label: t('fx_edit_data'), icon: 'clients', onClick: () => goTab('datos') },
-    { label: t('cc_resend'), icon: 'refresh', onClick: resend, disabled: resending, hidden: !client.must_change_password },
-    { label: syncing ? t('cs_syncing') : t('cs_button'), icon: 'calendar', onClick: syncCalendar, disabled: syncing },
     { label: t('cal_copy'), icon: 'copy', onClick: copyCalendarLink, disabled: copyingLink, hidden: !clientCalendar },
-    { label: t('lc_archive_menu'), icon: 'archive', onClick: () => setLifecycle('archive'), hidden: archivedClient || protectedClient },
-    { label: t('lc_unarchive'), icon: 'refresh', onClick: restore, disabled: restoring, hidden: !archivedClient || protectedClient },
     { label: t('lc_delete_menu'), icon: 'alert', onClick: () => setLifecycle('delete'), danger: true, hidden: protectedClient },
   ] : []
   const actions = client && (
     <>
-      <Button variant={shownPacks.length === 0 || shownPacks.every(pack => pack.status === 'expired' || pack.status === 'expiring') ? 'primary' : 'secondary'} onClick={() => setCreatingPack(true)}>
-        {t('fx_new_pack')}
-      </Button>
+      <Button variant="primary" onClick={() => setCreatingPack(true)}><Icon name="plus" className="h-4 w-4" />{t('fx_new_pack')}</Button>
+      <Button variant="secondary" onClick={sendMessage}><Icon name="send" className="h-4 w-4" />{t('fx_send_message')}</Button>
+      {!protectedClient && (archivedClient
+        ? <Button variant="secondary" onClick={restore} loading={restoring}>{t('lc_unarchive')}</Button>
+        : <Button variant="secondary" onClick={() => setLifecycle('archive')}>{t('lc_archive_menu')}</Button>)}
       <MoreMenu items={menuItems} label={t('fx_more')} />
     </>
   )
+
+  // the wanted action was taken at the start; the address goes back to the plain file
+  const wantedAction = searchParams.get('action')
+  useEffect(() => {
+    if (!wantedAction) return
+    setSearchParams(previous => { const next = new URLSearchParams(previous); next.delete('action'); return next }, { replace: true })
+  }, [wantedAction, setSearchParams])
 
   const sessionList = (
     sessions.length === 0 ? (
@@ -312,10 +318,11 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
                 const cancelled = session.status === 'Cancelled'
                 const past = session.date < today
                 return (
-                  <li key={session.id} className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-5 sm:py-4 ${cancelled || past ? 'opacity-60' : ''} ${sessionSelection.chosen.has(session.id) ? 'bg-emerald-400/[0.05]' : ''}`}>
+                  <li key={session.id} {...selectableProps(sessionSelection, session.id, canCancelSession(session))}
+                    className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-5 sm:py-4 ${cancelled || past ? 'opacity-60' : ''} ${sessionSelection.chosen.has(session.id) ? 'bg-emerald-400/[0.05]' : ''} ${sessionSelection.active && canCancelSession(session) ? SELECTING_CLASS : ''}`}>
                     {canCancelSession(session)
                       ? <RowCheck selection={sessionSelection} id={session.id} label={t('bk_select_one').replace('{name}', `${session.number || ''} ${session.date} ${session.time}`.trim())} />
-                      : <span className="w-11 shrink-0" aria-hidden="true" />}
+                      : (sessionSelection.active ? <span className="w-11 shrink-0" aria-hidden="true" /> : null)}
                     <span className="w-10 text-sm tabular-nums text-gray-500 sm:w-14">{session.number || ''}</span>
                     <span className="min-w-0 flex-1 basis-40">
                       <span className="block text-base font-medium">{parseDateKey(session.date).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
@@ -361,16 +368,16 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
             <div className="sticky top-0 z-10">
               <DetailHeader
                 avatar={<ClientAvatar client={client} size="h-12 w-12 text-base sm:h-16 sm:w-16 sm:text-xl" />}
-                title={client.name} meta={meta} badges={badges} chips={chips} actions={actions}
+                title={client.name} meta={meta} badges={badges} actions={actions}
                 onClose={requestClose} closeLabel={t('fx_close')}
               />
               <Tabs tabs={tabs} value={activeTab} onChange={goTab} label={t('fx_tabs')} idPrefix={TAB_PREFIX}
-                className="border-b border-white/10 bg-[#0b0e0d] px-2 sm:px-6" />
+                className="border-b border-white/[0.08] bg-[#0d1110] px-2 sm:px-6" />
             </div>
 
             <div className="px-4 py-6 sm:px-8 sm:py-8">
               <TabPanel id="resumen" idPrefix={TAB_PREFIX} active={activeTab === 'resumen'}>
-                <div className="grid gap-5 lg:grid-cols-2">
+                <div className="grid gap-4 lg:grid-cols-2">
                   <SectionCard title={t('fx_next_session')}>
                     {nextSession ? (
                       <>
@@ -378,11 +385,12 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
                         <p className="mt-1 text-gray-400">{nextSession.time} · {nextSession.trainer || '—'}</p>
                       </>
                     ) : <p className="text-gray-400">{t('cl_no_next')}</p>}
+                    <p className="mt-4 text-sm text-gray-500">{t('fx_last_session')}: {lastSession ? fmtDate(lastSession.date, { day: 'numeric', month: 'short', year: 'numeric' }) : t('fx_none')}</p>
                   </SectionCard>
                   <SectionCard title={t('cl_progress')}>
-                    <div className="mb-3 flex items-end justify-between">
+                    <div className="mb-3 flex items-end justify-between gap-3">
                       <p className="text-5xl font-semibold tabular-nums">{done}<span className="text-2xl text-gray-500">/{active.length}</span></p>
-                      <p className="text-sm text-gray-500">{done} {t('cl_completed')} · {active.length - done} {t('cl_upcoming')}</p>
+                      <p className="text-right text-sm text-gray-500">{done} {t('cl_completed')} · {active.length - done} {t('cl_upcoming')}</p>
                     </div>
                     <ProgressBar done={done} total={active.length} />
                   </SectionCard>
@@ -394,22 +402,21 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
                     </SectionCard>
                   )}
 
-                  <SectionCard title={t('cl_contact')} className="sm:hidden">
-                    <dl className="grid gap-4">
-                      <Detail label={t('fx_email')}><a href={`mailto:${client.email}`} className="hover:text-emerald-300">{client.email}</a></Detail>
-                      <Detail label={t('cl_phone')}>{phoneText && <a href={`tel:${toE164(client.phone, client.country_code)}`} className="hover:text-emerald-300">{phoneText}</a>}</Detail>
-                      <Detail label={t('fx_city')}>{client.city}</Detail>
-                    </dl>
-                  </SectionCard>
-
-                  <SectionCard title={t('fx_shortcuts')} className="lg:col-span-2">
-                    <div className="flex flex-wrap gap-3">
-                      <Button variant="secondary" onClick={() => goTab('sesiones')}><Icon name="calendar" className="h-4 w-4" />{t('fx_go_sessions')}</Button>
-                      <Button variant="secondary" onClick={() => goTab('packs')}><Icon name="bolt" className="h-4 w-4" />{t('fx_go_packs')}</Button>
-                      <Button variant="secondary" onClick={() => goTab('facturacion')}><Icon name="doc" className="h-4 w-4" />{t('fx_go_billing')}</Button>
-                    </div>
-                  </SectionCard>
+                  {hasActivity && (
+                    <SectionCard title={t('fx_calendar_state')} className="lg:col-span-2">
+                      <ul className="space-y-2.5 text-sm">
+                        {clientCalendar && <li className="flex items-center gap-3 text-gray-300"><Icon name="calendar" className="h-4 w-4 text-gray-500" />{client.calendar_feed_generated ? t('fx_act_calendar_on') : t('fx_act_calendar_off')}</li>}
+                        {okSync > 0 && <li className="flex items-center gap-3 text-emerald-300"><Icon name="check" className="h-4 w-4" />{okSync} {t('fx_act_synced')}</li>}
+                        {pendingSync > 0 && <li className="flex items-center gap-3 text-gray-300"><Icon name="clock" className="h-4 w-4" />{pendingSync} {t('fx_act_pending')}</li>}
+                        {failedSync > 0 && <li className="flex items-center gap-3 text-amber-300"><Icon name="alert" className="h-4 w-4" />{failedSync} {t('fx_act_failed')}</li>}
+                      </ul>
+                    </SectionCard>
+                  )}
                 </div>
+              </TabPanel>
+
+              <TabPanel id="packs" idPrefix={TAB_PREFIX} active={activeTab === 'packs'}>
+                <PackHistory clientId={clientId} version={(client.packs || []).map(pack => pack.id).join('-')} extras={client.packs} />
               </TabPanel>
 
               <TabPanel id="sesiones" idPrefix={TAB_PREFIX} active={activeTab === 'sesiones'}>
@@ -427,18 +434,6 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
                 </div>
               </TabPanel>
 
-              <TabPanel id="packs" idPrefix={TAB_PREFIX} active={activeTab === 'packs'}>
-                <div className="max-w-3xl">
-                  <div className="space-y-6">
-                    <PackSummary packs={shownPacks} onNewPack={() => setCreatingPack(true)} />
-                  </div>
-                </div>
-              </TabPanel>
-
-              <TabPanel id="historial" idPrefix={TAB_PREFIX} active={activeTab === 'historial'}>
-                <PackHistory clientId={clientId} version={(client.packs || []).map(pack => pack.id).join('-')} />
-              </TabPanel>
-
               <TabPanel id="datos" idPrefix={TAB_PREFIX} active={activeTab === 'datos'}>
                 <SectionCard title={t('fx_tab_personal')}
                   actions={<Button variant="secondary" onClick={() => { setEditingBilling(true); goTab('facturacion') }}>{t('fx_edit_address')}</Button>}>
@@ -447,9 +442,6 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
                     <Detail label={t('fx_email')}><a href={`mailto:${client.email}`} className="hover:text-emerald-300">{client.email}</a></Detail>
                     <Detail label={t('cl_phone')}>{phoneText && <a href={`tel:${toE164(client.phone, client.country_code)}`} className="hover:text-emerald-300">{phoneText}</a>}</Detail>
                     <Detail label={t('fx_city')}>{client.city}</Detail>
-                    <Detail label={t('fx_address')} wide>{client.address}</Detail>
-                    <Detail label={t('fx_postal')}>{client.postal_code}</Detail>
-                    <Detail label={t('fx_country')}>{client.country}</Detail>
                   </dl>
                   <p className="mt-5 text-sm text-gray-500">{t('fx_personal_hint')}</p>
                 </SectionCard>
@@ -463,7 +455,6 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
                         <Icon name="alert" className="h-4 w-4 shrink-0" />
                         <span>{t('bl_missing_list').replace('{list}', billingMissing.map(key => t(`bl_miss_${key}`)).join(', '))}</span>
                       </p>
-                      {!editing && <Button variant="secondary" onClick={() => setEditingBilling(true)}>{t('bl_complete')}</Button>}
                     </div>
                   )}
                   <SectionCard title={t('bl_title')}
@@ -498,27 +489,39 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
                       </>
                     )}
                   </SectionCard>
+
+                  {/* every pack is recorded and invoiced on its own: its type, period, price per session and total as sold */}
+                  <SectionCard title={t('bl_packs_title')}>
+                    <p className="mb-4 text-sm text-gray-500">{t('bl_packs_hint')}</p>
+                    {(client.packs || []).length === 0 ? <p className="text-gray-400">{t('pk_none')}</p> : (
+                      <ul className="space-y-3">
+                        {[...client.packs].reverse().map(pack => (
+                          <li key={pack.id} className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+                            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                              <p className="break-words font-semibold">{pack.name}</p>
+                              <TypeBadge type={pack.session_type} secondName={pack.second_person_name} />
+                            </div>
+                            <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+                              <div><dt className="text-gray-500">{t('pk_period')}</dt><dd>{fmtDate(pack.start_date)} → {fmtDate(pack.end_date)}</dd></div>
+                              <div><dt className="text-gray-500">{t('ty_price_session')}</dt><dd className="tabular-nums">{pack.price_per_session != null ? formatMoney(pack.price_per_session) : '—'}</dd></div>
+                              <div><dt className="text-gray-500">{t('ty_price_total')}</dt><dd className="tabular-nums">{pack.total_price != null ? formatMoney(pack.total_price) : '—'}</dd></div>
+                              <div><dt className="text-gray-500">{t('pk_sessions')}</dt><dd className="tabular-nums">{pack.done}/{pack.total}</dd></div>
+                            </dl>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </SectionCard>
                 </div>
               </TabPanel>
 
-              <TabPanel id="actividad" idPrefix={TAB_PREFIX} active={activeTab === 'actividad'}>
-                <SectionCard title={t('fx_tab_activity')}>
-                  <ul className="space-y-3 text-base">
-                    {clientCalendar && <li className="flex items-center gap-3"><Icon name="calendar" className="h-4 w-4 text-gray-500" />{client.calendar_feed_generated ? t('fx_act_calendar_on') : t('fx_act_calendar_off')}</li>}
-                    {okSync > 0 && <li className="flex items-center gap-3 text-emerald-300"><Icon name="check" className="h-4 w-4" />{okSync} {t('fx_act_synced')}</li>}
-                    {pendingSync > 0 && <li className="flex items-center gap-3 text-gray-300"><Icon name="clock" className="h-4 w-4" />{pendingSync} {t('fx_act_pending')}</li>}
-                    {failedSync > 0 && <li className="flex items-center gap-3 text-amber-300"><Icon name="alert" className="h-4 w-4" />{failedSync} {t('fx_act_failed')}</li>}
-                    {client.must_change_password && <li className="flex items-center gap-3 text-amber-200"><Icon name="alert" className="h-4 w-4" />{t('fx_act_temp')}</li>}
-                  </ul>
-                </SectionCard>
-              </TabPanel>
             </div>
           </>
         )}
       </Drawer>
       {creatingPack && client && (
         <NewPackDrawer
-          client={client} pack={client.pack} plans={plans} trainers={trainers}
+          client={client} pack={client.pack} packs={packs} trainers={trainers}
           onClose={() => setCreatingPack(false)}
           onDone={() => { setCreatingPack(false); detail.reload(); onChanged() }}
         />
@@ -543,14 +546,14 @@ function ClientDrawer({ clientId, plans, trainers, onClose, onChanged }) {
         confirmLabel={t('cl_cancel_do')} cancelLabel={t('cl_cancel_keep')}
         onConfirm={cancelSession} onCancel={() => setCancelTarget(null)}
       />
-      {lifecycle === 'archive' && client && (
+      {lifecycle === 'archive' && client && !archivedClient && !protectedClient && (
         <ArchiveDialog
           client={client} futureSessions={upcoming.length}
           onClose={() => setLifecycle(null)}
           onDone={() => { setLifecycle(null); onChanged(); onClose() }}
         />
       )}
-      {lifecycle === 'delete' && client && (
+      {lifecycle === 'delete' && client && !protectedClient && (
         <DeleteDialog
           client={client}
           onClose={() => setLifecycle(null)}
@@ -576,7 +579,7 @@ export default function Clients() {
   const clientsResource = useAdminResource('/admin/clients')
   // Archived clients are left out of the normal list; this one has only them.
   const archivedResource = useAdminResource('/admin/clients?archived=only')
-  const plansResource = useAdminResource('/plans')
+  const packsResource = useAdminResource('/pricing')          // the catalogue: only the packs on sale (and the trial prices)
   const trainersResource = useAdminResource('/admin/trainer-availability')
   const [query, setQuery] = useState('')
   const [shown, setShown] = useState(PAGE_SIZE)                 // how many rows are drawn (50 more each time)
@@ -593,11 +596,44 @@ export default function Clients() {
     return next
   })
   const [adding, setAdding] = useState(false)
+  const navigate = useNavigate()
+  const toast = useToast()
+  // open the file of a client, on a tab, or asking for an action (new pack, archive, delete) once it has loaded
+  const openClient = (id, { tab = '', action = '' } = {}) => setSearchParams(previous => {
+    const next = new URLSearchParams(previous)
+    next.set('client', String(id))
+    if (tab && tab !== 'resumen') next.set('tab', tab)
+    else next.delete('tab')
+    if (action) next.set('action', action)
+    else next.delete('action')
+    return next
+  })
+  const restoreClient = async (client) => {
+    try {
+      await adminRequest('POST', `/admin/clients/${client.id}/unarchive`)
+      toast.push(t('lc_unarchived_ok'))
+      reloadAll()
+    } catch (error) {
+      toast.push(error.message, 'error')
+    }
+  }
+  // the secondary actions of a row (the "···" menu): everything the file offers, one click from the list
+  const rowMenu = (client) => [
+    { label: t('cl_open_file'), icon: 'clients', onClick: () => openClient(client.id) },
+    { label: t('fx_new_pack'), icon: 'bolt', onClick: () => openClient(client.id, { action: 'newpack' }) },
+    { label: t('fx_tab_packs'), icon: 'doc', onClick: () => openClient(client.id, { tab: 'packs' }) },
+    { label: t('fx_tab_sessions'), icon: 'calendar', onClick: () => openClient(client.id, { tab: 'sesiones' }) },
+    { label: t('fx_tab_billing'), icon: 'doc', onClick: () => openClient(client.id, { tab: 'facturacion' }) },
+    { label: t('fx_send_message'), icon: 'send', onClick: () => navigate(`/admin/sent-messages?to=${encodeURIComponent(client.email)}&name=${encodeURIComponent(client.name || '')}`) },
+    { label: t('lc_archive_menu'), icon: 'archive', onClick: () => openClient(client.id, { action: 'archive' }), hidden: !!client.archived_at || !canSelectClient(client) },
+    { label: t('lc_unarchive'), icon: 'refresh', onClick: () => restoreClient(client), hidden: !client.archived_at || !canSelectClient(client) },
+    { label: t('lc_delete_menu'), icon: 'alert', onClick: () => openClient(client.id, { action: 'delete' }), danger: true, hidden: !canSelectClient(client) },
+  ]
 
   const activeClients = useMemo(() => clientsResource.data || [], [clientsResource.data])
   const archivedClients = useMemo(() => archivedResource.data || [], [archivedResource.data])
   const clients = filter === 'archived' ? archivedClients : activeClients
-  const plans = useMemo(() => plansResource.data || [], [plansResource.data])
+  const packs = useMemo(() => packsResource.data?.packs || [], [packsResource.data])
   const trainers = useMemo(() => (Array.isArray(trainersResource.data) ? trainersResource.data : []), [trainersResource.data])
 
   const counts = useMemo(() => ({
@@ -677,11 +713,14 @@ export default function Clients() {
         <>
           <p role="status" className="mb-2 px-1 text-xs text-gray-500">{t(visible.length === 1 ? 'cl_count_one' : 'cl_count_other').replace('{n}', visible.length)}</p>
           <SelectAllRow selection={selection} />
-          <ul className="divide-y divide-white/[0.06] overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02]">
+          <ul className="divide-y divide-white/[0.06] rounded-2xl bg-white/[0.025]">
             {rows.map(client => (
-              <ClientRow key={client.id} client={client} onOpen={setSelectedId} label={t('cl_open').replace('{email}', client.email)}
+              <ClientRow key={client.id} client={client}
+                onOpen={id => (selection.active ? (canSelectClient(client) && selection.toggle(id)) : setSelectedId(id))}
+                label={selection.active ? t('bk_select_one').replace('{name}', client.email) : t('cl_open').replace('{email}', client.email)}
                 selected={selection.chosen.has(client.id)}
-                check={canSelectClient(client) ? <RowCheck selection={selection} id={client.id} label={t('bk_select_one').replace('{name}', client.email)} /> : null} />
+                menu={selection.active ? null : <MoreMenu quiet items={rowMenu(client)} label={t('cl_row_menu').replace('{email}', client.email)} />}
+                check={selection.active && canSelectClient(client) ? <RowCheck selection={selection} id={client.id} label={t('bk_select_one').replace('{name}', client.email)} /> : null} />
             ))}
           </ul>
           {visible.length > rows.length && (
@@ -716,14 +755,14 @@ export default function Clients() {
 
       {adding && (
         <AddClientDrawer
-          plans={plans} trainers={trainers}
+          packs={packs} trainers={trainers}
           onClose={() => setAdding(false)} onCreated={() => reloadAll()}
         />
       )}
 
       {selectedId && (
         <ClientDrawer
-          key={selectedId} clientId={selectedId} plans={plans} trainers={trainers}
+          key={selectedId} clientId={selectedId} packs={packs} trainers={trainers}
           onClose={() => setSelectedId(null)} onChanged={reloadAll}
         />
       )}

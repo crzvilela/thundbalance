@@ -20,6 +20,8 @@ Dates and the limits of a day, week (Monday first) and month are Europe/Madrid.
 No personal data is ever logged here.
 """
 import logging
+
+import pack_view
 import threading
 import time as _time
 from datetime import date as date_type, datetime, timedelta
@@ -455,10 +457,7 @@ def evaluate_grant(cursor, trainer_id, email, admin_email, today=None):
     user = cursor.fetchone()
     with_activity = False
     if user:
-        cursor.execute(
-            "SELECT 1 FROM user_plans WHERE user_id = %s AND active AND (end_date IS NULL OR end_date >= %s) LIMIT 1",
-            (user[0], today),
-        )
+        cursor.execute(f"SELECT 1 FROM user_plans up WHERE up.user_id = %s AND {pack_view.ACTIVE_PACK_CONDITION} LIMIT 1", (user[0],))
         with_activity = cursor.fetchone() is not None
         if not with_activity:
             cursor.execute(

@@ -15,7 +15,9 @@ import calendar_sync
 import event_format
 import google_calendar as gc
 import google_fakes
+import catalog_testing
 import main
+import plans_schema
 import reschedule_requests as rr
 import session_restore
 import trial_confirmation
@@ -63,8 +65,9 @@ class Guests(unittest.TestCase):
         self.google = google_fakes.FakeGoogle().install()
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("INSERT INTO plans (nome, duracao_meses, duration_weeks) VALUES ('TEST guests 2 weeks', 1, 2) RETURNING id")
+        cur.execute(f"INSERT INTO plans (nome, {plans_schema.price_column(cur)}, duracao_meses, duration_weeks) VALUES ('TEST guests 2 weeks', 0, 1, 2) RETURNING id")
         self.plan_id = cur.fetchone()[0]
+        self.pack_id = catalog_testing.make_pair(cur, self.plan_id)['individual']
         cur.execute("INSERT INTO users (nome, email, firebase_uid) VALUES ('Ana María Ruiz', %s, 'uid-guests') RETURNING id", (CLIENT,))
         self.user_id = cur.fetchone()[0]
         conn.commit()
@@ -92,6 +95,7 @@ class Guests(unittest.TestCase):
             cur.execute("DELETE FROM reschedule_requests WHERE user_id = ANY(%s)", (ids,))
             cur.execute("DELETE FROM users WHERE id = ANY(%s)", (ids,))
         cur.execute("DELETE FROM trial_sessions WHERE email LIKE %s", (f"%{DOMAIN}",))
+        catalog_testing.drop(cur)
         cur.execute("DELETE FROM plans WHERE nome LIKE 'TEST guests%'")
         conn.commit()
         conn.close()
@@ -108,9 +112,9 @@ class Guests(unittest.TestCase):
 
     def new_pack(self, share=True, extra=None, per_week=2):
         return call("/admin/clients/{client_id}/renew-pack", self.user_id, main.NewPack(
-            plan_id=self.plan_id, sessions_per_week=per_week, preferred_days=f"{self.weekday}" if per_week == 1 else f"{self.weekday},Thursday",
+            pack_id=self.pack_id, sessions_per_week=per_week, preferred_days=f"{self.weekday}" if per_week == 1 else f"{self.weekday},Thursday",
             preferred_time="10:00", trainer_id=self.trainer_id, start_date=self.first_day.isoformat(), email_client=False,
-            email_extra=extra if extra is not None else [], allow_conflicts=True, confirm_replace=True, share_calendar=share))
+            email_extra=extra if extra is not None else [], allow_conflicts=True, share_calendar=share))
 
     def sessions(self):
         return self.sql("SELECT id, google_event_id, status, session_date FROM sessions WHERE user_id = %s ORDER BY session_date, session_time, id", (self.user_id,))
@@ -166,11 +170,16 @@ class Guests(unittest.TestCase):
         from google_calendar import create_calendar_event_status as installed        # the fake is installed under this name
         self.assertTrue(installed)
         gc.create_calendar_event_status = create
-        plan = self.sql("INSERT INTO plans (nome, duracao_meses, duration_weeks) VALUES ('TEST guests 6 weeks', 3, 6) RETURNING id")[0][0]
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(f"INSERT INTO plans (nome, {plans_schema.price_column(cur)}, duracao_meses, duration_weeks) VALUES ('TEST guests 6 weeks', 0, 3, 6) RETURNING id")
+        pack = catalog_testing.make_pair(cur, cur.fetchone()[0])['individual']
+        conn.commit()
+        conn.close()
         answer = call("/admin/clients/{client_id}/renew-pack", self.user_id, main.NewPack(
-            plan_id=plan, sessions_per_week=2, preferred_days=f"{self.weekday},Thursday", preferred_time="10:00",
+            pack_id=pack, sessions_per_week=2, preferred_days=f"{self.weekday},Thursday", preferred_time="10:00",
             trainer_id=self.trainer_id, start_date=self.first_day.isoformat(), email_client=False, email_extra=[],
-            allow_conflicts=True, confirm_replace=True))
+            allow_conflicts=True))
         self.assertEqual(answer["total_sessions"], 12)
         self.assertEqual(answer["calendar"]["failed"], 1)
         statuses = self.sql("SELECT session_number, calendar_sync_status FROM sessions WHERE user_id = %s ORDER BY id", (self.user_id,))

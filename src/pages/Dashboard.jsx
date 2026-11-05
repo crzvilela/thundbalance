@@ -96,13 +96,31 @@ function Dashboard() {
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <article className={card}><p className="text-gray-400 mb-2">{t('dash_trainer')}</p><h2 className="text-2xl">{[...new Set((workflow.plans || []).map(pack => pack.trainer).filter(Boolean))].join(', ') || workflow.plan?.trainer || workflow.request?.trainer || t('dash_being_assigned')}</h2></article>
           <article className={card}><p className="text-gray-400 mb-2">{t('dash_next_session')}</p><h2 className="text-xl">{nextSession ? new Date(`${nextSession.date}T00:00:00`).toLocaleDateString(locale) : t('dash_to_schedule')}</h2><p className="text-gray-400">{nextSession?.time || ''}</p></article>
-          <article className={card}><p className="text-gray-400 mb-2">{t('dash_package')}</p><h2 className="text-2xl">{(workflow.plans || []).map(pack => (pack.session_type === 'dual' ? `${pack.name} · ${t('st_dual')}` : pack.name)).join(' + ') || workflow.plan?.name || workflow.request?.package || t('dash_assigned_plan')}</h2>{(workflow.plans || []).length > 1 && <ul className="mt-3 space-y-1 text-sm text-gray-400">{workflow.plans.map(pack => <li key={pack.id}>{pack.name}{pack.session_type === 'dual' ? ` · ${t('st_dual')}` : ''} · {pack.remaining} {t('dash_pack_left')}</li>)}</ul>}</article>
           <article className={card}><p className="text-gray-400 mb-2">{t('dash_remaining')}</p><h2 className="text-3xl">{workflow.sessions_remaining}</h2></article>
         </div>
+        {/* one card per active pack, each with its own progress (x of y): packs run side by side */}
+        <ul className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label={t('dash_package')}>
+          {(workflow.plans || []).length === 0
+            ? <li className={card}><p className="text-gray-400 mb-2">{t('dash_package')}</p><h2 className="text-2xl">{workflow.plan?.name || workflow.request?.package || t('dash_assigned_plan')}</h2></li>
+            : workflow.plans.map(pack => {
+              const percent = pack.total ? Math.round((pack.done / pack.total) * 100) : 0
+              return (
+                <li key={pack.id} className={card}>
+                  <p className="text-gray-400 mb-2">{t('dash_package')}{pack.session_type === 'dual' ? ` · ${t('st_dual')}` : ''}</p>
+                  <h2 className="text-2xl break-words">{pack.name}</h2>
+                  <p className="mt-3 text-sm text-gray-300 tabular-nums">{t('dash_pack_done', { done: pack.done, total: pack.total })} · {pack.remaining} {t('dash_pack_left')}</p>
+                  <div role="progressbar" aria-valuemin={0} aria-valuemax={pack.total} aria-valuenow={pack.done} aria-label={t('dash_pack_done', { done: pack.done, total: pack.total })} className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
+                    <div className="h-full rounded-full bg-emerald-400" style={{ width: `${percent}%` }} />
+                  </div>
+                  {pack.end_date && <p className="mt-2 text-xs text-gray-500">{new Date(`${pack.start_date || pack.end_date}T00:00:00`).toLocaleDateString(locale)} → {new Date(`${pack.end_date}T00:00:00`).toLocaleDateString(locale)}</p>}
+                </li>
+              )
+            })}
+        </ul>
         <div className="mb-8 grid items-start gap-6 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
         <DashboardCalendar />
         <section className={card}><h2 style={{ fontFamily: 'Bebas Neue' }} className="text-4xl mb-5">{t('dash_upcoming')}</h2>
-          {upcoming.length ? <div className="divide-y divide-white/10">{upcoming.map(session => <div key={session.id} className="py-4 flex flex-wrap justify-between gap-2"><span>{new Date(`${session.date}T00:00:00`).toLocaleDateString(locale)}</span><span className="text-gray-400">{session.time}</span><span className="text-gray-400">{session.trainer || workflow.plan?.trainer || t('dash_trainer_word')}</span><span className="text-green-400">{session.status === 'Booked' ? t('dash_booked') : session.status}</span></div>)}</div> : <p className="text-gray-400">{t('dash_preparing')}</p>}
+          {upcoming.length ? <div className="divide-y divide-white/10">{upcoming.map(session => <div key={session.id} className="py-4 flex flex-wrap justify-between gap-2"><span>{new Date(`${session.date}T00:00:00`).toLocaleDateString(locale)}</span><span className="text-gray-400">{session.time}</span><span className="text-gray-400">{session.trainer || workflow.plan?.trainer || t('dash_trainer_word')}</span>{(workflow.plans || []).length > 1 && (workflow.plans || []).find(pack => pack.id === session.pack_id) && <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-2.5 py-0.5 text-xs text-sky-200">{(workflow.plans || []).find(pack => pack.id === session.pack_id).name}{session.number ? ` · ${session.number}` : ''}</span>}<span className="text-green-400">{session.status === 'Booked' ? t('dash_booked') : session.status}</span></div>)}</div> : <p className="text-gray-400">{t('dash_preparing')}</p>}
           <button onClick={() => navigate('/my-sessions')} className="mt-6 border border-white/20 px-5 py-3 rounded-lg">{t('dash_view_all')}</button>
         </section>
         </div>

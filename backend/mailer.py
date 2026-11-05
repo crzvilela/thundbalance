@@ -4,7 +4,7 @@ through the same Apps Script channel as every other email, in the background.
 Failures are logged and never raised.
 """
 from client_lang import resolve_client_lang
-from emails import send_email_async
+from emails import client_extra, send_email_async
 from emails.dates import parse_madrid
 from emails.trial_emails import (
     client_trial_approved, client_trial_cancelled, client_trial_confirmed, client_trial_received,
@@ -18,6 +18,9 @@ def _lang(to, lang):
 
 def _send(to, built, kind, lang, reference=None, **options):
     subject, html, text = built[:3]
+    extra = [a for a in client_extra() if a != str(to).strip().lower()]
+    if extra:                                  # the extra recipients the admin added to this action (BCC)
+        options["bcc"] = extra
     return send_email_async(to, subject, html, text, kind=kind, lang=lang, reference=reference, **options)
 
 

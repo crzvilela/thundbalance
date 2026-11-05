@@ -14,6 +14,8 @@ import logging
 import threading
 import unittest
 
+import catalog_testing
+
 import plans_schema
 from contextlib import redirect_stdout
 from datetime import date, timedelta
@@ -121,6 +123,7 @@ class Endpoints(unittest.TestCase):
         cls.trainer_id = (row or cur.fetchone())[0]
         cur.execute(f"INSERT INTO plans (nome, {plans_schema.price_column(cur)}, duracao_meses, duration_weeks) VALUES ('TEST billing 2 weeks', 0, 1, 2) RETURNING id")
         cls.plan_id = cur.fetchone()[0]
+        cls.pack_ids = catalog_testing.make_pair(cur, cls.plan_id)
         conn.commit()
         conn.close()
 
@@ -130,6 +133,7 @@ class Endpoints(unittest.TestCase):
         cls.cleanup()
         conn = get_connection()
         cur = conn.cursor()
+        catalog_testing.drop(cur)
         cur.execute("DELETE FROM plans WHERE id = %s", (cls.plan_id,))
         conn.commit()
         conn.close()
@@ -179,7 +183,7 @@ class Endpoints(unittest.TestCase):
             while start.weekday() != 0:
                 start += timedelta(days=1)
             pack_data = client_accounts.ClientPack(
-                plan_id=self.plan_id, sessions_per_week=1, preferred_days="Monday", preferred_time="09:00",
+                pack_id=self.pack_ids["individual"], sessions_per_week=1, preferred_days="Monday", preferred_time="09:00",
                 trainer_id=self.trainer_id, start_date=start.isoformat())
         out = io.StringIO()
         with redirect_stdout(out):

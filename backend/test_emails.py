@@ -134,8 +134,18 @@ class EmailTests(unittest.TestCase):
         self.assertIn("/trial-session/confirm/TOKEN123?lang=en\"", html)
         self.assertIn("/trial-session/confirm/TOKEN123?action=decline&amp;lang=en", html)
         self.assertIn("Carrer de Pallars 286", html)
-        subject, html, _ = client_trial_received("Ana", datetime(2026, 10, 12, 9))
-        self.assertIn("Monday 12 October 2026, 09:00", html)
+        subject, html, text = client_trial_received("Ana", datetime(2026, 10, 12, 9))
+        self.assertEqual(subject, "We received your request")
+        self.assertIn("Hi Ana,", html)
+        self.assertEqual(text.splitlines()[-2:], ["Best regards,", "David"])             # signed by David
+        for forbidden in ("<img", "<a ", "href=", "<table", "Carrer de Pallars", "@"):    # nothing decorative, no links, no footer
+            self.assertNotIn(forbidden, html)
+        self.assertNotIn("Monday", html)                                                    # the booking is not repeated
+        self.assertEqual(client_trial_received("Ana", None, "es")[0], "Hemos recibido tu solicitud")
+        self.assertEqual(client_trial_received("Ana", None, "ca")[0], "Hem rebut la teva sol·licitud")
+        self.assertIn("Hola Ana,", client_trial_received("Ana", None, "es")[1])
+        self.assertIn("Hola Ana,", client_trial_received("Ana", None, "ca")[1])
+        self.assertTrue(client_trial_received("Ana", None, "ca")[2].rstrip().endswith("Salutacions,\nDavid"))
         subject, html, text, ics = client_trial_confirmed("Ana", datetime(2026, 10, 12, 9), "Carles", 5)
         self.assertIn("UID:trial-5@thundbalance.com", ics)
         self.assertIn("DTSTART:20261012T070000Z", ics)

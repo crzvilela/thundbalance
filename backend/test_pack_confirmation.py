@@ -10,12 +10,16 @@ session. send_email is replaced by a recorder (nothing leaves the machine) and G
 """
 import logging
 import unittest
+
+import catalog_testing
 from datetime import date, timedelta
 from unittest import mock
 
 import google_fakes
 import main
+import pack_catalog
 import packs
+import plans_schema
 import pricing
 from database import get_connection
 from emails.transport import EmailResult
@@ -34,8 +38,8 @@ class Recorder:
     def __init__(self):
         self.sent = []
 
-    def __call__(self, to, subject, html, text, reply_to=None, attachments=None, cc=None, extra=None, kind="", lang="", reference=None):
-        self.sent.append({"to": to, "subject": subject, "html": html, "text": text, "kind": kind, "lang": lang})
+    def __call__(self, to, subject, html, text, reply_to=None, attachments=None, cc=None, extra=None, kind="", lang="", reference=None, bcc=None):
+        self.sent.append({"to": to, "subject": subject, "html": html, "text": text, "kind": kind, "lang": lang, "bcc": bcc})
         return EmailResult(True)
 
     def to(self, address):
@@ -64,13 +68,14 @@ class Confirmation(unittest.TestCase):
         self.addCleanup(patcher.stop)
         conn = get_connection()
         cur = conn.cursor()
-        # a 1-month plan of 3 weeks (the price comes from the pricing table, never from the plan)
-        cur.execute("INSERT INTO plans (nome, duracao_meses, duration_weeks) VALUES ('TEST confirm 3 weeks', 1, 3) RETURNING id")
+        # a plan of 3 weeks, sold from its own catalogue packs (the price comes from the catalogue, never from the plan)
+        cur.execute(f"INSERT INTO plans (nome, {plans_schema.price_column(cur)}, duracao_meses, duration_weeks) VALUES ('TEST confirm 3 weeks', 0, 1, 3) RETURNING id")
         self.plan_id = cur.fetchone()[0]
+        self.pack_ids = catalog_testing.make_pair(cur, self.plan_id)
         cur.execute("INSERT INTO users (nome, email, firebase_uid, lang) VALUES ('Ana Confirm', %s, 'uid-confirm', 'ca') RETURNING id", (f"ana{DOMAIN}",))
         self.user_id = cur.fetchone()[0]
-        self.individual = pricing.pack_quote(cur, "individual", 1, 6)       # 3 weeks x 2 a week = 6 sessions
-        self.dual = pricing.pack_quote(cur, "dual", 1, 6)
+        self.individual = pack_catalog.sale(cur, self.pack_ids["individual"], 2)   # 3 weeks x 2 a week = 6 sessions
+        self.dual = pack_catalog.sale(cur, self.pack_ids["dual"], 2)
         conn.commit()
         conn.close()
         self.monday = next_monday()
@@ -94,6 +99,7 @@ class Confirmation(unittest.TestCase):
             cur.execute("DELETE FROM user_plans WHERE user_id = ANY(%s)", (ids,))
             cur.execute("DELETE FROM client_requests WHERE user_id = ANY(%s)", (ids,))
             cur.execute("DELETE FROM users WHERE id = ANY(%s)", (ids,))
+        catalog_testing.drop(cur)
         cur.execute("DELETE FROM plans WHERE nome LIKE 'TEST confirm%'")
         conn.commit()
         conn.close()
@@ -101,12 +107,12 @@ class Confirmation(unittest.TestCase):
     def route(self, path):
         return next(r for r in main.app.routes if getattr(r, "path", None) == path and "POST" in getattr(r, "methods", ())).endpoint
 
-    def new_pack(self, session_type=None, email_client=True):
-        extra = {"session_type": "dual", "second_person_name": "Beatriz Prueba", "second_person_email": SECOND} if session_type == "dual" else {}
+    def new_pack(self, session_type=None, email_client=True, extra=None):
+        kind = {"session_type": "dual", "second_person_name": "Beatriz Prueba", "second_person_email": SECOND} if session_type == "dual" else {}
         return self.route("/admin/clients/{client_id}/renew-pack")(self.user_id, main.NewPack(
-            plan_id=self.plan_id, sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="10:00",
+            pack_id=self.pack_ids[session_type or "individual"], sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="10:00",
             trainer_id=self.trainer_id, start_date=self.monday.isoformat(), email_client=email_client,
-            allow_conflicts=True, confirm_replace=True, **extra))
+            allow_conflicts=True, allow_overlaps=True, extra_recipients=extra, **kind))
 
     def check_email(self, message, type_word, quote):
         html = message["html"]
@@ -120,13 +126,15 @@ class Confirmation(unittest.TestCase):
 
     # ----- the paths
     def test_a_new_pack_sends_the_confirmation_to_the_client_with_all_the_facts(self):
-        answer = self.new_pack()
+        answer = self.new_pack(extra=[TEAM])
         self.assertEqual(answer["email"]["sent_to"], [f"ana{DOMAIN}", TEAM])
         self.assertEqual(answer["email"]["failed"], [])
         message = self.recorder.to(f"ana{DOMAIN}")[0]
         self.check_email(message, "Individual", self.individual)
         self.assertEqual((message["kind"], message["lang"]), ("pack_summary", "ca"))
-        self.assertEqual(self.recorder.to(TEAM)[0]["lang"], "es")  # the team's copy stays Spanish
+        self.assertEqual(message["bcc"], [TEAM])                      # the extra recipient gets the SAME message in blind copy
+        self.assertEqual(len(self.recorder.sent), 1)                  # no separate copy for the team
+        self.assertNotIn(TEAM, message["html"].replace("pt@thundbalance.com", ""))
 
     def test_a_dual_pack_says_dual_and_the_dual_price(self):
         self.new_pack("dual")
@@ -144,7 +152,7 @@ class Confirmation(unittest.TestCase):
         conn.commit()
         conn.close()
         answer = main.approve_request(main.ApproveRequest(
-            request_id=request_id, trainer_id=self.trainer_id, start_date=self.monday.isoformat(), allow_conflicts=True, confirm_replace=True))
+            request_id=request_id, trainer_id=self.trainer_id, start_date=self.monday.isoformat(), allow_conflicts=True, allow_overlaps=True))
         self.assertIn(f"ana{DOMAIN}", answer["email"]["sent_to"])
         self.check_email(self.recorder.to(f"ana{DOMAIN}")[0], "Individual", self.individual)
 
@@ -177,12 +185,6 @@ class Confirmation(unittest.TestCase):
         self.assertIn("RuntimeError", text)
         self.assertNotIn("ana@x.co", text)
         self.assertNotIn("Ana", text)
-
-    def test_a_replaced_event_that_cannot_be_removed_does_not_stop_the_email(self):
-        with mock.patch("main.remove_replaced_events", side_effect=RuntimeError("calendar down")):
-            answer = self.new_pack()
-        self.assertEqual(answer["message"], "Pack created successfully")
-        self.assertIn(f"ana{DOMAIN}", answer["email"]["sent_to"])
 
     def test_email_pack_alone_never_raises(self):
         self.assertEqual(

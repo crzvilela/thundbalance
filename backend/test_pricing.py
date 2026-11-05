@@ -2,10 +2,10 @@
 
     python -m unittest test_pricing -v
 
-Pack Individual 1/3/6 months = 65/60/55, Dual = 80/75/70, trial 40 individual / 50 dual (EUR per session). The server
-works the price out itself, a dual session needs the second person, old packs are left alone, the Google event says
-"Tipo: Dual (Nombre)" and nothing is sent to the second person. Mail is a local fake server and Google is faked; the
-local database is used and cleaned up.
+Individual | Dual sessions with the prices of the CATALOGUE (the tests make their own packs: 1 and 3 "months", individual
+65/60 and dual 80/75 EUR per session; trial 40 individual / 50 dual). The server works the price out itself, a dual session
+needs the second person, old packs are left alone, the Google event says "Tipo: Dual (Nombre)" and nothing is sent to the
+second person. Mail is a local fake server and Google is faked; the local database is used and cleaned up.
 """
 import json
 import re
@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient
 
 import google_fakes
 import main
+import pack_catalog
 import plans_schema
 import pricing
 from database import get_connection
@@ -77,12 +78,14 @@ class Pricing(unittest.TestCase):
         cur = conn.cursor()
         cur.execute("SELECT id FROM trainers WHERE active ORDER BY id LIMIT 1")
         cls.trainer_id = cur.fetchone()[0]
-        price = plans_schema.price_column(cur)
-        cls.plans = {}
-        for months, weeks in ((1, 2), (3, 12), (7, 4)):         # 7 months has no price
-            cur.execute(f"INSERT INTO plans (nome, {price}, duracao_meses, duration_weeks) VALUES (%s, 0, %s, %s) RETURNING id",
-                        (f"TEST pricing {months}m", months, weeks))
-            cls.plans[months] = cur.fetchone()[0]
+        cls.packs = {}                                          # (type, months) -> catalogue pack id
+        for months, weeks, individual, dual in ((1, 2, 65, 80), (3, 12, 60, 75)):
+            for session_type, price in (("individual", individual), ("dual", dual)):
+                made = pack_catalog.create(cur, {
+                    "name": f"TEST pricing {months}m {session_type}", "session_type": session_type, "weeks": weeks,
+                    "sessions_per_week_options": [1, 2, 3], "price_per_session": price,
+                })
+                cls.packs[(session_type, months)] = made["id"]
         conn.commit()
         conn.close()
 
@@ -92,7 +95,8 @@ class Pricing(unittest.TestCase):
         cls.cleanup()
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("DELETE FROM plans WHERE id = ANY(%s)", (list(cls.plans.values()),))
+        cur.execute("DELETE FROM pack_catalog WHERE name LIKE 'TEST pricing%'")
+        cur.execute("DELETE FROM plans WHERE nome LIKE 'TEST pricing%'")
         conn.commit()
         conn.close()
 
@@ -134,11 +138,14 @@ class Pricing(unittest.TestCase):
         self.cleanup()
 
     # ----- helpers
+    def pack_of(self, session_type, months=3):
+        return self.packs[(session_type if session_type in ("individual", "dual") else "individual", months)]
+
     def new_pack(self, months=3, per_week=2, session_type=None, name=None, email=None, **extra):
         start = weekday_after(10).isoformat()
         return endpoint("/admin/clients/{client_id}/renew-pack", "POST")(self.user_id, main.NewPack(
-            plan_id=self.plans[months], sessions_per_week=per_week, preferred_days="Monday,Wednesday", preferred_time="09:00",
-            trainer_id=self.trainer_id, start_date=start, email_extra=[], allow_conflicts=True, confirm_replace=True,
+            pack_id=self.pack_of(session_type, months), sessions_per_week=per_week, preferred_days="Monday,Wednesday", preferred_time="09:00",
+            trainer_id=self.trainer_id, start_date=start, email_extra=[], allow_conflicts=True, allow_overlaps=True,
             session_type=session_type, second_person_name=name, second_person_email=email, **extra))
 
     def pack_row(self):
@@ -175,45 +182,29 @@ class Pricing(unittest.TestCase):
         conn.close()
         return row
 
-    # ----- the table
-    def test_the_prices_are_the_ones_of_the_brief_and_the_seed_is_idempotent(self):
+    # ----- the prices
+    def test_the_trial_prices_are_seeded_once_and_a_price_edited_in_the_database_survives(self):
         conn = get_connection()
         cur = conn.cursor()
         pricing.ensure_schema(cur)
         pricing.ensure_schema(cur)
-        cur.execute("SELECT kind, session_type, months, price FROM pricing ORDER BY kind, session_type, months")
-        rows = {(a, b, c): float(d) for a, b, c, d in cur.fetchall()}
-        self.assertEqual(rows, {
-            ("pack", "individual", 1): 65, ("pack", "individual", 3): 60, ("pack", "individual", 6): 55,
-            ("pack", "dual", 1): 80, ("pack", "dual", 3): 75, ("pack", "dual", 6): 70,
-            ("trial", "individual", 0): 40, ("trial", "dual", 0): 50,
-        })
-        # a price edited in the database survives the next start
-        cur.execute("UPDATE pricing SET price = 61 WHERE kind = 'pack' AND session_type = 'individual' AND months = 3")
+        self.assertEqual(float(pricing.trial_price(cur, "individual")), 40)
+        self.assertEqual(float(pricing.trial_price(cur, "dual")), 50)
+        cur.execute("UPDATE pricing SET price = 41 WHERE kind = 'trial' AND session_type = 'individual'")
         pricing.ensure_schema(cur)
-        self.assertEqual(float(pricing.price_per_session(cur, "pack", "individual", 3)), 61)
-        cur.execute("UPDATE pricing SET price = 60 WHERE kind = 'pack' AND session_type = 'individual' AND months = 3")
+        self.assertEqual(float(pricing.trial_price(cur, "individual")), 41)
+        cur.execute("UPDATE pricing SET price = 40 WHERE kind = 'trial' AND session_type = 'individual'")
         conn.commit()
         conn.close()
 
-    def test_the_site_reads_the_prices_from_a_public_endpoint(self):
+    def test_the_site_reads_the_catalogue_from_a_public_endpoint(self):
         body = TestClient(main.app).get("/pricing").json()                   # no token: they are the public prices
-        self.assertEqual(body["packs"]["individual"], {"1": 65, "3": 60, "6": 55})
-        self.assertEqual(body["packs"]["dual"], {"1": 80, "3": 75, "6": 70})
+        mine = {item["name"]: item for item in body["packs"] if item["name"].startswith("TEST pricing")}
+        item = mine["TEST pricing 3m individual"]
+        self.assertEqual((item["weeks"], item["price_per_session"], item["session_type"], item["sessions_per_week_options"]),
+                         (12, 60, "individual", [1, 2, 3]))
+        self.assertEqual(mine["TEST pricing 3m dual"]["price_per_session"], 75)
         self.assertEqual(body["trial"], {"individual": 40, "dual": 50})
-        self.assertEqual(body["months"], [1, 3, 6])
-
-    def test_plans_list_shows_the_individual_price_of_the_table(self):
-        rows = {row[2]: row for row in endpoint("/plans", "GET")() if row[1].startswith("TEST pricing")}
-        self.assertEqual(float(rows[3][3]), 60)
-        self.assertIsNone(rows[7][3])                                         # no price for 7 months: none is invented
-
-    def test_durations_without_a_price_are_found(self):
-        conn = get_connection()
-        cur = conn.cursor()
-        self.assertIn(7, pricing.unpriced_plan_months(cur))
-        self.assertNotIn(3, pricing.unpriced_plan_months(cur))
-        conn.close()
 
     # ----- packs
     def test_an_individual_pack_of_3_months_is_60_per_session_and_the_total_is_right(self):
@@ -246,9 +237,9 @@ class Pricing(unittest.TestCase):
     def test_a_price_sent_by_the_browser_is_ignored(self):
         main.app.dependency_overrides[main.require_admin] = lambda: {"email": main.ADMIN_EMAIL, "sub": "uid-admin"}
         body = {
-            "plan_id": self.plans[3], "sessions_per_week": 1, "preferred_days": "Monday", "preferred_time": "09:00",
+            "pack_id": self.pack_of("individual", 3), "sessions_per_week": 1, "preferred_days": "Monday", "preferred_time": "09:00",
             "trainer_id": self.trainer_id, "start_date": weekday_after(10).isoformat(), "email_extra": [],
-            "allow_conflicts": True, "confirm_replace": True,
+            "allow_conflicts": True, "allow_overlaps": True,
             "price_per_session": 1, "total_price": 1, "price": 1, "preco": 1,
         }
         response = TestClient(main.app).post(f"/admin/clients/{self.user_id}/renew-pack", json=body)
@@ -256,10 +247,28 @@ class Pricing(unittest.TestCase):
         self.assertEqual(response.json()["price_per_session"], 60)
         self.assertEqual(self.pack_row()[3:], (60, 720))
 
-    def test_a_duration_without_a_price_is_refused_not_invented(self):
+    def test_an_archived_pack_can_not_be_sold(self):
+        conn = get_connection()
+        cur = conn.cursor()
+        pack_catalog.set_archived(cur, self.pack_of("individual", 1), True)
+        conn.commit()
+        conn.close()
+        try:
+            with self.assertRaises(HTTPException) as error:
+                self.new_pack(months=1)
+            self.assertEqual(code(error), ("pack_archived", "pack_id"))
+            self.assertIsNone(self.pack_row())
+        finally:
+            conn = get_connection()
+            cur = conn.cursor()
+            pack_catalog.set_archived(cur, self.pack_of("individual", 1), False)
+            conn.commit()
+            conn.close()
+
+    def test_sessions_per_week_the_pack_does_not_offer_are_refused(self):
         with self.assertRaises(HTTPException) as error:
-            self.new_pack(months=7)
-        self.assertEqual(code(error), ("price_missing", "plan_id"))
+            self.new_pack(months=3, per_week=4)                               # the test packs offer 1, 2 and 3
+        self.assertEqual(code(error), ("invalid_sessions_per_week", "sessions_per_week"))
         self.assertIsNone(self.pack_row())
 
     def test_a_dual_pack_needs_the_second_person_and_a_valid_email(self):
@@ -285,7 +294,8 @@ class Pricing(unittest.TestCase):
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("INSERT INTO user_plans (user_id, plan_id, active, start_date, end_date) VALUES (%s, %s, TRUE, %s, %s) RETURNING id",
-                    (self.user_id, self.plans[3], date.today() - timedelta(days=5), date.today() + timedelta(days=60)))
+                    (self.user_id, pack_catalog.get(cur, self.pack_of("individual", 3))["plan_id"],
+                     date.today() - timedelta(days=5), date.today() + timedelta(days=60)))
         old_id = cur.fetchone()[0]
         conn.commit()
         pricing.ensure_schema(cur)                                            # the next start of the server
@@ -310,10 +320,11 @@ class Pricing(unittest.TestCase):
             self.assertRegex(event["summary"], r"^Henrique Preco \d+/\d+$")        # the title keeps its format
         self.assertNotIn("beatriz", json.dumps(events).lower().replace("beatriz prueba", ""))   # the email is not in the event
 
-    def test_the_event_of_an_individual_session_is_unchanged(self):
+    def test_the_event_of_an_individual_session_says_individual(self):
         self.new_pack(months=1, per_week=1)
         for event in self.google.events.values():
-            self.assertNotIn("Tipo", event["description"])
+            self.assertIn("Tipo: Individual", event["description"])
+            self.assertIn("Pack: TEST pricing 1m individual", event["description"])           # and which pack it belongs to
 
     # ----- trial sessions
     def test_a_trial_is_40_individual_and_50_dual(self):
@@ -337,13 +348,14 @@ class Pricing(unittest.TestCase):
         client = [m for m in RECEIVED if f"ana{DOMAIN}" in m["to"]]
         team = [m for m in RECEIVED if "pt@thundbalance.com" in m["to"].split(",")]
         self.assertEqual((len(client), len(team)), (1, 1))
-        for message in client + team:
+        for message in team:
             self.assertIn("Dual", message["html"])
             self.assertIn("€50", message["html"])
+        for message in client + team:
             self.assertNotIn(SECOND, message["to"])                            # never written to
         self.assertIn(SECOND, team[0]["html"])                                 # the team does see the second person's email
-        self.assertNotIn(SECOND, client[0]["html"])                            # the client's email only names them
-        self.assertIn("Beatriz Prueba", client[0]["html"])
+        self.assertNotIn(SECOND, client[0]["html"])                            # the client's note is short: it names nobody else
+        self.assertIn("David", client[0]["html"])                              # and it is signed by David
         self.assertFalse([m for m in RECEIVED if SECOND in m["to"] or SECOND in m.get("cc", "") or SECOND in m.get("bcc", "")])
 
     def test_the_pack_email_says_the_type_and_the_price_and_goes_only_to_the_client(self):
@@ -359,19 +371,19 @@ class Pricing(unittest.TestCase):
 
     def new_pack_with_email(self, months, per_week):
         return endpoint("/admin/clients/{client_id}/renew-pack", "POST")(self.user_id, main.NewPack(
-            plan_id=self.plans[months], sessions_per_week=per_week, preferred_days="Monday,Wednesday", preferred_time="09:00",
+            pack_id=self.pack_of("dual", months), sessions_per_week=per_week, preferred_days="Monday,Wednesday", preferred_time="09:00",
             trainer_id=self.trainer_id, start_date=weekday_after(10).isoformat(), email_extra=[], allow_conflicts=True,
-            confirm_replace=True, session_type="dual", second_person_name="Beatriz Prueba", second_person_email=SECOND))
+            allow_overlaps=True, session_type="dual", second_person_name="Beatriz Prueba", second_person_email=SECOND))
 
     # ----- requests
     def test_a_client_request_keeps_its_type_and_approving_it_builds_the_dual_pack(self):
         with mock.patch.object(main, "require_client", lambda authorization=None: {"sub": "uid-pricing", "email": f"hp{DOMAIN}"}):
             create = endpoint("/client-requests", "POST")
             with self.assertRaises(HTTPException) as error:
-                create(main.ClientRequestCreate(plan_id=self.plans[3], sessions_per_week=2, preferred_days="Monday,Wednesday",
+                create(main.ClientRequestCreate(pack_id=self.pack_of("dual", 3), sessions_per_week=2, preferred_days="Monday,Wednesday",
                                                 preferred_time="09:00", session_type="dual"), "Bearer x")
             self.assertEqual(code(error), ("invalid_name", "second_person_name"))
-            create(main.ClientRequestCreate(plan_id=self.plans[3], sessions_per_week=2, preferred_days="Monday,Wednesday",
+            create(main.ClientRequestCreate(pack_id=self.pack_of("dual", 3), sessions_per_week=2, preferred_days="Monday,Wednesday",
                                             preferred_time="09:00", session_type="dual", second_person_name="Beatriz Prueba",
                                             second_person_email=SECOND), "Bearer x")
         rows = [row for row in endpoint("/admin/client-requests", "GET")() if row[1] == "Henrique Preco"]
@@ -380,19 +392,15 @@ class Pricing(unittest.TestCase):
         self.assertEqual((row[9], row[10], row[11], row[12]), ("dual", "Beatriz Prueba", SECOND, 3))      # type, second person, plan months
         result = endpoint("/admin/approve-request", "POST")(main.ApproveRequest(
             request_id=row[0], trainer_id=self.trainer_id, start_date=weekday_after(10).isoformat(), email_extra=[],
-            email_client=False, allow_conflicts=True, confirm_replace=True))
+            email_client=False, allow_conflicts=True, allow_overlaps=True))
         self.assertEqual(result["total_sessions"], 24)
         self.assertEqual(self.pack_row(), ("dual", "Beatriz Prueba", SECOND, 75, 1800))
 
     def test_the_preview_shows_the_price_and_the_lists_show_the_label(self):
         preview = endpoint("/admin/packs/preview", "POST")(main.PackPreview(
-            client_id=self.user_id, plan_id=self.plans[3], sessions_per_week=2, preferred_days="Monday,Wednesday",
-            preferred_time="09:00", trainer_id=self.trainer_id, start_date=weekday_after(10).isoformat(), session_type="dual"))
-        self.assertEqual((preview["price_per_session"], preview["total_price"]), (75, 1800))
-        unpriced = endpoint("/admin/packs/preview", "POST")(main.PackPreview(
-            client_id=self.user_id, plan_id=self.plans[7], sessions_per_week=1, preferred_days="Monday",
+            client_id=self.user_id, pack_id=self.pack_of("dual", 3), sessions_per_week=2, preferred_days="Monday,Wednesday",
             preferred_time="09:00", trainer_id=self.trainer_id, start_date=weekday_after(10).isoformat()))
-        self.assertIsNone(unpriced["price_per_session"])
+        self.assertEqual((preview["price_per_session"], preview["total_price"], preview["session_type"]), (75, 1800, "dual"))
         self.new_pack(months=1, per_week=1, session_type="dual", name="Beatriz Prueba", email=SECOND)
         main.app.dependency_overrides[main.require_admin] = lambda: {"email": main.ADMIN_EMAIL, "sub": "uid-admin"}
         http = TestClient(main.app)

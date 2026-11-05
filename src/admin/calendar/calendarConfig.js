@@ -33,7 +33,7 @@ export function studioHours(trainers) {
 
 // Day and week views on a laptop: every hour of the studio on one screen, no scrolling.
 export const MIN_ROW_PX = 20          // the smallest a half-hour row may be before the grid goes hourly
-export const GRID_CHROME_PX = 70      // the calendar's own toolbar and day header, inside the frame (measured: 67px)
+export const GRID_CHROME_PX = 92      // the calendar's own toolbar and day header, inside the frame (measured: 92px)
 export const PAGE_BOTTOM_PX = 16      // what is left under the frame
 
 // 30-minute rows while each one stays at least MIN_ROW_PX tall, otherwise hourly rows (the sessions last one hour and
@@ -65,6 +65,26 @@ export function madridWallClock(now = new Date()) {
     }).formatToParts(now).map(part => [part.type, part.value])
   )
   return new Date(Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second))
+}
+
+// "GMT+01" / "GMT+02": the studio's offset on that day, for the corner of the time grid (as Google Calendar shows it)
+export function madridOffsetLabel(date = new Date()) {
+  const noon = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 12))
+  const part = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', timeZoneName: 'shortOffset' })
+    .formatToParts(noon).find(piece => piece.type === 'timeZoneName')?.value || ''
+  const match = /GMT([+-])(\d+)/.exec(part)
+  return match ? `GMT${match[1]}${match[2].padStart(2, '0')}` : 'GMT'
+}
+
+// Black or white text, whichever reads better on a trainer's colour (WCAG relative luminance)
+export function inkOn(color) {
+  const hex = String(color || '').replace('#', '')
+  if (!/^[0-9a-f]{6}$/i.test(hex)) return '#0b1410'
+  const [red, green, blue] = [0, 2, 4].map(at => {
+    const value = parseInt(hex.slice(at, at + 2), 16) / 255
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue > 0.4 ? '#0b1410' : '#ffffff'
 }
 
 // "2026-10-19T18:00:00" -> a Date whose UTC fields are that wall-clock time

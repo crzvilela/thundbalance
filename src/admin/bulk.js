@@ -26,19 +26,32 @@ export function summarize(answer) {
 }
 
 // The selected ids of a list. `items` are the rows visible now and `getId` must not change between renders.
+// The checkboxes are hidden until the admin presses "Seleccionar": `active` is that mode (start / stop). Leaving the
+// mode ("Cancelar", or an action that finished) also clears the choice.
 export function useBulkSelection(items, getId, isSelectable = () => true) {
   const [picked, setPicked] = useState([])
+  const [active, setActive] = useState(false)
   const selectable = useMemo(() => items.filter(isSelectable).map(getId), [items, getId, isSelectable])
   const ids = useMemo(() => pruneSelection(picked, selectable), [picked, selectable])
   const chosen = useMemo(() => new Set(ids), [ids])
   const toggle = useCallback((id) => setPicked(current => (current.includes(id) ? current.filter(item => item !== id) : [...current, id].slice(0, MAX_BULK))), [])
   const toggleAll = useCallback(() => setPicked(toggleAllIds(ids, selectable)), [ids, selectable])
   const clear = useCallback(() => setPicked([]), [])
+  const start = useCallback(() => setActive(true), [])
+  const stop = useCallback(() => { setActive(false); setPicked([]) }, [])
   return {
-    ids, chosen, toggle, toggleAll, clear,
+    ids, chosen, toggle, toggleAll, clear, active, start, stop,
     count: ids.length,
     allSelected: selectable.length > 0 && ids.length === Math.min(selectable.length, MAX_BULK),
     someSelected: ids.length > 0,
     selectableCount: selectable.length
   }
 }
+
+// What a row that is NOT a button needs in the selection mode: a click anywhere on it toggles it, and what is inside it
+// (buttons, links, fields) stops answering, so nothing is opened or sent by mistake. Spread it on the row / card.
+export function selectableProps(selection, id, enabled = true) {
+  if (!selection.active || !enabled) return {}
+  return { onClick: () => selection.toggle(id), 'data-selecting': 'true' }
+}
+export const SELECTING_CLASS = 'cursor-pointer select-none [&[data-selecting=true]_*]:pointer-events-none'

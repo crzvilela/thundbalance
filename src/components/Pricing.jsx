@@ -4,20 +4,25 @@ import MovableBox from './editor/MovableBox'
 import { useState } from 'react'
 import { useI18n } from '../i18n/I18nContext'
 import SegmentedType from './forms/SegmentedType'
-import { formatMoney, packPricePerSession, priceMonths } from '../utils/pricing'
+import { formatMoney, packQuote, packsOfType } from '../utils/pricing'
 import { usePricing } from '../utils/usePricing'
 
 function Pricing({ sectionId }) {
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'Pricing')
   const { t } = useI18n()
-  // The prices are not part of the page text: they come from the server (the one table of prices). The cards, in order,
-  // are the durations that have a price (1, 3, 6 months); Individual | Dual changes the figures of all of them.
+  // The packs and their prices are not part of the page text: they come from the server (the catalogue edited in Admin > Packs).
+  // There is one card per pack on sale of the chosen type (Individual | Dual), in the order of the catalogue. The cards of this
+  // page give the texts (description, features, button); a pack without a card of its own gets a plain one.
   const { prices, failed } = usePricing()
   const [sessionType, setSessionType] = useState('individual')
 
   if (!visible && !isEditMode) return null
 
-  const plans = section.plans && section.plans.length ? section.plans : []
+  const pageCards = section.plans && section.plans.length ? section.plans : []
+  const packs = packsOfType(prices, sessionType)
+  // while the prices load (or in the editor) the cards of the page are drawn as they were
+  const count = prices ? Math.max(packs.length, isEditMode ? pageCards.length : 0) : pageCards.length
+  const plans = Array.from({ length: count }, (_unused, index) => pageCards[index] || { ...(pageCards[pageCards.length - 1] || {}), name: '', description: '', features: [], highlighted: false, extra: true })
 
   return (
     <section
@@ -63,7 +68,9 @@ function Pricing({ sectionId }) {
 
           {plans.map((plan, index) => {
             const highlighted = !!plan.highlighted
-            const price = packPricePerSession(prices, sessionType, priceMonths(prices)[index])
+            const pack = packs[index] || null
+            const quote = packQuote(pack, pack?.sessions_per_week_options?.[0])
+            const single = pack && pack.sessions_per_week_options.length === 1
 
             return (
               <MovableBox key={index} path={`sections.${sectionId}.plans.${index}.card`} label={`Plan ${index + 1} Card`} className="h-full">
@@ -74,26 +81,37 @@ function Pricing({ sectionId }) {
                     : 'border border-black/10'
                 }`}
               >
-                <EditableText
-                  as="h3"
-                  path={`sections.${sectionId}.plans.${index}.name`}
-                  styleObj={`sections.${sectionId}.plans.${index}.nameStyle`}
-                  label={`Plan ${index + 1} Name`}
-                  style={{ fontFamily: theme.typography.headingFont }}
-                  className="text-3xl mb-4 uppercase block"
-                />
+                {pack ? (
+                  // the name of a pack is the one field of the catalogue (one language: the one the admin wrote)
+                  <h3 style={{ fontFamily: theme.typography.headingFont }} className="text-3xl mb-1 uppercase block">{pack.name}</h3>
+                ) : (
+                  <EditableText
+                    as="h3"
+                    path={`sections.${sectionId}.plans.${index}.name`}
+                    styleObj={`sections.${sectionId}.plans.${index}.nameStyle`}
+                    label={`Plan ${index + 1} Name`}
+                    style={{ fontFamily: theme.typography.headingFont }}
+                    className="text-3xl mb-4 uppercase block"
+                  />
+                )}
+                {pack && <p className={`mb-4 text-sm ${highlighted ? 'text-gray-400' : 'text-gray-500'}`}>{t('st_weeks').replace('{n}', pack.weeks)} · {pack.sessions_per_week_options.length > 1 ? t('st_per_week_options').replace('{list}', pack.sessions_per_week_options.join(' / ')) : t('st_per_week_one').replace('{n}', pack.sessions_per_week_options[0])}</p>}
 
                 <div className="mb-6">
                   <div className="text-5xl font-bold">
-                    <span aria-live="polite">{prices ? formatMoney(price) : '—'}</span>
-                    <EditableText
-                      as="span"
-                      path={`sections.${sectionId}.plans.${index}.period`}
-                      styleObj={`sections.${sectionId}.plans.${index}.periodStyle`}
-                      label={`Plan ${index + 1} Period`}
-                      className="text-xl ml-1"
-                    />
+                    <span aria-live="polite">{prices ? formatMoney(quote.perSession) : '—'}</span>
+                    {plan.extra
+                      ? <span className="text-xl ml-1">{plan.period}</span>
+                      : (
+                        <EditableText
+                          as="span"
+                          path={`sections.${sectionId}.plans.${index}.period`}
+                          styleObj={`sections.${sectionId}.plans.${index}.periodStyle`}
+                          label={`Plan ${index + 1} Period`}
+                          className="text-xl ml-1"
+                        />
+                      )}
                   </div>
+                  {single && pack.price_per_pack != null && <p className={`mt-1 text-sm ${highlighted ? 'text-gray-400' : 'text-gray-500'}`}>{t('st_pack_total').replace('{price}', formatMoney(quote.total))}</p>}
                   {sessionType === 'dual' && <p className={`mt-1 text-sm ${highlighted ? 'text-gray-400' : 'text-gray-500'}`}>{t('st_price_both')}</p>}
                   {failed && <p className="mt-1 text-sm text-red-500">{t('st_price_error')}</p>}
                 </div>

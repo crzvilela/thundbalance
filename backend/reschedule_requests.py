@@ -27,6 +27,7 @@ Everything runs in one transaction; the e-mails go out AFTER it is committed and
 the operation. The studio can always move a session directly (admin_reschedule): that never
 counts for the client's limit.
 """
+from emails.recipients import extra_scope, parse_extra
 import logging
 import re
 import secrets
@@ -88,6 +89,8 @@ def ensure_tables():
             """
         )
         cursor.execute("ALTER TABLE reschedule_requests ADD COLUMN IF NOT EXISTS lang TEXT")
+        # the extra recipients the admin added to the answer (BCC of the email); kept for the calendar invitations
+        cursor.execute("ALTER TABLE reschedule_requests ADD COLUMN IF NOT EXISTS extra_emails TEXT[]")
         # the trainer the client asks for at the NEW hour (empty = the session keeps its trainer)
         cursor.execute("ALTER TABLE reschedule_requests ADD COLUMN IF NOT EXISTS requested_trainer_id INTEGER REFERENCES trainers(id)")
         # true: the studio proposed inside the notice period and confirmed it, so the client may answer until the session starts
@@ -828,8 +831,14 @@ class RequestPayload(BaseModel):
     trainer_id: int | None = None      # another trainer at the new hour (optional)
 
 
+class ExtraPayload(BaseModel):
+    """The extra recipients of an answer that sends an email: the client always gets it, these get it in BCC (max 5)."""
+    extra_recipients: list[str] | None = None
+
+
 class RejectPayload(BaseModel):
     note: str | None = None
+    extra_recipients: list[str] | None = None
 
 
 class CounterPayload(BaseModel):
@@ -837,12 +846,35 @@ class CounterPayload(BaseModel):
     time: str
     note: str | None = None
     confirm_late: bool = False      # send it although the client will not have the full notice period to answer
+    extra_recipients: list[str] | None = None
 
 
 class DirectPayload(BaseModel):
     session_date: str
     session_time: str
     note: str | None = None
+    extra_recipients: list[str] | None = None
+
+
+def _with_extra(values, run, request_id=None):
+    """Runs an admin answer so that the e-mail to the CLIENT also goes, in BCC, to the extra recipients (validated first:
+    nothing is decided when one is wrong). They are kept with the request (extra_emails) and echoed in the answer."""
+    extra = parse_extra(values)
+    with extra_scope(extra):
+        result = run()
+    if request_id and extra:
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("UPDATE reschedule_requests SET extra_emails = %s WHERE id = %s", (extra, request_id))
+            conn.commit()
+        except Exception as error:  # noqa: BLE001 - the answer is done; only the note is lost
+            conn.rollback()
+            logger.error("extra recipients of request %s could not be stored (%s)", request_id, type(error).__name__)
+        finally:
+            cursor.close()
+            conn.close()
+    return {**result, "extra_recipients": extra}
 
 
 def register_reschedule_routes(app, require_admin, require_client, own_user_id):
@@ -931,21 +963,21 @@ def register_reschedule_routes(app, require_admin, require_client, own_user_id):
         return open_count()
 
     @app.post("/admin/reschedule-requests/{request_id}/approve")
-    def admin_approve(request_id: int, claims=Depends(require_admin)):
-        return approve(request_id, admin_name(claims))
+    def admin_approve(request_id: int, data: ExtraPayload | None = None, claims=Depends(require_admin)):
+        return _with_extra(data.extra_recipients if data else None, lambda: approve(request_id, admin_name(claims)), request_id)
 
     @app.post("/admin/reschedule-requests/{request_id}/reject")
     def admin_reject(request_id: int, data: RejectPayload, claims=Depends(require_admin)):
-        return reject(request_id, data.note, admin_name(claims))
+        return _with_extra(data.extra_recipients, lambda: reject(request_id, data.note, admin_name(claims)), request_id)
 
     @app.post("/admin/reschedule-requests/{request_id}/counter")
     def admin_counter(request_id: int, data: CounterPayload, claims=Depends(require_admin)):
-        return counter(request_id, data.date, data.time, data.note, admin_name(claims), data.confirm_late)
+        return _with_extra(data.extra_recipients, lambda: counter(request_id, data.date, data.time, data.note, admin_name(claims), data.confirm_late), request_id)
 
     @app.post("/admin/reschedule-requests/{request_id}/resend-email", dependencies=admin)
-    def admin_resend(request_id: int):
-        return resend_email(request_id)
+    def admin_resend(request_id: int, data: ExtraPayload | None = None):
+        return _with_extra(data.extra_recipients if data else None, lambda: resend_email(request_id), request_id)
 
     @app.post("/admin/sessions/{session_id}/reschedule")
     def admin_move(session_id: int, data: DirectPayload, claims=Depends(require_admin)):
-        return admin_reschedule(session_id, data.session_date, data.session_time, data.note, admin_name(claims))
+        return _with_extra(data.extra_recipients, lambda: admin_reschedule(session_id, data.session_date, data.session_time, data.note, admin_name(claims)))

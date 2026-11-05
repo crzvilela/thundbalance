@@ -1,7 +1,7 @@
 // node --test src/admin/calendar/
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { GRID_CHROME_PX, MIN_ROW_PX, STUDIO_END, STUDIO_START, slotDurationFor, studioHours } from './calendarConfig.js'
+import { GRID_CHROME_PX, MIN_ROW_PX, STUDIO_END, STUDIO_START, inkOn, madridOffsetLabel, slotDurationFor, studioHours } from './calendarConfig.js'
 
 const week = (start, end) => Object.fromEntries(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day, index) => [day, index < 5 ? { start, end } : null]))
 
@@ -31,4 +31,16 @@ test('rows stay at half an hour while they are tall enough, and go hourly on a s
   assert.equal(slotDurationFor(374, studio), '01:00:00')               // a 720px window
   assert.equal(slotDurationFor(1000, studio), '00:30:00')
   assert.equal(slotDurationFor(300, { start: '09:00:00', end: '12:00:00' }), '00:30:00')          // a short day fits half hours
+})
+
+test('the corner of the grid says GMT+01 in winter and GMT+02 in summer (Madrid)', () => {
+  assert.equal(madridOffsetLabel(new Date(Date.UTC(2026, 0, 15))), 'GMT+01')
+  assert.equal(madridOffsetLabel(new Date(Date.UTC(2026, 6, 15))), 'GMT+02')
+})
+
+test('text on a trainer colour is dark on light colours and white on dark ones', () => {
+  assert.equal(inkOn('#34d399'), '#0b1410')
+  assert.equal(inkOn('#facc15'), '#0b1410')
+  assert.equal(inkOn('#1e3a8a'), '#ffffff')
+  assert.equal(inkOn(''), '#0b1410')
 })

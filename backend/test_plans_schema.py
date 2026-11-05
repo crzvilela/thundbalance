@@ -61,65 +61,14 @@ class PriceColumn(unittest.TestCase):
         self.assertEqual(len(cursor.statements), 1)
 
 
-class PlanForms(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        testsafety.require_local_database()
-        cls.http = TestClient(main.app)
+class PlanFormsAreGone(unittest.TestCase):
+    """Plans are not edited by hand any more: the packs of the catalogue own them (Admin > Packs)."""
 
-    def setUp(self):
-        plans_schema.forget()
-        main.app.dependency_overrides[main.require_admin] = lambda: {"email": main.ADMIN_EMAIL, "sub": "uid-admin"}
-        self.clean()
-
-    def tearDown(self):
-        main.app.dependency_overrides.clear()
-        self.clean()
-
-    @staticmethod
-    def clean():
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("DELETE FROM plans WHERE nome LIKE %s", (f"{NAME}%",))
-        conn.commit()
-        conn.close()
-
-    def test_creating_editing_listing_and_deleting_a_plan_works(self):
-        # the price is NOT part of a plan: it comes from the pricing table by duration (a sent "preco" is ignored)
-        created = self.http.post("/admin/plans", json={"nome": NAME, "duracao_meses": 3, "duration_weeks": 8, "preco": 1})
-        self.assertEqual(created.status_code, 200, created.text)
-        plan_id = created.json()["id"]
-
-        listing = self.http.get("/plans").json()
-        row = next(item for item in listing if item[0] == plan_id)
-        self.assertEqual(len(row), 5)                                               # [id, name, months, price, weeks]
-        self.assertEqual((row[1], row[2], float(row[3]), row[4]), (NAME, 3, 60.0, 8))        # 3 months, individual: 60
-
-        edited = self.http.put(f"/admin/plans/{plan_id}", json={"nome": f"{NAME} 2", "duracao_meses": 6, "duration_weeks": 12, "preco": 1})
-        self.assertEqual(edited.status_code, 200, edited.text)
-        row = next(item for item in self.http.get("/plans").json() if item[0] == plan_id)
-        self.assertEqual((row[1], row[2], float(row[3]), row[4]), (f"{NAME} 2", 6, 55.0, 12))
-
-        self.assertEqual(self.http.delete(f"/admin/plans/{plan_id}").status_code, 200)
-        self.assertNotIn(plan_id, [item[0] for item in self.http.get("/plans").json()])
-
-    def test_the_list_keeps_its_shape_whatever_columns_the_table_has_besides(self):
-        row = self.http.get("/plans").json()[0]
-        self.assertEqual(len(row), 5)
-
-    def test_no_second_price_column_exists_after_the_forms_are_used(self):
-        self.http.post("/admin/plans", json={"nome": NAME, "duracao_meses": 1, "duration_weeks": 4, "preco": 10})
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'plans' AND column_name = ANY(%s)",
-                    (list(plans_schema.PRICE_COLUMNS),))
-        self.assertEqual(len(cur.fetchall()), 1)
-        conn.close()
-
-    def test_change_plan_is_gone(self):
-        self.assertIn(self.http.post("/admin/assign-plan", json={"user_id": 1, "plan_id": 1}).status_code, (404, 405))
+    def test_the_old_plan_endpoints_do_not_exist_and_change_plan_stays_gone(self):
         paths = {getattr(route, "path", "") for route in main.app.routes}
-        self.assertNotIn("/admin/assign-plan", paths)
+        for path in ("/admin/plans", "/admin/plans/{plan_id}", "/admin/plans/bulk", "/plans", "/admin/assign-plan"):
+            self.assertNotIn(path, paths, path)
+        self.assertIn("/admin/pack-catalog", paths)
         self.assertIn("/admin/clients/{client_id}/renew-pack", paths)            # the shared endpoint of "Nuevo pack" stays
 
 

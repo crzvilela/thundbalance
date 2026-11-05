@@ -11,7 +11,9 @@ from fastapi import HTTPException
 
 import admin_calendar
 import google_fakes
+import catalog_testing
 import main
+import plans_schema
 import session_restore
 from database import get_connection
 
@@ -47,8 +49,9 @@ class Restore(unittest.TestCase):
         self.google = google_fakes.FakeGoogle().install()
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("INSERT INTO plans (nome, duracao_meses, duration_weeks) VALUES ('TEST restore 2 weeks', 1, 2) RETURNING id")
+        cur.execute(f"INSERT INTO plans (nome, {plans_schema.price_column(cur)}, duracao_meses, duration_weeks) VALUES ('TEST restore 2 weeks', 0, 1, 2) RETURNING id")
         self.plan_id = cur.fetchone()[0]
+        self.pack_id = catalog_testing.make_pair(cur, self.plan_id)['individual']
         cur.execute("INSERT INTO users (nome, email, firebase_uid, lang) VALUES ('Ana María Ruiz', %s, 'uid-restore', 'ca') RETURNING id", (f"ana{DOMAIN}",))
         self.user_id = cur.fetchone()[0]
         cur.execute("INSERT INTO users (nome, email, firebase_uid) VALUES ('Otra Persona', %s, 'uid-restore-2') RETURNING id", (f"otra{DOMAIN}",))
@@ -57,9 +60,9 @@ class Restore(unittest.TestCase):
         conn.close()
         self.monday = next_monday()
         call("/admin/clients/{client_id}/renew-pack", self.user_id, main.NewPack(
-            plan_id=self.plan_id, sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="10:00",
+            pack_id=self.pack_id, sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="10:00",
             trainer_id=self.trainer_id, start_date=self.monday.isoformat(), email_client=False, email_extra=[],
-            allow_conflicts=True, confirm_replace=True))
+            allow_conflicts=True))
         self.sessions = self.rows()
 
     def tearDown(self):
@@ -83,6 +86,7 @@ class Restore(unittest.TestCase):
             cur.execute("DELETE FROM client_requests WHERE user_id = ANY(%s)", (ids,))
             cur.execute("DELETE FROM users WHERE id = ANY(%s)", (ids,))
         cur.execute("DELETE FROM trial_sessions WHERE email LIKE %s", (f"%{DOMAIN}",))
+        catalog_testing.drop(cur)
         cur.execute("DELETE FROM plans WHERE nome LIKE 'TEST restore%'")
         conn.commit()
         conn.close()

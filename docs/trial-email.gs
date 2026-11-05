@@ -3,7 +3,7 @@
 // docs/TRIAL_EMAIL_SETUP.md. SECRET must be identical to TRIAL_EMAIL_WEBHOOK_SECRET in Render.
 //
 // Two kinds of request are understood:
-//   1. New format: { secret, to, cc, subject, html, text, replyTo, name, language, attachments: [{name, type, data(base64)}] }
+//   1. New format: { secret, to, cc, bcc, subject, html, text, replyTo, name, language, attachments: [{name, type, data(base64)}] }
 //      `language` (en | es | ca) is the language the message is written in. GmailApp cannot set a
 //      Content-Language header, so the language is declared inside the HTML (<html lang> and a meta tag).
 //   2. Old format: { secret, to, trial: {...} }  (plain-text trial notice, kept so an old
@@ -39,6 +39,7 @@ function sendMessage(data) {
   };
   if (data.html) options.htmlBody = data.html;
   if (data.cc) options.cc = data.cc;
+  if (data.bcc) options.bcc = data.bcc;   // the extra recipients added by the admin (hidden from the others)
   if (data.attachments && data.attachments.length) {
     options.attachments = data.attachments.map(function (file) {
       return Utilities.newBlob(Utilities.base64Decode(file.data), file.type || 'application/octet-stream', file.name);

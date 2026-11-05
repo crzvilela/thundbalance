@@ -27,6 +27,12 @@ export function Spinner() {
 
 const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400'
 
+// The name of the pack a session belongs to, as a small label (a client can have several packs at once).
+export function PackLabel({ name, className = '' }) {
+  if (!name) return null
+  return <span className={`inline-block max-w-full truncate rounded-full border border-sky-400/30 bg-sky-400/10 px-2.5 py-0.5 align-middle text-xs font-medium text-sky-200 ${className}`}>{name}</span>
+}
+
 export function SessionRow({ session, status, onOpen }) {
   const { t, locale } = useI18n()
   return (
@@ -42,6 +48,7 @@ export function SessionRow({ session, status, onOpen }) {
         <span className="block truncate text-sm text-gray-400">
           {session.trainer || '—'}{session.number ? ` · ${session.number}` : ''}
         </span>
+        <PackLabel name={session.packName} className="mt-1" />
       </span>
       <StatusBadge status={status} className="shrink-0" />
       <span aria-hidden="true" className="text-gray-500 transition group-hover:translate-x-0.5 group-hover:text-emerald-300">→</span>
@@ -65,6 +72,7 @@ export function NextSessionCard({ session, status, onOpen, onRequest, onCancel, 
         <span className="tabular-nums">{formatTime(session.time)}</span> · {session.trainer || '—'}
         {session.number && <span className="ml-2 rounded-full border border-white/20 px-2.5 py-0.5 text-sm text-gray-300">{session.number}</span>}
       </p>
+      {session.packName && <p className="mt-2"><PackLabel name={session.packName} /></p>}
       <div className="mt-6 grid gap-3 sm:flex sm:flex-wrap">
         {showCalendar && (
           <a href={googleCalendarUrl(session, eventDetails(t, session, locale))} target="_blank" rel="noopener noreferrer"

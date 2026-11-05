@@ -1,6 +1,8 @@
 """A client's packs and which sessions belong to each (read only).
 
-A client can have several active packs at the same time. New sessions carry
+A client can have several active packs at the same time (buying a new pack never touches the others: each one
+runs and counts on its own). A pack is ACTIVE while it has sessions still to come (see ACTIVE_PACK_CONDITION), FINISHED
+when it ran its course and CANCELLED when none of its sessions took place. New sessions carry
 sessions.user_plan_id; sessions from before that column existed have none and
 are matched to the pack whose period contains their date (the pack that started
 last wins when periods overlap). Nothing is ever rewritten here.
@@ -15,8 +17,8 @@ def user_packs(cursor, user_id, today=None):
     end_date, sessions_per_week, preferred_days, preferred_time, trainer_id,
     trainer, session_type, second_person_name / _email, price_per_session, total_price (what was
     stored when the pack was created; empty for packs from before prices), total, done, remaining (non-cancelled sessions of that pack) and
-    `shown`: the pack is active, or it still has sessions to come (a pack from a
-    renewal made before packs could run in parallel).
+    `planned_all` (every session of the pack, cancelled ones too) and `is_active` / `shown`: the pack is active (it
+    has sessions still to come, or it has none yet and its period is not over).
     assignment: {session_id: pack_id or None}.
     """
     today = today or date.today()
@@ -26,6 +28,7 @@ def user_packs(cursor, user_id, today=None):
                up.sessions_per_week, up.preferred_days, up.preferred_time, up.trainer_id, t.nome,
                up.session_type, up.second_person_name, up.second_person_email, up.price_per_session, up.total_price,
                up.status, up.created_at, up.replaced_at, COALESCE(up.duration_months, p.duracao_meses),
+               COALESCE(up.weeks, p.duration_weeks), up.catalog_pack_id,
                up.calendar_share, up.calendar_extra
         FROM user_plans up
         JOIN plans p ON p.id = up.plan_id
@@ -43,9 +46,10 @@ def user_packs(cursor, user_id, today=None):
             "session_type": r[11] or "individual", "second_person_name": r[12], "second_person_email": r[13],
             "price_per_session": r[14], "total_price": r[15],
             "stored_status": r[16], "created_at": r[17], "replaced_at": r[18], "duration_months": r[19],
+            "weeks": r[20], "catalog_pack_id": r[21],
             # the client sees the pack's events in their own Google Calendar (the extra addresses are invited as well)
-            "calendar_share": bool(r[20]), "calendar_extra": r[21],
-            "total": 0, "done": 0, "remaining": 0, "_dates": [],
+            "calendar_share": bool(r[22]), "calendar_extra": r[23],
+            "total": 0, "done": 0, "remaining": 0, "planned_all": 0, "_dates": [],
         }
         for r in cursor.fetchall()
     ]
@@ -72,6 +76,8 @@ def user_packs(cursor, user_id, today=None):
             else:
                 owner = None
         assignment[session_id] = owner
+        if owner is not None:
+            by_id[owner]["planned_all"] += 1
         if owner is not None and status != "Cancelled":
             pack = by_id[owner]
             pack["total"] += 1
@@ -86,19 +92,34 @@ def user_packs(cursor, user_id, today=None):
         # packs saved before periods were tracked fall back to the span of their sessions
         pack["start_date"] = pack["start_date"] or (min(dates) if dates else None)
         pack["end_date"] = pack["end_date"] or (max(dates) if dates else None)
-        pack["shown"] = pack["active"] or pack["remaining"] > 0
+        pack["is_active"] = pack_is_active(pack["active"], pack["planned_all"], pack["remaining"], pack["end_date"], today)
+        pack["shown"] = pack["is_active"]
     return packs, assignment
 
 
+def pack_is_active(flag, planned_all, remaining, end_date, today):
+    """A pack is active while sessions are still to come; a pack with no sessions at all is active until its period ends
+    (or for ever when it has no dates: packs from before periods were tracked). A pack whose sessions were all cancelled
+    or already happened is not."""
+    if remaining > 0:
+        return True
+    return bool(flag) and planned_all == 0 and (end_date is None or end_date >= today)
+
+
 # ---------------------------------------------------------------- "has an active pack"
-# ONE definition of "active account", the one the dashboard and the panel use for a pack that is
-# "shown": the pack is active (user_plans.active) or it still has sessions to come.
+# ONE definition of "active pack" in SQL, for a `user_plans up` row (the same rule as pack_is_active above): it has
+# non-cancelled sessions still to come, or it has no sessions at all and its period is not over. A client is "active" when
+# ANY of their packs is. (The flag user_plans.active alone says nothing: a pack that ran its course keeps it.)
+ACTIVE_PACK_CONDITION = (
+    "(EXISTS (SELECT 1 FROM sessions s WHERE s.user_plan_id = up.id AND s.status <> 'Cancelled' AND s.session_date >= CURRENT_DATE)"
+    " OR (up.active AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.user_plan_id = up.id)"
+    " AND (up.end_date IS NULL OR up.end_date >= CURRENT_DATE)))"
+)
+
+
 def active_pack_sql(user_column="u.id"):
-    """A SQL condition (no parameters) true for the users that have an active pack."""
-    return (
-        f"EXISTS (SELECT 1 FROM user_plans up WHERE up.user_id = {user_column} AND (up.active OR EXISTS ("
-        "SELECT 1 FROM sessions s WHERE s.user_plan_id = up.id AND s.status <> 'Cancelled' AND s.session_date >= CURRENT_DATE)))"
-    )
+    """A SQL condition (no parameters) true for the users that have an active pack (any of them)."""
+    return f"EXISTS (SELECT 1 FROM user_plans up WHERE up.user_id = {user_column} AND {ACTIVE_PACK_CONDITION})"
 
 
 def has_active_pack(cursor, user_id):
@@ -108,12 +129,10 @@ def has_active_pack(cursor, user_id):
 
 # ---------------------------------------------------------------- the history of a client's packs
 def pack_state(stored, active, planned, done, remaining, end_date, today):
-    """activo | finalizado | sustituido | cancelado.
-    sustituido (and cancelado, if ever stored) are written when they happen. The others come from the sessions:
-    with sessions still to come the pack is activo; if every session was cancelled and none took place it is
-    cancelado; otherwise it ran its course (finalizado)."""
-    if stored in ("sustituido", "cancelado"):
-        return stored
+    """activo | finalizado | cancelado, worked out from the sessions (nothing about the state is stored any more):
+    sessions still to come -> activo; every session cancelled and none held -> cancelado; a pack with no sessions yet is
+    activo until its period is over; otherwise it ran its course (finalizado). A state an older version stored
+    ('sustituido', when a new pack replaced the previous one) is not used: such a pack is read from its sessions like any other."""
     if remaining > 0:
         return "activo"
     if planned > 0 and done == 0:
@@ -124,7 +143,7 @@ def pack_state(stored, active, planned, done, remaining, end_date, today):
 
 
 def pack_history(cursor, user_id, today=None):
-    """Every pack the client has ever had, newest first (by start date), each with its sessions. Nothing is hidden or
+    """Every pack the client has ever had, newest first (by start date), each with its sessions and its own x/y. Nothing is hidden or
     deleted. `planned` counts every session of the pack (cancelled ones too), `used` the ones that took place,
     `cancelled` the cancelled ones. Values an old pack never stored stay None."""
     today = today or date.today()
@@ -150,7 +169,7 @@ def pack_history(cursor, user_id, today=None):
             **{key: pack[key] for key in (
                 "id", "plan_id", "name", "active", "start_date", "end_date", "sessions_per_week", "trainer",
                 "session_type", "second_person_name", "second_person_email", "price_per_session", "total_price",
-                "created_at", "replaced_at", "duration_months",
+                "created_at", "duration_months", "weeks", "catalog_pack_id",
             )},
             "planned": len(sessions), "used": pack["done"], "remaining": pack["remaining"],
             "cancelled": sum(1 for item in sessions if item["status"] == "Cancelled"),

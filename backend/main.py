@@ -26,6 +26,7 @@ from google_calendar import (
 )
 from landing_page_default import DEFAULT_LANDING_CONTENT
 from admin_api import register_admin_routes
+import pack_catalog
 import plans_schema
 import pricing
 import trainer_area
@@ -44,7 +45,7 @@ from trial_notifications import notify_trial_requested
 import mailer
 from packs import (
     DAY_MAP, clean_pack_recipients, create_pack, delete_created_events, email_pack,
-    ensure_pack_columns, preview_pack, remove_replaced_events, validate_pack_request,
+    ensure_pack_columns, preview_pack, validate_pack_request,
 )
 import pack_view
 from emails import send_pack_summary_email, team_emails
@@ -496,14 +497,12 @@ def ensure_client_workflow_fields():
         cursor.execute("ALTER TABLE plans ADD COLUMN IF NOT EXISTS duration_weeks INTEGER")
         plans_schema.price_column(cursor)              # the price column exists (under its real name); never a second one
         pricing.ensure_schema(cursor)                  # the prices table (seeded once) and the Individual | Dual columns
-        unpriced = pricing.unpriced_plan_months(cursor)
-        if unpriced:
-            logging.getLogger("thundbalance").warning("plans with no price for some session type (months): %s", unpriced)
         cursor.execute("""
             UPDATE plans SET duration_weeks = CASE id
                 WHEN 1 THEN 4 WHEN 2 THEN 12 WHEN 3 THEN 24 ELSE 4 END
             WHERE duration_weeks IS NULL
         """)
+        pack_catalog.ensure_schema(cursor)             # the catalogue of packs (seeded once from the plans and prices that existed)
         conn.commit()
     finally:
         cursor.close()
@@ -567,7 +566,7 @@ class TrialSessionCreate(BaseModel):
 
 class ClientRequestCreate(BaseModel):
     user_id: int | None = None
-    plan_id: int
+    pack_id: int                       # a pack of the catalogue (GET /pricing)
     sessions_per_week: int
     preferred_days: str
     preferred_time: str
@@ -581,22 +580,21 @@ class ApproveRequest(BaseModel):
     request_id: int
     trainer_id: int
     start_date: str
-    plan_id: int | None = None
+    pack_id: int | None = None         # another catalogue pack than the one requested
     sessions_per_week: int | None = None
-    # Pack summary email: to the client (on/off) and to extra addresses
-    # (None = the team's default addresses).
+    # Pack summary email: the client ALWAYS gets it; `extra_recipients` get it in BCC (max 5, validated by the server).
+    # email_client / email_extra are the older names and are still read (email_client is ignored).
     email_client: bool = True
     email_extra: list[str] | None = None
-    allow_conflicts: bool = False
-    # the admin confirmed that the client's current pack is replaced from the
-    # start date (its future sessions from then on are cancelled)
-    confirm_replace: bool = False
+    extra_recipients: list[str] | None = None
+    allow_conflicts: bool = False      # create it although the trainer is busy / outside their hours ("Crear igualmente")
+    allow_overlaps: bool = False       # continue although the client gets two sessions at the same time
     # the client sees the events in THEIR Google Calendar (a guest of each event); off = no guests
     share_calendar: bool = True
 
 
 class NewPack(BaseModel):
-    plan_id: int
+    pack_id: int
     sessions_per_week: int
     preferred_days: str
     preferred_time: str
@@ -605,26 +603,25 @@ class NewPack(BaseModel):
     session_type: str | None = None
     second_person_name: str | None = None
     second_person_email: str | None = None
-    email_client: bool = True
-    email_extra: list[str] | None = None
-    # create the sessions even when some collide (the panel asks first)
+    email_client: bool = True          # ignored: the client always gets the email
+    email_extra: list[str] | None = None          # older name of extra_recipients
+    extra_recipients: list[str] | None = None     # BCC of the pack email (max 5)
+    # create the sessions even when the trainer is busy (the panel asks first)
     allow_conflicts: bool = False
-    # the admin confirmed that the client's current pack is replaced from the
-    # start date (its future sessions from then on are cancelled)
-    confirm_replace: bool = False
+    # continue although the client gets two sessions at the same time as another pack (the panel warns first)
+    allow_overlaps: bool = False
     # the client sees the events in THEIR Google Calendar (a guest of each event); off = no guests
     share_calendar: bool = True
 
 
 class PackPreview(BaseModel):
     client_id: int | None = None
-    plan_id: int
+    pack_id: int
     sessions_per_week: int
     preferred_days: str
     preferred_time: str
     trainer_id: int
     start_date: str
-    session_type: str | None = None      # only to show the price in the preview
 
 
 class RejectRequest(BaseModel):
@@ -689,41 +686,16 @@ def home():
     }
 
 
-@app.get("/plans")
-def get_plans():
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    try:
-
-        # rows: [id, name, months, price per session (individual, from the prices table), weeks]
-        cursor.execute(
-            """
-            SELECT p.id, p.nome, p.duracao_meses, pr.price, p.duration_weeks
-            FROM plans p
-            LEFT JOIN pricing pr ON pr.kind = 'pack' AND pr.session_type = 'individual' AND pr.months = p.duracao_meses
-            ORDER BY p.id
-            """
-        )
-
-        return cursor.fetchall()
-
-    finally:
-
-        cursor.close()
-        conn.close()
-
-
 @app.get("/pricing")
 def get_pricing():
-    """The prices (EUR per session) the site shows, public like the prices themselves:
-    {"packs": {"individual": {"1": 65, ...}, "dual": {...}}, "trial": {...}, "months": [1, 3, 6]}.
-    Read only; the server never trusts a price sent back by the browser."""
+    """The packs on sale and the trial prices, public like the prices themselves (the catalogue, see pack_catalog.py):
+    {"packs": [{"id", "name", "session_type", "weeks", "months", "sessions_per_week_options", "price_per_session",
+    "price_per_pack"}], "trial": {"individual": 40, "dual": 50}}. Archived packs are not listed. Read only; the
+    server never trusts a price sent back by the browser."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        return pricing.catalog(cursor)
+        return pack_catalog.public_catalog(cursor)
     finally:
         cursor.close()
         conn.close()
@@ -914,7 +886,7 @@ def get_user_by_email(email: str, claims=Depends(require_account)):
     try:
 
         cursor.execute(
-            """
+            f"""
             SELECT
                 u.id,
                 u.nome,
@@ -922,7 +894,7 @@ def get_user_by_email(email: str, claims=Depends(require_account)):
                 (
                     SELECT string_agg(p.nome, ' + ' ORDER BY up.id)
                     FROM user_plans up JOIN plans p ON p.id = up.plan_id
-                    WHERE up.user_id = u.id AND up.active
+                    WHERE up.user_id = u.id AND {pack_view.ACTIVE_PACK_CONDITION}
                 ),
                 u.must_change_password
 
@@ -983,12 +955,15 @@ def get_user_sessions(user_id: int, claims=Depends(require_client)):
 
             WHERE s.user_id = %s
 
-            ORDER BY s.session_date ASC
+            ORDER BY s.session_date ASC, s.session_time ASC, s.id ASC
             """,
             (user_id,)
         )
-
-        return cursor.fetchall()
+        rows = cursor.fetchall()
+        # Every session says which pack it belongs to (a client can have several at once): [..., number, pack id, pack name]
+        packs, assignment = pack_view.user_packs(cursor, user_id)
+        names = {pack["id"]: pack["name"] for pack in packs}
+        return [[*row, assignment.get(row[0]), names.get(assignment.get(row[0]))] for row in rows]
 
     finally:
 
@@ -1077,7 +1052,7 @@ def get_profile(user_id: int, claims=Depends(require_account)):
     try:
 
         cursor.execute(
-            """
+            f"""
             SELECT
                 u.id,
                 u.nome,
@@ -1091,7 +1066,7 @@ def get_profile(user_id: int, claims=Depends(require_account)):
                 (
                     SELECT string_agg(p.nome, ' + ' ORDER BY up.id)
                     FROM user_plans up JOIN plans p ON p.id = up.plan_id
-                    WHERE up.user_id = u.id AND up.active
+                    WHERE up.user_id = u.id AND {pack_view.ACTIVE_PACK_CONDITION}
                 ),
                 u.tax_id_type,
                 u.tax_id,
@@ -1195,7 +1170,7 @@ def admin_users():
     try:
 
         cursor.execute(
-            """
+            f"""
             SELECT
 
                 u.id,
@@ -1208,7 +1183,7 @@ def admin_users():
                     (
                         SELECT string_agg(p.nome, ' + ' ORDER BY up.id)
                         FROM user_plans up JOIN plans p ON p.id = up.plan_id
-                        WHERE up.user_id = u.id AND up.active
+                        WHERE up.user_id = u.id AND {pack_view.ACTIVE_PACK_CONDITION}
                     ),
                     'No Plan'
                 )
@@ -1783,15 +1758,6 @@ def create_trial_session(
         conn.close()
 
 
-def _after_pack_commit(created):
-    """Removes the Google events of the sessions a new pack replaced. The pack is already saved, so a failure here must
-    not stop the confirmation email nor undo anything: only its type is logged."""
-    try:
-        remove_replaced_events(created)
-    except Exception as error:  # noqa: BLE001
-        print(f"Replaced events could not be removed: {type(error).__name__}")
-
-
 @app.get("/client/workflow", dependencies=[Depends(require_client)])
 def client_workflow(authorization: str | None = Header(default=None)):
     claims = require_client(authorization)
@@ -1820,7 +1786,9 @@ def client_workflow(authorization: str | None = Header(default=None)):
         plan = None
         if active_packs:
             newest = active_packs[-1]
-            plan = (newest["name"], newest["trainer"], newest["plan_id"], newest["end_date"])
+            # the notice "your pack is ending" looks at the LAST end date of all the active packs, not at the newest pack
+            last_end = max((p["end_date"] for p in active_packs if p["end_date"]), default=None)
+            plan = (newest["name"], newest["trainer"], newest["plan_id"], last_end)
         cursor.execute("""
             SELECT s.id, s.session_date, s.session_time, t.nome, s.status, s.session_number
             FROM sessions s LEFT JOIN trainers t ON t.id = s.trainer_id
@@ -1903,9 +1871,13 @@ def create_client_request(
         """, (user_id,))
         if cursor.fetchone():
             raise HTTPException(status_code=409, detail="You already have a pending request")
-        cursor.execute("SELECT 1 FROM user_plans WHERE user_id = %s AND active = TRUE LIMIT 1", (user_id,))
-        if cursor.fetchone():
-            raise HTTPException(status_code=409, detail="You already have an active plan")
+        # the pack must be on sale, of the chosen type and offer those sessions per week (the price is worked out at approval)
+        sale = pack_catalog.sale(cursor, request.pack_id, request.sessions_per_week)
+        if sale["pack"]["session_type"] != session_type:
+            raise HTTPException(status_code=422, detail={
+                "code": "invalid_session_type", "field": "session_type",
+                "message": "El tipo de sesión no coincide con el pack. / The session type does not match the pack.",
+            })
 
         cursor.execute(
             """
@@ -1913,6 +1885,7 @@ def create_client_request(
             (
                 user_id,
                 plan_id,
+                catalog_pack_id,
                 sessions_per_week,
                 preferred_days,
                 preferred_time,
@@ -1923,11 +1896,12 @@ def create_client_request(
             )
 
             VALUES
-            (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             (
                 user_id,
-                request.plan_id,
+                sale["pack"]["plan_id"],
+                request.pack_id,
                 request.sessions_per_week,
                 request.preferred_days,
                 request.preferred_time,
@@ -1994,7 +1968,9 @@ def admin_client_requests(archived: str = "exclude"):
                 cr.second_person_email,
                 p.duracao_meses,
                 cr.trainer_id,
-                tr.nome
+                tr.nome,
+                cr.catalog_pack_id,
+                u.email
 
             FROM client_requests cr
 
@@ -2035,9 +2011,9 @@ def admin_preview_pack(data: PackPreview):
     cursor = conn.cursor()
     try:
         return preview_pack(
-            cursor, user_id=data.client_id, plan_id=data.plan_id, trainer_id=data.trainer_id,
+            cursor, user_id=data.client_id, catalog_pack_id=data.pack_id, trainer_id=data.trainer_id,
             sessions_per_week=data.sessions_per_week, preferred_days=data.preferred_days,
-            preferred_time=data.preferred_time, start_date=data.start_date, session_type=data.session_type,
+            preferred_time=data.preferred_time, start_date=data.start_date,
         )
     finally:
         cursor.close()
@@ -2071,7 +2047,8 @@ def approve_request(
                 preferred_time,
                 session_type,
                 second_person_name,
-                second_person_email
+                second_person_email,
+                catalog_pack_id
             FROM client_requests
             WHERE id = %s AND LOWER(status) = 'pending'
             FOR UPDATE
@@ -2086,7 +2063,11 @@ def approve_request(
             raise HTTPException(status_code=404, detail="Pending request not found")
 
         user_id = request[0]
-        plan_id = data.plan_id or request[1]
+        # the catalogue pack: the one the admin picked, else the requested one (a request made before the catalogue
+        # only knows its plan: it stands for the catalogue pack made from that plan)
+        pack_id = data.pack_id or request[8] or pack_catalog.pack_for_request(cursor, request[1], request[5])
+        if not pack_id:
+            raise HTTPException(status_code=422, detail="Choose a pack for this request.")
         sessions_per_week = data.sessions_per_week or request[2]
         preferred_days = request[3]
         preferred_time = request[4]
@@ -2103,16 +2084,16 @@ def approve_request(
         if sessions_per_week < 1 or sessions_per_week > 7:
             raise HTTPException(status_code=400, detail="Sessions per week must be between 1 and 7")
 
-        extra = clean_pack_recipients(data.email_extra, client_email)
+        extra = clean_pack_recipients(data.extra_recipients if data.extra_recipients is not None else data.email_extra, client_email)
 
         created = create_pack(
-            cursor, created_event_ids,
+            cursor, created_event_ids, extra_emails=extra,
             user_id=user_id, client_name=client_name, client_email=client_email,
-            plan_id=plan_id, trainer_id=data.trainer_id, trainer_name=trainer_name,
+            catalog_pack_id=pack_id, trainer_id=data.trainer_id, trainer_name=trainer_name,
             sessions_per_week=sessions_per_week, preferred_days=preferred_days,
             preferred_time=preferred_time, start_date=data.start_date,
             request_id=data.request_id, allow_conflicts=data.allow_conflicts,
-            confirm_replace=data.confirm_replace,
+            allow_overlaps=data.allow_overlaps,
             session_type=request[5], second_person_name=request[6], second_person_email=request[7],
             calendar_share=data.share_calendar, calendar_extra=extra,
         )
@@ -2126,6 +2107,7 @@ def approve_request(
                 trainer_id = %s,
                 start_date = %s,
                 plan_id = %s,
+                catalog_pack_id = %s,
                 sessions_per_week = %s,
                 rejection_reason = NULL
 
@@ -2134,25 +2116,26 @@ def approve_request(
             (
                 data.trainer_id,
                 data.start_date,
-                plan_id,
+                created["plan_id"],
+                pack_id,
                 sessions_per_week,
                 data.request_id
             )
         )
 
         conn.commit()
-        _after_pack_commit(created)         # only now: the cancelled sessions are saved
         inbox.on_pack_created(user_id, created["pack_id"], created["plan_name"])
 
         email = email_pack(
             created, client_name=client_name, client_email=client_email,
             days=[day.strip() for day in str(preferred_days).split(",") if day.strip()],
             sessions_per_week=sessions_per_week, trainer_name=trainer_name,
-            to_client=data.email_client, extra=extra,
+            to_client=True, extra=extra,
         )
 
         return {
             "message": "Request approved successfully",
+            "extra_recipients": extra,
             "total_sessions": created["total_sessions"],
             "calendar": {"failed": created["calendar_failed"], "errors": created["calendar_errors"], "guests_warning": created.get("calendar_guests_warning")},
             "email": email,
@@ -2204,32 +2187,32 @@ def admin_new_pack(client_id: int, data: NewPack):
             cursor, trainer_id=data.trainer_id, sessions_per_week=data.sessions_per_week,
             preferred_days=data.preferred_days, start_date=data.start_date,
         )
-        extra = clean_pack_recipients(data.email_extra, client_email)
+        extra = clean_pack_recipients(data.extra_recipients if data.extra_recipients is not None else data.email_extra, client_email)
 
         created = create_pack(
-            cursor, created_event_ids,
+            cursor, created_event_ids, extra_emails=extra,
             user_id=client_id, client_name=client_name, client_email=client_email,
-            plan_id=data.plan_id, trainer_id=data.trainer_id, trainer_name=trainer_name,
+            catalog_pack_id=data.pack_id, trainer_id=data.trainer_id, trainer_name=trainer_name,
             sessions_per_week=data.sessions_per_week, preferred_days=",".join(days),
             preferred_time=data.preferred_time, start_date=data.start_date,
-            allow_conflicts=data.allow_conflicts, confirm_replace=data.confirm_replace,
+            allow_conflicts=data.allow_conflicts, allow_overlaps=data.allow_overlaps,
             session_type=data.session_type, second_person_name=data.second_person_name,
             second_person_email=data.second_person_email,
             calendar_share=data.share_calendar, calendar_extra=extra,
         )
 
         conn.commit()
-        _after_pack_commit(created)         # only now: the cancelled sessions are saved
         inbox.on_pack_created(client_id, created["pack_id"], created["plan_name"])
 
         email = email_pack(
             created, client_name=client_name, client_email=client_email, days=days,
             sessions_per_week=data.sessions_per_week, trainer_name=trainer_name,
-            to_client=data.email_client, extra=extra,
+            to_client=True, extra=extra,
         )
 
         return {
             "message": "Pack created successfully",
+            "extra_recipients": extra,
             "total_sessions": created["total_sessions"],
             "start_date": created["session_dates"][0],
             "end_date": created["session_dates"][-1],
