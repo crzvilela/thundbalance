@@ -125,7 +125,8 @@ function TrialSession() {
   }, [timesState])
 
   // Only days on which at least one trainer works can be picked.
-  const isBookableDay = (date) => !schedule || (schedule[WEEKDAYS[(date.getDay() + 6) % 7]] || []).length > 0
+  // Saturday and Sunday are never an option, whatever the server says.
+  const isBookableDay = (date) => date.getDay() % 6 !== 0 && (!schedule || (schedule[WEEKDAYS[(date.getDay() + 6) % 7]] || []).length > 0)
 
   // The times depend on the date: they are the hours when a trainer is free.
   const applyTimes = (list) => {

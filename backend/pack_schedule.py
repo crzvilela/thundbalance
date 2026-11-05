@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException
 from pydantic import BaseModel
 
-from availability import SESSION_HOURS, WEEKDAYS, hhmm, to_minutes
+from availability import BOOKABLE_WEEKDAYS, SESSION_HOURS, WEEKDAYS, hhmm, is_bookable_weekday, to_minutes
 
 MAX_WEEKS_WINDOW = 60
 
@@ -50,8 +50,8 @@ def clean(entries, sessions_per_week=None, trainer_required=True):
     result, seen = [], set()
     for item in entries:
         weekday, time, trainer = _get(item, "weekday"), _get(item, "time"), _get(item, "trainer_id")
-        if weekday not in WEEKDAYS:
-            raise _bad("Use a weekday such as Monday. / Usa un día de la semana, por ejemplo Monday.")
+        if weekday not in BOOKABLE_WEEKDAYS:
+            raise _bad("Choose a day from Monday to Friday: Saturday and Sunday are not available. / Elige un día de lunes a viernes: sábado y domingo no están disponibles.")
         if weekday in seen:
             raise _bad("Each day can only appear once. / Cada día solo puede aparecer una vez.")
         seen.add(weekday)
@@ -115,7 +115,7 @@ def named(entries, names):
 
 def legacy_entries(days, time, trainer_id=None):
     """READ ONLY: the single hour of an old row as per-day entries (the admin prefills the form with it and labels it "old")."""
-    items = [day.strip() for day in str(days or "").split(",") if day.strip() in WEEKDAYS]
+    items = [day.strip() for day in str(days or "").split(",") if day.strip() in WEEKDAYS]      # an old row may hold a weekend day: it is only READ
     stamp = str(time or "")[:5]
     return [{"weekday": day, "time": stamp, "trainer_id": trainer_id} for day in items] if stamp else []
 
@@ -185,6 +185,8 @@ class Grid:
         return cls(trainers, windows, busy)
 
     def works(self, trainer_id, weekday, time):
+        if not is_bookable_weekday(weekday):
+            return False
         start = to_minutes(time)
         return any(low <= start and start + SESSION_HOURS * 60 <= high for low, high in self.windows.get((trainer_id, weekday), []))
 

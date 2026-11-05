@@ -5,7 +5,7 @@ import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
 import { useBulkSelection, SELECTING_CLASS, selectableProps } from '../bulk'
-import { WEEKDAYS } from '../availability'
+import { BOOKABLE_DAYS, WEEKDAYS } from '../availability'
 import TrainerAccess from '../TrainerAccess'
 import { NEUTRAL_COLOR, TRAINER_PALETTE } from '../calendar/calendarConfig'
 import {
@@ -76,7 +76,7 @@ function HoursEditor({ hours, setHours }) {
   return (
     <div>
       <div className="space-y-2">
-        {WEEKDAYS.map(day => {
+        {BOOKABLE_DAYS.map(day => {
           const window = hours[day]
           return (
             <div key={day} className={`grid grid-cols-[7.5rem_1fr] items-center gap-3 rounded-xl border px-4 py-2.5 sm:grid-cols-[9rem_6rem_1fr] ${window ? 'border-white/10 bg-white/[0.03]' : 'border-white/[0.05] bg-transparent'}`}>
@@ -109,7 +109,7 @@ function HoursEditor({ hours, setHours }) {
   )
 }
 
-const hoursInvalid = (hours) => WEEKDAYS.some(day => hours[day] && hours[day].start >= hours[day].end)
+const hoursInvalid = (hours) => BOOKABLE_DAYS.some(day => hours[day] && hours[day].start >= hours[day].end)
 
 function TrainerCard({ trainer, onChanged, check = null, selected = false, selection = null }) {
   const { t } = useAdminText()
@@ -121,7 +121,7 @@ function TrainerCard({ trainer, onChanged, check = null, selected = false, selec
   const [removing, setRemoving] = useState(false)
 
   const dirty = useMemo(() => JSON.stringify(hours) !== JSON.stringify(trainer.hours), [hours, trainer.hours])
-  const workingDays = WEEKDAYS.filter(day => hours[day]).length
+  const workingDays = BOOKABLE_DAYS.filter(day => hours[day]).length
 
   const save = async () => {
     if (hoursInvalid(hours)) { setError(t('tn_invalid')); return }

@@ -1,5 +1,5 @@
 import { useEffect, useId } from 'react'
-import { WEEKDAYS, hoursOf, setTime, setTrainer, staleDays, toggleDay, trainersAt, trimTo } from '../../utils/packSchedule'
+import { BOOKABLE_DAYS, hoursOf, setTime, setTrainer, staleDays, toggleDay, trainersAt, trimTo } from '../../utils/packSchedule'
 
 // The ONE component that chooses the weekly schedule of a pack, for the site (the client's request) and for the admin (new pack,
 // new client, approving a request): one DAY per weekly session, each with ITS OWN hour (only free hours) and ITS OWN trainer
@@ -59,7 +59,7 @@ export default function PackSchedulePicker({
     <div>
       <span className={style.label}>{text('ps_days')}</span>
       <div className="flex flex-wrap gap-3" role="group" aria-label={text('ps_days')}>
-        {WEEKDAYS.map(day => {
+        {BOOKABLE_DAYS.map(day => {
           const on = value.some(entry => entry.weekday === day)
           const offered = hoursOf(data, day).length > 0 || !data
           return (

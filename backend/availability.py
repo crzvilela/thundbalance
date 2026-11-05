@@ -10,6 +10,13 @@ from datetime import date as date_type, datetime, timedelta
 
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 SESSION_HOURS = 1
+# Saturday and Sunday are NEVER an option: nothing can be booked, requested, rescheduled or scheduled on them, whatever hours
+# are stored. Every rule below (working hours, free times, weekly pack hours, trial dates) reads this one list.
+BOOKABLE_WEEKDAYS = WEEKDAYS[:5]
+
+
+def is_bookable_weekday(weekday):
+    return weekday in BOOKABLE_WEEKDAYS
 
 # Initial team, seeded once (see ensure_trainers_and_availability). After that
 # the hours are edited from the admin panel and never overwritten.
@@ -44,6 +51,8 @@ def weekday_name(day):
 
 
 def _windows(cursor, trainer_id, weekday):
+    if not is_bookable_weekday(weekday):
+        return []
     cursor.execute(
         """
         SELECT start_time, end_time FROM trainer_availability
@@ -105,6 +114,8 @@ def slot_problem(cursor, trainer_id, day, time, ignore_session_id=None, ignore_t
         return f"{name} is no longer available for new sessions."
 
     weekday = weekday_name(day)
+    if not is_bookable_weekday(weekday):
+        return f"{name} does not work on {weekday}s (Saturday and Sunday are never available)."
     windows = _windows(cursor, trainer_id, weekday)
     start = to_minutes(time)
     if not any(low <= start and start + SESSION_HOURS * 60 <= high for low, high in windows):
@@ -179,7 +190,8 @@ def free_slots_between(cursor, trainer_id, first, last):
     )
     windows = {}
     for weekday, start, end in cursor.fetchall():
-        windows.setdefault(weekday, []).append((to_minutes(start), to_minutes(end)))
+        if is_bookable_weekday(weekday):
+            windows.setdefault(weekday, []).append((to_minutes(start), to_minutes(end)))
     cursor.execute(
         """
         SELECT session_date, session_time FROM sessions
@@ -218,6 +230,8 @@ def free_start_times_any_trainer(cursor, day, timeout_ms=None):
     time (the request fails with an error instead of hanging).
     """
     weekday = weekday_name(day)
+    if not is_bookable_weekday(weekday):
+        return []
     key = str(day)[:10]
     cursor.execute(
         _time_limit(timeout_ms) + """
@@ -266,7 +280,7 @@ def weekly_start_times(cursor, timeout_ms=None):
     )
     result = {day: set() for day in WEEKDAYS}
     for weekday, start, end in cursor.fetchall():
-        if weekday not in result:
+        if weekday not in result or not is_bookable_weekday(weekday):
             continue
         hour = (to_minutes(start) + 59) // 60
         while (hour + SESSION_HOURS) * 60 <= to_minutes(end):
@@ -343,6 +357,8 @@ def validate_hours(hours):
             raise ValueError(f"Unknown weekday: {day}")
         if window is None:
             continue
+        if not is_bookable_weekday(day):
+            continue                      # Saturday and Sunday are never an option: whatever is sent for them is ignored
         try:
             low, high = to_minutes(window.start), to_minutes(window.end)
         except Exception:
@@ -357,7 +373,7 @@ def save_hours(cursor, trainer_id, hours):
     """Replaces a trainer's weekly hours. A weekday set to None is a day off."""
     cursor.execute("DELETE FROM trainer_availability WHERE trainer_id = %s", (trainer_id,))
     for day, window in hours.items():
-        if window is None:
+        if window is None or not is_bookable_weekday(day):
             continue
         cursor.execute(
             """

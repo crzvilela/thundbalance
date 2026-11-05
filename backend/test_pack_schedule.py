@@ -333,6 +333,42 @@ class Schedule(unittest.TestCase):
         with self.assertRaises(Exception):
             main.ApproveRequest(request_id=1, start_date=self.monday.isoformat())
 
+
+    # ----- Saturday and Sunday are NEVER an option
+    def test_weekend_days_are_refused_and_never_offered(self):
+        for day in ("Saturday", "Sunday"):
+            with self.subTest(day), self.assertRaises(HTTPException) as caught:
+                pack_schedule.clean([{"weekday": day, "time": "10:00", "trainer_id": 1}], 1)
+            self.assertEqual(caught.exception.detail["code"], "invalid_schedule")
+        # even a trainer who has weekend hours stored is never free then
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO trainer_availability (trainer_id, day_of_week, start_time, end_time) VALUES (%s, 'Saturday', '08:00', '20:00')", (self.a,))
+        conn.commit()
+        conn.close()
+        answer = route("/pack-availability", "GET")(fake_request(), None, None)
+        self.assertEqual((answer["weekdays"]["Saturday"], answer["weekdays"]["Sunday"]), ([], []))
+        import availability
+        conn = get_connection()
+        cur = conn.cursor()
+        saturday = next_weekday(10, 5)
+        self.assertIsNotNone(availability.slot_problem(cur, self.a, saturday.isoformat(), "10:00"))
+        self.assertEqual(availability.free_start_times_any_trainer(cur, saturday.isoformat()), [])
+        self.assertEqual(availability.weekly_start_times(cur)["Saturday"], [])
+        conn.close()
+
+    def test_saving_trainer_hours_ignores_the_weekend(self):
+        import availability
+        conn = get_connection()
+        cur = conn.cursor()
+        window = type("W", (), {"start": "08:00", "end": "12:00"})
+        availability.validate_hours({"Monday": window, "Saturday": window})
+        availability.save_hours(cur, self.a, {"Monday": window, "Saturday": window})
+        cur.execute("SELECT day_of_week FROM trainer_availability WHERE trainer_id = %s", (self.a,))
+        self.assertEqual([r[0] for r in cur.fetchall()], ["Monday"])
+        conn.rollback()
+        conn.close()
+
     # ----- old single-hour rows are only read
     def test_an_old_single_hour_request_and_pack_stay_readable(self):
         conn = get_connection()
