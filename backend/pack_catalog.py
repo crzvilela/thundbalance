@@ -116,10 +116,23 @@ def _seed(cursor):
 
 
 def _new_plan(cursor, price_column, name, weeks, price):
+    # In some databases `plans.id` was created without a default (no serial / identity): then the id is given explicitly.
     cursor.execute(
-        f"INSERT INTO plans (nome, duracao_meses, {price_column}, duration_weeks) VALUES (%s, %s, %s, %s) RETURNING id",
-        (name, months_for(weeks), price, weeks),
+        "SELECT column_default IS NOT NULL OR is_identity = 'YES' FROM information_schema.columns "
+        "WHERE table_schema = current_schema() AND table_name = 'plans' AND column_name = 'id'"
     )
+    row = cursor.fetchone()
+    if row is None or row[0]:
+        cursor.execute(
+            f"INSERT INTO plans (nome, duracao_meses, {price_column}, duration_weeks) VALUES (%s, %s, %s, %s) RETURNING id",
+            (name, months_for(weeks), price, weeks),
+        )
+    else:
+        cursor.execute(
+            f"INSERT INTO plans (id, nome, duracao_meses, {price_column}, duration_weeks) "
+            "VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM plans), %s, %s, %s, %s) RETURNING id",
+            (name, months_for(weeks), price, weeks),
+        )
     return cursor.fetchone()[0]
 
 
