@@ -21,7 +21,7 @@ def age_from_birth_date(birth_date, today=None):
     return today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
 
 from availability import (
-    WEEKDAYS, create_trainer, hhmm, save_hours, slot_problem,
+    BOOKABLE_WEEKDAYS, create_trainer, hhmm, save_hours, slot_problem,
     trainer_usage, validate_hours,
 )
 import mailer
@@ -878,7 +878,7 @@ def register_admin_routes(app, require_admin):
             return [
                 {
                     "id": row[0], "name": row[1], "specialty": row[2], "color": row[3],
-                    "hours": {day: hours.get(row[0], {}).get(day) for day in WEEKDAYS},
+                    "hours": {day: hours.get(row[0], {}).get(day) for day in BOOKABLE_WEEKDAYS},
                 }
                 for row in trainers
             ]

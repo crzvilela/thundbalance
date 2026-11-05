@@ -8,7 +8,7 @@ export const pageText = {
   en: {
     // Shared
     wd_Monday: 'Monday', wd_Tuesday: 'Tuesday', wd_Wednesday: 'Wednesday', wd_Thursday: 'Thursday',
-    wd_Friday: 'Friday', wd_Saturday: 'Saturday', wd_Sunday: 'Sunday',
+    wd_Friday: 'Friday',
     pg_try_again: 'Try again',
 
     // Inbox (menu envelope, panel and Messages page)
@@ -347,7 +347,7 @@ export const pageText = {
 
   es: {
     wd_Monday: 'Lunes', wd_Tuesday: 'Martes', wd_Wednesday: 'Miércoles', wd_Thursday: 'Jueves',
-    wd_Friday: 'Viernes', wd_Saturday: 'Sábado', wd_Sunday: 'Domingo',
+    wd_Friday: 'Viernes',
     pg_try_again: 'Reintentar',
 
     // Inbox (menu envelope, panel and Messages page)
@@ -681,7 +681,7 @@ export const pageText = {
 
   ca: {
     wd_Monday: 'Dilluns', wd_Tuesday: 'Dimarts', wd_Wednesday: 'Dimecres', wd_Thursday: 'Dijous',
-    wd_Friday: 'Divendres', wd_Saturday: 'Dissabte', wd_Sunday: 'Diumenge',
+    wd_Friday: 'Divendres',
     pg_try_again: 'Torna-ho a provar',
 
     // Inbox (menu envelope, panel and Messages page)

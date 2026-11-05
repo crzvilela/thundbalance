@@ -20,13 +20,13 @@ export default function SessionCalendar({ month, onMonth, sessionsByDay, statusO
   const pendingFocus = useRef(false)
 
   const cells = useMemo(() => {
+    // Monday to Friday only: the weeks are drawn from the Monday of the first week, and the two other days of each week are left out
     const first = new Date(month.getFullYear(), month.getMonth(), 1)
     const offset = (first.getDay() + 6) % 7
     const total = Math.ceil((offset + new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()) / 7) * 7
-    return Array.from({ length: total }, (_, index) => {
-      const date = new Date(month.getFullYear(), month.getMonth(), index - offset + 1)
-      return { key: keyOf(date), day: date.getDate(), inMonth: date.getMonth() === month.getMonth() }
-    })
+    return Array.from({ length: total }, (_, index) => new Date(month.getFullYear(), month.getMonth(), index - offset + 1))
+      .filter(date => date.getDay() % 6 !== 0)
+      .map(date => ({ key: keyOf(date), day: date.getDate(), inMonth: date.getMonth() === month.getMonth() }))
   }, [month])
 
   const inMonth = (key) => cells.some(cell => cell.key === key && cell.inMonth)
@@ -50,7 +50,12 @@ export default function SessionCalendar({ month, onMonth, sessionsByDay, statusO
 
   const onKeyDown = (event, key) => {
     const steps = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }
-    if (steps[event.key]) { event.preventDefault(); move(addDays(key, steps[event.key])) }
+    if (steps[event.key]) {
+      event.preventDefault()
+      let target = addDays(key, steps[event.key])
+      while (parseKey(target).getDay() % 6 === 0) target = addDays(target, steps[event.key] > 0 ? 1 : -1)      // skip the days that are not shown
+      move(target)
+    }
     else if (event.key === 'PageUp' || event.key === 'PageDown') {
       event.preventDefault()
       const date = parseKey(key)
@@ -59,7 +64,7 @@ export default function SessionCalendar({ month, onMonth, sessionsByDay, statusO
     } else if (event.key === 'Home' || event.key === 'End') {
       event.preventDefault()
       const weekday = (parseKey(key).getDay() + 6) % 7
-      move(addDays(key, event.key === 'Home' ? -weekday : 6 - weekday))
+      move(addDays(key, event.key === 'Home' ? -weekday : 4 - weekday))
     }
   }
 
@@ -78,7 +83,7 @@ export default function SessionCalendar({ month, onMonth, sessionsByDay, statusO
         </div>
       </div>
 
-      <div role="group" aria-label={t('ms_calendar_label')} className={`grid grid-cols-7 text-center ${compact ? 'gap-0.5' : 'gap-1 sm:gap-1.5'}`}>
+      <div role="group" aria-label={t('ms_calendar_label')} className={`grid grid-cols-5 text-center ${compact ? 'gap-0.5' : 'gap-1 sm:gap-1.5'}`}>
         {weekdayNames(locale).map(name => <div key={name} className={`text-[11px] uppercase tracking-wider text-gray-400 ${compact ? 'pb-1' : 'pb-2'}`}>{name}</div>)}
         {cells.map(cell => {
           const list = sessionsByDay.get(cell.key) || []

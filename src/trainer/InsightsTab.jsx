@@ -52,7 +52,7 @@ export default function InsightsTab({ state, text, color }) {
   if (!data) return null
 
   const number = (value) => new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(value)
-  const weekday = (key) => formatDay(`2026-10-${19 + ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].indexOf(key)}`, locale, { weekday: 'short' })
+  const weekday = (key) => formatDay(`2026-10-${19 + ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].indexOf(key)}`, locale, { weekday: 'short' })
   const valueText = (n) => (n === 1 ? t('tr_chart_value_one') : t('tr_chart_value', { n }))
 
   return (

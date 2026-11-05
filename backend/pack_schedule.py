@@ -51,7 +51,7 @@ def clean(entries, sessions_per_week=None, trainer_required=True):
     for item in entries:
         weekday, time, trainer = _get(item, "weekday"), _get(item, "time"), _get(item, "trainer_id")
         if weekday not in BOOKABLE_WEEKDAYS:
-            raise _bad("Choose a day from Monday to Friday: Saturday and Sunday are not available. / Elige un día de lunes a viernes: sábado y domingo no están disponibles.")
+            raise _bad("Choose a day from Monday to Friday. / Elige un día de lunes a viernes.")
         if weekday in seen:
             raise _bad("Each day can only appear once. / Cada día solo puede aparecer una vez.")
         seen.add(weekday)

@@ -6,7 +6,7 @@ import { madridWallClock } from '../admin/calendar/calendarConfig.js'
 export const PERIODS = ['today', 'week', 'month', 'custom']
 export const MAX_RANGE_DAYS = 366
 export const STATUSES = ['booked', 'completed', 'cancelled']
-export const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+export const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
 
 const pad = (n) => String(n).padStart(2, '0')
 const utc = (key) => {
@@ -19,7 +19,7 @@ export const addDaysKey = (key, days) => toKey(new Date(utc(key).getTime() + day
 // Today in Madrid, as a key
 export const madridToday = (now = new Date()) => toKey(madridWallClock(now))
 
-// The first and last day of today | week (Monday to Sunday) | month, in Madrid. `custom` is chosen by the person.
+// The first and last day of today | week | month, in Madrid. `custom` is chosen by the person.
 export function periodRange(period, today = madridToday()) {
   if (period === 'today') return { from: today, to: today }
   if (period === 'week') {
@@ -68,7 +68,7 @@ export function groupByDay(sessions, today = madridToday()) {
 
 export const filterByStatus = (sessions, status) => (status === 'all' ? sessions : sessions.filter(item => item.status === status))
 
-// Seven columns, Monday first, with 0 for the days that have no sessions: [{ key, value }]
+// Five columns, Monday to Friday, with 0 for the days that have no sessions: [{ key, value }]
 export function weekdayBars(busiest = []) {
   const counts = Object.fromEntries(busiest.map(item => [item.weekday, item.count]))
   return WEEKDAYS.map(key => ({ key, value: counts[key] || 0 }))

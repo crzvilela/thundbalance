@@ -4,9 +4,8 @@
 // Trainer shape (from /admin/trainer-availability):
 // { id, name, hours: { Monday: { start: '07:00', end: '14:00' } | null, ... } }
 
-export const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-// Saturday and Sunday are never an option (trainer hours, bookings): only these days are edited or offered.
-export const BOOKABLE_DAYS = WEEKDAYS.slice(0, 5)
+// The days the studio works and offers: Monday to Friday.
+export const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
 
 const minutes = (value) => {
   const [hour, minute] = String(value).split(':')

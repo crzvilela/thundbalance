@@ -4,9 +4,8 @@
 // component is components/forms/PackSchedulePicker.jsx and the free hours come from GET /pack-availability.
 // An availability answer is { weekdays: { Monday: [{ time: '07:00', trainers: [{ id, name }] }, ...], ... } }.
 
-export const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-// Saturday and Sunday are NEVER an option: only these days can be chosen (the server refuses the others).
-export const BOOKABLE_DAYS = WEEKDAYS.slice(0, 5)
+// The only days that exist for a pack: Monday to Friday (the server refuses any other).
+export const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
 
 const order = (entries) => [...entries].sort((a, b) => WEEKDAYS.indexOf(a.weekday) - WEEKDAYS.indexOf(b.weekday))
 
@@ -17,7 +16,7 @@ export const trainersAt = (availability, weekday, time) => hoursOf(availability,
 
 export function trainerNames(availability) {
   const names = new Map()
-  for (const day of BOOKABLE_DAYS) {
+  for (const day of WEEKDAYS) {
     for (const hour of availability?.weekdays?.[day] || []) {
       for (const trainer of hour.trainers) names.set(trainer.id, trainer.name)
     }
@@ -80,7 +79,7 @@ export function fromStored({ schedule, days, time, trainerId } = {}) {
   if (Array.isArray(schedule) && schedule.length) {
     return { legacy: false, entries: order(schedule.map(entry => ({ weekday: entry.weekday, time: String(entry.time).slice(0, 5), trainer_id: entry.trainer_id ?? '' }))) }
   }
-  const list = String(days || '').split(',').map(day => day.trim()).filter(day => BOOKABLE_DAYS.includes(day))      // a weekend day of an old row is not carried over
+  const list = String(days || '').split(',').map(day => day.trim()).filter(day => WEEKDAYS.includes(day))      // a day of an old row that is not offered any more is not carried over
   const stamp = time ? String(time).slice(0, 5) : ''
   return { legacy: list.length > 0, entries: order(list.map(weekday => ({ weekday, time: stamp, trainer_id: trainerId ?? '' }))) }
 }

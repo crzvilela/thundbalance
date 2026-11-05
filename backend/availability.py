@@ -10,8 +10,8 @@ from datetime import date as date_type, datetime, timedelta
 
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 SESSION_HOURS = 1
-# Saturday and Sunday are NEVER an option: nothing can be booked, requested, rescheduled or scheduled on them, whatever hours
-# are stored. Every rule below (working hours, free times, weekly pack hours, trial dates) reads this one list.
+# The studio works Monday to Friday and nothing else is an option: nothing can be booked, requested, rescheduled or scheduled on
+# any other day, whatever hours are stored. Every rule below (working hours, free times, weekly pack hours, trial dates) reads this one list.
 BOOKABLE_WEEKDAYS = WEEKDAYS[:5]
 
 
@@ -115,7 +115,7 @@ def slot_problem(cursor, trainer_id, day, time, ignore_session_id=None, ignore_t
 
     weekday = weekday_name(day)
     if not is_bookable_weekday(weekday):
-        return f"{name} does not work on {weekday}s (Saturday and Sunday are never available)."
+        return f"{name} is not available on that day (only Monday to Friday)."
     windows = _windows(cursor, trainer_id, weekday)
     start = to_minutes(time)
     if not any(low <= start and start + SESSION_HOURS * 60 <= high for low, high in windows):
@@ -358,7 +358,7 @@ def validate_hours(hours):
         if window is None:
             continue
         if not is_bookable_weekday(day):
-            continue                      # Saturday and Sunday are never an option: whatever is sent for them is ignored
+            continue                      # only Monday to Friday exist: whatever is sent for another day is ignored
         try:
             low, high = to_minutes(window.start), to_minutes(window.end)
         except Exception:

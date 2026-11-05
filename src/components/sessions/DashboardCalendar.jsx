@@ -11,7 +11,7 @@ function Skeleton() {
   return (
     <div role="status" aria-label="…" className="animate-pulse">
       <div className="mb-4 flex items-center justify-between"><div className="h-8 w-40 rounded-lg bg-white/10" /><div className="h-8 w-28 rounded-lg bg-white/10" /></div>
-      <div className="grid grid-cols-7 gap-1.5">{Array.from({ length: 35 }, (_, index) => <div key={index} className="aspect-square min-h-[40px] rounded-xl bg-white/[0.06]" />)}</div>
+      <div className="grid grid-cols-5 gap-1.5">{Array.from({ length: 25 }, (_, index) => <div key={index} className="aspect-square min-h-[40px] rounded-xl bg-white/[0.06]" />)}</div>
     </div>
   )
 }

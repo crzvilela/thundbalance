@@ -143,3 +143,10 @@ html {
   font-weight: 700;
 
 }
+
+/* The trial date picker shows Monday to Friday only: the week starts on Monday and the last two columns are not drawn. */
+.react-datepicker.tb-workdays .react-datepicker__day-name:nth-child(n + 6),
+.react-datepicker.tb-workdays .react-datepicker__week > .react-datepicker__day:nth-child(n + 6),
+.react-datepicker.tb-workdays .react-datepicker__week > .react-datepicker__week-number ~ .react-datepicker__day:nth-child(n + 7) {
+  display: none;
+}

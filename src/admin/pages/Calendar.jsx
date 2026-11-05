@@ -198,6 +198,7 @@ export default function Calendar() {
             timeZone="UTC"
             now={madridWallClock}
             firstDay={1}
+            weekends={false}
             height="100%"
             expandRows
             nowIndicator

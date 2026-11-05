@@ -857,11 +857,11 @@ export const adminText = {
     st_rejected: 'Declined',
     days: {
       Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed', Thursday: 'Thu',
-      Friday: 'Fri', Saturday: 'Sat', Sunday: 'Sun'
+      Friday: 'Fri'
     },
     days_full: {
       Monday: 'Monday', Tuesday: 'Tuesday', Wednesday: 'Wednesday', Thursday: 'Thursday',
-      Friday: 'Friday', Saturday: 'Saturday', Sunday: 'Sunday'
+      Friday: 'Friday'
     }
   },
   es: {
@@ -1719,11 +1719,11 @@ export const adminText = {
     st_rejected: 'Rechazada',
     days: {
       Monday: 'Lun', Tuesday: 'Mar', Wednesday: 'Mié', Thursday: 'Jue',
-      Friday: 'Vie', Saturday: 'Sáb', Sunday: 'Dom'
+      Friday: 'Vie'
     },
     days_full: {
       Monday: 'Lunes', Tuesday: 'Martes', Wednesday: 'Miércoles', Thursday: 'Jueves',
-      Friday: 'Viernes', Saturday: 'Sábado', Sunday: 'Domingo'
+      Friday: 'Viernes'
     }
   }
 }
