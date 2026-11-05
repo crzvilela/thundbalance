@@ -207,9 +207,13 @@ class Schedule(unittest.TestCase):
         self.assertEqual(stored[2], "Monday,Wednesday")
 
     def test_the_preview_lists_each_session_with_its_hour_and_trainer(self):
-        preview = packs.preview_pack(
-            get_conn_cursor(), user_id=self.user_id, catalog_pack_id=self.pack_ids["individual"], sessions_per_week=2,
-            schedule=self.mine, start_date=self.monday.isoformat())
+        conn = get_connection()
+        try:
+            preview = packs.preview_pack(
+                conn.cursor(), user_id=self.user_id, catalog_pack_id=self.pack_ids["individual"], sessions_per_week=2,
+                schedule=self.mine, start_date=self.monday.isoformat())
+        finally:
+            conn.close()
         self.assertEqual(preview["total_sessions"], 4)
         self.assertEqual([(s["time"], s["trainer_id"]) for s in preview["sessions"]], [("18:00", self.a), ("09:00", self.b)] * 2)
         self.assertEqual(preview["sessions"][0]["number"], "1/4")
@@ -360,11 +364,6 @@ class _Request:
 
 def fake_request():
     return _Request()
-
-
-def get_conn_cursor():
-    conn = get_connection()
-    return conn.cursor()
 
 
 if __name__ == "__main__":
