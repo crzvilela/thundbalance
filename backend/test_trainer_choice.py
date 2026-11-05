@@ -222,11 +222,11 @@ class Choice(unittest.TestCase):
         self.assertEqual(self.code_of(caught), "trainer_unavailable")
         self.pack_request("Monday,Wednesday", "10:00", trainer=a)
         self.assertEqual(self.sql("SELECT trainer_id FROM client_requests WHERE user_id = %s", (self.user_id,)), [(a,)])
-        # the admin list shows it (the last two columns of each row)
+        # the admin list shows it (trainer id and name are columns 13 and 14 of each row)
         rows = main.admin_client_requests(archived="exclude") if hasattr(main, "admin_client_requests") else None
         if rows:
             mine = next(row for row in rows if row[1] == "Choice Client")
-            self.assertEqual(mine[-2:], [a, "TEST Choice A"])
+            self.assertEqual(mine[13:15], [a, "TEST Choice A"])
 
     # ----- the change of date
     def make_session(self):
