@@ -408,8 +408,13 @@ class Parallel(unittest.TestCase):
             self.renew(per_week=1, days="Monday", start=monday)
         self.assertIn("trainer_busy", {c["kind"] for c in busy.exception.detail["conflicts"]})
 
+        with self.assertRaises(HTTPException) as weekend:
+            self.renew(per_week=1, days="Saturday", start=next_weekday(14, 5))       # Saturday and Sunday are never an option
+        self.assertEqual(weekend.exception.status_code, 422)
+        self.assertEqual(weekend.exception.detail["code"], "invalid_schedule")
+
         with self.assertRaises(HTTPException) as hours:
-            self.renew(per_week=1, days="Saturday", start=next_weekday(14, 5))       # nobody works on Saturdays
+            self.renew(per_week=1, days="Monday", start=monday, time="23:00")        # a weekday, but outside the trainer's hours
         self.assertEqual({c["kind"] for c in hours.exception.detail["conflicts"]}, {"trainer_hours"})
 
     def test_the_preview_counts_sessions_and_lists_conflicts_and_overlaps_without_writing(self):

@@ -215,11 +215,12 @@ class Choice(unittest.TestCase):
         with self.assertRaises(HTTPException) as caught:
             self.pack_request("Monday,Tuesday", "10:00", trainer=a)               # A does not work on Tuesdays
         self.assertEqual(caught.exception.status_code, 409)
-        self.assertEqual(self.code_of(caught), "trainer_unavailable")
-        self.assertNotIn(a, {item["id"] for item in caught.exception.detail["alternatives"]})
+        self.assertEqual(self.code_of(caught), "schedule_unavailable")            # answered by pack_schedule: one entry per day that is not free
+        tuesday_entry = next(entry for entry in caught.exception.detail["entries"] if entry["weekday"] == "Tuesday")
+        self.assertNotIn(a, {item["id"] for item in tuesday_entry["alternatives"]})
         with self.assertRaises(HTTPException) as caught:
             self.pack_request("Monday,Tuesday", "10:00", trainer=tuesday)         # the Tuesday trainer does not work on Mondays
-        self.assertEqual(self.code_of(caught), "trainer_unavailable")
+        self.assertEqual(self.code_of(caught), "schedule_unavailable")
         self.pack_request("Monday,Wednesday", "10:00", trainer=a)
         self.assertEqual(self.sql("SELECT trainer_id FROM client_requests WHERE user_id = %s", (self.user_id,)), [(a,)])
         # the admin list shows it (trainer id and name are columns 13 and 14 of each row)
