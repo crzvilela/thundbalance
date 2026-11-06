@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Home from '../pages/Home'
 import Login from '../pages/Login'
 import RequireAdmin from '../components/admin/RequireAdmin'
+import ConsentBanner from '../components/ConsentBanner'
 import { NotForTrainers, TrainerRoute } from '../roles/RoleGuards'
 const Register = lazy(() => import('../pages/Register'))
 const Dashboard = lazy(() => import('../pages/Dashboard'))
@@ -31,6 +32,8 @@ const TrialConfirm = lazy(() => import('../pages/TrialConfirm'))
 const RescheduleResponse = lazy(() => import('../pages/RescheduleResponse'))
 const TrainingRequest = lazy(() => import('../pages/TrainingRequest'))
 const AdminLogin = lazy(() => import('../pages/admin/AdminLogin'))
+const LegalPage = lazy(() => import('../pages/LegalPage'))
+const NotFound = lazy(() => import('../pages/NotFound'))
 
 function AppRoutes() {
   return (
@@ -90,9 +93,15 @@ function AppRoutes() {
         <Route path="/training-request" element={<NotForTrainers><TrainingRequest /></NotForTrainers>}/>
 
         <Route path="/trainer" element={<TrainerRoute><TrainerArea /></TrainerRoute>} />
+
+        <Route path="/privacy" element={<LegalPage page="privacy" />} />
+        <Route path="/cookies" element={<LegalPage page="cookies" />} />
+        <Route path="/legal-notice" element={<LegalPage page="legal" />} />
+        <Route path="*" element={<NotFound />} />
       
       </Routes>
       </Suspense>
+      <ConsentBanner />
 
     </BrowserRouter>
   )

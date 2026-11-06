@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import ConsentGate from './ConsentGate'
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 const PLACE_QUERY = 'ThundBalance, Carrer de Pallars 286, Barcelona, Spain'
@@ -59,6 +60,10 @@ function ElfsightReviews() {
 }
 
 export default function GoogleReviews() {
+  return <ConsentGate className="min-h-56"><GoogleReviewsContent /></ConsentGate>
+}
+
+function GoogleReviewsContent() {
   const [placeId, setPlaceId] = useState('')
   const [useElfsight, setUseElfsight] = useState(!GOOGLE_MAPS_API_KEY)
 

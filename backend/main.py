@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, Request
 
 import os
+import web_safety
 import re
 import threading
 import time as _time
@@ -80,7 +81,11 @@ from google.oauth2 import id_token
 # Application logs go to the console at INFO (ids and outcomes, never names or e-mails).
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper(), format="%(levelname)s %(name)s: %(message)s")
 
-app = FastAPI()
+web_safety.start_error_reporting()
+# The interactive API docs list every route: only on request (ENABLE_API_DOCS=1), never in production.
+_DOCS = os.getenv("ENABLE_API_DOCS", "").strip() == "1"
+app = FastAPI(docs_url="/docs" if _DOCS else None, redoc_url=None, openapi_url="/openapi.json" if _DOCS else None)
+web_safety.register_safety(app)
 
 # Sites allowed to call this API from a browser. Extra ones (the final domain)
 # come from CORS_ORIGINS in the environment, comma separated, so changing
@@ -95,8 +100,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -293,10 +298,11 @@ client_lang.register_client_lang_routes(app, require_client, _own_user_id)
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+web_safety.register_upload_routes(app, UPLOAD_DIR)         # images live in the database; the disk only keeps older files and videos
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
-ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"}
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}      # no .svg: it can carry scripts
 MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024  # 8MB
 
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov"}
@@ -1265,19 +1271,10 @@ def admin_sessions():
 
 @app.post("/profile/{user_id}/photo")
 async def upload_profile_photo(user_id: int, file: UploadFile = File(...), claims=Depends(require_account)):
-    extension = os.path.splitext(file.filename or "")[1].lower()
-    if extension not in {".jpg", ".jpeg", ".png", ".webp"}:
-        raise HTTPException(status_code=400, detail="Use a JPG, PNG or WebP image")
     contents = await file.read(5 * 1024 * 1024 + 1)
-    if not contents or len(contents) > 5 * 1024 * 1024:
+    if len(contents) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Image must be smaller than 5MB")
-    valid_image = (
-        (extension in {".jpg", ".jpeg"} and contents.startswith(b"\xff\xd8\xff"))
-        or (extension == ".png" and contents.startswith(b"\x89PNG\r\n\x1a\n"))
-        or (extension == ".webp" and contents[:4] == b"RIFF" and contents[8:12] == b"WEBP")
-    )
-    if not valid_image:
-        raise HTTPException(status_code=400, detail="Invalid image file")
+    extension = web_safety.check_image(file.filename, contents)
     conn = get_connection()
     cursor = conn.cursor()
     destination = None
@@ -1286,10 +1283,7 @@ async def upload_profile_photo(user_id: int, file: UploadFile = File(...), claim
         if not cursor.fetchone():
             raise HTTPException(status_code=403, detail="You can only update your own photo")
         filename = f"{uuid.uuid4().hex}{extension}"
-        destination = os.path.join(UPLOAD_DIR, filename)
-        with open(destination, "wb") as image_file:
-            image_file.write(contents)
-        photo_url = f"/uploads/{filename}"
+        photo_url = web_safety.save_upload(filename, contents)
         cursor.execute("UPDATE users SET foto = %s WHERE id = %s", (photo_url, user_id))
         conn.commit()
         return {"url": photo_url}
@@ -2729,24 +2723,13 @@ def reset_landing_page(version: str = "draft"):
 @app.post("/landing-page/upload-image", dependencies=[Depends(require_admin)])
 async def upload_landing_page_image(file: UploadFile = File(...)):
 
-    original_name = file.filename or "image"
-    extension = os.path.splitext(original_name)[1].lower()
-
-    if extension not in ALLOWED_IMAGE_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Unsupported image type")
-
-    contents = await file.read()
+    contents = await file.read(MAX_IMAGE_SIZE_BYTES + 1)
 
     if len(contents) > MAX_IMAGE_SIZE_BYTES:
         raise HTTPException(status_code=400, detail="Image is too large (max 8MB)")
 
-    filename = f"{uuid.uuid4().hex}{extension}"
-    destination = os.path.join(UPLOAD_DIR, filename)
-
-    with open(destination, "wb") as f:
-        f.write(contents)
-
-    return {"url": f"/uploads/{filename}"}
+    extension = web_safety.check_image(file.filename, contents)       # extension AND first bytes, no .svg
+    return {"url": web_safety.save_upload(f"{uuid.uuid4().hex}{extension}", contents)}
 
 
 @app.post("/landing-page/upload-video", dependencies=[Depends(require_admin)])

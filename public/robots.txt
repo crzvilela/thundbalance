@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /trainer
+Disallow: /dashboard
+Disallow: /my-sessions
+Disallow: /messages
+Disallow: /profile
+Disallow: /trial-session/confirm/
+Disallow: /reschedule-response/
+
+Sitemap: https://thundbalance.vercel.app/sitemap.xml

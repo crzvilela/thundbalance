@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import ConsentGate from './ConsentGate'
 import { resolveImageUrl } from '../api/landingPage'
 import { getEmbedUrl, getInstagramEmbedUrl } from '../utils/videoEmbed'
 
@@ -11,13 +12,13 @@ function TrainingVideoPlayer({ source, url, className = '', compact = false }) {
   if (source === 'instagram') {
     return (
       <div className={`w-full max-w-sm mx-auto aspect-[9/16] ${className}`}>
-        <iframe
+        <ConsentGate className="h-full"><iframe
           src={getInstagramEmbedUrl(url)}
           className="w-full h-full rounded-lg border-0"
           title="Instagram Reel"
           scrolling="no"
           allow="autoplay; encrypted-media"
-        />
+        /></ConsentGate>
       </div>
     )
   }
@@ -25,13 +26,13 @@ function TrainingVideoPlayer({ source, url, className = '', compact = false }) {
   if (source === 'youtube' || source === 'vimeo') {
     return (
       <div className={`w-full aspect-video ${className}`}>
-        <iframe
+        <ConsentGate className="h-full"><iframe
           src={getEmbedUrl(url)}
           className="w-full h-full rounded-lg border-0"
           title="Video"
           allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
-        />
+        /></ConsentGate>
       </div>
     )
   }

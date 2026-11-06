@@ -29,3 +29,7 @@
   .footer-icon-link::after { content: ''; position: absolute; inset: -10px; }
   .footer-meta { font-size: 12px; }
 }
+
+.footer-legal { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; width: 100%; margin-top: 8px; }
+.footer-legal a { color: #a6a6a6; text-decoration: underline; text-underline-offset: 2px; padding: 6px 2px; }
+.footer-legal a:hover { color: #fff; }
