@@ -7,6 +7,7 @@ local database is used and cleaned up. The key promise tested here: the
 document is validated, masked in lists, and never appears in emails, logs or
 error answers.
 """
+import pack_schedule
 import asyncio
 import io
 import json
@@ -183,8 +184,7 @@ class Endpoints(unittest.TestCase):
             while start.weekday() != 0:
                 start += timedelta(days=1)
             pack_data = client_accounts.ClientPack(
-                pack_id=self.pack_ids["individual"], sessions_per_week=1, preferred_days="Monday", preferred_time="09:00",
-                trainer_id=self.trainer_id, start_date=start.isoformat())
+                pack_id=self.pack_ids["individual"], sessions_per_week=1, schedule=pack_schedule.uniform("Monday", "09:00", self.trainer_id), start_date=start.isoformat())
         out = io.StringIO()
         with redirect_stdout(out):
             result = route("/admin/clients", "POST")(client_accounts.CreateClient(

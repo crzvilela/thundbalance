@@ -59,3 +59,31 @@ Sin esa variable el panel responde "La creación de cuentas no está configurada
 - Validación (`backend/tax_id.py`, igual en el frontend): DNI = 8 dígitos + letra (módulo 23); NIE = X/Y/Z + 7 dígitos + letra; Pasaporte/Otro = 4 a 20 letras o números. Se normaliza a mayúsculas sin espacios, puntos ni guiones.
 - Las listas devuelven solo el documento enmascarado (`••••678Z`). El documento completo solo lo ven el admin (ficha del cliente) y el propio cliente (Perfil).
 - El documento y la dirección no se envían nunca por email, ni a logs, ni en respuestas de error.
+
+## Envío desde el dominio (Gmail API, `pt@thundbalance.com`)
+
+Los emails pueden salir de `pt@thundbalance.com` por la Gmail API (HTTPS, funciona en Render gratis) con la **misma cuenta de servicio del Google Calendar** y delegación de todo el dominio. Así pasan SPF, DKIM y DMARC del dominio y no caen en spam.
+
+**Lo que hace el jefe (una vez, fuera del código):**
+1. En Google Cloud, activar la **Gmail API** del proyecto de la cuenta de servicio.
+2. En la consola de administración de Google Workspace → Seguridad → Acceso y control de datos → Controles de API → **Delegación de todo el dominio**: en el cliente de la cuenta de servicio, los ámbitos deben ser `https://www.googleapis.com/auth/calendar` **y** `https://www.googleapis.com/auth/gmail.send`.
+3. Comprobar que `pt@thundbalance.com` es un buzón real y que SPF/DKIM (y DMARC) del dominio están activos.
+
+**Variables del servidor (Render):**
+
+| Variable | Valor | Para qué |
+|---|---|---|
+| `MAIL_PROVIDER` | `gmail_api` o `legacy` (por defecto `legacy`) | Con `gmail_api` TODOS los emails (clientes y equipo) salen por la Gmail API |
+| `MAIL_FROM_EMAIL` | `pt@thundbalance.com` | Remitente y usuario al que suplanta la delegación |
+| `MAIL_FROM_NAME` | `ThundBalance` | Nombre visible del remitente |
+| `MAIL_REPLY_TO` | `pt@thundbalance.com` | Dirección de respuesta |
+
+Las credenciales del método antiguo (`TRIAL_EMAIL_WEBHOOK_URL`, `TRIAL_EMAIL_WEBHOOK_SECRET`) **no se borran**: son la alternativa.
+
+**Si la delegación aún no está activa:** cada email sale por el método antiguo, el log solo guarda el tipo de error (nunca destinatario, nombre ni cuerpo) y el panel muestra el aviso «Envío por dominio no configurado». Las reservas, packs y aprobaciones nunca se bloquean por un fallo de envío. Tras un rechazo, la delegación no se vuelve a consultar durante 5 minutos.
+
+**Cómo validar:**
+1. En el panel de admin (barra lateral) pulsar **Enviar email de prueba** (máx. 5 por hora) a un Gmail. La respuesta indica el método usado y si hubo fallback.
+2. En Gmail abrir el mensaje → ⋮ → **Mostrar original** y comprobar que **SPF, DKIM y DMARC = PASS**, y que el remitente es `ThundBalance <pt@thundbalance.com>`.
+3. Revisar acentos, ñ y ç en el asunto y el cuerpo, y que el Bcc funciona (acciones del panel con destinatarios extra).
+4. Si todo está bien, dejar `MAIL_PROVIDER=gmail_api` en Render (volver a `legacy` revierte sin tocar código).

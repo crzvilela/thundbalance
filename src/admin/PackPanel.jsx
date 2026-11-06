@@ -6,6 +6,7 @@ import { dateKey, parseDateKey } from './requests'
 import { WEEKDAYS } from './availability'
 import { Badge, Button, ConfirmDialog, Drawer } from './ui'
 import PackFields from './PackFields'
+import { scheduleLines } from './scheduleText'
 import { TypeBadge } from './SessionKind'
 import { formatMoney } from '../utils/pricing'
 import { packIsComplete, packPayload, startIsInThePast, usePackForm, usePackPreview } from './packForm'
@@ -68,7 +69,7 @@ export function PackSummary({ packs = [], onNewPack }) {
               )}
               <div className="col-span-2">
                 <dt className="text-sm text-gray-500">{t('pk_schedule')}</dt>
-                <dd>{pack.preferred_days ? `${pack.preferred_days.split(',').map(day => dayLabel(day.trim())).join(', ')} · ${String(pack.preferred_time || '').slice(0, 5)}` : '—'}</dd>
+                <dd>{scheduleLines(pack, { dayLabel, t }).map(line => <span key={line} className="block">{line}</span>)}{!scheduleLines(pack, { dayLabel, t }).length && '—'}</dd>
               </div>
             </dl>
           </div>
@@ -103,9 +104,13 @@ export function TrainingCalendar({ sessions }) {
 
   const year = cursor.getFullYear()
   const month = cursor.getMonth()
-  const offset = (new Date(year, month, 1).getDay() + 6) % 7
+  // Monday to Friday only: the first week starts under its own weekday and the other two days of each week are left out
   const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const cells = [...Array(offset).fill(null), ...Array.from({ length: daysInMonth }, (_, index) => index + 1)]
+  const firstDay = new Date(year, month, 1).getDay()
+  const cells = [
+    ...Array(firstDay === 0 ? 0 : firstDay === 6 ? 0 : firstDay - 1).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, index) => index + 1).filter(day => new Date(year, month, day).getDay() % 6 !== 0)
+  ]
 
   const toneFor = (list) => {
     if (list.every(session => session.status === 'Cancelled')) return 'border border-red-400/40 text-red-300 line-through'
@@ -121,7 +126,7 @@ export function TrainingCalendar({ sessions }) {
           <p className="font-medium capitalize">{cursor.toLocaleDateString(locale, { month: 'long', year: 'numeric' })}</p>
           <button type="button" aria-label={t('pk_next')} onClick={() => setCursor(new Date(year, month + 1, 1))} className="min-h-[44px] min-w-[44px] rounded-lg px-3 py-1.5 text-gray-300 transition hover:bg-white/10">›</button>
         </div>
-        <div className="grid grid-cols-7 gap-1 text-center text-xs text-gray-500">
+        <div className="grid grid-cols-5 gap-1 text-center text-xs text-gray-500">
           {WEEKDAYS.map(day => <span key={day} className="py-1">{dayLabel(day)}</span>)}
           {cells.map((day, index) => {
             if (!day) return <span key={`blank-${index}`} />
@@ -145,7 +150,7 @@ export function TrainingCalendar({ sessions }) {
   )
 }
 
-export function NewPackDrawer({ client, pack, packs, trainers, onClose, onDone }) {
+export function NewPackDrawer({ client, pack, packs, onClose, onDone }) {
   const { t } = useAdminText()
   const toast = useToast()
   const [form, set] = usePackForm(pack)
@@ -217,7 +222,7 @@ export function NewPackDrawer({ client, pack, packs, trainers, onClose, onDone }
       </>}
     >
       <p className="mb-6 text-sm text-gray-400">{t('pk_new_sub')}</p>
-      <PackFields form={form} set={update} packs={packs} trainers={trainers} pack={pack} busy={busy} preview={preview} serverConflicts={serverConflicts} serverOverlaps={serverOverlaps} />
+      <PackFields form={form} set={update} packs={packs} pack={pack} busy={busy} preview={preview} serverConflicts={serverConflicts} serverOverlaps={serverOverlaps} />
       <RecipientsBox clientEmail={client.email} value={extra} onChange={setExtra} disabled={busy} shareCalendar={share} onShareCalendar={setShare} />
       <SendsTo clientEmail={client.email} extra={extra} />
       {askConflicts && conflicts.length > 0 && (

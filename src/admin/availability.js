@@ -4,7 +4,8 @@
 // Trainer shape (from /admin/trainer-availability):
 // { id, name, hours: { Monday: { start: '07:00', end: '14:00' } | null, ... } }
 
-export const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+// The days the studio works and offers: Monday to Friday.
+export const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
 
 const minutes = (value) => {
   const [hour, minute] = String(value).split(':')
@@ -23,12 +24,6 @@ export function canStart(trainer, day, time) {
 export function weekdayOf(dateKey) {
   const [year, month, day] = dateKey.split('-').map(Number)
   return WEEKDAYS[(new Date(year, month - 1, day).getDay() + 6) % 7]
-}
-
-// null when the trainer fits every day at that time, otherwise the first day
-// that does not work.
-export function firstMismatch(trainer, days, time) {
-  return days.find(day => !canStart(trainer, day, time)) || null
 }
 
 // Short "07:00–14:00" summary of a trainer's hours on the given days.

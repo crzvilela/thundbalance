@@ -52,7 +52,7 @@ test('filtering by status', () => {
 
 test('chart data fills the empty days and hours', () => {
   const days = weekdayBars([{ weekday: 'Wednesday', count: 4 }, { weekday: 'Monday', count: 1 }])
-  assert.deepEqual(days.map(day => day.value), [1, 0, 4, 0, 0, 0, 0])
+  assert.deepEqual(days.map(day => day.value), [1, 0, 4, 0, 0])
   assert.equal(days[0].key, 'Monday')
   const hours = hourBars([{ hour: 9, count: 3 }, { hour: 21, count: 1 }])
   assert.equal(hours[0].key, 7)

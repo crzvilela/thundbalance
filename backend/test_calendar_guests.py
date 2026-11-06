@@ -11,6 +11,7 @@ import unittest
 from datetime import date, datetime, timedelta
 from unittest import mock
 
+import pack_schedule
 import calendar_sync
 import event_format
 import google_calendar as gc
@@ -112,8 +113,7 @@ class Guests(unittest.TestCase):
 
     def new_pack(self, share=True, extra=None, per_week=2):
         return call("/admin/clients/{client_id}/renew-pack", self.user_id, main.NewPack(
-            pack_id=self.pack_id, sessions_per_week=per_week, preferred_days=f"{self.weekday}" if per_week == 1 else f"{self.weekday},Thursday",
-            preferred_time="10:00", trainer_id=self.trainer_id, start_date=self.first_day.isoformat(), email_client=False,
+            pack_id=self.pack_id, sessions_per_week=per_week, schedule=pack_schedule.uniform(f"{self.weekday}" if per_week == 1 else f"{self.weekday},Thursday", "10:00", self.trainer_id), start_date=self.first_day.isoformat(), email_client=False,
             email_extra=extra if extra is not None else [], allow_conflicts=True, share_calendar=share))
 
     def sessions(self):
@@ -177,8 +177,7 @@ class Guests(unittest.TestCase):
         conn.commit()
         conn.close()
         answer = call("/admin/clients/{client_id}/renew-pack", self.user_id, main.NewPack(
-            pack_id=pack, sessions_per_week=2, preferred_days=f"{self.weekday},Thursday", preferred_time="10:00",
-            trainer_id=self.trainer_id, start_date=self.first_day.isoformat(), email_client=False, email_extra=[],
+            pack_id=pack, sessions_per_week=2, schedule=pack_schedule.uniform(f"{self.weekday},Thursday", "10:00", self.trainer_id), start_date=self.first_day.isoformat(), email_client=False, email_extra=[],
             allow_conflicts=True))
         self.assertEqual(answer["total_sessions"], 12)
         self.assertEqual(answer["calendar"]["failed"], 1)

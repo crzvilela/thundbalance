@@ -8,6 +8,7 @@ says, and the endpoint is admin only. Google is faked; the local database is use
 """
 import unittest
 
+import pack_schedule
 import catalog_testing
 from datetime import date, timedelta
 
@@ -92,8 +93,7 @@ class History(unittest.TestCase):
         for route in main.app.routes:
             if getattr(route, "path", None) == "/admin/clients/{client_id}/renew-pack" and "POST" in route.methods:
                 return route.endpoint(self.user_id, main.NewPack(
-                    pack_id=self.pack_ids[session_type or "individual"], sessions_per_week=2, preferred_days="Monday,Wednesday", preferred_time="09:00",
-                    trainer_id=self.trainer_id, start_date=weekday_after(start_offset).isoformat(), email_extra=[],
+                    pack_id=self.pack_ids[session_type or "individual"], sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", self.trainer_id), start_date=weekday_after(start_offset).isoformat(), email_extra=[],
                     email_client=False, allow_conflicts=True, allow_overlaps=True,
                     session_type=session_type, second_person_name=name, second_person_email=email))
 

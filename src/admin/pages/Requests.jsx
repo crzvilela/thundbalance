@@ -13,7 +13,10 @@ import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
 import { useBulkSelection, SELECTING_CLASS, selectableProps } from '../bulk'
 import { PriceBox, TypeBadge } from '../SessionKind'
 import { formatMoney, packQuote, packsOfType } from '../../utils/pricing'
-import { firstMismatch, hoursSummary } from '../availability'
+import PackSchedulePicker from '../../components/forms/PackSchedulePicker'
+import PackScheduleSummary from '../../components/forms/PackScheduleSummary'
+import { fromStored, isComplete, toBody } from '../../utils/packSchedule'
+import { usePackAvailability } from '../../utils/usePackAvailability'
 import { OverlapAsk } from '../OverlapWarning'
 import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon, PageHeader,
@@ -24,10 +27,9 @@ const STATUS_TONE = { pending: 'amber', approved: 'emerald', rejected: 'red' }
 const requestKey = request => request.id
 
 export default function Requests() {
-  const { t, dayLabel, dayFull } = useAdminText()
+  const { t, language, dayLabel } = useAdminText()
   const toast = useToast()
   const { requests, requestsResource } = useOutletContext()
-  const trainersResource = useAdminResource('/admin/trainer-availability')
   const catalogResource = useAdminResource('/pricing')        // the catalogue: only the packs on sale
   // The layout's list leaves archived requests out; this one has only them.
   const archivedResource = useAdminResource('/admin/client-requests?archived=only')
@@ -38,7 +40,9 @@ export default function Requests() {
   const [approving, setApproving] = useState(null)
   const [declining, setDeclining] = useState(null)
   const [archiving, setArchiving] = useState(null)
-  const [form, setForm] = useState({ trainer: '', date: '', plan: '', perWeek: '' })
+  const [form, setForm] = useState({ date: '', plan: '', perWeek: '' })
+  const [entries, setEntries] = useState([])              // the final schedule: one entry per day (hour and trainer), adjusted before approving
+  const [legacy, setLegacy] = useState(false)             // the request is an old one with a single hour
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [share, setShare] = useState(true)                // the client is a guest of the events in their Google Calendar
@@ -48,15 +52,6 @@ export default function Requests() {
   const [overlaps, setOverlaps] = useState([])            // the client would have two sessions at the same time as another pack
   const [trainerOk, setTrainerOk] = useState(false)         // the admin already accepted the trainer's collisions
 
-  const trainers = useMemo(() => (Array.isArray(trainersResource.data) ? trainersResource.data : []), [trainersResource.data])
-
-  // A trainer can only be chosen when they work every requested day at the
-  // requested time (the server checks again and refuses anything else).
-  const trainerOptions = useMemo(() => (approving ? trainers.map(trainer => {
-    const badDay = firstMismatch(trainer, approving.days, approving.time)
-    return { trainer, badDay, summary: hoursSummary(trainer, approving.days) }
-  }) : []), [trainers, approving])
-  const nobodyFits = approving && trainerOptions.length > 0 && trainerOptions.every(option => option.badDay)
   const packs = useMemo(() => catalogResource.data?.packs || [], [catalogResource.data])
 
   const counts = useMemo(() => ({
@@ -109,7 +104,11 @@ export default function Requests() {
   }
 
   const openApprove = (request) => {
-    setForm({ trainer: request.trainerId ? String(request.trainerId) : '', date: '', plan: '', perWeek: String(request.perWeek || 1) })       // the one the client asked for is already chosen
+    // what the client asked for is already chosen, day by day; an OLD request (one hour) is shown as such and prefilled with it
+    const asked = fromStored({ schedule: request.schedule, days: request.days.join(','), time: request.time, trainerId: request.trainerId })
+    setEntries(asked.entries)
+    setLegacy(asked.legacy)
+    setForm({ date: '', plan: '', perWeek: String(request.perWeek || asked.entries.length || 1) })
     setFormError('')
     setConflicts([])
     setOverlaps([])
@@ -133,6 +132,8 @@ export default function Requests() {
     return packs.find(pack => pack.id === approving.catalogPackId) || typePacks.find(pack => pack.name === approving.plan) || null
   }, [approving, form.plan, packs, typePacks])
   const perWeekOptions = chosenPack ? chosenPack.sessions_per_week_options : [1, 2, 3, 4, 5, 6, 7]
+  // the free hours for THIS pack from the start date (working hours only until a date is chosen)
+  const availability = usePackAvailability({ startDate: form.date, weeks: chosenPack?.weeks || 0 })
 
   // How many sessions the approval will create (pack weeks x sessions per week) and what it costs.
   const sessionEstimate = chosenPack && form.perWeek ? chosenPack.weeks * Number(form.perWeek) : null
@@ -148,7 +149,8 @@ export default function Requests() {
   }
 
   const approve = async (allowConflicts = false, allowOverlaps = false) => {
-    if (!form.trainer || !form.date) { setFormError(t('need_trainer_date')); return }
+    if (!form.date) { setFormError(t('need_trainer_date')); return }
+    if (!isComplete(entries, form.perWeek)) { setFormError(t('ps_choose_hours')); return }
     setBusy(true)
     setFormError('')
     try {
@@ -156,7 +158,7 @@ export default function Requests() {
         ...extraBody(extra),
         share_calendar: share,
         request_id: approving.id,
-        trainer_id: Number(form.trainer),
+        schedule: toBody(entries),               // one entry per day: weekday, hour and trainer
         start_date: form.date,
         allow_conflicts: allowConflicts || trainerOk,
         allow_overlaps: allowOverlaps,
@@ -170,7 +172,8 @@ export default function Requests() {
       reportCalendarResult(toast, t, result.calendar)
       requestsResource.reload()
     } catch (error) {
-      if (error.code === 'conflicts') setConflicts(error.conflicts || [])   // listed in the modal, with "Crear igualmente"
+      if (error.code === 'schedule_unavailable') { availability.reload(); setFormError(t('ps_race_admin')) }
+      else if (error.code === 'conflicts') setConflicts(error.conflicts || [])   // listed in the modal, with "Crear igualmente"
       else if (error.code === 'client_overlap') setOverlaps(error.detail?.overlaps || [])   // a warning, with "Continuar igualmente"
       else setFormError(error.message || t('action_error'))
     } finally {
@@ -251,10 +254,17 @@ export default function Requests() {
                     <p className="mt-1 text-sm text-gray-400">{request.plan} · {request.perWeek} {t('req_per_week')}</p>
                     {request.trainer && <p className="mt-1 text-sm text-sky-200">{t(request.status === 'pending' ? 'req_trainer_requested' : 'req_trainer')}: {request.trainer}</p>}
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      {request.days.map(day => (
-                        <span key={day} className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{dayLabel(day)}</span>
-                      ))}
-                      {request.time && <span className="ml-1 flex items-center gap-1 text-xs text-gray-400"><Icon name="clock" className="h-3.5 w-3.5" />{request.time}</span>}
+                      {request.schedule.length > 0 ? request.schedule.map(entry => (
+                        <span key={entry.weekday} className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">
+                          {dayLabel(entry.weekday)} · {String(entry.time).slice(0, 5)}{entry.trainer ? ` · ${entry.trainer}` : ''}
+                        </span>
+                      )) : (<>
+                        {request.days.map(day => (
+                          <span key={day} className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{dayLabel(day)}</span>
+                        ))}
+                        {request.time && <span className="ml-1 flex items-center gap-1 text-xs text-gray-400"><Icon name="clock" className="h-3.5 w-3.5" />{request.time}</span>}
+                        <span className="text-xs text-amber-300">{t('ps_old_label')}</span>
+                      </>)}
                     </div>
                     {request.reason && <p className="mt-2 text-sm text-red-300/90">{t('req_reason')}: {request.reason}</p>}
                   </div>
@@ -304,16 +314,6 @@ export default function Requests() {
       >
         <p className="mb-6 text-sm text-gray-400">{t('approve_sub')}</p>
         <div className="grid gap-x-8 md:grid-cols-2">
-        <Field label={t('trainer')}>
-          <SelectInput value={form.trainer} onChange={event => setForm({ ...form, trainer: event.target.value })} disabled={busy}>
-            <option value="">{t('select_trainer')}</option>
-            {trainerOptions.map(({ trainer, badDay, summary }) => (
-              <option key={trainer.id} value={trainer.id} disabled={!!badDay}>
-                {trainer.name}{badDay ? ` — ${t('av_unavailable')} ${dayFull(badDay)} ${approving.time}${summary ? ` (${t('av_works')} ${summary})` : ''}` : ` — ${summary}`}
-              </option>
-            ))}
-          </SelectInput>
-        </Field>
         <Field label={t('start_date')}>
           <TextInput type="date" value={form.date} onChange={event => { setConflicts([]); setForm({ ...form, date: event.target.value }) }} disabled={busy} />
         </Field>
@@ -330,9 +330,17 @@ export default function Requests() {
         </Field>
         </div>
         {approving && (
-          <p className={`mb-4 rounded-xl border px-4 py-3 text-sm ${nobodyFits ? 'border-red-400/25 bg-red-400/10 text-red-200' : 'border-sky-400/20 bg-sky-400/5 text-sky-100'}`}>
-            {nobodyFits ? t('av_none') : `${t('av_hint')} ${approving.days.map(day => dayFull(day)).join(', ')} · ${approving.time}`}
-          </p>
+          <div className="mb-5">
+            <p className="mb-3 text-sm text-sky-100">{t('ps_adjust')}</p>
+            <PackSchedulePicker
+              value={entries} onChange={setEntries} perWeek={Number(form.perWeek)} availability={availability}
+              text={t} dayLabel={dayLabel} variant="admin" trainerRequired disabled={busy} legacy={legacy}
+            />
+            <PackScheduleSummary
+              className="mt-4 rounded-xl border border-white/10 p-4" value={entries} availability={availability.data}
+              start={form.date} total={sessionEstimate || 0} text={t} dayLabel={dayLabel} locale={language === 'es' ? 'es-ES' : 'en-GB'}
+            />
+          </div>
         )}
         {approving && (
           <div className="mb-4 space-y-3">

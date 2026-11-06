@@ -18,6 +18,7 @@ from unittest import mock
 
 import os
 
+import pack_schedule
 import testsafety
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -144,8 +145,7 @@ class Pricing(unittest.TestCase):
     def new_pack(self, months=3, per_week=2, session_type=None, name=None, email=None, **extra):
         start = weekday_after(10).isoformat()
         return endpoint("/admin/clients/{client_id}/renew-pack", "POST")(self.user_id, main.NewPack(
-            pack_id=self.pack_of(session_type, months), sessions_per_week=per_week, preferred_days="Monday,Wednesday", preferred_time="09:00",
-            trainer_id=self.trainer_id, start_date=start, email_extra=[], allow_conflicts=True, allow_overlaps=True,
+            pack_id=self.pack_of(session_type, months), sessions_per_week=per_week, schedule=pack_schedule.uniform(["Monday", "Wednesday", "Friday", "Tuesday"][:per_week], "09:00", self.trainer_id), start_date=start, email_extra=[], allow_conflicts=True, allow_overlaps=True,
             session_type=session_type, second_person_name=name, second_person_email=email, **extra))
 
     def pack_row(self):
@@ -237,8 +237,8 @@ class Pricing(unittest.TestCase):
     def test_a_price_sent_by_the_browser_is_ignored(self):
         main.app.dependency_overrides[main.require_admin] = lambda: {"email": main.ADMIN_EMAIL, "sub": "uid-admin"}
         body = {
-            "pack_id": self.pack_of("individual", 3), "sessions_per_week": 1, "preferred_days": "Monday", "preferred_time": "09:00",
-            "trainer_id": self.trainer_id, "start_date": weekday_after(10).isoformat(), "email_extra": [],
+            "pack_id": self.pack_of("individual", 3), "sessions_per_week": 1,
+            "schedule": [{"weekday": "Monday", "time": "09:00", "trainer_id": self.trainer_id}], "start_date": weekday_after(10).isoformat(), "email_extra": [],
             "allow_conflicts": True, "allow_overlaps": True,
             "price_per_session": 1, "total_price": 1, "price": 1, "preco": 1,
         }
@@ -371,8 +371,7 @@ class Pricing(unittest.TestCase):
 
     def new_pack_with_email(self, months, per_week):
         return endpoint("/admin/clients/{client_id}/renew-pack", "POST")(self.user_id, main.NewPack(
-            pack_id=self.pack_of("dual", months), sessions_per_week=per_week, preferred_days="Monday,Wednesday", preferred_time="09:00",
-            trainer_id=self.trainer_id, start_date=weekday_after(10).isoformat(), email_extra=[], allow_conflicts=True,
+            pack_id=self.pack_of("dual", months), sessions_per_week=per_week, schedule=pack_schedule.uniform(["Monday", "Wednesday", "Friday", "Tuesday"][:per_week], "09:00", self.trainer_id), start_date=weekday_after(10).isoformat(), email_extra=[], allow_conflicts=True,
             allow_overlaps=True, session_type="dual", second_person_name="Beatriz Prueba", second_person_email=SECOND))
 
     # ----- requests
@@ -380,26 +379,25 @@ class Pricing(unittest.TestCase):
         with mock.patch.object(main, "require_client", lambda authorization=None: {"sub": "uid-pricing", "email": f"hp{DOMAIN}"}):
             create = endpoint("/client-requests", "POST")
             with self.assertRaises(HTTPException) as error:
-                create(main.ClientRequestCreate(pack_id=self.pack_of("dual", 3), sessions_per_week=2, preferred_days="Monday,Wednesday",
-                                                preferred_time="09:00", session_type="dual"), "Bearer x")
+                create(main.ClientRequestCreate(pack_id=self.pack_of("dual", 3), sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", None),
+                                                session_type="dual"), "Bearer x")
             self.assertEqual(code(error), ("invalid_name", "second_person_name"))
-            create(main.ClientRequestCreate(pack_id=self.pack_of("dual", 3), sessions_per_week=2, preferred_days="Monday,Wednesday",
-                                            preferred_time="09:00", session_type="dual", second_person_name="Beatriz Prueba",
+            create(main.ClientRequestCreate(pack_id=self.pack_of("dual", 3), sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", None),
+                                            session_type="dual", second_person_name="Beatriz Prueba",
                                             second_person_email=SECOND), "Bearer x")
         rows = [row for row in endpoint("/admin/client-requests", "GET")() if row[1] == "Henrique Preco"]
         self.assertEqual(len(rows), 1)
         row = rows[0]
         self.assertEqual((row[9], row[10], row[11], row[12]), ("dual", "Beatriz Prueba", SECOND, 3))      # type, second person, plan months
         result = endpoint("/admin/approve-request", "POST")(main.ApproveRequest(
-            request_id=row[0], trainer_id=self.trainer_id, start_date=weekday_after(10).isoformat(), email_extra=[],
+            request_id=row[0], schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", self.trainer_id), start_date=weekday_after(10).isoformat(), email_extra=[],
             email_client=False, allow_conflicts=True, allow_overlaps=True))
         self.assertEqual(result["total_sessions"], 24)
         self.assertEqual(self.pack_row(), ("dual", "Beatriz Prueba", SECOND, 75, 1800))
 
     def test_the_preview_shows_the_price_and_the_lists_show_the_label(self):
         preview = endpoint("/admin/packs/preview", "POST")(main.PackPreview(
-            client_id=self.user_id, pack_id=self.pack_of("dual", 3), sessions_per_week=2, preferred_days="Monday,Wednesday",
-            preferred_time="09:00", trainer_id=self.trainer_id, start_date=weekday_after(10).isoformat()))
+            client_id=self.user_id, pack_id=self.pack_of("dual", 3), sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", self.trainer_id), start_date=weekday_after(10).isoformat()))
         self.assertEqual((preview["price_per_session"], preview["total_price"], preview["session_type"]), (75, 1800, "dual"))
         self.new_pack(months=1, per_week=1, session_type="dual", name="Beatriz Prueba", email=SECOND)
         main.app.dependency_overrides[main.require_admin] = lambda: {"email": main.ADMIN_EMAIL, "sub": "uid-admin"}

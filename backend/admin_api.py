@@ -21,10 +21,12 @@ def age_from_birth_date(birth_date, today=None):
     return today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
 
 from availability import (
-    WEEKDAYS, create_trainer, hhmm, save_hours, slot_problem,
+    BOOKABLE_WEEKDAYS, create_trainer, hhmm, save_hours, slot_problem,
     trainer_usage, validate_hours,
 )
 import mailer
+import time
+from emails import gmail_api
 from emails.recipients import extra_scope, parse_extra
 from bulk_actions import BulkPayload, run_each, unknown_action
 from google_calendar import delete_calendar_event, list_calendar_events
@@ -99,6 +101,9 @@ class TrialApprovePayload(BaseModel):
     session_date: Optional[str] = Field(default=None, max_length=10)     # the admin may adjust the day / hour
     session_time: Optional[str] = Field(default=None, max_length=5)
     share_calendar: bool = True              # the client is a guest of the event in THEIR Google Calendar
+
+
+TEST_EMAILS_PER_HOUR = 5
 
 
 class EmailTestPayload(BaseModel):
@@ -257,6 +262,7 @@ def register_admin_routes(app, require_admin):
                     "start_date": _iso(p["start_date"]), "end_date": _iso(p["end_date"]),
                     "sessions_per_week": p["sessions_per_week"],
                     "preferred_days": p["preferred_days"], "preferred_time": p["preferred_time"],
+                    "schedule": p["schedule"],     # one entry per day; [] = an old pack with a single hour (shown as "old")
                     "trainer_id": p["trainer_id"], "trainer": p["trainer"],
                     "status": _pack_status(p["plan_id"], p["end_date"]),
                     "total": p["total"], "done": p["done"], "remaining": p["remaining"],
@@ -631,19 +637,32 @@ def register_admin_routes(app, require_admin):
     @app.get("/admin/email/health", dependencies=admin)
     def admin_email_health():
         """Can the server send email right now? Asks the Google script to answer
-        a ping (nothing is sent) and reports {"email_ready", "reason", "quota"}.
-        No secret or address is ever included."""
+        a ping (nothing is sent) and reports {"email_ready", "reason", "quota"}, plus the mail provider in use
+        ("provider", "from", "fallback_active": the domain delegation is not active and emails go the old way).
+        No secret or address of a client is ever included."""
         status = email_health.check_ready()
-        return {**status, "detail": email_health.describe(status["reason"])}
+        return {**status, "detail": email_health.describe(status["reason"]), **gmail_api.status()}
 
-    @app.post("/admin/email/test", dependencies=admin)
-    def admin_email_test(data: EmailTestPayload):
-        """Sends a short test email to the given address."""
+    test_sends = {}                                    # admin -> times of the test emails sent in the last hour
+
+    @app.post("/admin/email/test")
+    def admin_email_test(data: EmailTestPayload, claims=Depends(require_admin)):
+        """Sends a short test email to the given address (at most 5 an hour per admin) and says which provider was
+        used and whether it had to fall back to the legacy one."""
+        info = claims if isinstance(claims, dict) else {}          # called directly (tests) there is no token
+        who = str(info.get("email") or info.get("sub") or "admin")
+        now = time.monotonic()
+        recent = [moment for moment in test_sends.get(who, []) if now - moment < 3600]
+        if len(recent) >= TEST_EMAILS_PER_HOUR:
+            test_sends[who] = recent
+            raise HTTPException(status_code=429, detail=f"At most {TEST_EMAILS_PER_HOUR} test emails an hour. / Máximo {TEST_EMAILS_PER_HOUR} emails de prueba por hora.")
         try:
             result = email_health.send_test(data.to)
         except ValueError:
             raise HTTPException(status_code=422, detail="Please enter a valid email address.")
-        return {"sent": result.ok, "problem": result.error}
+        test_sends[who] = recent + [now]
+        return {"sent": result.ok, "problem": result.error, "provider": result.provider or gmail_api.provider(),
+                "fallback": result.fallback, "remaining": TEST_EMAILS_PER_HOUR - len(test_sends[who])}
 
     @app.post("/admin/trial-sessions/{trial_id}/resend-approval", dependencies=admin)
     def admin_resend_trial_approval(trial_id: int, data: ExtraRecipients | None = None):
@@ -859,7 +878,7 @@ def register_admin_routes(app, require_admin):
             return [
                 {
                     "id": row[0], "name": row[1], "specialty": row[2], "color": row[3],
-                    "hours": {day: hours.get(row[0], {}).get(day) for day in WEEKDAYS},
+                    "hours": {day: hours.get(row[0], {}).get(day) for day in BOOKABLE_WEEKDAYS},
                 }
                 for row in trainers
             ]

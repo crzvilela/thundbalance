@@ -19,7 +19,7 @@ const DEFAULT_WINDOW = { start: '07:00', end: '14:00' }
 const trainerKey = trainer => trainer.id
 
 // Monday to Friday 07:00-14:00 as a starting point for a new trainer.
-const starterHours = () => Object.fromEntries(WEEKDAYS.map((day, index) => [day, index < 5 ? { ...DEFAULT_WINDOW } : null]))
+const starterHours = () => Object.fromEntries(WEEKDAYS.map(day => [day, { ...DEFAULT_WINDOW }]))
 
 // The colour of the trainer in the admin calendar: 12 colours, saved as soon as one is clicked.
 function ColorPicker({ trainer, onSaved }) {
@@ -70,7 +70,7 @@ function HoursEditor({ hours, setHours }) {
   const setDay = (day, patch) => setHours(current => ({ ...current, [day]: patch === null ? null : { ...(current[day] || DEFAULT_WINDOW), ...patch } }))
   const copyMonday = () => {
     const monday = hours.Monday || DEFAULT_WINDOW
-    setHours(current => ({ ...current, ...Object.fromEntries(WEEKDAYS.slice(0, 5).map(day => [day, { ...monday }])) }))
+    setHours(current => ({ ...current, ...Object.fromEntries(WEEKDAYS.map(day => [day, { ...monday }])) }))
   }
 
   return (

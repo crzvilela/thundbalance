@@ -45,8 +45,8 @@ export function formatMonth(date, locale) {
 }
 
 export function weekdayNames(locale) {
-  // 1 Jan 2024 was a Monday: the week starts on Monday
-  return Array.from({ length: 7 }, (_, index) => new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(2024, 0, 1 + index, 12))))
+  // 1 Jan 2024 was a Monday: the week starts on Monday and has five days
+  return Array.from({ length: 5 }, (_, index) => new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(2024, 0, 1 + index, 12))))
 }
 
 // 24-hour clock, always "HH:MM"

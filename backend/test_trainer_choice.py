@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+import pack_schedule
 import availability
 import google_fakes
 import main
@@ -205,8 +206,7 @@ class Choice(unittest.TestCase):
         main.require_client = lambda authorization: {"sub": "uid-choice", "email": f"c{DOMAIN}"}
         try:
             return main.create_client_request(
-                main.ClientRequestCreate(pack_id=self.pack_ids["individual"], sessions_per_week=len(days.split(",")), preferred_days=days, preferred_time=time,
-                                         trainer_id=trainer), authorization="Bearer x")
+                main.ClientRequestCreate(pack_id=self.pack_ids["individual"], sessions_per_week=len(days.split(",")), schedule=pack_schedule.uniform(days, time, trainer)), authorization="Bearer x")
         finally:
             main.require_client = real
 

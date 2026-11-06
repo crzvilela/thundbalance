@@ -23,7 +23,7 @@ const GOALS = [
   'Conditioning', 'Endurance', 'Tone/define', 'Improve mobility & flexibility', 'Increase energy'
 ]
 const LEVELS = ['Beginner', 'Intermediate', 'Advanced']
-const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
 const dayKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
 function ageFrom(birthDate, today = new Date()) {
@@ -125,7 +125,8 @@ function TrialSession() {
   }, [timesState])
 
   // Only days on which at least one trainer works can be picked.
-  const isBookableDay = (date) => !schedule || (schedule[WEEKDAYS[(date.getDay() + 6) % 7]] || []).length > 0
+  // Only Monday to Friday exist for the studio (the week starts on Monday), whatever the server says.
+  const isBookableDay = (date) => date.getDay() % 6 !== 0 && (!schedule || (schedule[WEEKDAYS[(date.getDay() + 6) % 7]] || []).length > 0)
 
   // The times depend on the date: they are the hours when a trainer is free.
   const applyTimes = (list) => {
@@ -381,6 +382,8 @@ function TrialSession() {
                   onChange={chooseDate}
                   minDate={new Date()}
                   filterDate={isBookableDay}
+                  calendarStartDay={1}
+                  calendarClassName="tb-workdays"
                   dateFormat="dd/MM/yyyy"
                   placeholderText={t('ts_placeholder_date')}
                   wrapperClassName="w-full"

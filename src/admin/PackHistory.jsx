@@ -4,6 +4,7 @@ import { useAdminResource } from './useAdminResource'
 import { dateKey, parseDateKey } from './requests'
 import { formatMoney } from '../utils/pricing'
 import { TypeBadge } from './SessionKind'
+import { scheduleLines } from './scheduleText'
 import { Badge, Button, ErrorState, Skeleton } from './ui'
 
 const STATE_TONE = { activo: 'emerald', finalizado: 'neutral', cancelado: 'red' }
@@ -35,7 +36,7 @@ function PackRow({ pack, highlight, extra = null }) {
             {pack.sessions_per_week ? ` · ${pack.sessions_per_week} ${t('req_per_week')}` : ''}
             {pack.trainer ? ` · ${pack.trainer}` : ''}
           </p>
-          {extra?.preferred_days && <p className="mt-0.5 text-sm text-gray-500">{String(extra.preferred_days).split(',').map(day => dayLabel(day.trim())).join(', ')}{extra.preferred_time ? ` · ${String(extra.preferred_time).slice(0, 5)}` : ''}</p>}
+          {scheduleLines(extra, { dayLabel, t }).map(line => <p key={line} className="mt-0.5 text-sm text-gray-500">{line}</p>)}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <TypeBadge type={pack.session_type} secondName={pack.second_person_name} />

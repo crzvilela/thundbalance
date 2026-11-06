@@ -28,6 +28,7 @@ from google_calendar import (
 from landing_page_default import DEFAULT_LANDING_CONTENT
 from admin_api import register_admin_routes
 import pack_catalog
+import pack_schedule
 import plans_schema
 import pricing
 import trainer_area
@@ -45,8 +46,8 @@ from contact_messages import register_contact_routes
 from trial_notifications import notify_trial_requested
 import mailer
 from packs import (
-    DAY_MAP, clean_pack_recipients, create_pack, delete_created_events, email_pack,
-    ensure_pack_columns, preview_pack, validate_pack_request,
+    clean_pack_recipients, create_pack, delete_created_events, email_pack,
+    ensure_pack_columns, preview_pack,
 )
 import pack_view
 from emails import send_pack_summary_email, team_emails
@@ -478,6 +479,8 @@ def ensure_client_workflow_fields():
         cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS trainer_id INTEGER REFERENCES trainers(id)")
         cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS start_date DATE")
         cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS sessions_per_week INTEGER")
+        # the schedule asked for: one entry per day (weekday, hour, trainer). Older requests only have preferred_days / preferred_time
+        cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS schedule JSONB")
         # Archiving hides a request from the admin lists without deleting anything.
         cursor.execute("ALTER TABLE client_requests ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP")
         # When the client sent it (shown on their "pending requests" card). Older rows stay empty: the card then shows no date.
@@ -574,9 +577,8 @@ class ClientRequestCreate(BaseModel):
     user_id: int | None = None
     pack_id: int                       # a pack of the catalogue (GET /pricing)
     sessions_per_week: int
-    preferred_days: str
-    preferred_time: str
-    trainer_id: int | None = None      # the trainer the client prefers (optional): must work at that time on every chosen day
+    # one entry per training day, each with ITS hour and (optionally) ITS trainer; as many entries as sessions per week
+    schedule: list[pack_schedule.ScheduleEntry]
     session_type: str | None = None
     second_person_name: str | None = None
     second_person_email: str | None = None
@@ -584,7 +586,8 @@ class ClientRequestCreate(BaseModel):
 
 class ApproveRequest(BaseModel):
     request_id: int
-    trainer_id: int
+    # the final schedule, one entry per day with its hour and trainer (the admin may adjust what the client asked for)
+    schedule: list[pack_schedule.ScheduleEntry]
     start_date: str
     pack_id: int | None = None         # another catalogue pack than the one requested
     sessions_per_week: int | None = None
@@ -602,9 +605,7 @@ class ApproveRequest(BaseModel):
 class NewPack(BaseModel):
     pack_id: int
     sessions_per_week: int
-    preferred_days: str
-    preferred_time: str
-    trainer_id: int
+    schedule: list[pack_schedule.ScheduleEntry]      # one entry per training day: weekday, hour and trainer
     start_date: str
     session_type: str | None = None
     second_person_name: str | None = None
@@ -624,9 +625,7 @@ class PackPreview(BaseModel):
     client_id: int | None = None
     pack_id: int
     sessions_per_week: int
-    preferred_days: str
-    preferred_time: str
-    trainer_id: int
+    schedule: list[pack_schedule.ScheduleEntry]
     start_date: str
 
 
@@ -1396,6 +1395,35 @@ def update_profile(
         conn.close()
 
 
+@app.get("/pack-availability")
+def pack_availability(request: Request, start_date: str | None = None, weeks: int | None = None):
+    """The free hours of every weekday, with the trainers free at each one, to choose the schedule of a pack (one hour and one
+    trainer for EACH training day). Public (the client's request page uses it), rate limited, only trainer id and name.
+
+      GET /pack-availability                              working hours only (a request without a start date yet)
+      GET /pack-availability?start_date=2026-01-12&weeks=8   also leaves out the hours a trainer is already booked in that window
+      -> {"weekdays": {"Monday": [{"time": "07:00", "trainers": [{"id": 1, "name": "Carles"}]}, ...], ...}}
+
+    The same rules as the rest of the app (pack_schedule.Grid); the server checks again when the pack or request is saved."""
+    ip = (request.client.host if request.client else "") or "unknown"
+    if trainer_choice._too_many(ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please try again in a minute.")
+    if start_date is not None:
+        try:
+            datetime.strptime(start_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Use the date as YYYY-MM-DD") from None
+        if weeks is None or not 1 <= weeks <= pack_schedule.MAX_WEEKS_WINDOW:
+            raise HTTPException(status_code=422, detail=f"Use weeks between 1 and {pack_schedule.MAX_WEEKS_WINDOW}")
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        return {"weekdays": pack_schedule.Grid.load(cursor, start_date, weeks).hours()}
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @app.get("/available-trainers/{day}/{time}")
 def available_trainers(day: str, time: str):
     """Active trainers working at that weekday and time (by working hours)."""
@@ -1767,7 +1795,7 @@ def client_workflow(authorization: str | None = Header(default=None)):
             SELECT cr.id, cr.status, cr.rejection_reason, p.nome, cr.sessions_per_week,
                    cr.preferred_days, cr.preferred_time, t.nome, cr.start_date,
                    cr.session_type, cr.second_person_name,
-                   cr.created_at
+                   cr.created_at, cr.schedule
             FROM client_requests cr
             LEFT JOIN plans p ON p.id = cr.plan_id
             LEFT JOIN trainers t ON t.id = cr.trainer_id
@@ -1799,7 +1827,9 @@ def client_workflow(authorization: str | None = Header(default=None)):
                          "preferred_days": request[5], "preferred_time": request[6],
                          "trainer": request[7], "start_date": request[8],
                          "session_type": request[9], "second_person_name": request[10],
-                         "created_at": request[11].isoformat() if request[11] else None} if request else None),
+                         "created_at": request[11].isoformat() if request[11] else None,
+                         # one entry per day; [] for an old request (single hour: preferred_days / preferred_time)
+                         "schedule": pack_schedule.loads(request[12])} if request else None),
             "plan": ({"name": plan[0], "trainer": plan[1], "id": plan[2],
                       "end_date": str(plan[3]) if plan[3] else None} if plan else None),
             # all the packs that are running, each with its own counters
@@ -1843,21 +1873,15 @@ def create_client_request(
         session_type = pricing.normalize_type(request.session_type)
         second_name, second_email = pricing.second_person(session_type, request.second_person_name, request.second_person_email)
 
+        # one entry per day, each with its own hour and (optionally) trainer; the same rules as everywhere (pack_schedule)
+        entries = pack_schedule.clean(request.schedule, request.sessions_per_week, trainer_required=False)
         offered = weekly_start_times(cursor)
-        chosen_days = [day.strip() for day in request.preferred_days.split(",") if day.strip()]
-        if not chosen_days or any(day not in offered for day in chosen_days):
-            raise HTTPException(status_code=422, detail="Please choose valid training days.")
-        unavailable = [day for day in chosen_days if request.preferred_time not in offered[day]]
-        if unavailable:
-            raise HTTPException(
-                status_code=422,
-                detail=f"No trainer works at {request.preferred_time} on {', '.join(unavailable)}. Please choose another time."
-            )
-
-        if request.trainer_id is not None:
-            working = trainer_choice.working_trainers(cursor, chosen_days, request.preferred_time)
-            if request.trainer_id not in [item["id"] for item in working]:
-                raise trainer_choice.unavailable(working)
+        closed = [entry for entry in entries if entry["time"] not in offered.get(entry["weekday"], [])]
+        if closed:
+            raise pack_schedule.unavailable(pack_schedule.problems(cursor, closed))
+        taken = pack_schedule.problems(cursor, entries)
+        if taken:
+            raise pack_schedule.unavailable(taken)
 
         cursor.execute("""
             SELECT id FROM client_requests WHERE user_id = %s AND LOWER(status) = 'pending'
@@ -1883,6 +1907,7 @@ def create_client_request(
                 sessions_per_week,
                 preferred_days,
                 preferred_time,
+                schedule,
                 session_type,
                 second_person_name,
                 second_person_email,
@@ -1890,19 +1915,19 @@ def create_client_request(
             )
 
             VALUES
-            (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            (%s,%s,%s,%s,%s,NULL,%s::jsonb,%s,%s,%s,%s)
             """,
             (
                 user_id,
                 sale["pack"]["plan_id"],
                 request.pack_id,
                 request.sessions_per_week,
-                request.preferred_days,
-                request.preferred_time,
+                pack_schedule.days_csv(entries),
+                pack_schedule.dumps(entries),
                 session_type,
                 second_name,
                 second_email,
-                request.trainer_id
+                pack_schedule.main_trainer(entries)
             )
         )
 
@@ -1964,7 +1989,8 @@ def admin_client_requests(archived: str = "exclude"):
                 cr.trainer_id,
                 tr.nome,
                 cr.catalog_pack_id,
-                u.email
+                u.email,
+                cr.schedule
 
             FROM client_requests cr
 
@@ -1986,9 +2012,11 @@ def admin_client_requests(archived: str = "exclude"):
             (archived, archived, archived)
         )
 
+        rows = cursor.fetchall()
+        names = pack_schedule.all_names(cursor)
         return [
-            [*row[:8], row[8].isoformat() if row[8] else None, *row[9:]]
-            for row in cursor.fetchall()
+            [*row[:8], row[8].isoformat() if row[8] else None, *row[9:17], pack_schedule.named(pack_schedule.loads(row[17]), names)]
+            for row in rows
         ]
 
     finally:
@@ -2005,9 +2033,8 @@ def admin_preview_pack(data: PackPreview):
     cursor = conn.cursor()
     try:
         return preview_pack(
-            cursor, user_id=data.client_id, catalog_pack_id=data.pack_id, trainer_id=data.trainer_id,
-            sessions_per_week=data.sessions_per_week, preferred_days=data.preferred_days,
-            preferred_time=data.preferred_time, start_date=data.start_date,
+            cursor, user_id=data.client_id, catalog_pack_id=data.pack_id,
+            sessions_per_week=data.sessions_per_week, schedule=data.schedule, start_date=data.start_date,
         )
     finally:
         cursor.close()
@@ -2042,7 +2069,8 @@ def approve_request(
                 session_type,
                 second_person_name,
                 second_person_email,
-                catalog_pack_id
+                catalog_pack_id,
+                schedule
             FROM client_requests
             WHERE id = %s AND LOWER(status) = 'pending'
             FOR UPDATE
@@ -2063,29 +2091,22 @@ def approve_request(
         if not pack_id:
             raise HTTPException(status_code=422, detail="Choose a pack for this request.")
         sessions_per_week = data.sessions_per_week or request[2]
-        preferred_days = request[3]
-        preferred_time = request[4]
 
         cursor.execute("SELECT nome, email FROM users WHERE id = %s", (user_id,))
         client_name, client_email = cursor.fetchone()
 
-        cursor.execute("SELECT nome FROM trainers WHERE id = %s", (data.trainer_id,))
-        trainer = cursor.fetchone()
-        if not trainer:
-            raise HTTPException(status_code=404, detail="Trainer not found")
-        trainer_name = trainer[0]
-
         if sessions_per_week < 1 or sessions_per_week > 7:
             raise HTTPException(status_code=400, detail="Sessions per week must be between 1 and 7")
+        # The final schedule is the one the admin sends (the client's request, adjusted day by day): create_pack checks it
+        # again (one entry per day, hour and trainer) and the trainers' conflicts, so nothing is trusted from the page.
 
         extra = clean_pack_recipients(data.extra_recipients if data.extra_recipients is not None else data.email_extra, client_email)
 
         created = create_pack(
             cursor, created_event_ids, extra_emails=extra,
             user_id=user_id, client_name=client_name, client_email=client_email,
-            catalog_pack_id=pack_id, trainer_id=data.trainer_id, trainer_name=trainer_name,
-            sessions_per_week=sessions_per_week, preferred_days=preferred_days,
-            preferred_time=preferred_time, start_date=data.start_date,
+            catalog_pack_id=pack_id,
+            sessions_per_week=sessions_per_week, schedule=data.schedule, start_date=data.start_date,
             request_id=data.request_id, allow_conflicts=data.allow_conflicts,
             allow_overlaps=data.allow_overlaps,
             session_type=request[5], second_person_name=request[6], second_person_email=request[7],
@@ -2099,6 +2120,8 @@ def approve_request(
             SET
                 status = 'Approved',
                 trainer_id = %s,
+                schedule = %s::jsonb,
+                preferred_days = %s,
                 start_date = %s,
                 plan_id = %s,
                 catalog_pack_id = %s,
@@ -2108,7 +2131,9 @@ def approve_request(
             WHERE id = %s
             """,
             (
-                data.trainer_id,
+                pack_schedule.main_trainer(created["schedule"]),
+                pack_schedule.dumps(created["schedule"]),
+                pack_schedule.days_csv(created["schedule"]),
                 data.start_date,
                 created["plan_id"],
                 pack_id,
@@ -2122,8 +2147,8 @@ def approve_request(
 
         email = email_pack(
             created, client_name=client_name, client_email=client_email,
-            days=[day.strip() for day in str(preferred_days).split(",") if day.strip()],
-            sessions_per_week=sessions_per_week, trainer_name=trainer_name,
+            days=pack_schedule.weekdays(created["schedule"]),
+            sessions_per_week=sessions_per_week, trainer_name=created["trainer_label"],
             to_client=True, extra=extra,
         )
 
@@ -2177,18 +2202,13 @@ def admin_new_pack(client_id: int, data: NewPack):
             raise HTTPException(status_code=404, detail="Client not found")
         client_name, client_email = user
 
-        trainer_name, days = validate_pack_request(
-            cursor, trainer_id=data.trainer_id, sessions_per_week=data.sessions_per_week,
-            preferred_days=data.preferred_days, start_date=data.start_date,
-        )
         extra = clean_pack_recipients(data.extra_recipients if data.extra_recipients is not None else data.email_extra, client_email)
 
         created = create_pack(
             cursor, created_event_ids, extra_emails=extra,
             user_id=client_id, client_name=client_name, client_email=client_email,
-            catalog_pack_id=data.pack_id, trainer_id=data.trainer_id, trainer_name=trainer_name,
-            sessions_per_week=data.sessions_per_week, preferred_days=",".join(days),
-            preferred_time=data.preferred_time, start_date=data.start_date,
+            catalog_pack_id=data.pack_id,
+            sessions_per_week=data.sessions_per_week, schedule=data.schedule, start_date=data.start_date,
             allow_conflicts=data.allow_conflicts, allow_overlaps=data.allow_overlaps,
             session_type=data.session_type, second_person_name=data.second_person_name,
             second_person_email=data.second_person_email,
@@ -2199,8 +2219,8 @@ def admin_new_pack(client_id: int, data: NewPack):
         inbox.on_pack_created(client_id, created["pack_id"], created["plan_name"])
 
         email = email_pack(
-            created, client_name=client_name, client_email=client_email, days=days,
-            sessions_per_week=data.sessions_per_week, trainer_name=trainer_name,
+            created, client_name=client_name, client_email=client_email, days=pack_schedule.weekdays(created["schedule"]),
+            sessions_per_week=data.sessions_per_week, trainer_name=created["trainer_label"],
             to_client=True, extra=extra,
         )
 

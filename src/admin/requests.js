@@ -1,6 +1,7 @@
 // /admin/client-requests returns rows as arrays:
 // [id, clientName, packageName, sessionsPerWeek, preferredDays, preferredTime, status, rejectionReason, archivedAt,
-//  sessionType, secondPersonName, secondPersonEmail, planMonths, trainerId, trainerName, catalogPackId, clientEmail]
+//  sessionType, secondPersonName, secondPersonEmail, planMonths, trainerId, trainerName, catalogPackId, clientEmail,
+//  schedule]   schedule: [{ weekday, time, trainer_id, trainer }] one entry per day ([] for an OLD request with one hour: days + time)
 export function normalizeRequests(rows) {
   if (!Array.isArray(rows)) return []
   return rows.map(row => ({
@@ -20,7 +21,8 @@ export function normalizeRequests(rows) {
     trainerId: row[13] ?? null,          // asked for by the client, then the final one once approved
     trainer: row[14] || '',
     catalogPackId: row[15] ?? null,       // the catalogue pack asked for (null for a request made before the catalogue)
-    clientEmail: row[16] || ''            // the client's email: the fixed recipient of what the admin sends
+    clientEmail: row[16] || '',           // the client's email: the fixed recipient of what the admin sends
+    schedule: Array.isArray(row[17]) ? row[17] : []   // the hour and trainer asked for on EACH day ([] = old single-hour request)
   }))
 }
 

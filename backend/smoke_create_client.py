@@ -66,8 +66,8 @@ def main_script():
     if with_pack:
         plan, (trainer_id, trainer_name), weekday, time, start = pick_pack(cur)
         print(f"Pack: {plan[1]}, {weekday} {time} with {trainer_name}, starting {start}")
-        pack = client_accounts.ClientPack(plan_id=plan[0], sessions_per_week=1, preferred_days=weekday,
-                                          preferred_time=time, trainer_id=trainer_id, start_date=start)
+        pack = client_accounts.ClientPack(pack_id=plan[0], sessions_per_week=1, start_date=start,
+                                          schedule=[{"weekday": weekday, "time": time, "trainer_id": trainer_id}])
     conn.close()
 
     user_id = None

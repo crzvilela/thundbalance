@@ -1,21 +1,21 @@
 import { useEffect, useId, useState } from 'react'
-import { loadAvailableForWeekdays, loadAvailableTrainers, loadTrainers } from '../../api/trainers'
+import { loadAvailableTrainers, loadTrainers } from '../../api/trainers'
 import { useI18n } from '../../i18n/I18nContext'
 
 // The trainer of a request (trial, weekly pack, change of date) and what to do when that trainer is not free.
 //
-//   <TrainerChoice value={id|''} onChange={setId} date="YYYY-MM-DD" | weekdays={['Monday', ...]} time="HH:MM" onStatus={...} />
+//   <TrainerChoice value={id|''} onChange={setId} date="YYYY-MM-DD" time="HH:MM" onStatus={...} />
 //
 // - showSelect (default): an optional list "No preference + every trainer". Without it (change of date) the trainer is the
 //   session's own and the component only appears when that trainer is busy at the new hour.
 // - When the chosen trainer is not free at that day and hour: "{Name} is not available at that time" and a list of the
 //   trainers who ARE free; picking one makes it the trainer of the request. If nobody is free, say so.
-// - A weekly pack (several days) is checked day by day: the trainer has to be free on every chosen day at that time.
+// - A weekly pack does NOT use this component: its schedule has one hour and one trainer per day (PackSchedulePicker).
 // - The server checks again when the request is sent (409 with the alternatives); `refreshKey` makes this check run again.
 // onStatus: 'idle' | 'checking' | 'ok' | 'busy' | 'none'. The page keeps its send button off while it is busy or none.
 
 export default function TrainerChoice({
-  value, onChange, date, weekdays, time, excludeSessionId, showSelect = true, refreshKey = 0, onStatus,
+  value, onChange, date, time, excludeSessionId, showSelect = true, refreshKey = 0, onStatus,
   disabled = false, labelClass = 'mb-2 block text-xs font-medium uppercase tracking-wider text-gray-400',
   selectClass = 'w-full rounded-xl border border-white/15 bg-black/40 px-4 py-3.5 text-white outline-none transition focus:border-emerald-400/70'
 }) {
@@ -23,24 +23,23 @@ export default function TrainerChoice({
   const id = useId()
   const [trainers, setTrainers] = useState([])
   const [answer, setAnswer] = useState({ key: '', list: null })      // what the server said for the slot `key`
-  const weekdayKey = (weekdays || []).join(',')
 
   useEffect(() => { loadTrainers().then(setTrainers) }, [])
 
   // The slot is checked only when there is a trainer and a day and hour; the answer is kept with the slot it belongs to, so an
   // old answer is never taken for the new slot ("checking" until the new one arrives).
-  const ready = Boolean(value && time && (date || weekdayKey))
-  const slotKey = ready ? `${value}|${date || weekdayKey}|${time}|${excludeSessionId || ''}|${refreshKey}` : ''
+  const ready = Boolean(value && time && date)
+  const slotKey = ready ? `${value}|${date}|${time}|${excludeSessionId || ''}|${refreshKey}` : ''
 
   useEffect(() => {
     if (!slotKey) return undefined
     let current = true
-    const asked = weekdayKey ? loadAvailableForWeekdays({ weekdays: weekdayKey.split(','), time }) : loadAvailableTrainers({ date, time, excludeSessionId })
+    const asked = loadAvailableTrainers({ date, time, excludeSessionId })
     asked
       .then(list => { if (current) setAnswer({ key: slotKey, list }) })
       .catch(() => { if (current) setAnswer({ key: slotKey, list: null }) })       // the server asleep or offline: it checks again when sending
     return () => { current = false }
-  }, [slotKey, weekdayKey, date, time, excludeSessionId])
+  }, [slotKey, date, time, excludeSessionId])
 
   const free = answer.key === slotKey ? answer.list : null
   let status = 'idle'

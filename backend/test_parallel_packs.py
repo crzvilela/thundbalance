@@ -6,6 +6,7 @@ the same time (allowed after a warning):
 
 Google Mail is a local fake server, the Google Calendar is faked. The local database is used and cleaned up.
 """
+import pack_schedule
 import base64
 import os
 import json
@@ -132,8 +133,7 @@ class Parallel(unittest.TestCase):
     # ----- helpers
     def renew(self, *, per_week, days, start, time="09:00", allow=False, trainer=None, extra=None, overlaps=False):
         return route("/admin/clients/{client_id}/renew-pack", "POST")(self.user_id, main.NewPack(
-            pack_id=self.pack_ids["individual"], sessions_per_week=per_week, preferred_days=days, preferred_time=time,
-            trainer_id=trainer or self.trainer_id, start_date=start.isoformat(),
+            pack_id=self.pack_ids["individual"], sessions_per_week=per_week, schedule=pack_schedule.uniform(days, time, trainer or self.trainer_id), start_date=start.isoformat(),
             email_extra=extra if extra is not None else [], allow_conflicts=allow, allow_overlaps=overlaps))
 
     def add_session(self, day, time="09:00", status="Booked"):
@@ -316,7 +316,7 @@ class Parallel(unittest.TestCase):
         conn.commit()
         conn.close()
         route("/admin/approve-request", "POST")(main.ApproveRequest(
-            request_id=request_id, trainer_id=self.trainer_id, start_date=(monday + timedelta(days=2)).isoformat(), email_extra=[]))
+            request_id=request_id, schedule=pack_schedule.uniform("Wednesday", "15:00", self.trainer_id), start_date=(monday + timedelta(days=2)).isoformat(), email_extra=[]))
         self.assertEqual([r[1] for r in self.plans_rows()], [True, True])
         self.assertEqual(sum(1 for r in self.sessions_rows() if r[3] == "Booked"), 4)       # 2 + 2, none cancelled
 
@@ -331,7 +331,7 @@ class Parallel(unittest.TestCase):
         from unittest import mock
         with mock.patch.object(main, "require_client", lambda authorization=None: {"sub": "uid-hp", "email": f"hp{DOMAIN}"}):
             main.create_client_request(main.ClientRequestCreate(
-                pack_id=self.pack_ids["individual"], sessions_per_week=1, preferred_days="Wednesday", preferred_time="09:00"), "Bearer x")
+                pack_id=self.pack_ids["individual"], sessions_per_week=1, schedule=pack_schedule.uniform("Wednesday", "09:00", None)), "Bearer x")
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM client_requests WHERE user_id = %s AND LOWER(status) = 'pending'", (self.user_id,))
@@ -418,8 +418,7 @@ class Parallel(unittest.TestCase):
         self.free_the_trainer()
         plans_before, sessions_before = self.plans_rows(), self.sessions_rows()
         preview = route("/admin/packs/preview", "POST")(main.PackPreview(
-            client_id=self.user_id, pack_id=self.pack_ids["individual"], sessions_per_week=1, preferred_days="Monday",
-            preferred_time="09:00", trainer_id=self.trainer_id, start_date=monday.isoformat()))
+            client_id=self.user_id, pack_id=self.pack_ids["individual"], sessions_per_week=1, schedule=pack_schedule.uniform("Monday", "09:00", self.trainer_id), start_date=monday.isoformat()))
         self.assertEqual(preview["total_sessions"], 2)
         self.assertNotIn("replaces", preview)                           # nothing is replaced any more
         self.assertEqual(preview["conflicts"], [])                      # the trainer is free
@@ -427,8 +426,7 @@ class Parallel(unittest.TestCase):
         self.assertEqual((self.plans_rows(), self.sessions_rows()), (plans_before, sessions_before))
 
         free = route("/admin/packs/preview", "POST")(main.PackPreview(
-            client_id=None, pack_id=self.pack_ids["individual"], sessions_per_week=1, preferred_days="Wednesday",
-            preferred_time="16:00", trainer_id=self.trainer_id, start_date=next_weekday(20, 2).isoformat()))
+            client_id=None, pack_id=self.pack_ids["individual"], sessions_per_week=1, schedule=pack_schedule.uniform("Wednesday", "16:00", self.trainer_id), start_date=next_weekday(20, 2).isoformat()))
         self.assertEqual((free["total_sessions"], free["conflicts"], free["overlaps"]), (2, [], []))
 
     # ----- sessions that existed before parallel packs

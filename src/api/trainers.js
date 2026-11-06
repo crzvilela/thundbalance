@@ -16,22 +16,13 @@ export function loadTrainers() {
   return cached
 }
 
-// [{ id, name }] free on a date at a time, or with `weekday` the ones that work then (a weekly pack).
+// [{ id, name }] free on a date at a time.
 // `excludeSessionId`: the session being moved (it does not block its own trainer).
-export async function loadAvailableTrainers({ date, weekday, time, excludeSessionId }) {
-  const query = new URLSearchParams({ time })
-  if (weekday) query.set('weekday', weekday)
-  else query.set('date', date)
+export async function loadAvailableTrainers({ date, time, excludeSessionId }) {
+  const query = new URLSearchParams({ time, date })
   if (excludeSessionId) query.set('exclude_session_id', String(excludeSessionId))
   const response = await fetch(`${API_URL}/available-trainers?${query}`)
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
   const list = await response.json()
   return Array.isArray(list) ? list : []
-}
-
-// Free at EVERY weekday at that time (a pack with several days is checked day by day).
-export async function loadAvailableForWeekdays({ weekdays, time }) {
-  const lists = await Promise.all(weekdays.map(weekday => loadAvailableTrainers({ weekday, time })))
-  const [first = [], ...rest] = lists
-  return first.filter(trainer => rest.every(list => list.some(item => item.id === trainer.id)))
 }
