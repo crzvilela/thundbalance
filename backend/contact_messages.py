@@ -19,13 +19,11 @@ The notice e-mail goes to the team (TEAM_NOTIFICATION_EMAILS, default pt@thundba
 import logging
 import os
 import re
-import threading
-import time
-from collections import defaultdict, deque
 
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 
+import web_safety
 from database import get_connection
 from emails import send_email_async
 from emails.contact_emails import staff_contact_message
@@ -40,8 +38,7 @@ PAGE_MAX = 100
 
 logger = logging.getLogger("thundbalance.contact")
 
-_recent_by_ip = defaultdict(deque)
-_lock = threading.Lock()
+_limit = web_safety.SharedRateLimit("contact", PER_IP_LIMIT, WINDOW_SECONDS)       # kept in the database
 
 
 class ContactCreate(BaseModel):
@@ -67,15 +64,7 @@ def _client_ip(request: Request):
 
 
 def _allow_ip(ip):
-    now = time.time()
-    with _lock:
-        hits = _recent_by_ip[ip]
-        while hits and now - hits[0] > WINDOW_SECONDS:
-            hits.popleft()
-        if len(hits) >= PER_IP_LIMIT:
-            return False
-        hits.append(now)
-        return True
+    return not _limit.too_many(ip)
 
 
 def _clean(text, limit, multiline=False):

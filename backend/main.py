@@ -1535,7 +1535,7 @@ TRIAL_TIMES = {f"{hour:02d}:00" for hour in range(7, 21)}
 # resets when the server restarts; it only needs to stop floods).
 TRIAL_LIMIT = 5
 TRIAL_WINDOW_SECONDS = 3600
-_trial_hits = {}
+_trial_hits = web_safety.SharedRateLimit("trial", TRIAL_LIMIT, TRIAL_WINDOW_SECONDS)     # kept in the database; .clear() for tests
 
 
 def _client_ip(request):
@@ -1544,14 +1544,7 @@ def _client_ip(request):
 
 
 def _too_many_trial_requests(ip):
-    now = datetime.now().timestamp()
-    hits = [moment for moment in _trial_hits.get(ip, []) if now - moment < TRIAL_WINDOW_SECONDS]
-    if len(hits) >= TRIAL_LIMIT:
-        _trial_hits[ip] = hits
-        return True
-    hits.append(now)
-    _trial_hits[ip] = hits
-    return False
+    return _trial_hits.too_many(ip)
 
 
 def _active_trial_for_email(cursor, email):

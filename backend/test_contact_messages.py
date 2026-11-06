@@ -32,7 +32,7 @@ class Contact(unittest.TestCase):
 
     def setUp(self):
         self.cleanup()
-        cm._recent_by_ip.clear()
+        cm._limit.clear()
         self.sent = []
         patcher = mock.patch.object(cm, "send_email_async", lambda *args, **kwargs: self.sent.append((args, kwargs)))
         patcher.start()
@@ -40,7 +40,7 @@ class Contact(unittest.TestCase):
 
     def tearDown(self):
         self.cleanup()
-        cm._recent_by_ip.clear()
+        cm._limit.clear()
 
     @staticmethod
     def cleanup():
@@ -101,8 +101,9 @@ class Contact(unittest.TestCase):
             self.add("loop")
         self.add("loop")
         self.assertEqual(self.post("loop").status_code, 429)                                       # per e-mail
-        cm._recent_by_ip.clear()
-        cm._recent_by_ip["testclient"].extend([9e18] * cm.PER_IP_LIMIT)
+        cm._limit.clear()
+        for _ in range(cm.PER_IP_LIMIT):
+            cm._limit.too_many("testclient")
         self.assertEqual(self.post("other").status_code, 429)                                      # per IP
 
     # ----- inbox, archive, counts

@@ -14,6 +14,7 @@ import time
 
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse, Response
+from starlette.concurrency import run_in_threadpool
 
 from database import get_connection
 
@@ -57,9 +58,77 @@ class RateLimit:
             return False
 
 
+class SharedRateLimit:
+    """Sliding window per key kept in the database (table rate_limit_hits), so the count survives a restart of the server and is
+    the same for every instance. If the database does not answer it falls back to a window in memory: a limit that does not work
+    must never take the site down."""
+
+    def __init__(self, bucket, limit, window_seconds):
+        self.bucket, self.limit, self.window = bucket, limit, window_seconds
+        self._memory = RateLimit(limit, window_seconds)
+
+    _table_ready = False
+
+    def too_many(self, key):
+        key = str(key)[:200]
+        try:
+            if not SharedRateLimit._table_ready:          # created on first use: it works even before the startup hook ran
+                ensure_rate_limit_table()
+                SharedRateLimit._table_ready = True
+            conn = get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"{self.bucket}:{key}",))
+                cursor.execute(
+                    "DELETE FROM rate_limit_hits WHERE bucket = %s AND key = %s AND hit_at < NOW() - make_interval(secs => %s)",
+                    (self.bucket, key, self.window),
+                )
+                cursor.execute("SELECT COUNT(*) FROM rate_limit_hits WHERE bucket = %s AND key = %s", (self.bucket, key))
+                if cursor.fetchone()[0] >= self.limit:
+                    conn.commit()
+                    return True
+                cursor.execute("INSERT INTO rate_limit_hits (bucket, key) VALUES (%s, %s)", (self.bucket, key))
+                conn.commit()
+                return False
+            finally:
+                conn.close()
+        except Exception as error:  # noqa: BLE001
+            logger.warning("rate limit '%s' used the memory window: %s", self.bucket, type(error).__name__)
+            return self._memory.too_many(key)
+
+    def clear(self):
+        """Forgets every hit of this limit (tests)."""
+        self._memory.hits.clear()
+        try:
+            conn = get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM rate_limit_hits WHERE bucket = %s", (self.bucket,))
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def ensure_rate_limit_table():
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "CREATE TABLE IF NOT EXISTS rate_limit_hits (id BIGSERIAL PRIMARY KEY, bucket TEXT NOT NULL, key TEXT NOT NULL, "
+            "hit_at TIMESTAMP NOT NULL DEFAULT NOW())"
+        )
+        cursor.execute("CREATE INDEX IF NOT EXISTS rate_limit_hits_lookup ON rate_limit_hits (bucket, key, hit_at)")
+        cursor.execute("DELETE FROM rate_limit_hits WHERE hit_at < NOW() - INTERVAL '1 day'")       # nothing older is ever needed
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # the public routes that act on a link token: nobody needs more than a few tries per minute
 TOKEN_PREFIXES = ("/trial-sessions/confirmation/", "/reschedule-response/")
-token_limit = RateLimit(limit=int(os.getenv("TOKEN_RATE_LIMIT", "40")), window_seconds=300)
+token_limit = SharedRateLimit("token", limit=int(os.getenv("TOKEN_RATE_LIMIT", "40")), window_seconds=300)
 
 
 def client_ip(request):
@@ -71,7 +140,7 @@ def register_safety(app):
     @app.middleware("http")
     async def safety(request: Request, call_next):
         path = request.url.path
-        if path.startswith(TOKEN_PREFIXES) and token_limit.too_many(client_ip(request)):
+        if path.startswith(TOKEN_PREFIXES) and await run_in_threadpool(token_limit.too_many, client_ip(request)):
             return JSONResponse({"detail": "Too many requests. Please try again in a few minutes."}, status_code=429,
                                 headers={"Retry-After": "300", **SECURITY_HEADERS})
         response = await call_next(request)
@@ -144,10 +213,11 @@ def save_upload(name, contents):
 def register_upload_routes(app, upload_dir):
     @app.on_event("startup")
     def _ensure_uploads():
-        try:
-            ensure_upload_table()
-        except Exception as error:  # noqa: BLE001
-            logger.error("uploaded_files table could not be created: %s", type(error).__name__)
+        for name, create in (("uploaded_files", ensure_upload_table), ("rate_limit_hits", ensure_rate_limit_table)):
+            try:
+                create()
+            except Exception as error:  # noqa: BLE001
+                logger.error("%s table could not be created: %s", name, type(error).__name__)
 
     # Declared BEFORE the static mount, so the database wins; old files (and videos) still come from the disk.
     @app.get("/uploads/{name}")

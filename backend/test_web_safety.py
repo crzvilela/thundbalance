@@ -22,7 +22,7 @@ class Safety(unittest.TestCase):
         cls.client = TestClient(main.app)
 
     def setUp(self):
-        web_safety.token_limit.hits.clear()
+        web_safety.token_limit.clear()
 
     def test_images_are_checked_by_their_first_bytes_and_svg_is_refused(self):
         self.assertEqual(web_safety.check_image("a.PNG", PNG), ".png")
@@ -78,6 +78,32 @@ class Safety(unittest.TestCase):
         import time
         time.sleep(0.06)
         self.assertFalse(limit.too_many("a"))
+
+    def test_the_shared_limit_lives_in_the_database_and_survives_a_new_object(self):
+        first = web_safety.SharedRateLimit("test-shared", 2, 60)
+        first.clear()
+        try:
+            self.assertFalse(first.too_many("ip-1"))
+            self.assertFalse(first.too_many("ip-1"))
+            second = web_safety.SharedRateLimit("test-shared", 2, 60)          # like a restarted server: no memory, same database
+            self.assertTrue(second.too_many("ip-1"))
+            self.assertFalse(second.too_many("ip-2"))                          # another key is not affected
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute("UPDATE rate_limit_hits SET hit_at = NOW() - INTERVAL '2 minutes' WHERE bucket = 'test-shared'")
+            conn.commit()
+            conn.close()
+            self.assertFalse(second.too_many("ip-1"))                          # the window passed: the old hits are forgotten
+        finally:
+            first.clear()
+
+    def test_if_the_database_fails_the_limit_still_works_from_memory(self):
+        from unittest import mock
+        limit = web_safety.SharedRateLimit("test-fallback", 2, 60)
+        with mock.patch.object(web_safety, "get_connection", side_effect=RuntimeError("down")):
+            self.assertFalse(limit.too_many("x"))
+            self.assertFalse(limit.too_many("x"))
+            self.assertTrue(limit.too_many("x"))
 
     def test_error_reporting_is_off_without_a_dsn(self):
         import os
