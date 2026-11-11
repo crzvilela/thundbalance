@@ -30,6 +30,7 @@ from emails import gmail_api
 from emails.recipients import extra_scope, parse_extra
 from bulk_actions import BulkPayload, run_each, unknown_action
 from google_calendar import delete_calendar_event, list_calendar_events
+import calendar_reconcile
 from datetime import timezone
 
 import calendar_sync
@@ -543,6 +544,8 @@ def register_admin_routes(app, require_admin):
 
     @app.get("/admin/trial-sessions", dependencies=admin)
     def admin_trial_sessions():
+        calendar_reconcile.ensure_columns_once()
+        calendar_reconcile.maybe_reconcile()        # in the background, at most once a minute: sessions deleted in Google get cancelled
         conn = get_connection()
         cursor = conn.cursor()
         try:
@@ -553,7 +556,7 @@ def register_admin_routes(app, require_admin):
                        ts.trainer_id, t.nome, ts.rejection_reason, ts.created_at,
                        ts.birth_date, ts.confirmation_token, ts.google_event_id, ts.calendar_error,
                        ts.approved_at, ts.confirmed_at, ts.declined_at,
-                       ts.session_type, ts.second_person_name, ts.second_person_email, ts.price_per_session
+                       ts.session_type, ts.second_person_name, ts.second_person_email, ts.price_per_session, ts.cancel_source
                 FROM trial_sessions ts
                 LEFT JOIN trainers t ON t.id = ts.trainer_id
                 ORDER BY ts.id DESC
@@ -587,6 +590,7 @@ def register_admin_routes(app, require_admin):
                     "declined_at": _iso(r[20]) if r[20] else None,
                     "session_type": r[21], "second_person_name": r[22], "second_person_email": r[23],
                     "price_per_session": pricing.number(r[24]),
+                    "cancel_source": r[25] or "",          # "google": cancelled because its event was deleted in Google Calendar
                     # Confirmed by the client but with no event on the calendar: the panel
                     # offers "Crear evento en el calendario" (calendar_failed = the last
                     # attempt errored). An approved session has no event by design.

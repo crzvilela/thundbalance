@@ -49,7 +49,9 @@ export default function EventDetail({ event, onClose, onChanged }) {
   const start = event.startStr.slice(0, 19)
   const end = event.endStr.slice(0, 19)
   const changeable = !isTrial && (props.status === 'booked' || props.status === 'rescheduled')
-  const restorable = !isTrial && props.status === 'cancelled'            // a cancelled session of a pack (trials are not restored)
+  const fromGoogle = props.cancelSource === 'google'                       // cancelled because its event was deleted in Google Calendar
+  // a cancelled session of a pack; a trial only when it was cancelled from Google (the studio's own cancellations stay cancelled)
+  const restorable = props.status === 'cancelled' && (!isTrial || fromGoogle)
   const statusLabel = isTrial ? t(`ac_tr_${props.status}`) : t(`ac_st_${props.status}`)
   // the studio's Google Calendar follows the app; this button makes it match when it does not
   const canSync = !isTrial || props.status === 'confirmed'
@@ -79,6 +81,21 @@ export default function EventDetail({ event, onClose, onChanged }) {
       setMessage(t('ac_times_error'))
     } finally {
       setLoadingTimes(false)
+    }
+  }
+
+  // a trial cancelled from Google: back to the state it had, and its event is created again (packs use the restore dialog)
+  const restoreTrial = async () => {
+    setSyncing(true); setMessage('')
+    try {
+      await adminRequest('POST', `/admin/trial-sessions/${props.trialId}/restore`)
+      toast.push(t('gs_restore_ok'))
+      onChanged()
+      onClose()
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -173,7 +190,7 @@ export default function EventDetail({ event, onClose, onChanged }) {
               {restorable && (
                 <div className="sm:col-span-2">
                   <Row label={t('ac_cancelled_by')}>
-                    {[props.cancelledBy === 'new_pack' ? t('rs_by_new_pack') : props.cancelledBy === 'client' ? t('rs_by_client') : props.cancelledBy,
+                    {fromGoogle ? t('gs_from_google') : [props.cancelledBy === 'new_pack' ? t('rs_by_new_pack') : props.cancelledBy === 'client' ? t('rs_by_client') : props.cancelledBy,
                       props.cancelledAt && new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(`${props.cancelledAt}Z`))
                     ].filter(Boolean).join(' · ')}
                   </Row>
@@ -225,7 +242,7 @@ export default function EventDetail({ event, onClose, onChanged }) {
               {isTrial && <Link to="/admin/trials" className="inline-flex min-h-[44px] items-center rounded-xl border border-white/15 px-4 text-sm font-semibold text-gray-100 transition hover:bg-white/10">{t('ac_trials_page')}</Link>}
             </div>
             <div className="flex flex-wrap gap-3">
-              {restorable && <Button variant="primary" onClick={() => setRestoring(true)}><Icon name="refresh" className="h-4 w-4" />{t('ac_restore')}</Button>}
+              {restorable && <Button variant="primary" onClick={isTrial ? restoreTrial : () => setRestoring(true)} loading={isTrial && syncing}><Icon name="refresh" className="h-4 w-4" />{t('ac_restore')}</Button>}
               {changeable && mode === 'view' && <>
                 <Button variant="secondary" onClick={() => { setMode('reschedule'); setMessage('') }}>{t('ac_reschedule')}</Button>
                 <Button variant="danger" onClick={() => setConfirmCancel(true)}>{t('ac_cancel_session')}</Button>

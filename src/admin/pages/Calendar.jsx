@@ -11,6 +11,7 @@ import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { Button, Card, Icon, PageHeader } from '../ui'
 import CalendarFilters from '../calendar/CalendarFilters'
+import GoogleSyncBanner from '../GoogleSyncBanner'
 import EventDetail from '../calendar/EventDetail'
 import { MOBILE_QUERY, NEUTRAL_COLOR, dayKey, inkOn, madridOffsetLabel, madridWallClock, slotDurationFor, studioHours } from '../calendar/calendarConfig'
 import { useCalendarFilters } from '../calendar/useCalendarFilters'
@@ -162,6 +163,8 @@ export default function Calendar() {
         title={t('ac_title')} subtitle={t('ac_sub')}
         actions={<Button variant="secondary" onClick={reload}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>}
       />
+
+      <GoogleSyncBanner onChanged={reload} />
 
       <CalendarFilters filters={filters} setFilters={setFilters} clear={clear} active={active} trainers={trainers} />
 

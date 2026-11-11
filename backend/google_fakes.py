@@ -88,7 +88,7 @@ class FakeGoogle:
             self.events[event_id] = self._guests(self.events[event_id])
         return event_id
 
-    def list_events(self, time_min, time_max):
+    def list_events(self, time_min, time_max, show_deleted=False):
         if self.fail:
             raise RuntimeError("google down")
         return [{"id": event_id, "status": "confirmed", **body} for event_id, body in self.events.items()]

@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel
 
+import calendar_reconcile
 from database import get_connection
 from emails.dates import now_madrid
 
@@ -137,7 +138,7 @@ def _iso(day, moment):
 def session_event(row, now):
     (session_id, day, moment, status, rescheduled, number, user_id, name, email, phone, code,
      trainer_id, trainer, color, pack, sync_status, sync_error, change_id, change_status, session_type, second_name,
-     cancelled_at, cancelled_by, restored_at, restored_by) = row
+     cancelled_at, cancelled_by, restored_at, restored_by, cancel_source) = row
     start, end = _iso(day, moment)
     number = str(number or "").strip()
     email = str(email or "").strip()
@@ -157,6 +158,7 @@ def session_event(row, now):
             # only meaningful while the session is cancelled (the modal shows who and when, and offers "Restaurar sesión")
             "cancelledAt": cancelled_at.isoformat() if cancelled_at else None, "cancelledBy": cancelled_by or "",
             "restoredAt": restored_at.isoformat() if restored_at else None, "restoredBy": restored_by or "",
+            "cancelSource": cancel_source or "",           # "google": cancelled because its event was deleted in Google Calendar
         },
     }
 
@@ -168,7 +170,7 @@ def trial_title_text(email, pending):
 
 
 def trial_event(row):
-    trial_id, day, moment, status, token, name, email, phone, trainer_id, trainer, color, goal, sync_status, sync_error, session_type, second_name = row
+    trial_id, day, moment, status, token, name, email, phone, trainer_id, trainer, color, goal, sync_status, sync_error, session_type, second_name, cancel_source = row
     start, end = _iso(day, moment)
     email = str(email or "").strip()
     return {
@@ -182,6 +184,7 @@ def trial_event(row):
             "trainerId": trainer_id, "trainer": trainer or "", "color": color or "", "goal": goal or "",
             "syncStatus": sync_status, "syncError": sync_error,
             "sessionType": session_type or "individual", "secondPersonName": second_name or "",
+            "cancelSource": cancel_source or "",
         },
     }
 
@@ -191,6 +194,7 @@ def calendar_events(cursor, first, last, email=None, trainer_ids=None, kind="all
     now = now or now_madrid()
     email = (email or "").strip().lower() or None
     events = []
+    calendar_reconcile.ensure_columns_once()
 
     if kind in ("all", "packs"):
         import reschedule_requests              # the table the open-request columns read (created if missing)
@@ -213,7 +217,7 @@ def calendar_events(cursor, first, last, email=None, trainer_ids=None, kind="all
                    (SELECT rr.id FROM reschedule_requests rr WHERE rr.session_id = s.id AND rr.status IN ('pending', 'counter_proposed') LIMIT 1),
                    (SELECT rr.status FROM reschedule_requests rr WHERE rr.session_id = s.id AND rr.status IN ('pending', 'counter_proposed') LIMIT 1),
                    up.session_type, up.second_person_name,
-                   s.cancelled_at, s.cancelled_by, s.restored_at, s.restored_by
+                   s.cancelled_at, s.cancelled_by, s.restored_at, s.restored_by, s.cancel_source
             FROM sessions s
             LEFT JOIN users u ON u.id = s.user_id
             LEFT JOIN trainers t ON t.id = s.trainer_id
@@ -245,7 +249,7 @@ def calendar_events(cursor, first, last, email=None, trainer_ids=None, kind="all
             f"""
             SELECT ts.id, ts.session_date, ts.session_time, ts.status, ts.confirmation_token,
                    ts.full_name, ts.email, ts.phone, ts.trainer_id, t.nome, t.color, ts.goal,
-                   ts.calendar_sync_status, ts.calendar_sync_error, ts.session_type, ts.second_person_name
+                   ts.calendar_sync_status, ts.calendar_sync_error, ts.session_type, ts.second_person_name, ts.cancel_source
             FROM trial_sessions ts
             LEFT JOIN trainers t ON t.id = ts.trainer_id
             WHERE {' AND '.join(where)}
@@ -277,6 +281,7 @@ def register_admin_calendar_routes(app, require_admin):
         except ValueError:
             raise HTTPException(status_code=422, detail="trainer_ids must be numbers separated by commas") from None
         ensure_columns_once()
+        calendar_reconcile.maybe_reconcile()        # in the background, at most once a minute: sessions deleted in Google get cancelled
         conn = get_connection()
         cursor = conn.cursor()
         try:

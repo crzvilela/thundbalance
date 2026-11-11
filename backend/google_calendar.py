@@ -587,7 +587,7 @@ def clear_calendar():
     return deleted
 
 
-def list_calendar_events(time_min, time_max):
+def list_calendar_events(time_min, time_max, show_deleted=False):
     """Events between two RFC3339 instants, in Europe/Madrid time.
 
     Recurring events are expanded and results are paginated until Google has
@@ -608,7 +608,8 @@ def list_calendar_events(time_min, time_max):
             orderBy="startTime",
             timeZone="Europe/Madrid",
             maxResults=250,
-            pageToken=page_token
+            pageToken=page_token,
+            **({"showDeleted": True} if show_deleted else {})
         ).execute()
 
         events.extend(response.get("items", []))

@@ -11,6 +11,7 @@ import { useBulkSelection, SELECTING_CLASS, selectableProps } from '../bulk'
 import { TypeBadge } from '../SessionKind'
 import RecipientsBox, { SendsTo } from '../RecipientsBox'
 import SendConfirm from '../SendConfirm'
+import GoogleSyncBanner from '../GoogleSyncBanner'
 import { extraBody } from '../recipients'
 import { formatMoney } from '../../utils/pricing'
 import { canStart, hoursSummary, weekdayOf } from '../availability'
@@ -201,6 +202,8 @@ export default function TrialSessions() {
         actions={<Button variant="secondary" onClick={trialsResource.reload}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>}
       />
 
+      <GoogleSyncBanner onChanged={trialsResource.reload} />
+
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2" role="tablist">
           {filters.map(([key, label]) => (
@@ -241,6 +244,7 @@ export default function TrialSessions() {
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="truncate text-base font-semibold">{trial.name}</p>
                       <Badge tone={STATUS_TONE[trial.status] || 'neutral'}>{t(`trs_${trial.status}`)}</Badge>
+                      {trial.status === 'cancelled' && trial.cancel_source === 'google' && <Badge tone="amber">{t('gs_from_google')}</Badge>}
                     </div>
                     <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-400">
                       <a href={`mailto:${trial.email}`} className="inline-block py-1.5 hover:text-emerald-300">{trial.email}</a>
@@ -305,6 +309,11 @@ export default function TrialSessions() {
                     )}
                     {(trial.status === 'approved' || trial.status === 'confirmed') && (
                       <Button variant="danger" onClick={() => { setFormError(''); setCancelling(trial) }}>{t('cl_cancel_session')}</Button>
+                    )}
+                    {trial.status === 'cancelled' && trial.cancel_source === 'google' && (
+                      <Button variant="primary" onClick={() => run(() => adminRequest('POST', `/admin/trial-sessions/${trial.id}/restore`), 'gs_restore_ok', () => {})}>
+                        <Icon name="refresh" className="h-4 w-4" />{t('ac_restore')}
+                      </Button>
                     )}
                   </div>
                 </div>

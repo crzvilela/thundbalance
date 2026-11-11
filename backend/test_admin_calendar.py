@@ -47,6 +47,10 @@ class FakeCursor:
 class Calendar(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        import os
+        from unittest import mock
+        cls._delete_sync = mock.patch.dict(os.environ, {"GOOGLE_DELETE_SYNC": "off"})        # this page must never touch Google, not even in the background
+        cls._delete_sync.start()
         ac.ensure_columns()
         cls._calendar_calls = []
 
@@ -109,6 +113,7 @@ class Calendar(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         google_calendar.list_calendar_events, google_calendar.get_calendar_service = cls._saved
+        cls._delete_sync.stop()
         cls.cleanup()
 
     @classmethod

@@ -24,6 +24,7 @@ from datetime import datetime
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel
 
+import calendar_reconcile
 import calendar_sync
 import inbox
 import trainer_choice
@@ -56,6 +57,7 @@ def _slot(day, time):
 
 
 def restore_session(session_id, admin="", date=None, time=None, trainer_id=None, confirm_client_overlap=False):
+    calendar_reconcile.ensure_columns_once()
     conn = get_connection()
     cursor = conn.cursor()
     message = None
@@ -93,7 +95,7 @@ def restore_session(session_id, admin="", date=None, time=None, trainer_id=None,
         moved = (day, moment, trainer) != (str(old_day)[:10], hhmm(old_time), old_trainer)
         cursor.execute(
             "UPDATE sessions SET status = 'Booked', session_date = %s, session_time = %s, trainer_id = %s, "
-            "rescheduled = rescheduled OR %s, feed_sequence = feed_sequence + 1, "
+            "rescheduled = rescheduled OR %s, feed_sequence = feed_sequence + 1, cancel_source = NULL, "
             "restored_at = NOW() AT TIME ZONE 'UTC', restored_by = %s WHERE id = %s RETURNING restored_at",
             (day, moment, trainer, moved, (str(admin)[:120] or "admin"), session_id),
         )

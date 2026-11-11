@@ -53,6 +53,7 @@ import pack_view
 from emails import send_pack_summary_email, team_emails
 from emails import log as email_log
 from emails.texts import normalize_language
+import calendar_reconcile
 import calendar_sync
 import calendar_feed
 import google_calendar
@@ -220,6 +221,16 @@ def ensure_trainer_area():
 
 
 @app.on_event("startup")
+def start_google_delete_sync():
+    # cancel_source columns (idempotent) and the 10-minute check of sessions deleted in Google Calendar (GOOGLE_DELETE_SYNC=off disables it)
+    try:
+        calendar_reconcile.ensure_columns_once()
+        calendar_reconcile.start_background()
+    except Exception as error:  # noqa: BLE001
+        print(f"google delete sync could not start: {type(error).__name__}")
+
+
+@app.on_event("startup")
 def ensure_client_lifecycle_columns():
     # users.archived_at + admin_audit_log (client_lifecycle.py). Idempotent.
     try:
@@ -293,6 +304,7 @@ reschedule_requests.register_reschedule_routes(app, require_admin, require_clien
 inbox.register_inbox_routes(app, require_admin, require_inbox_user, _own_user_id, ADMIN_EMAIL)
 trainer_choice.register_trainer_choice_routes(app)
 session_restore.register_restore_routes(app, require_admin)
+calendar_reconcile.register_reconcile_routes(app, require_admin)
 client_lang.register_client_lang_routes(app, require_client, _own_user_id)
 
 
