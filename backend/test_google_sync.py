@@ -30,7 +30,6 @@ import packs
 from database import get_connection
 from emails import build_pack_email
 from emails.pack_emails import pack_ics_attachment
-from emails.trial_emails import client_trial_confirmed
 from emails.welcome_emails import build_welcome_email
 from features import client_calendar_enabled
 
@@ -345,16 +344,6 @@ class ClientCalendarSwitch(unittest.TestCase):
         with self.env("true"):
             *_, ics_on = build_welcome_email("Ana", "ana@example.com", "pw-123456", self.SUMMARY)
         self.assertIsNotNone(ics_on)
-
-    def test_the_trial_confirmation_has_no_file_and_no_sentence_about_it_when_off(self):
-        with self.env("false"):
-            subject, html, text, ics = client_trial_confirmed("Ana", datetime(2026, 11, 3, 10), "Carles", 5, "es")
-        self.assertIsNone(ics)
-        self.assertNotIn("calendario", (html + text).lower())
-        self.assertNotIn("adjunt", (html + text).lower())
-        with self.env("true"):
-            *_, ics_on = client_trial_confirmed("Ana", datetime(2026, 11, 3, 10), "Carles", 5, "es")
-        self.assertIn("UID:trial-5@thundbalance.com", ics_on)
 
     def test_the_endpoints_of_the_client_calendar_are_closed_when_off(self):
         with self.env("false"):

@@ -185,34 +185,6 @@ def client_trial_approved(name, start, trainer, token, lang=None, details=None):
     return localized_email(lang, "trial_approved_subject", build, title_key="trial_approved_title")
 
 
-def client_trial_confirmed(name, start, trainer, trial_id, lang=None, details=None):
-    """Confirmation with the calendar file. Returns (subject, html, text, ics_text)."""
-    lang = normalize_language(lang) or "en"
-
-    def build(l):
-        return [
-            heading(tr(l, "trial_confirmed_title")),
-            paragraph(tr(l, "greeting", name=name)),
-            # the sentence that mentions the attached event only exists with the client calendar on
-            paragraph(tr(l, "trial_confirmed_body" if client_calendar_enabled() else "trial_confirmed_body_plain")),
-            sessions_table([{"start": start, "trainer": trainer}], l),
-            key_value([*kind_rows(l, details), (tr(l, "lbl_place"), STUDIO_PLACE)]),
-            paragraph(tr(l, "trial_confirmed_note"), muted=True),
-        ]
-    subject, html, text = localized_email(lang, "trial_confirmed_subject", build, title_key="trial_confirmed_title")
-    if not client_calendar_enabled():
-        return subject, html, text, None
-    ics = build_ics([{
-        "id": f"trial-{trial_id}",
-        "start": start,
-        "summary": client_trial_title(trainer),
-        "sequence": 0,
-        "description": f"{tr(lang, 'lbl_trainer')}: {trainer}" if trainer else "",
-        "location": STUDIO_PLACE,
-    }])
-    return subject, html, text, ics
-
-
 def client_trial_cancelled(name, start, lang=None, trial_id=None, trainer=None, sequence=1):
     """(subject, html, text, ics). `ics` is a METHOD:CANCEL file (STATUS:CANCELLED, the same
     UID as the confirmation, a higher SEQUENCE) when the caller gives the trial id, so the event

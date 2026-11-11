@@ -27,7 +27,7 @@ from emails.reschedule_emails import (
 from emails.samples import sample_all_components
 from emails.transport import EmailResult
 from emails.trial_emails import (
-    client_trial_approved, client_trial_cancelled, client_trial_confirmed, client_trial_received,
+    client_trial_approved, client_trial_cancelled, client_trial_received,
     staff_trial_confirmed, staff_trial_declined, staff_trial_requested,
 )
 from emails.welcome_emails import build_staff_client_created, build_welcome_email
@@ -64,7 +64,6 @@ def client_emails(lang):
         "welcome_with_pack": build_welcome_email("Ana", "ana@example.com", "Pw-123-xyz", PACK, lang)[:3],
         "trial_received": client_trial_received("Ana", START, lang),
         "trial_approved": client_trial_approved("Ana", START, "Carles", "TOKEN", lang),
-        "trial_confirmed": client_trial_confirmed("Ana", START, "Carles", 5, lang)[:3],
         "trial_cancelled": client_trial_cancelled("Ana", START, lang, 5, "Carles")[:3],
         "reschedule_approved": client_reschedule_approved(ctx),
         "reschedule_rejected": client_reschedule_rejected(ctx),
@@ -270,13 +269,12 @@ class WhichLanguage(unittest.TestCase):
         self.profile["ca@x.co"] = "ca"
         mailer.send_trial_received("ca@x.co", "Ana", "2026-10-12", "09:00")
         mailer.send_trial_approved("ca@x.co", "Ana", "2026-10-12", "09:00", "Carles", "TOKEN")
-        mailer.send_trial_confirmed("ca@x.co", "Ana", "2026-10-12", "09:00", "Carles", 5)
         mailer.send_trial_cancelled("ca@x.co", "Ana", "2026-10-12", "09:00")
         ctx = {**RESCHEDULE, "client_email": "ca@x.co", "lang": None}
         for send in (notifications.client_approved, notifications.client_rejected, notifications.client_counter, notifications.session_moved):
             notifications.wait(send(dict(ctx)))
         sent = self.mail("ca@x.co")
-        self.assertEqual(len(sent), 8)
+        self.assertEqual(len(sent), 7)
         for message in sent:
             self.assertEqual(message["lang"], "ca", message["kind"])
             self.assertIn('<html lang="ca"', message["html"], message["kind"])

@@ -187,7 +187,7 @@ class Languages(unittest.TestCase):
             self.assertTrue(any("kind=staff_trial_requested lang=es to=" in line for line in lines))
             self.assertTrue(all("@" in line and f"{lang}{DOMAIN}" not in line for line in lines))   # masked
 
-    def test_approval_and_confirmation_emails_follow_the_language(self):
+    def test_approval_email_follows_the_language_and_confirming_sends_the_client_nothing(self):
         for lang in ("en", "es", "ca"):
             RECEIVED.clear()
             main._trial_hits.clear()
@@ -216,18 +216,9 @@ class Languages(unittest.TestCase):
             RECEIVED.clear()
             endpoint("/trial-sessions/confirmation/{token}/confirm", "POST")(token)
             self.wait_for_mail()
-            confirmed = self.to(email)
-            self.assertEqual((len(confirmed), len(self.to("pt@thundbalance.com"))), (1, 1), lang)
-            message = confirmed[0]
-            self.assertIn(MARKERS[lang]["confirmed"], plain(message["html"]))
-            self.assertIn(f'<html lang="{lang}"', message["html"])
-            self.assertNotIn(" / ", message["subject"])
-            self.assertEqual(message["attachments"][0]["name"], "thundbalance-sesion-de-prueba.ics")
-            ics = base64.b64decode(message["attachments"][0]["data"]).decode()
-            self.assertEqual(ics.count("BEGIN:VEVENT"), 1)
-            for other, other_marks in MARKERS.items():
-                if other != lang:
-                    self.assertNotIn(other_marks["confirmed"], plain(message["html"]))
+            self.assertEqual(self.to(email), [], lang)              # the client gets NO e-mail for confirming
+            self.assertEqual(len(self.to("pt@thundbalance.com")), 1, lang)     # the studio is told (in Spanish)
+            self.assertEqual(self.row(trial_id)[1], "Confirmed")
 
     def test_unknown_language_is_stored_as_english(self):
         for number, value in enumerate(("fr", "", None, "EN-gb;drop")):

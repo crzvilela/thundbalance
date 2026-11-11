@@ -17,7 +17,7 @@ from emails.reschedule_emails import (
 )
 from emails.samples import sample_all_components
 from emails.trial_emails import (
-    client_trial_approved, client_trial_cancelled, client_trial_confirmed, client_trial_received,
+    client_trial_approved, client_trial_cancelled, client_trial_received,
     staff_trial_confirmed, staff_trial_declined, staff_trial_requested,
 )
 from emails.welcome_emails import build_staff_client_created, build_welcome_email
@@ -69,7 +69,6 @@ for lang in LANGUAGES:
     examples[f"client-welcome-with-pack-{lang}"] = build_welcome_email("Ana García", "ana@example.com", "Ab3-9xQ-77-EXAMPLE", SAMPLE_PACK, lang)[:3]
     examples[f"client-trial-received-{lang}"] = client_trial_received("Ana", start, lang)
     examples[f"client-trial-approved-{lang}"] = client_trial_approved("Ana", start, "Carles", "TOKEN-DE-EJEMPLO", lang)
-    examples[f"client-trial-confirmed-{lang}"] = client_trial_confirmed("Ana", start, "Carles", 15, lang)[:3]
     examples[f"client-trial-cancelled-{lang}"] = client_trial_cancelled("Ana", start, lang)[:3]
     examples[f"client-reschedule-approved-{lang}"] = client_reschedule_approved(ctx)
     examples[f"client-reschedule-rejected-{lang}"] = client_reschedule_rejected(ctx)

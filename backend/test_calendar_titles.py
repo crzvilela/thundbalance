@@ -14,7 +14,7 @@ import calendar_feed
 import calendar_titles as titles
 from emails.ics import build_ics
 from emails.pack_emails import build_pack_ics
-from emails.trial_emails import client_trial_cancelled, client_trial_confirmed
+from emails.trial_emails import client_trial_cancelled
 from event_format import session_title, trial_title
 
 os.environ["CLIENT_CALENDAR_ENABLED"] = "true"      # these tests look at the calendar parts of the emails
@@ -96,16 +96,6 @@ class IcsFiles(unittest.TestCase):
                          f"SEQUENCE:{titles.TITLE_VERSION}", "DTSTART:20261103T090000Z"):
             self.assertIn(expected, email_ics)
             self.assertIn(expected, feed)
-
-    def test_trial_confirmation_ics(self):
-        _, _, _, ics = client_trial_confirmed("Ana", datetime(2026, 10, 14, 10, 0), "Matilda", 42, "es")
-        ics = unfold(ics)
-        self.assertIn("SUMMARY:ThundBalance · Trial Session con Matilda", ics)
-        self.assertIn("UID:trial-42@thundbalance.com", ics)
-        self.assertIn("SEQUENCE:0", ics)
-        self.assertIn("STATUS:CONFIRMED", ics)
-        self.assertIn("DTSTART:20261014T080000Z", ics)       # 10:00 Madrid (summer) = 08:00Z
-        self.assertIn("DTEND:20261014T090000Z", ics)
 
     def test_trial_cancellation_ics_cancels_the_same_uid_with_a_higher_sequence(self):
         _, _, _, ics = client_trial_cancelled("Ana", datetime(2026, 10, 14, 10, 0), "es", trial_id=42,

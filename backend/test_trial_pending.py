@@ -68,17 +68,16 @@ class Pending(unittest.TestCase):
         self.cleanup()
         self.google = google_fakes.FakeGoogle().install()
         self.mails = []
-        self._saved = (mailer.send_trial_approved, mailer.send_trial_confirmed, mailer.send_trial_cancelled,
+        self._saved = (mailer.send_trial_approved, mailer.send_trial_cancelled,
                        trial_notifications.notify_trial_confirmed, trial_notifications.notify_trial_declined)
         mailer.send_trial_approved = lambda *a, **k: (self.mails.append(("approved", a)), Sent())[1]
-        mailer.send_trial_confirmed = lambda *a, **k: Sent()
         mailer.send_trial_cancelled = lambda *a, **k: None
         trial_notifications.notify_trial_confirmed = lambda trial, ok=True: None
         trial_notifications.notify_trial_declined = lambda trial: None
 
     def tearDown(self):
         self.google.uninstall()
-        (mailer.send_trial_approved, mailer.send_trial_confirmed, mailer.send_trial_cancelled,
+        (mailer.send_trial_approved, mailer.send_trial_cancelled,
          trial_notifications.notify_trial_confirmed, trial_notifications.notify_trial_declined) = self._saved
         self.cleanup()
 

@@ -7,7 +7,7 @@ from client_lang import resolve_client_lang
 from emails import client_extra, send_email_async
 from emails.dates import parse_madrid
 from emails.trial_emails import (
-    client_trial_approved, client_trial_cancelled, client_trial_confirmed, client_trial_received,
+    client_trial_approved, client_trial_cancelled, client_trial_received,
 )
 
 
@@ -33,15 +33,6 @@ def send_trial_received(to, name, date_text, time_text, lang=None, reference=Non
 def send_trial_approved(to, name, date_text, time_text, trainer, token, lang=None, reference=None, details=None):
     lang = _lang(to, lang)
     return _send(to, client_trial_approved(name, parse_madrid(date_text, time_text), trainer, token, lang, details), "trial_approved", lang, reference)
-
-
-def send_trial_confirmed(to, name, date_text, time_text, trainer, trial_id, lang=None, reference=None, details=None):
-    lang = _lang(to, lang)
-    built = client_trial_confirmed(name, parse_madrid(date_text, time_text), trainer, trial_id, lang, details)
-    options = {}
-    if built[3]:           # None when the client calendar is off
-        options["attachments"] = [{"filename": "thundbalance-sesion-de-prueba.ics", "content_type": "text/calendar", "data": built[3].encode("utf-8")}]
-    return _send(to, built, "trial_confirmed", lang, reference, **options)
 
 
 def send_trial_cancelled(to, name, date_text, time_text, lang=None, reference=None,

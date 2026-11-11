@@ -206,12 +206,9 @@ def answer_trial(token, wanted):
         trial = _trial_dict(row)
         if wanted == "confirmed":
             calendar_ok = sync_calendar_event(trial["id"])
+            # The client gets NO e-mail for confirming: the page they see says it, and their Google Calendar invitation
+            # (the event updated above) shows the session. Only the studio is told.
             trial_notifications.notify_trial_confirmed(trial, calendar_ok)
-            mailer.send_trial_confirmed(
-                trial["email"], _first_name(trial["full_name"]), trial["session_date"],
-                trial["session_time"], trial["trainer"], trial["id"], trial["lang"],
-                reference=trial["id"], details=_details(trial),
-            )
         else:
             _remove_event(row)
             trial_notifications.notify_trial_declined(trial)

@@ -80,7 +80,6 @@ class Inbox(unittest.TestCase):
         self.mails, self.events = [], []
         self._patches = [
             mock.patch.object(mailer, "send_trial_approved", lambda *a, **k: (self.mails.append("approved"), Sent())[1]),
-            mock.patch.object(mailer, "send_trial_confirmed", lambda *a, **k: (self.mails.append("client_confirmed"), Sent())[1]),
             mock.patch.object(trial_notifications, "notify_trial_confirmed", lambda trial, ok=True: self.mails.append("staff_confirmed")),
             mock.patch.object(trial_notifications, "notify_trial_declined", lambda trial: self.mails.append("staff_declined")),
             mock.patch.object(tc, "create_trial_session_event", lambda *a, **k: (self.events.append(1), "evt")[1]),
@@ -326,7 +325,7 @@ class Inbox(unittest.TestCase):
         result = inbox.do_action(self.ana, claims_of("ana"), item["id"], "trial_confirm", "es")
         self.assertEqual(result["outcome"], "confirmed")
         self.assertEqual(self.sql("SELECT status FROM trial_sessions WHERE id = %s", (trial_id,))[0][0], "Confirmed")
-        self.assertEqual((len(self.events), "client_confirmed" in self.mails, "staff_confirmed" in self.mails), (1, True, True))
+        self.assertEqual((len(self.events), "client_confirmed" in self.mails, "staff_confirmed" in self.mails), (1, False, True))
         self.assertEqual(self.action_state(result["item"], "trial_confirm"), "done")
         self.assertTrue(result["item"]["read"])
         self.assertEqual(result["item"]["actions"][0]["label"], "Confirmar")

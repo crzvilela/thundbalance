@@ -16,7 +16,7 @@ from emails import (
 from emails.samples import sample_all_components, sample_ics
 from emails.transport import build_payload
 from emails.trial_emails import (
-    client_trial_approved, client_trial_confirmed, client_trial_received, staff_trial_confirmed,
+    client_trial_approved, client_trial_received, staff_trial_confirmed,
     staff_trial_declined, staff_trial_requested,
 )
 
@@ -146,9 +146,6 @@ class EmailTests(unittest.TestCase):
         self.assertIn("Hola Ana,", client_trial_received("Ana", None, "es")[1])
         self.assertIn("Hola Ana,", client_trial_received("Ana", None, "ca")[1])
         self.assertTrue(client_trial_received("Ana", None, "ca")[2].rstrip().endswith("Salutacions,\nDavid"))
-        subject, html, text, ics = client_trial_confirmed("Ana", datetime(2026, 10, 12, 9), "Carles", 5)
-        self.assertIn("UID:trial-5@thundbalance.com", ics)
-        self.assertIn("DTSTART:20261012T070000Z", ics)
         trial = {"full_name": "Ana", "email": "a@b.co", "session_date": "2026-10-12", "session_time": "09:00", "trainer": "Carles"}
         self.assertIn("CONFIRMADA", staff_trial_confirmed(trial)[0])
         self.assertIn("Créalo a mano", staff_trial_confirmed(trial, calendar_ok=False)[1])

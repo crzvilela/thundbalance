@@ -70,15 +70,16 @@ class Flow(unittest.TestCase):
             self.updates.append(event_id)
 
         self._orig = (tc.create_trial_session_event, tc.delete_calendar_event, mailer.send_trial_approved,
-                      mailer.send_trial_confirmed, trial_notifications.notify_trial_confirmed,
-                      trial_notifications.notify_trial_declined, tc.update_trial_session_event)
+                      trial_notifications.notify_trial_confirmed,
+                      trial_notifications.notify_trial_declined, tc.update_trial_session_event, mailer.send_email_async)
         tc.create_trial_session_event = fake_create
         tc.update_trial_session_event = fake_update
         tc.delete_calendar_event = lambda event_id, notify=False: self.deleted.append(event_id)
         self._admin_delete = admin_api.delete_calendar_event
         admin_api.delete_calendar_event = lambda event_id, notify=False: self.deleted.append(event_id)
         mailer.send_trial_approved = lambda *a, **k: (self.mails.append(("approved", a)), Sent())[1]
-        mailer.send_trial_confirmed = lambda *a, **k: (self.mails.append(("client_confirmed", a)), Sent())[1]
+        # anything else that would reach a client through the mailer is recorded (the confirmation must send none)
+        mailer.send_email_async = lambda to, *a, **k: (self.mails.append(("client_email", k.get("kind"))), Sent())[1]
         trial_notifications.notify_trial_confirmed = lambda trial, ok=True: self.mails.append(("staff_confirmed", ok))
         trial_notifications.notify_trial_declined = lambda trial: self.mails.append(("staff_declined", None))
         # trial_confirmation imported the notification module itself, so patching the module attributes is enough
@@ -86,8 +87,8 @@ class Flow(unittest.TestCase):
     def tearDown(self):
         admin_api.delete_calendar_event = self._admin_delete
         (tc.create_trial_session_event, tc.delete_calendar_event, mailer.send_trial_approved,
-         mailer.send_trial_confirmed, trial_notifications.notify_trial_confirmed,
-         trial_notifications.notify_trial_declined, tc.update_trial_session_event) = self._orig
+         trial_notifications.notify_trial_confirmed,
+         trial_notifications.notify_trial_declined, tc.update_trial_session_event, mailer.send_email_async) = self._orig
 
     # ----- helpers
     def new_trial(self, days=14, status="Pending", hour="10:00"):
@@ -151,7 +152,8 @@ class Flow(unittest.TestCase):
         self.assertTrue(kwargs["event_id"].startswith("tb"))   # deterministic id: a repeat can not duplicate
         self.assertEqual(kwargs["trial_id"], trial_id)
         self.assertEqual(self.updates, ["evt-1"])              # the same event, turned into the confirmed one
-        self.assertEqual([m[0] for m in self.mails if m[0] != "approved"], ["staff_confirmed", "client_confirmed"])
+        self.assertEqual([m[0] for m in self.mails if m[0] != "approved"], ["staff_confirmed"])     # the studio is told; the client gets NO e-mail
+        self.assertFalse([m for m in self.mails if m[0] == "client_email"])
         status, event_id, _, calendar_error, confirmed_at, _ = self.row(trial_id)
         self.assertEqual((status, event_id, calendar_error), ("Confirmed", "evt-1", None))
         self.assertIsNotNone(confirmed_at)
@@ -347,6 +349,17 @@ class Flow(unittest.TestCase):
         status, event_id, _, calendar_error, _, _ = self.row(trial_id)
         self.assertEqual((status, event_id), ("Cancelled", "evt-1"))       # kept, so it can be removed later
         self.assertTrue(calendar_error)
+
+
+    def test_received_approved_and_cancelled_still_reach_the_client_and_there_is_no_confirmed_email(self):
+        self.assertFalse(hasattr(mailer, "send_trial_confirmed"))       # that e-mail does not exist any more
+        mailer.send_trial_approved = self._orig[2]                       # the real one, recorded by the fake transport
+        sent = []
+        mailer.send_email_async = lambda to, *a, **k: (sent.append(k.get("kind")), Sent())[1]
+        mailer.send_trial_received("ana@x.co", "Ana", "2026-10-12", "09:00", "es")
+        mailer.send_trial_approved("ana@x.co", "Ana", "2026-10-12", "09:00", "Carles", "TOKEN", "es")
+        mailer.send_trial_cancelled("ana@x.co", "Ana", "2026-10-12", "09:00", "es")
+        self.assertEqual(sent, ["trial_received", "trial_approved", "trial_cancelled"])
 
 
 if __name__ == "__main__":
