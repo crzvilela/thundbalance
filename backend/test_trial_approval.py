@@ -116,8 +116,8 @@ class Approval(unittest.TestCase):
                       admin_api.delete_calendar_event)
         tc.create_trial_session_event = fake_create
         tc.update_trial_session_event = fake_update
-        tc.delete_calendar_event = lambda event_id: self.deleted.append(event_id)
-        admin_api.delete_calendar_event = lambda event_id: self.deleted.append(event_id)
+        tc.delete_calendar_event = lambda event_id, notify=False: self.deleted.append(event_id)
+        admin_api.delete_calendar_event = lambda event_id, notify=False: self.deleted.append(event_id)
 
     def tearDown(self):
         (tc.create_trial_session_event, tc.update_trial_session_event, tc.delete_calendar_event,

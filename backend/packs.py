@@ -16,10 +16,11 @@ for the whole pack. Each session is created at its own day's hour with its own d
 Each pack has its own period, schedule and numbering, and its sessions carry sessions.user_plan_id (sessions from before
 that column existed are matched to a pack by date when they are read, never rewritten).
 
-Database rows go in first and Google Calendar events afterwards; the caller owns the transaction and the list of created
-event ids, so everything can be rolled back together.
+ORDER OF OPERATIONS (docs/PACK_CREATION_ORDER.md): create_pack only validates and WRITES THE DATABASE ROWS; it never calls
+Google. The caller commits and only THEN calls publish_calendar(), which creates the events (and so sends the invitations).
+Nothing that can still fail happens after an invitation went out, and a failure while creating the events never deletes the ones
+already created: each session records ok / failed and "Sincronizar con Google" repeats what is missing.
 """
-import traceback
 import logging
 from datetime import datetime
 
@@ -34,7 +35,7 @@ from emails import clean_recipients, parse_extra, send_pack_summary_email
 from emails.dates import parse_madrid
 import calendar_feed
 import calendar_sync
-from google_calendar import create_calendar_event, delete_calendar_event, describe_error, http_status
+from google_calendar import create_calendar_event, delete_calendar_event, describe_error, http_status   # noqa: F401 - the tests replace these two by name
 
 logger = logging.getLogger("thundbalance.packs")
 
@@ -154,22 +155,19 @@ def session_type_sent(value):
 
 
 def create_pack(
-    cursor, created_event_ids, *, user_id, client_name, client_email, catalog_pack_id,
+    cursor, *, user_id, client_name, client_email, catalog_pack_id,
     sessions_per_week, schedule, start_date,
     request_id=None, allow_conflicts=False, allow_overlaps=False,
     session_type=None, second_person_name=None, second_person_email=None, extra_emails=None,
     calendar_share=False, calendar_extra=()
 ):
-    """The one place that creates a pack: records the period and schedule,
-    inserts every session and creates its Google Calendar event.
+    """The one place that creates a pack: records the period and schedule and inserts every session. DATABASE ONLY: no Google
+    Calendar event is created here (the caller commits and then calls publish_calendar).
 
     `schedule`: one entry per training day, [{"weekday", "time", "trainer_id"}] (pack_schedule.clean). Every session is created at
     the hour and with the trainer of ITS day. Nothing here stores a single hour for the pack.
 
-    Database rows go in first and the calendar events afterwards; the id of
-    every event created is appended to `created_event_ids`, so the caller can
-    delete them if anything fails later (before or at commit). Nothing is
-    committed here.
+    Nothing is committed here. The sessions are saved with calendar_sync_status "pending" until publish_calendar runs.
 
     The client's other packs are never touched (they run in parallel, each with its own x/y).
     allow_conflicts: with the TRAINER busy or outside their hours and allow_conflicts=False nothing is created and a 409
@@ -183,8 +181,7 @@ def create_pack(
 
     Returns {"plan_name", "total_sessions", "session_dates", "sessions", "session_type",
     "price_per_session", "total_price", "calendar_failed", "calendar_errors"} where sessions is
-    [{"id", "start" (Madrid datetime), "trainer", "number"}]. Sessions whose
-    calendar event could not be created are still created (and flagged).
+    [{"id", "start" (Madrid datetime), "trainer", "number"}]. The calendar_* fields are 0 / [] until publish_calendar fills them.
     """
     session_type_arg = session_type
     sale = pack_catalog.sale(cursor, catalog_pack_id, sessions_per_week)
@@ -240,27 +237,14 @@ def create_pack(
         cursor.execute(
             """
             INSERT INTO sessions
-            (user_id, trainer_id, session_date, session_time, request_id, session_number, status, user_plan_id)
-            VALUES (%s, %s, %s, %s, %s, %s, 'Booked', %s)
+            (user_id, trainer_id, session_date, session_time, request_id, session_number, status, user_plan_id, calendar_sync_status)
+            VALUES (%s, %s, %s, %s, %s, %s, 'Booked', %s, %s)
             RETURNING id
             """,
-            (user_id, session_trainer, session_date, session_time, request_id, session_number, pack_id)
+            (user_id, session_trainer, session_date, session_time, request_id, session_number, pack_id, calendar_sync.PENDING)
         )
         pending.append((cursor.fetchone()[0], session_date, session_time, session_trainer, session_number))
 
-    # Every event is made by the one central rule (calendar_sync.sync_sessions_to_google),
-    # in parallel but never more than a few at a time. A calendar failure never stops the
-    # sessions from existing: it is recorded on each session (calendar_sync_status /
-    # calendar_sync_error), shown in the panel, and "Sincronizar con Google" retries it.
-    results = calendar_sync.sync_sessions_to_google(cursor, [item[0] for item in pending])
-    calendar_errors = []
-    guests_warning = None
-    for item in results:
-        if item["action"] == "failed":
-            calendar_errors.append(item["error"])
-        elif item["event_id"]:
-            created_event_ids.append(item["event_id"])
-        guests_warning = guests_warning or item.get("guests_warning")
     sessions = [
         {
             "id": session_id,
@@ -289,19 +273,57 @@ def create_pack(
         "total_sessions": total_sessions,
         "session_dates": session_dates,
         "sessions": sessions,
-        "calendar_failed": len(calendar_errors),
-        "calendar_errors": sorted(set(calendar_errors)),
-        "calendar_guests_warning": guests_warning,        # "delegation_missing": the events exist but the client was not invited
+        "calendar_failed": 0,
+        "calendar_errors": [],
+        "calendar_guests_warning": None,
     }
 
 
-def delete_created_events(created_event_ids):
-    """Removes calendar events created by a pack whose creation did not finish."""
-    for event_id in created_event_ids:
+def publish_calendar(created):
+    """Creates the Google Calendar events (and so sends the invitations) of a pack that is ALREADY COMMITTED. Call it only after
+    the commit. It never raises and never deletes anything: every event is made by the one central rule
+    (calendar_sync.sync_sessions_to_google, a few at a time) and each session records ok / failed with the reason; "Sincronizar
+    con Google" repeats what is missing. Fills calendar_failed / calendar_errors / calendar_guests_warning of `created` and returns it."""
+    ids = [item["id"] for item in created["sessions"]]
+    errors, warning = [], None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
         try:
-            delete_calendar_event(event_id)
-        except Exception:
-            traceback.print_exc()
+            for item in calendar_sync.sync_sessions_to_google(cursor, ids):
+                if item["action"] == "failed":
+                    errors.append(item["error"])
+                warning = warning or item.get("guests_warning")
+            conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception as error:  # noqa: BLE001 - the pack is saved: this only marks the sessions so the sync can repeat them
+        logger.error("calendar events of a new pack could not be written (%s)", type(error).__name__)
+        errors.append(describe_error(error))
+        _mark_failed(ids, errors[-1])
+    created["calendar_failed"] = len(errors)
+    created["calendar_errors"] = sorted(set(errors))
+    created["calendar_guests_warning"] = warning        # "delegation_missing": the events exist but the client was not invited
+    return created
+
+
+def _mark_failed(session_ids, reason):
+    """Best effort: sessions of a committed pack whose event step broke as a whole are marked failed (never raises)."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "UPDATE sessions SET calendar_sync_status = %s, calendar_sync_error = %s WHERE id = ANY(%s::int[]) AND google_event_id IS NULL",
+                (calendar_sync.FAILED, str(reason)[:200], list(session_ids)),
+            )
+            conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception as error:  # noqa: BLE001
+        logger.error("sessions could not be marked as failed (%s)", type(error).__name__)
 
 
 def clean_pack_recipients(extra_recipients, client_email):

@@ -46,7 +46,7 @@ from contact_messages import register_contact_routes
 from trial_notifications import notify_trial_requested
 import mailer
 from packs import (
-    clean_pack_recipients, create_pack, delete_created_events, email_pack,
+    clean_pack_recipients, create_pack, publish_calendar, email_pack,
     ensure_pack_columns, preview_pack,
 )
 import pack_view
@@ -2040,7 +2040,6 @@ def approve_request(
 
     conn = get_connection()
     cursor = conn.cursor()
-    created_event_ids = []
 
     try:
 
@@ -2089,7 +2088,7 @@ def approve_request(
         extra = clean_pack_recipients(data.extra_recipients if data.extra_recipients is not None else data.email_extra, client_email)
 
         created = create_pack(
-            cursor, created_event_ids, extra_emails=extra,
+            cursor, extra_emails=extra,
             user_id=user_id, client_name=client_name, client_email=client_email,
             catalog_pack_id=pack_id,
             sessions_per_week=sessions_per_week, schedule=data.schedule, start_date=data.start_date,
@@ -2129,6 +2128,7 @@ def approve_request(
         )
 
         conn.commit()
+        publish_calendar(created)           # only now (saved): the Google events and their invitations; never raises, never deletes
         inbox.on_pack_created(user_id, created["pack_id"], created["plan_name"])
 
         email = email_pack(
@@ -2148,12 +2148,10 @@ def approve_request(
 
     except HTTPException:
         conn.rollback()
-        delete_created_events(created_event_ids)
         raise
     except Exception as e:
 
         conn.rollback()
-        delete_created_events(created_event_ids)
 
         traceback.print_exc()
         # Admin-only endpoint: surface the real cause so it can be fixed
@@ -2179,7 +2177,6 @@ def admin_new_pack(client_id: int, data: NewPack):
 
     conn = get_connection()
     cursor = conn.cursor()
-    created_event_ids = []
 
     try:
         cursor.execute("SELECT nome, email FROM users WHERE id = %s", (client_id,))
@@ -2191,7 +2188,7 @@ def admin_new_pack(client_id: int, data: NewPack):
         extra = clean_pack_recipients(data.extra_recipients if data.extra_recipients is not None else data.email_extra, client_email)
 
         created = create_pack(
-            cursor, created_event_ids, extra_emails=extra,
+            cursor, extra_emails=extra,
             user_id=client_id, client_name=client_name, client_email=client_email,
             catalog_pack_id=data.pack_id,
             sessions_per_week=data.sessions_per_week, schedule=data.schedule, start_date=data.start_date,
@@ -2202,6 +2199,7 @@ def admin_new_pack(client_id: int, data: NewPack):
         )
 
         conn.commit()
+        publish_calendar(created)           # only now (saved): the Google events and their invitations; never raises, never deletes
         inbox.on_pack_created(client_id, created["pack_id"], created["plan_name"])
 
         email = email_pack(
@@ -2225,11 +2223,9 @@ def admin_new_pack(client_id: int, data: NewPack):
 
     except HTTPException:
         conn.rollback()
-        delete_created_events(created_event_ids)
         raise
     except Exception as error:
         conn.rollback()
-        delete_created_events(created_event_ids)
         traceback.print_exc()
         raise HTTPException(
             status_code=500,

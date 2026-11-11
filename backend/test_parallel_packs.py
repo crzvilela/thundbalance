@@ -486,5 +486,61 @@ class Parallel(unittest.TestCase):
         self.assertIn("4", message["text"])
 
 
+    # ----- order of operations: validate, commit, THEN Google (docs/PACK_CREATION_ORDER.md)
+    def committed(self):
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM sessions WHERE user_id = %s AND status = 'Booked'", (self.user_id,))
+        count = cur.fetchone()[0]
+        conn.close()
+        return count
+
+    def test_a_pack_the_server_refuses_makes_no_google_call_at_all(self):
+        monday = next_weekday(14, 0)
+        self.renew(per_week=1, days="Monday", start=monday)
+        self.events.clear()
+        with self.assertRaises(HTTPException) as caught:
+            self.renew(per_week=1, days="Monday", start=monday, time="09:00", trainer=self.trainer_id, overlaps=False, allow=False)
+        self.assertEqual(caught.exception.status_code, 409)
+        self.assertEqual(self.events, [])                              # nothing created, so nobody was invited
+        self.assertEqual(self.deleted, [])                             # and nothing to cancel
+
+    def test_the_events_are_made_after_the_pack_is_committed_and_each_session_records_it(self):
+        seen = []
+        original = packs.create_calendar_event
+        packs.create_calendar_event = lambda *a, **k: (seen.append(self.committed()), original(*a, **k))[1]
+        result = self.renew(per_week=1, days="Monday", start=next_weekday(14, 0))
+        self.assertEqual(seen, [result["total_sessions"]] * result["total_sessions"])     # every session was already saved
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT calendar_sync_status FROM sessions WHERE user_id = %s", (self.user_id,))
+        self.assertEqual(cur.fetchall(), [("ok",)])
+        conn.close()
+
+    def test_a_failure_before_the_commit_creates_no_event_and_so_cancels_none(self):
+        real = main.get_connection
+
+        class Proxy:
+            def __init__(self, conn):
+                self.conn = conn
+
+            def __getattr__(self, name):
+                return getattr(self.conn, name)
+
+            def commit(self):
+                raise RuntimeError("disk full")
+
+        main.get_connection = lambda: Proxy(real())
+        try:
+            with self.assertRaises(HTTPException) as caught:
+                self.renew(per_week=1, days="Monday", start=next_weekday(14, 0))
+        finally:
+            main.get_connection = real
+        self.assertEqual(caught.exception.status_code, 500)
+        self.assertEqual(self.events, [])                              # the invitations only go out once the pack is saved
+        self.assertEqual(self.deleted, [])                             # a rollback never deletes (and so never notifies)
+        self.assertEqual(self.committed(), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

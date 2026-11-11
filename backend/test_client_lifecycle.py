@@ -101,7 +101,7 @@ class Lifecycle(unittest.TestCase):
                 raise client_lifecycle.accounts.AccountError("down")
             return self.firebase["users"].pop(uid, None) is not None
 
-        def delete_event(event_id):
+        def delete_event(event_id, notify=False):
             if self.google_fail:
                 raise RuntimeError("calendar down")
             if event_id in self.google_deleted:

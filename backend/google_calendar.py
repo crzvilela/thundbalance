@@ -410,16 +410,20 @@ def get_calendar_event(event_id):
 
 
 def delete_calendar_event(
-    event_id
+    event_id,
+    notify=False
 ):
+    """Removes an event. SILENT by default (sendUpdates=none): a rollback, an internal cancellation or a clean-up must never
+    e-mail the guest a cancellation for an event they may never have seen. `notify=True` is only for a cancellation the admin
+    or the client asked for (a cancelled session, a declined trial): even then Google e-mails the guest only when
+    SEND_CALENDAR_INVITE_EMAILS=all."""
 
     service = get_calendar_service()
 
-    # the guest stops seeing the event; Google e-mails them a cancellation only with SEND_CALENDAR_INVITE_EMAILS=all
     service.events().delete(
         calendarId=get_calendar_id(),
         eventId=event_id,
-        sendUpdates=send_updates()
+        sendUpdates=send_updates() if notify else "none"
     ).execute(num_retries=HTTP_RETRIES)
 
     logger.info("calendar event deleted (%s)", event_id)

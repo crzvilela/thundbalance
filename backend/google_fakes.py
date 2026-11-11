@@ -64,8 +64,11 @@ class FakeGoogle:
             raise FakeHttpError(404)
         self.events[event_id].update(self._guests(body))
 
-    def delete(self, event_id):
+    def delete(self, event_id, notify=False):
         self.calls.append(("delete", event_id))
+        self.notified_deletes = getattr(self, "notified_deletes", [])
+        if notify:
+            self.notified_deletes.append(event_id)
         self._check(event_id)
         if event_id not in self.events:
             raise FakeHttpError(404)
@@ -132,7 +135,7 @@ def delegate_to_packs():
     saved = (gc.create_calendar_event_status, gc.patch_calendar_event, gc.delete_calendar_event)
     gc.create_calendar_event_status = lambda *a, **k: (packs.create_calendar_event(*a, **k), True)
     gc.patch_calendar_event = lambda event_id, body: None
-    gc.delete_calendar_event = lambda event_id: packs.delete_calendar_event(event_id)
+    gc.delete_calendar_event = lambda event_id, notify=False: packs.delete_calendar_event(event_id)
 
     def restore():
         gc.create_calendar_event_status, gc.patch_calendar_event, gc.delete_calendar_event = saved

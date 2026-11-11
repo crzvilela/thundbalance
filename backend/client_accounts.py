@@ -30,7 +30,7 @@ from emails.pack_emails import ICS_CONTENT_TYPE, ICS_FILENAME
 from emails.transport import validate_address
 from emails.welcome_emails import build_staff_client_created, build_welcome_email
 import pack_schedule
-from packs import create_pack, delete_created_events
+from packs import create_pack, publish_calendar
 from trial_notifications import studio_address
 
 logger = logging.getLogger("thundbalance.accounts")
@@ -90,9 +90,13 @@ def _bilingual(es, en):
     return f"{es} / {en}"
 
 
-DUPLICATE = _bilingual(
-    "Ya existe una cuenta con este email.",
-    "An account with this email already exists.",
+CLIENT_EXISTS = _bilingual(
+    "Este email ya es un cliente. Abre su ficha y crea el pack desde ahí.",
+    "This email is already a client. Open their profile and create the pack from there.",
+)
+LOGIN_EXISTS = _bilingual(
+    "Este email ya tiene una cuenta de acceso, pero no figura como cliente. No se ha creado nada. Revisa el email o contacta con soporte.",
+    "This email already has a login account but is not listed as a client. Nothing was created. Check the email or contact support.",
 )
 UNAVAILABLE = _bilingual(
     "La creación de cuentas no está configurada en el servidor.",
@@ -210,14 +214,21 @@ def register_client_account_routes(app, require_admin, require_client):
 
         conn = get_connection()
         cursor = conn.cursor()
-        created_event_ids = []
         uid = None
         pack_summary = None
         pack_info = None
         try:
-            cursor.execute("SELECT 1 FROM users WHERE LOWER(email) = %s", (email,))
-            if cursor.fetchone():
-                raise HTTPException(status_code=409, detail=DUPLICATE)
+            # Every refusal that can be known up front comes BEFORE anything is written (and long before any Google call).
+            cursor.execute("SELECT id FROM users WHERE LOWER(email) = %s", (email,))
+            existing = cursor.fetchone()
+            if existing:
+                raise HTTPException(status_code=409, detail={"code": "client_exists", "existing_client_id": existing[0], "message": CLIENT_EXISTS})
+            try:
+                has_login = accounts.get_user_by_email(email) is not None
+            except (accounts.AccountsUnavailable, accounts.AccountError):
+                has_login = False                  # not known: creating the login below reports it, still before any Google call
+            if has_login:
+                raise HTTPException(status_code=409, detail={"code": "login_exists", "message": LOGIN_EXISTS})
 
             cursor.execute(
                 """
@@ -234,7 +245,7 @@ def register_client_account_routes(app, require_admin, require_client):
             if data.pack:
                 pack = data.pack
                 created = create_pack(
-                    cursor, created_event_ids,
+                    cursor,
                     user_id=user_id, client_name=name, client_email=email,
                     catalog_pack_id=pack.pack_id,
                     sessions_per_week=pack.sessions_per_week, schedule=pack.schedule, start_date=pack.start_date,
@@ -260,37 +271,32 @@ def register_client_account_routes(app, require_admin, require_client):
                     "total_price": pricing.number(created["total_price"]),
                 }
 
-            # The login account is created last: if it fails, nothing else exists yet outside
-            # this (uncommitted) transaction and the calendar events are deleted below.
+            # The login account is created last: if it fails nothing exists outside this (uncommitted) transaction, and no
+            # calendar event exists yet: the events are made after the commit, below.
             password = accounts.generate_password()
             uid = accounts.create_login(email, password, name)
             cursor.execute("UPDATE users SET firebase_uid = %s WHERE id = %s", (uid, user_id))
             conn.commit()
         except HTTPException:
             conn.rollback()
-            delete_created_events(created_event_ids)
             if uid:
                 accounts.delete_login(uid)
             raise
-        except accounts.EmailAlreadyRegistered:
+        except accounts.EmailAlreadyRegistered:           # somebody registered it a moment ago
             conn.rollback()
-            delete_created_events(created_event_ids)
-            raise HTTPException(status_code=409, detail=DUPLICATE) from None
+            raise HTTPException(status_code=409, detail={"code": "login_exists", "message": LOGIN_EXISTS}) from None
         except accounts.AccountsUnavailable as error:
             conn.rollback()
-            delete_created_events(created_event_ids)
             logger.error("Account creation unavailable: %s", error)
             raise HTTPException(status_code=503, detail=_unavailable(str(error))) from None
         except psycopg2.errors.UniqueViolation:
             # Two requests for the same email at once (double click): the second one loses.
             conn.rollback()
-            delete_created_events(created_event_ids)
             if uid:
                 accounts.delete_login(uid)
-            raise HTTPException(status_code=409, detail=DUPLICATE) from None
+            raise HTTPException(status_code=409, detail={"code": "client_exists", "message": CLIENT_EXISTS}) from None
         except Exception as error:  # noqa: BLE001
             conn.rollback()
-            delete_created_events(created_event_ids)
             if uid:
                 accounts.delete_login(uid)
             logger.error("Client creation failed (%s)", type(error).__name__)
@@ -300,8 +306,13 @@ def register_client_account_routes(app, require_admin, require_client):
             cursor.close()
             conn.close()
 
-        if pack_info:           # the inbox message of the new client's pack (never raises)
-            inbox.on_pack_created(user_id, created["pack_id"], created["plan_name"])
+        if pack_info:
+            # Saved: only now the Google events (and their invitations) are made. Never raises, never deletes.
+            publish_calendar(created)
+            pack_info["calendar_failed"] = created["calendar_failed"]
+            pack_info["calendar_errors"] = created["calendar_errors"]
+            pack_info["calendar_guests_warning"] = created.get("calendar_guests_warning")
+            inbox.on_pack_created(user_id, created["pack_id"], created["plan_name"])      # the inbox message of the pack (never raises)
         email_result = send_welcome(name, email, password, pack_summary)
         del password
         return {"id": user_id, "email": email_result, "pack": pack_info}

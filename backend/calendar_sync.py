@@ -263,7 +263,7 @@ def _google_step(state, key):
             if not stored and not state["sync_status"]:
                 return {"action": "skipped", "event_id": None}
             try:
-                gc.delete_calendar_event(stored or wanted)
+                gc.delete_calendar_event(stored or wanted, notify=True)      # the admin or the client cancelled it: the only notified delete
             except Exception as error:  # noqa: BLE001
                 if gc.http_status(error) not in (404, 410):    # "it does not exist" is success
                     raise

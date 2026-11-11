@@ -104,7 +104,7 @@ class Languages(unittest.TestCase):
         self.events = []
         self._orig = (tc.create_trial_session_event, tc.delete_calendar_event)
         tc.create_trial_session_event = lambda *a, **k: (self.events.append(a), f"evt-{len(self.events)}")[1]
-        tc.delete_calendar_event = lambda event_id: None
+        tc.delete_calendar_event = lambda event_id, notify=False: None
 
     def tearDown(self):
         tc.create_trial_session_event, tc.delete_calendar_event = self._orig

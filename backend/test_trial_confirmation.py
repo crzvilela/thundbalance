@@ -74,9 +74,9 @@ class Flow(unittest.TestCase):
                       trial_notifications.notify_trial_declined, tc.update_trial_session_event)
         tc.create_trial_session_event = fake_create
         tc.update_trial_session_event = fake_update
-        tc.delete_calendar_event = lambda event_id: self.deleted.append(event_id)
+        tc.delete_calendar_event = lambda event_id, notify=False: self.deleted.append(event_id)
         self._admin_delete = admin_api.delete_calendar_event
-        admin_api.delete_calendar_event = lambda event_id: self.deleted.append(event_id)
+        admin_api.delete_calendar_event = lambda event_id, notify=False: self.deleted.append(event_id)
         mailer.send_trial_approved = lambda *a, **k: (self.mails.append(("approved", a)), Sent())[1]
         mailer.send_trial_confirmed = lambda *a, **k: (self.mails.append(("client_confirmed", a)), Sent())[1]
         trial_notifications.notify_trial_confirmed = lambda trial, ok=True: self.mails.append(("staff_confirmed", ok))
@@ -175,7 +175,7 @@ class Flow(unittest.TestCase):
         token = self.approve(trial_id)
         self.confirm(token)
 
-        def broken(event_id):
+        def broken(event_id, notify=False):
             raise RuntimeError("calendar down")
         tc.delete_calendar_event = broken
         self.assertEqual(self.decline(token)["outcome"], "declined")
@@ -336,7 +336,7 @@ class Flow(unittest.TestCase):
         orig = mailer.send_trial_cancelled
         mailer.send_trial_cancelled = lambda *a, **k: None
 
-        def broken(event_id):
+        def broken(event_id, notify=False):
             raise RuntimeError("calendar down")
 
         tc.delete_calendar_event = broken

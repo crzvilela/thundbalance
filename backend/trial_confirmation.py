@@ -569,7 +569,7 @@ def remove_trial_event(trial_id, event_id):
     row = (trial_id,)
     try:
         try:
-            delete_calendar_event(event_id)
+            delete_calendar_event(event_id, notify=True)      # a declined / cancelled trial: asked for by the admin or the client
         except Exception as error:  # noqa: BLE001
             if not _is_gone(error):
                 raise

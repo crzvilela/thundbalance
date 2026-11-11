@@ -132,7 +132,8 @@ class Accounts(unittest.TestCase):
         self.events = []
         self._restore_gc = google_fakes.delegate_to_packs()
         self._orig = (accounts.create_login, accounts.set_password, accounts.delete_login,
-                      packs.create_calendar_event, packs.delete_calendar_event)
+                      packs.create_calendar_event, packs.delete_calendar_event, accounts.get_user_by_email)
+        self.committed_when_created = []        # how many sessions of the client were already COMMITTED when each event was created
 
         def create_login(email, password, name):
             with self.firebase_lock:
@@ -153,7 +154,14 @@ class Accounts(unittest.TestCase):
         accounts.create_login = create_login
         accounts.set_password = lambda uid, password: (self.set_calls.append((uid, password)), self.passwords.append(password))
         accounts.delete_login = delete_login
-        packs.create_calendar_event = lambda *a, **k: (self.events.append(a), f"evt-{len(self.events)}")[1]
+        accounts.get_user_by_email = lambda email: {"uid": self.firebase[email], "email_verified": True, "disabled": False} if email in self.firebase else None
+
+        def make_event(*a, **k):
+            self.committed_when_created.append(self.committed_sessions(a[2]))
+            self.events.append(a)
+            return f"evt-{len(self.events)}"
+
+        packs.create_calendar_event = make_event
         packs.delete_calendar_event = lambda event_id: self.deleted_events.append(event_id)
 
         self.logs = LogCatcher()
@@ -162,7 +170,7 @@ class Accounts(unittest.TestCase):
 
     def tearDown(self):
         (accounts.create_login, accounts.set_password, accounts.delete_login,
-         packs.create_calendar_event, packs.delete_calendar_event) = self._orig
+         packs.create_calendar_event, packs.delete_calendar_event, accounts.get_user_by_email) = self._orig
         self._restore_gc()
         logging.getLogger().removeHandler(self.logs)
         self.cleanup()
@@ -189,6 +197,23 @@ class Accounts(unittest.TestCase):
         row = cur.fetchone()
         conn.close()
         return row[0] if row else None
+
+    def committed_sessions(self, email):
+        """Sessions of that client visible from ANOTHER connection (that is, committed)."""
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM sessions s JOIN users u ON u.id = s.user_id WHERE u.email = %s AND s.status = 'Booked'", (email,))
+        count = cur.fetchone()[0]
+        conn.close()
+        return count
+
+    def session_states(self, email):
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT s.calendar_sync_status FROM sessions s JOIN users u ON u.id = s.user_id WHERE u.email = %s ORDER BY s.id", (email,))
+        states = [row[0] for row in cur.fetchall()]
+        conn.close()
+        return states
 
     def db_user(self, email):
         conn = get_connection()
@@ -281,18 +306,51 @@ class Accounts(unittest.TestCase):
         with self.assertRaises(HTTPException) as caught:
             self.create(email="ANA" + DOMAIN)
         self.assertEqual(caught.exception.status_code, 409)
-        self.assertIn("Ya existe una cuenta", caught.exception.detail)
-        self.assertIn("already exists", caught.exception.detail)
+        detail = caught.exception.detail
+        self.assertEqual(detail["code"], "client_exists")
+        self.assertIn("Este email ya es un cliente. Abre su ficha y crea el pack desde ahí.", detail["message"])
+        self.assertIn("already a client", detail["message"])
+        self.assertEqual(detail["existing_client_id"], self.db_user("ana" + DOMAIN)[0])      # the admin can open that profile
         self.assertEqual(len(self.firebase), calls)
+
+    def test_a_pack_for_an_existing_client_email_makes_no_google_call_and_no_client(self):
+        first = self.create()
+        self.events.clear()
+        with self.assertRaises(HTTPException) as caught:
+            self.create(pack=True)                                    # the same email, now with a pack
+        self.assertEqual(caught.exception.status_code, 409)
+        self.assertEqual(self.events, [])                             # ZERO calls to Google Calendar: nothing created, nothing to cancel
+        self.assertEqual(self.deleted_events, [])
+        self.assertEqual(self.committed_sessions("ana" + DOMAIN), 0)
+        self.assertEqual(self.session_states("ana" + DOMAIN), [])
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM users WHERE email = %s", ("ana" + DOMAIN,))
+        self.assertEqual(cur.fetchone()[0], 1)                        # the client is not duplicated
+        conn.close()
+        self.assertEqual(caught.exception.detail["existing_client_id"], first["id"])
 
     def test_duplicate_email_in_firebase_rolls_back(self):
         self.firebase["ana" + DOMAIN] = "someone-else"
         with self.assertRaises(HTTPException) as caught:
             self.create(pack=True)
         self.assertEqual(caught.exception.status_code, 409)
+        self.assertEqual(caught.exception.detail["code"], "login_exists")      # found up front, in plain words
         self.assertIsNone(self.db_user("ana" + DOMAIN))
-        self.assertEqual(len(self.deleted_events), len(self.events))     # calendar events removed
+        self.assertEqual(self.events, [])                                  # no event was ever created: nobody was invited
+        self.assertEqual(self.deleted_events, [])                          # so nothing is cancelled either
         self.assertEqual(self.deleted_logins, [])                          # the other account is untouched
+
+    def test_a_login_registered_in_the_meantime_still_creates_no_event(self):
+        accounts.get_user_by_email = lambda email: None                  # the up-front look did not see it ...
+        self.firebase["ana" + DOMAIN] = "someone-else"                   # ... but it exists when the login is created
+        with self.assertRaises(HTTPException) as caught:
+            self.create(pack=True)
+        self.assertEqual(caught.exception.status_code, 409)
+        self.assertEqual(caught.exception.detail["code"], "login_exists")
+        self.assertIsNone(self.db_user("ana" + DOMAIN))
+        self.assertEqual(self.events, [])                                  # the events come after the commit, which never happened
+        self.assertEqual(self.deleted_events, [])
 
     def test_database_failure_removes_the_firebase_account(self):
         real = client_accounts.get_connection
@@ -317,7 +375,8 @@ class Accounts(unittest.TestCase):
         self.assertEqual(self.deleted_logins, ["fake-uid-1"])
         self.assertEqual(self.firebase, {})
         self.assertIsNone(self.db_user("ana" + DOMAIN))
-        self.assertEqual(sorted(self.deleted_events), sorted(f"evt-{n}" for n in range(1, 5)))
+        self.assertEqual(self.events, [])                                  # the commit failed: no event, no invitation
+        self.assertEqual(self.deleted_events, [])
         self.assertNotIn("disk full", caught.exception.detail)
 
     def test_calendar_failure_does_not_stop_the_client_or_the_pack(self):
@@ -335,8 +394,26 @@ class Accounts(unittest.TestCase):
         self.assertEqual(result["pack"]["calendar_failed"], 1)
         user = self.db_user("ana" + DOMAIN)
         self.assertIsNotNone(user)                                    # the client exists
-        self.assertEqual(self.deleted_events, [])
+        self.assertEqual(self.deleted_events, [])                     # the events already made are NOT deleted (that would e-mail cancellations)
         self.assertEqual(len(self.firebase), 1)
+        self.assertEqual(sorted(self.session_states("ana" + DOMAIN), key=str), ["failed", "ok", "ok", "ok"])    # the failure is recorded per session
+
+    def test_the_events_are_created_only_after_the_pack_is_committed(self):
+        result = self.create(pack=True)
+        self.assertEqual(result["pack"]["total_sessions"], 4)
+        self.assertEqual(len(self.events), 4)
+        self.assertEqual(self.committed_when_created, [4, 4, 4, 4])   # when the first event was made all four sessions were already saved
+        self.assertEqual(self.session_states("ana" + DOMAIN), ["ok"] * 4)
+
+    def test_a_calendar_outage_keeps_the_pack_and_marks_every_session_failed(self):
+        def down(*a, **k):
+            raise RuntimeError("calendar down")
+
+        packs.create_calendar_event = down
+        result = self.create(pack=True)
+        self.assertEqual(result["pack"]["calendar_failed"], 4)
+        self.assertEqual(self.session_states("ana" + DOMAIN), ["failed"] * 4)
+        self.assertEqual(self.deleted_events, [])                     # nothing is deleted: "Sincronizar con Google" repeats it later
 
     def test_double_submit_creates_one_client(self):
         outcomes = []

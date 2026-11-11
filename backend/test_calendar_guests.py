@@ -395,11 +395,22 @@ class GoogleLayer(unittest.TestCase):
         service = FakeService()
         with mock.patch.object(gc, "get_calendar_service", return_value=service), mock.patch.object(gc, "get_calendar_id", return_value="cal"), \
                 mock.patch.object(gc, "delegation_active", return_value=True), mock.patch.dict(os.environ, {"SEND_CALENDAR_INVITE_EMAILS": "all"}):
-            gc.delete_calendar_event("tbabc")
+            gc.delete_calendar_event("tbabc", notify=True)            # a cancellation somebody asked for follows the rule
             gc.patch_calendar_event("tbabc", {"summary": "x", "attendees": [{"email": "ana@x.com"}], **event_format.GUEST_FLAGS})
         deleted, patched = service.events().log
         self.assertEqual((deleted[0], deleted[1]["sendUpdates"], deleted[2]), ("delete", "all", gc.HTTP_RETRIES))
         self.assertEqual((patched[0], patched[1]["sendUpdates"], patched[2]), ("patch", "all", gc.HTTP_RETRIES))
+
+
+    def test_a_delete_never_notifies_unless_the_admin_or_the_client_asked_for_the_cancellation(self):
+        service = FakeService()
+        with mock.patch.object(gc, "get_calendar_service", return_value=service), mock.patch.object(gc, "get_calendar_id", return_value="cal"), \
+                mock.patch.object(gc, "delegation_active", return_value=True), mock.patch.dict(os.environ, {"SEND_CALENDAR_INVITE_EMAILS": "all"}):
+            gc.delete_calendar_event("tbrollback")                   # a rollback / clean-up: silent even with "all"
+            gc.delete_calendar_event("tbcancelled", notify=True)     # a cancellation somebody asked for
+        silent, asked = service.events().log
+        self.assertEqual(silent[1]["sendUpdates"], "none")
+        self.assertEqual(asked[1]["sendUpdates"], "all")
 
 
 if __name__ == "__main__":
