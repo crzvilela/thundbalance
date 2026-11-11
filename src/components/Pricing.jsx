@@ -3,13 +3,14 @@ import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/Section
 import MovableBox from './editor/MovableBox'
 import { useState } from 'react'
 import { useI18n } from '../i18n/I18nContext'
+import { resolveText } from '../utils/multilingual'
 import SegmentedType from './forms/SegmentedType'
 import { formatMoney, packQuote, packsOfType } from '../utils/pricing'
 import { usePricing } from '../utils/usePricing'
 
 function Pricing({ sectionId }) {
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'Pricing')
-  const { t } = useI18n()
+  const { t, language } = useI18n()
   // The packs and their prices are not part of the page text: they come from the server (the catalogue edited in Admin > Packs).
   // There is one card per pack on sale of the chosen type (Individual | Dual), in the order of the catalogue. The cards of this
   // page give the texts (description, features, button); a pack without a card of its own gets a plain one.
@@ -100,7 +101,7 @@ function Pricing({ sectionId }) {
                   <div className="text-5xl font-bold">
                     <span aria-live="polite">{prices ? formatMoney(quote.perSession) : '—'}</span>
                     {plan.extra
-                      ? <span className="text-xl ml-1">{plan.period}</span>
+                      ? <span className="text-xl ml-1">{resolveText(plan.period, language)}</span>      // the period is stored per language: an extra card (a pack without a card of its own) must not draw the object
                       : (
                         <EditableText
                           as="span"
