@@ -37,7 +37,7 @@ export default function SentMessages() {
 
   return (
     <div className="admin-fade">
-      <PageHeader title={t('bx_title')} subtitle={t('bx_sub')} />
+      <PageHeader pageKey="sent-messages" title={t('bx_title')} subtitle={t('bx_sub')} />
 
       <div className="mb-6 flex flex-wrap gap-2" role="tablist" aria-label={t('bx_tabs')}>
         {TABS.map(([key, label]) => (

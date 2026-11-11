@@ -30,9 +30,9 @@ from emails.contact_emails import staff_contact_message
 from trial_notifications import studio_address
 import validators
 
-PER_IP_LIMIT = 5          # messages per hour from one IP address
-PER_EMAIL_LIMIT = 3       # messages per hour with the same sender e-mail
-WINDOW_SECONDS = 3600
+PER_IP_LIMIT = web_safety.env_int("CONTACT_IP_LIMIT", 5)            # messages per hour from one IP address
+PER_EMAIL_LIMIT = web_safety.env_int("CONTACT_EMAIL_LIMIT", 3)      # messages per hour with the same sender e-mail
+WINDOW_SECONDS = web_safety.env_int("CONTACT_WINDOW_SECONDS", 3600)
 MAX_BULK = 200            # ids per bulk request
 PAGE_MAX = 100
 
@@ -54,13 +54,6 @@ class ContactCreate(BaseModel):
 class BulkPayload(BaseModel):
     action: str
     ids: list[int]
-
-
-def _client_ip(request: Request):
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
 
 
 def _allow_ip(ip):
@@ -286,7 +279,7 @@ def register_contact_routes(app, require_admin):
             raise validators.http_error(error) from None
         if len(message) < 5:
             raise HTTPException(status_code=422, detail="Please write a message.")
-        if not _allow_ip(_client_ip(request)):
+        if not _allow_ip(web_safety.get_client_ip(request)):
             raise HTTPException(status_code=429, detail="Too many messages. Please try again later.")
 
         language = _clean(data.language, 5) or None

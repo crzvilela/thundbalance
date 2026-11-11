@@ -92,7 +92,10 @@ export async function uploadLandingVideo(file) {
   })
 
   if (!response.ok) {
-    throw new Error(`Failed to upload video (${response.status})`)
+    // 415: the file is not a real MP4 / MOV / WebM video (the server checks the file itself, not only its name)
+    const error = new Error(response.status === 415 ? 'This file is not a valid MP4, MOV or WebM video.' : `Failed to upload video (${response.status})`)
+    error.status = response.status
+    throw error
   }
 
   const data = await response.json()

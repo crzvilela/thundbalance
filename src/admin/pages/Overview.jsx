@@ -2,6 +2,8 @@ import { useMemo } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
 import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
+import { useOverviewCards } from '../uiSettingsContext'
+import { overviewBlocks } from '../uiSettings'
 import { dateKey, normalizeSessions, parseDateKey } from '../requests'
 import BusinessPanel from '../BusinessPanel'
 import { Badge, Button, Card, EmptyState, ErrorState, Icon, PageHeader, Skeleton, StatCard } from '../ui'
@@ -34,6 +36,7 @@ function WeekChart({ days, t }) {
 export default function Overview() {
   const { t, language } = useAdminText()
   const { requests, requestsResource, trials, trialsResource } = useOutletContext()
+  const { cards, titleOf } = useOverviewCards()      // the studio's order, names and hidden cards (the original ones when nothing is saved)
   const stats = useAdminResource('/admin/stats')
   const sessionsResource = useAdminResource('/admin/sessions')
 
@@ -92,9 +95,115 @@ export default function Overview() {
 
   const formatDay = (key) => parseDateKey(key).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' })
 
+  // The small number cards, then the big cards in rows of 5 columns, then the business panel as a full row: with no configuration this is
+  // exactly the original layout (the same order, the same rows).
+  const { stats: statCards, blocks } = overviewBlocks(cards)
+  const statNode = {
+    stat_clients: <StatCard label={titleOf('stat_clients', t('stat_clients'))} value={stats.data?.users ?? '—'} icon="clients" loading={stats.loading && !stats.data} to="/admin/clients" />,
+    stat_sessions: <StatCard label={titleOf('stat_sessions', t('stat_sessions'))} value={stats.data?.sessions ?? '—'} icon="calendar" loading={stats.loading && !stats.data} to="/admin/clients" />,
+    stat_pending: (
+      <StatCard
+        label={titleOf('stat_pending', t('stat_pending_total'))} value={totalPending} icon="requests" tone="amber" to={pendingTarget}
+        hint={pendingHint} loading={pendingLoading}
+      />
+    )
+  }
+  const SPAN = { 2: 'lg:col-span-2', 3: 'lg:col-span-3' }
+  const bigCard = {
+    week: (span) => (
+      <Card key="week" className={`p-6 ${SPAN[span]}`}>
+        <h2 className="text-lg font-semibold">{titleOf('week', t('week_title'))}</h2>
+        <p className="mb-6 text-sm text-gray-500">{t('week_sub')}</p>
+        {sessionsResource.error
+          ? <ErrorState message={t('load_error')} retryLabel={t('retry')} onRetry={sessionsResource.reload} />
+          : sessionsResource.loading && !sessionsResource.data
+            ? <Skeleton className="h-40 w-full" />
+            : <WeekChart days={week} t={t} />}
+      </Card>
+    ),
+    pending: (span) => (
+      <Card key="pending" className={`p-6 ${SPAN[span]}`}>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">{titleOf('pending', t('pending_title'))}</h2>
+          <Link to="/admin/requests" className="inline-flex min-h-[44px] items-center text-sm text-emerald-300 hover:text-emerald-200">{t('view_all')} →</Link>
+        </div>
+        {requestsResource.error
+          ? <ErrorState message={t('load_error')} retryLabel={t('retry')} onRetry={requestsResource.reload} />
+          : requestsResource.loading && !requestsResource.data
+            ? <div className="space-y-3"><Skeleton className="h-14" /><Skeleton className="h-14" /></div>
+            : pending.length === 0
+              ? <EmptyState icon="check" title={t('pending_empty')} />
+              : <ul className="space-y-2">
+                {pending.slice(0, 4).map(request => (
+                  <li key={request.id}>
+                    <Link to="/admin/requests" className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 transition hover:border-amber-400/30 hover:bg-amber-400/5">
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">{request.client}</span>
+                        <span className="block truncate text-xs text-gray-500">{request.plan} · {request.perWeek} {t('req_per_week')}</span>
+                      </span>
+                      <Badge tone="amber">{t('st_pending')}</Badge>
+                    </Link>
+                  </li>
+                ))}
+              </ul>}
+      </Card>
+    ),
+    upcoming: (span) => (
+      <Card key="upcoming" className={`p-6 ${SPAN[span]}`}>
+        <h2 className="mb-4 text-lg font-semibold">{titleOf('upcoming', t('upcoming_title'))}</h2>
+        {sessionsResource.error
+          ? <ErrorState message={t('load_error')} retryLabel={t('retry')} onRetry={sessionsResource.reload} />
+          : sessionsResource.loading && !sessionsResource.data
+            ? <div className="space-y-3"><Skeleton className="h-12" /><Skeleton className="h-12" /><Skeleton className="h-12" /></div>
+            : upcoming.length === 0
+              ? <EmptyState icon="calendar" title={t('upcoming_empty')} />
+              : <ul className="divide-y divide-white/[0.06]">
+                {upcoming.map(session => (
+                  <li key={session.id} className="flex items-center gap-4 py-3">
+                    <span className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl bg-emerald-400/10 text-emerald-300">
+                      <span className="text-[10px] uppercase leading-none">{parseDateKey(session.date).toLocaleDateString(locale, { month: 'short' })}</span>
+                      <span className="text-base font-semibold leading-tight">{parseDateKey(session.date).getDate()}</span>
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2 font-medium">
+                        <span className="truncate">{session.client}</span>
+                        {session.isTrial && <Badge tone={{ pending: 'amber', approved: 'sky', confirmed: 'emerald' }[session.status]}>{t(`trial_b_${session.status}`)}</Badge>}
+                      </span>
+                      <span className="block truncate text-xs text-gray-500">{formatDay(session.date)} · {session.trainer}</span>
+                    </span>
+                    <span className="flex items-center gap-1.5 text-sm tabular-nums text-gray-300"><Icon name="clock" className="h-4 w-4 text-gray-500" />{session.time}</span>
+                  </li>
+                ))}
+              </ul>}
+      </Card>
+    ),
+    quick: (span) => (
+      <Card key="quick" className={`p-6 ${SPAN[span]}`}>
+        <h2 className="mb-4 text-lg font-semibold">{titleOf('quick', t('quick_title'))}</h2>
+        <div className="space-y-2">
+          {[
+            { to: '/admin/landing-editor', icon: 'landing', title: t('qa_landing'), text: t('qa_landing_desc') },
+            { to: '/admin/videos', icon: 'video', title: t('qa_videos'), text: t('qa_videos_desc') },
+            { to: '/admin/clients', icon: 'clients', title: t('qa_clients'), text: t('qa_clients_desc') }
+          ].map(action => (
+            <Link key={action.to} to={action.to} className="group flex items-center gap-4 rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 transition hover:border-emerald-400/30 hover:bg-emerald-400/5">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-400/10 text-emerald-300"><Icon name={action.icon} /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium">{action.title}</span>
+                <span className="block truncate text-xs text-gray-500">{action.text}</span>
+              </span>
+              <Icon name="arrow" className="h-4 w-4 text-gray-600 transition group-hover:translate-x-0.5 group-hover:text-emerald-300" />
+            </Link>
+          ))}
+        </div>
+      </Card>
+    )
+  }
+
   return (
     <div className="admin-fade">
       <PageHeader
+        pageKey="overview"
         title="THUNDBALANCE ADMIN"
         subtitle={t('overview_sub')}
         actions={<Button variant="secondary" onClick={() => { stats.reload(); sessionsResource.reload(); requestsResource.reload(); trialsResource.reload() }}>
@@ -102,106 +211,24 @@ export default function Overview() {
         </Button>}
       />
 
-      <section className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <StatCard label={t('stat_clients')} value={stats.data?.users ?? '—'} icon="clients" loading={stats.loading && !stats.data} to="/admin/clients" />
-        <StatCard label={t('stat_sessions')} value={stats.data?.sessions ?? '—'} icon="calendar" loading={stats.loading && !stats.data} to="/admin/clients" />
-        <div className="col-span-2 sm:col-span-1">
-          <StatCard
-            label={t('stat_pending_total')} value={totalPending} icon="requests" tone="amber" to={pendingTarget}
-            hint={pendingHint} loading={pendingLoading}
-          />
-        </div>
-      </section>
+      {statCards.length > 0 && (
+        <section className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          {statCards.map((card, index) => (
+            // with an odd number of cards the last one takes the whole row on a phone (the original third card did)
+            statCards.length % 2 === 1 && index === statCards.length - 1
+              ? <div key={card.key} className="col-span-2 sm:col-span-1">{statNode[card.key]}</div>
+              : <div key={card.key} className="contents">{statNode[card.key]}</div>
+          ))}
+        </section>
+      )}
 
-      <section className="mt-6 grid gap-6 lg:grid-cols-5">
-        <Card className="p-6 lg:col-span-3">
-          <h2 className="text-lg font-semibold">{t('week_title')}</h2>
-          <p className="mb-6 text-sm text-gray-500">{t('week_sub')}</p>
-          {sessionsResource.error
-            ? <ErrorState message={t('load_error')} retryLabel={t('retry')} onRetry={sessionsResource.reload} />
-            : sessionsResource.loading && !sessionsResource.data
-              ? <Skeleton className="h-40 w-full" />
-              : <WeekChart days={week} t={t} />}
-        </Card>
-
-        <Card className="p-6 lg:col-span-2">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">{t('pending_title')}</h2>
-            <Link to="/admin/requests" className="inline-flex min-h-[44px] items-center text-sm text-emerald-300 hover:text-emerald-200">{t('view_all')} →</Link>
-          </div>
-          {requestsResource.error
-            ? <ErrorState message={t('load_error')} retryLabel={t('retry')} onRetry={requestsResource.reload} />
-            : requestsResource.loading && !requestsResource.data
-              ? <div className="space-y-3"><Skeleton className="h-14" /><Skeleton className="h-14" /></div>
-              : pending.length === 0
-                ? <EmptyState icon="check" title={t('pending_empty')} />
-                : <ul className="space-y-2">
-                  {pending.slice(0, 4).map(request => (
-                    <li key={request.id}>
-                      <Link to="/admin/requests" className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 transition hover:border-amber-400/30 hover:bg-amber-400/5">
-                        <span className="min-w-0">
-                          <span className="block truncate font-medium">{request.client}</span>
-                          <span className="block truncate text-xs text-gray-500">{request.plan} · {request.perWeek} {t('req_per_week')}</span>
-                        </span>
-                        <Badge tone="amber">{t('st_pending')}</Badge>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>}
-        </Card>
-      </section>
-
-      <BusinessPanel sessions={sessions} trials={trials} />
-
-      <section className="mt-6 grid gap-6 lg:grid-cols-5">
-        <Card className="p-6 lg:col-span-3">
-          <h2 className="mb-4 text-lg font-semibold">{t('upcoming_title')}</h2>
-          {sessionsResource.error
-            ? <ErrorState message={t('load_error')} retryLabel={t('retry')} onRetry={sessionsResource.reload} />
-            : sessionsResource.loading && !sessionsResource.data
-              ? <div className="space-y-3"><Skeleton className="h-12" /><Skeleton className="h-12" /><Skeleton className="h-12" /></div>
-              : upcoming.length === 0
-                ? <EmptyState icon="calendar" title={t('upcoming_empty')} />
-                : <ul className="divide-y divide-white/[0.06]">
-                  {upcoming.map(session => (
-                    <li key={session.id} className="flex items-center gap-4 py-3">
-                      <span className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl bg-emerald-400/10 text-emerald-300">
-                        <span className="text-[10px] uppercase leading-none">{parseDateKey(session.date).toLocaleDateString(locale, { month: 'short' })}</span>
-                        <span className="text-base font-semibold leading-tight">{parseDateKey(session.date).getDate()}</span>
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-2 font-medium">
-                          <span className="truncate">{session.client}</span>
-                          {session.isTrial && <Badge tone={{ pending: 'amber', approved: 'sky', confirmed: 'emerald' }[session.status]}>{t(`trial_b_${session.status}`)}</Badge>}
-                        </span>
-                        <span className="block truncate text-xs text-gray-500">{formatDay(session.date)} · {session.trainer}</span>
-                      </span>
-                      <span className="flex items-center gap-1.5 text-sm tabular-nums text-gray-300"><Icon name="clock" className="h-4 w-4 text-gray-500" />{session.time}</span>
-                    </li>
-                  ))}
-                </ul>}
-        </Card>
-
-        <Card className="p-6 lg:col-span-2">
-          <h2 className="mb-4 text-lg font-semibold">{t('quick_title')}</h2>
-          <div className="space-y-2">
-            {[
-              { to: '/admin/landing-editor', icon: 'landing', title: t('qa_landing'), text: t('qa_landing_desc') },
-              { to: '/admin/videos', icon: 'video', title: t('qa_videos'), text: t('qa_videos_desc') },
-              { to: '/admin/clients', icon: 'clients', title: t('qa_clients'), text: t('qa_clients_desc') }
-            ].map(action => (
-              <Link key={action.to} to={action.to} className="group flex items-center gap-4 rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 transition hover:border-emerald-400/30 hover:bg-emerald-400/5">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-400/10 text-emerald-300"><Icon name={action.icon} /></span>
-                <span className="min-w-0 flex-1">
-                  <span className="block font-medium">{action.title}</span>
-                  <span className="block truncate text-xs text-gray-500">{action.text}</span>
-                </span>
-                <Icon name="arrow" className="h-4 w-4 text-gray-600 transition group-hover:translate-x-0.5 group-hover:text-emerald-300" />
-              </Link>
-            ))}
-          </div>
-        </Card>
-      </section>
+      {blocks.map((block, index) => (block.type === 'business'
+        ? <BusinessPanel key="business" sessions={sessions} trials={trials} title={titleOf('business', '')} />
+        : (
+          <section key={`row-${index}`} className="mt-6 grid gap-6 lg:grid-cols-5">
+            {block.cards.map(card => bigCard[card.key](card.span))}
+          </section>
+        )))}
     </div>
   )
 }

@@ -4,8 +4,11 @@
 - a small per-IP rate limit on the public routes that work with a link token;
 - uploaded images kept in the database (the disk of the host is wiped at each deploy) and served from /uploads/{name};
 - the same content check for every image upload;
-- optional error reporting (Sentry) when SENTRY_DSN is set. No personal data is sent.
+- optional error reporting (Sentry) when SENTRY_DSN is set. No personal data is sent;
+- the real client IP behind the proxy (get_client_ip), the CORS origins for production / development (cors_origins) and the content
+  check of uploaded videos (check_video).
 """
+import ipaddress
 import logging
 import mimetypes
 import os
@@ -29,6 +32,78 @@ SECURITY_HEADERS = {
 }
 # Whatever is served from /uploads can never run a script or load anything, even if the file is not what it says it is.
 UPLOAD_HEADERS = {"Content-Security-Policy": "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'none'; sandbox"}
+
+def env_int(name, default, minimum=1):
+    """An integer setting from the environment (a bad or missing value is the default; never below `minimum`)."""
+    try:
+        value = int(os.getenv(name, "").strip() or default)
+    except ValueError:
+        value = default
+    return max(minimum, value)
+
+
+# ----------------------------------------------------------------------------------------------- the client's IP
+# How many proxies sit between the internet and this server AND append to X-Forwarded-For (Render's: 1 by default). Every proxy adds
+# the address it received the request from at the END of the header, so the entries on the left can be written by the client (anyone can
+# send "X-Forwarded-For: 1.2.3.4") and only the last `TRUSTED_PROXY_HOPS` entries are trustworthy. The client's address is therefore
+# the entry that is `hops` from the end: the LAST one when there is one proxy, never the first. With 0 the header is ignored.
+TRUSTED_PROXY_HOPS = env_int("TRUSTED_PROXY_HOPS", 1, minimum=0)
+_chain_logged = False
+
+
+def get_client_ip(request, hops=None):
+    """THE client address every rate limit uses (one function, so no limiter trusts the header differently):
+    the entry `hops` from the end of X-Forwarded-For (the one the proxy appended), else the address of the connection. An entry that is
+    not an IP address is never used. Returns "unknown" when there is nothing."""
+    global _chain_logged
+    hops = TRUSTED_PROXY_HOPS if hops is None else hops
+    peer = (request.client.host if request.client else "") or "unknown"
+    entries = [part.strip() for part in request.headers.get("x-forwarded-for", "").split(",") if part.strip()]
+    if not _chain_logged and entries:
+        _chain_logged = True
+        logger.info("X-Forwarded-For arrives with %d entries (TRUSTED_PROXY_HOPS=%d)", len(entries), hops)       # a count, never an address
+    if hops >= 1 and len(entries) >= hops:
+        try:
+            return str(ipaddress.ip_address(entries[-hops]))
+        except ValueError:
+            pass
+    return peer
+
+
+# ----------------------------------------------------------------------------------------------- CORS
+PRODUCTION_ORIGIN = "https://thundbalance.vercel.app"
+DEVELOPMENT_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
+
+
+def is_development():
+    """True only when ENV / ENVIRONMENT says so (dev, development, local). Not set = production."""
+    value = (os.getenv("ENV") or os.getenv("ENVIRONMENT") or "").strip().lower()
+    return value in ("dev", "development", "local")
+
+
+def _is_local_origin(origin):
+    host = origin.split("://", 1)[-1].split("/", 1)[0].rsplit("@", 1)[-1]
+    host = host.rsplit(":", 1)[0] if not host.startswith("[") else host.split("]")[0] + "]"
+    return host in ("localhost", "127.0.0.1", "[::1]", "0.0.0.0")
+
+
+def cors_origins(extra=None, development=None):
+    """The browser origins allowed to call this API: the production site plus the ones listed in CORS_ORIGINS (comma separated: the own
+    domain when there is one); localhost / 127.0.0.1 only in development. Never "*" and never anything that is not http(s)."""
+    development = is_development() if development is None else development
+    raw = os.getenv("CORS_ORIGINS", "") if extra is None else extra
+    origins = [PRODUCTION_ORIGIN]
+    for item in str(raw).split(","):
+        origin = item.strip().rstrip("/")
+        if not origin or origin == "*" or not origin.startswith(("https://", "http://")):
+            continue
+        if _is_local_origin(origin) and not development:
+            continue                                   # a localhost origin from the environment does not count in production either
+        origins.append(origin)
+    if development:
+        origins.extend(DEVELOPMENT_ORIGINS)
+    return list(dict.fromkeys(origins))
+
 
 IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif"}
 # Not allowed: .svg (it can carry scripts).
@@ -128,19 +203,14 @@ def ensure_rate_limit_table():
 
 # the public routes that act on a link token: nobody needs more than a few tries per minute
 TOKEN_PREFIXES = ("/trial-sessions/confirmation/", "/reschedule-response/")
-token_limit = SharedRateLimit("token", limit=int(os.getenv("TOKEN_RATE_LIMIT", "40")), window_seconds=300)
-
-
-def client_ip(request):
-    forwarded = request.headers.get("x-forwarded-for", "")
-    return (forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "")) or "unknown"
+token_limit = SharedRateLimit("token", limit=env_int("TOKEN_RATE_LIMIT", 40), window_seconds=env_int("TOKEN_RATE_WINDOW_SECONDS", 300))
 
 
 def register_safety(app):
     @app.middleware("http")
     async def safety(request: Request, call_next):
         path = request.url.path
-        if path.startswith(TOKEN_PREFIXES) and await run_in_threadpool(token_limit.too_many, client_ip(request)):
+        if path.startswith(TOKEN_PREFIXES) and await run_in_threadpool(token_limit.too_many, get_client_ip(request)):
             return JSONResponse({"detail": "Too many requests. Please try again in a few minutes."}, status_code=429,
                                 headers={"Retry-After": "300", **SECURITY_HEADERS})
         response = await call_next(request)
@@ -167,6 +237,43 @@ def check_image(filename, contents):
     )
     if not contents or not valid:
         raise HTTPException(status_code=400, detail="Invalid image file")
+    return extension
+
+
+# ----------------------------------------------------------------------------------------------- videos
+VIDEO_CONTENT_TYPES = {
+    ".mp4": ("video/mp4", "video/x-m4v"),
+    ".mov": ("video/quicktime",),
+    ".webm": ("video/webm",),
+}
+_ISO_BOX_TYPES = (b"moov", b"mdat", b"wide", b"free", b"skip", b"pnot")       # a QuickTime file may start with one of these instead of "ftyp"
+
+
+def video_kind(head):
+    """What the first bytes of a file say it is: "iso" (MP4 / MOV: an "ftyp" box, or an old QuickTime atom), "webm" (the EBML header) or
+    None. This is the file's own signature, not what the upload says about it."""
+    if head[:4] == b"\x1a\x45\xdf\xa3":
+        return "webm"
+    if len(head) >= 12 and head[4:8] == b"ftyp":
+        return "iso"
+    if len(head) >= 8 and head[4:8] in _ISO_BOX_TYPES:
+        return "iso"
+    return None
+
+
+def check_video(filename, content_type, contents):
+    """The extension of a valid video (mp4, mov or webm). The extension, the declared Content-Type and the real signature of the file
+    (magic bytes) must agree: otherwise HTTP 415. A missing or generic Content-Type (application/octet-stream) is accepted when the
+    extension and the signature agree: some browsers send nothing for .mov."""
+    extension = os.path.splitext(filename or "")[1].lower()
+    if extension not in VIDEO_CONTENT_TYPES:
+        raise HTTPException(status_code=415, detail="Unsupported video type: use MP4, MOV or WebM")
+    kind = video_kind(bytes(contents[:16]))
+    if kind is None or (kind == "webm") != (extension == ".webm"):
+        raise HTTPException(status_code=415, detail="The file is not a valid video of the type its name says")
+    declared = (content_type or "").split(";", 1)[0].strip().lower()
+    if declared and declared != "application/octet-stream" and declared not in VIDEO_CONTENT_TYPES[extension]:
+        raise HTTPException(status_code=415, detail="The declared content type does not match the video")
     return extension
 
 

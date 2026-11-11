@@ -660,7 +660,7 @@ export default function Clients() {
 
   return (
     <div className="admin-fade">
-      <PageHeader
+      <PageHeader pageKey="clients"
         title={t('clients_title')} subtitle={t('clients_sub')}
         actions={<>
           <Button variant="secondary" onClick={reloadAll}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>

@@ -2,10 +2,14 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase/auth'
+import { ADMIN_EMAIL } from '../config'
 import { ConfirmDialog, Icon } from './ui'
 import { LeaveGuardContext } from './leaveGuard'
 import AdminErrorBoundary from './AdminErrorBoundary'
 import EmailTest from './EmailTest'
+import UiSettingsProvider from './UiSettingsProvider'
+import CustomizePanel from './CustomizePanel'
+import { useMenuItems, useUiSettings } from './uiSettingsContext'
 import { ToastContext } from './toastContext'
 import { useAdminText } from './useAdminText'
 import { useAdminResource } from './useAdminResource'
@@ -19,20 +23,6 @@ const THEME_KEY = 'tb_admin_theme'
 function readTheme() {
   try { return window.localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark' } catch { return 'dark' }
 }
-
-const NAV = [
-  { to: '/admin', end: true, icon: 'overview', label: 'nav_overview' },
-  { to: '/admin/requests', icon: 'requests', label: 'nav_requests', badge: 'requests' },
-  { to: '/admin/trials', icon: 'whistle', label: 'nav_trials', badge: 'trials' },
-  { to: '/admin/messages', icon: 'inbox', label: 'nav_messages', badge: 'messages' },
-  { to: '/admin/sent-messages', icon: 'send', label: 'nav_broadcast' },
-  { to: '/admin/clients', icon: 'clients', label: 'nav_clients' },
-  { to: '/admin/calendar', icon: 'calendar', label: 'nav_sessions' },
-  { to: '/admin/schedule', icon: 'refresh', label: 'nav_schedule', badge: 'schedule' },
-  { to: '/admin/trainers', icon: 'clock', label: 'nav_trainers' },
-  { to: '/admin/plans', icon: 'bolt', label: 'nav_plans' },
-  { to: '/admin/videos', icon: 'video', label: 'nav_videos' }
-]
 
 const linkClass = ({ isActive }) =>
   `group flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all duration-150 ${
@@ -56,8 +46,20 @@ function ToastHost({ toasts }) {
   )
 }
 
+// The menu (names, order, what is hidden) comes from uiRegistry.js and the studio's saved configuration (UiSettingsProvider): with no
+// configuration it is exactly the original menu.
 export default function AdminLayout() {
+  return (
+    <UiSettingsProvider>
+      <AdminShell />
+    </UiSettingsProvider>
+  )
+}
+
+function AdminShell() {
   const { t, language, setLanguage } = useAdminText()
+  const { items: menuItems, customizeLabel } = useMenuItems()
+  const ui = useUiSettings()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const [toasts, setToasts] = useState([])
@@ -117,6 +119,8 @@ export default function AdminLayout() {
   }
 
   const email = auth.currentUser?.email || ''
+  // only the studio's main admin sees the editor (the trainers never reach this layout)
+  const isAdmin = email.trim().toLowerCase() === ADMIN_EMAIL
 
   const sidebar = (
     <div className="flex h-full flex-col">
@@ -129,20 +133,23 @@ export default function AdminLayout() {
       </div>
 
       <nav className="flex-1 space-y-1 px-3" aria-label="Admin">
-        {NAV.map(item => (
-          <NavLink key={item.to} to={item.to} end={item.end} className={linkClass} onClick={guarded(item.to)}>
+        {menuItems.filter(item => !item.hidden).map(item => (
+          <NavLink key={item.key} to={item.to} end={item.end} className={linkClass} onClick={guarded(item.to)}>
             <Icon name={item.icon} className="h-[18px] w-[18px]" />
-            <span className="flex-1">{t(item.label)}</span>
+            <span className="flex-1">{item.custom || t(item.labelKey)}</span>
             {item.badge && badges[item.badge] > 0 && (
               <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[11px] font-bold leading-none text-black">{badges[item.badge]}</span>
             )}
+            {item.arrow && <Icon name="arrow" className="h-4 w-4 opacity-0 transition group-hover:opacity-60" />}
           </NavLink>
         ))}
-        <NavLink to="/admin/landing-editor" className={linkClass} onClick={guarded('/admin/landing-editor')}>
-          <Icon name="landing" className="h-[18px] w-[18px]" />
-          <span className="flex-1">{t('nav_landing')}</span>
-          <Icon name="arrow" className="h-4 w-4 opacity-0 transition group-hover:opacity-60" />
-        </NavLink>
+        {isAdmin && ui && (
+          <button type="button" onClick={() => { setMenuOpen(false); ui.startEditing() }} disabled={ui.editing}
+            className="group mt-3 flex w-full items-center gap-3 rounded-xl border border-dashed border-white/15 px-3.5 py-2.5 text-left text-sm font-medium text-gray-400 transition hover:border-emerald-400/40 hover:bg-white/5 hover:text-white disabled:opacity-50">
+            <Icon name="pencil" className="h-[18px] w-[18px]" />
+            <span className="flex-1">{customizeLabel || t('ui_customize')}</span>
+          </button>
+        )}
       </nav>
 
       <div className="space-y-3 border-t border-white/10 p-4">
@@ -209,6 +216,7 @@ export default function AdminLayout() {
           </div>
         </main>
       </div>
+      {ui?.editing && <CustomizePanel />}
       <ToastHost toasts={toasts} />
       <ConfirmDialog
         open={!!leaving} tone="neutral" icon="send"

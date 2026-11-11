@@ -220,6 +220,7 @@ function TrialSession() {
         }
         throw new Error(`msg:${fieldError.message}`)
       }
+      if (response.status === 429) throw new Error('ts_e_limit')       // too many requests from this connection or with this e-mail (the same answer for both)
       if (!response.ok) {
         throw new Error(typeof data.detail === 'string' ? data.detail : 'ts_e_send')
       }

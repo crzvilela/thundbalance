@@ -11,7 +11,7 @@ const INACTIVE = new Set(['cancelled', 'canceled', 'completed', 'rejected'])
 // Business view for the Overview: packs that are ending, clients without a
 // pack and the month's workload per trainer. Everything comes from data the
 // admin already loads (/admin/clients, sessions and trial sessions).
-export default function BusinessPanel({ sessions, trials }) {
+export default function BusinessPanel({ sessions, trials, title }) {
   const { t, language } = useAdminText()
   const clientsResource = useAdminResource('/admin/clients')
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
@@ -57,7 +57,7 @@ export default function BusinessPanel({ sessions, trials }) {
 
   return (
     <section className="mt-6" aria-labelledby="biz-title">
-      <h2 id="biz-title" className="mb-4 text-lg font-semibold">{t('biz_title')}</h2>
+      <h2 id="biz-title" className="mb-4 text-lg font-semibold">{title || t('biz_title')}</h2>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         <StatCard label={t('biz_active_packs')} value={activePacks} icon="clients" loading={loading} to="/admin/clients" />

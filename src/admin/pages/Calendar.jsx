@@ -159,7 +159,7 @@ export default function Calendar() {
 
   return (
     <div className="admin-fade ac-page">
-      <PageHeader
+      <PageHeader pageKey="calendar"
         title={t('ac_title')} subtitle={t('ac_sub')}
         actions={<Button variant="secondary" onClick={reload}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>}
       />

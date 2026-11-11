@@ -63,8 +63,8 @@ export default function Videos() {
     try {
       const url = await uploadLandingVideo(file)
       setForm(current => ({ ...current, video_url: url }))
-    } catch {
-      toast.push(t('vd_upload_error'), 'error')
+    } catch (error) {
+      toast.push(t(error?.status === 415 ? 'vd_upload_format' : 'vd_upload_error'), 'error')
     } finally {
       setUploading(false)
       if (fileInput.current) fileInput.current.value = ''
@@ -116,7 +116,7 @@ export default function Videos() {
 
   return (
     <div className="admin-fade">
-      <PageHeader
+      <PageHeader pageKey="videos"
         title={t('videos_title')} subtitle={t('vd_sub')}
         actions={<Button variant="primary" onClick={openNew}><Icon name="video" className="h-4 w-4" />{t('vd_add')}</Button>}
       />

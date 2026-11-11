@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, Request
 
 import os
+import hashlib
 import web_safety
 import re
 import threading
@@ -53,6 +54,7 @@ import pack_view
 from emails import send_pack_summary_email, team_emails
 from emails import log as email_log
 from emails.texts import normalize_language
+import admin_ui_settings
 import calendar_reconcile
 import calendar_sync
 import calendar_feed
@@ -92,11 +94,9 @@ web_safety.register_safety(app)
 # Sites allowed to call this API from a browser. Extra ones (the final domain)
 # come from CORS_ORIGINS in the environment, comma separated, so changing
 # domain is a Render setting and not a code change.
-CORS_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "https://thundbalance.vercel.app",
-] + [origin.strip().rstrip("/") for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
+# In production only the production site and what CORS_ORIGINS lists are allowed; localhost is added only when ENV / ENVIRONMENT
+# says development (web_safety.cors_origins). Never "*".
+CORS_ORIGINS = web_safety.cors_origins()
 
 app.add_middleware(
     CORSMiddleware,
@@ -221,6 +221,15 @@ def ensure_trainer_area():
 
 
 @app.on_event("startup")
+def ensure_admin_ui_settings_table():
+    # admin_ui_settings: the panel configuration (names, order, visibility). Idempotent.
+    try:
+        admin_ui_settings.ensure_table_once()
+    except Exception as error:  # noqa: BLE001
+        print(f"admin ui settings table could not be created: {type(error).__name__}")
+
+
+@app.on_event("startup")
 def start_google_delete_sync():
     # cancel_source columns (idempotent) and the 10-minute check of sessions deleted in Google Calendar (GOOGLE_DELETE_SYNC=off disables it)
     try:
@@ -305,6 +314,7 @@ inbox.register_inbox_routes(app, require_admin, require_inbox_user, _own_user_id
 trainer_choice.register_trainer_choice_routes(app)
 session_restore.register_restore_routes(app, require_admin)
 calendar_reconcile.register_reconcile_routes(app, require_admin)
+admin_ui_settings.register_ui_settings_routes(app, require_admin)
 client_lang.register_client_lang_routes(app, require_client, _own_user_id)
 
 
@@ -318,7 +328,6 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}      # no .svg: it can carry scripts
 MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024  # 8MB
 
-ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov"}
 MAX_VIDEO_SIZE_BYTES = 300 * 1024 * 1024  # 300MB — raised from 50MB, phone-recorded workout clips were hitting the old limit
 
 
@@ -1416,8 +1425,7 @@ def pack_availability(request: Request, start_date: str | None = None, weeks: in
       -> {"weekdays": {"Monday": [{"time": "07:00", "trainers": [{"id": 1, "name": "Carles"}]}, ...], ...}}
 
     The same rules as the rest of the app (pack_schedule.Grid); the server checks again when the pack or request is saved."""
-    ip = (request.client.host if request.client else "") or "unknown"
-    if trainer_choice._too_many(ip):
+    if trainer_choice._too_many(web_safety.get_client_ip(request)):
         raise HTTPException(status_code=429, detail="Too many requests. Please try again in a minute.")
     if start_date is not None:
         try:
@@ -1544,18 +1552,28 @@ TRIAL_TIMES = {f"{hour:02d}:00" for hour in range(7, 21)}
 
 # At most this many requests per address per hour (kept in memory, so it
 # resets when the server restarts; it only needs to stop floods).
-TRIAL_LIMIT = 5
-TRIAL_WINDOW_SECONDS = 3600
+# Both limits are settings (Render environment); the defaults are the values below.
+TRIAL_LIMIT = web_safety.env_int("TRIAL_IP_LIMIT", 5)                                  # requests per address ...
+TRIAL_WINDOW_SECONDS = web_safety.env_int("TRIAL_IP_WINDOW_SECONDS", 3600)             # ... per hour
+TRIAL_EMAIL_LIMIT = web_safety.env_int("TRIAL_EMAIL_LIMIT", 3)                         # requests with the same e-mail ...
+TRIAL_EMAIL_WINDOW_SECONDS = web_safety.env_int("TRIAL_EMAIL_WINDOW_SECONDS", 86400)   # ... per 24 hours
 _trial_hits = web_safety.SharedRateLimit("trial", TRIAL_LIMIT, TRIAL_WINDOW_SECONDS)     # kept in the database; .clear() for tests
-
-
-def _client_ip(request):
-    forwarded = request.headers.get("x-forwarded-for", "")
-    return (forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "")) or "unknown"
+# The e-mail limit shares the bucket "trial" (so .clear() forgets both) under keys that cannot collide with an address.
+_trial_email_hits = web_safety.SharedRateLimit("trial", TRIAL_EMAIL_LIMIT, TRIAL_EMAIL_WINDOW_SECONDS)
 
 
 def _too_many_trial_requests(ip):
     return _trial_hits.too_many(ip)
+
+
+def _email_limit_key(email):
+    """The e-mail (lower case, no spaces) as a hash: the address itself is never stored in the limit table."""
+    normalized = "".join(str(email).split()).lower()
+    return "email:" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:40]
+
+
+def _too_many_trial_requests_for_email(email):
+    return _trial_email_hits.too_many(_email_limit_key(email))
 
 
 def _active_trial_for_email(cursor, email):
@@ -1621,7 +1639,7 @@ def create_trial_session(
     # Checked against a fixed list; the site starts in English, so that is the fallback.
     client_lang = normalize_language(trial.lang) or "en"
 
-    if _too_many_trial_requests(_client_ip(request)):
+    if _too_many_trial_requests(web_safety.get_client_ip(request)):
         raise HTTPException(
             status_code=429,
             detail="Too many requests from this connection. Please try again later."
@@ -1675,6 +1693,14 @@ def create_trial_session(
         trial_price = pricing.trial_price(cursor, session_type)
         if trial_price is None:
             raise HTTPException(status_code=422, detail="No price is defined for this trial session.")
+
+        # At most TRIAL_EMAIL_LIMIT requests per e-mail every 24 hours, besides the limit per address: nobody can fill a mailbox (or this
+        # table) with one address. The answer is the same generic 429 as the address limit: it never says whether the e-mail exists.
+        if _too_many_trial_requests_for_email(email):
+            raise HTTPException(
+                status_code=429,
+                detail="Too many requests from this connection. Please try again later."
+            )
 
         existing = _active_trial_for_email(cursor, email)
         if existing:
@@ -2753,17 +2779,14 @@ async def upload_landing_page_video(file: UploadFile = File(...)):
     # extensions and a larger size ceiling. Videos are stored in the same
     # backend/uploads/ directory and served the same way.
 
-    original_name = file.filename or "video"
-    extension = os.path.splitext(original_name)[1].lower()
-
-    if extension not in ALLOWED_VIDEO_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Unsupported video type")
-
-    contents = await file.read()
+    # The extension, the declared Content-Type and the first bytes of the file must agree (415 otherwise), and the stored name is made
+    # here (uuid + the validated extension): the name sent by the user is never used.
+    contents = await file.read(MAX_VIDEO_SIZE_BYTES + 1)
 
     if len(contents) > MAX_VIDEO_SIZE_BYTES:
         raise HTTPException(status_code=400, detail="Video is too large (max 300MB)")
 
+    extension = web_safety.check_video(file.filename, file.content_type, contents)
     filename = f"{uuid.uuid4().hex}{extension}"
     destination = os.path.join(UPLOAD_DIR, filename)
 

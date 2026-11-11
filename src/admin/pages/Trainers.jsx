@@ -246,7 +246,7 @@ export default function Trainers() {
 
   return (
     <div className="admin-fade">
-      <PageHeader
+      <PageHeader pageKey="trainers"
         title={t('tn_title')} subtitle={t('tn_sub')}
         actions={<>
           <Button variant="secondary" onClick={resource.reload}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>

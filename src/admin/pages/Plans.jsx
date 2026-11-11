@@ -110,7 +110,7 @@ export default function Plans() {
 
   return (
     <div className="admin-fade">
-      <PageHeader
+      <PageHeader pageKey="plans"
         title={t('cat_title')} subtitle={t('cat_sub')}
         actions={<Button variant="primary" onClick={openNew}><Icon name="bolt" className="h-4 w-4" />{t('cat_new')}</Button>}
       />

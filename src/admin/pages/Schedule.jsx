@@ -237,7 +237,7 @@ export default function Schedule() {
 
   return (
     <div className="admin-fade">
-      <PageHeader
+      <PageHeader pageKey="schedule"
         title={t('sch_title')}
         subtitle={t('sch_sub')}
         actions={<Button variant="secondary" onClick={refresh}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>}

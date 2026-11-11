@@ -203,7 +203,7 @@ export default function Requests() {
 
   return (
     <div className="admin-fade">
-      <PageHeader
+      <PageHeader pageKey="requests"
         title={t('req_title')}
         subtitle={t('req_sub')}
         actions={<Button variant="secondary" onClick={reloadAll}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>}

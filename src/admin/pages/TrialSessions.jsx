@@ -197,7 +197,7 @@ export default function TrialSessions() {
         </div>
       )}
 
-      <PageHeader
+      <PageHeader pageKey="trials"
         title={t('tr_title')} subtitle={t('tr_sub')}
         actions={<Button variant="secondary" onClick={trialsResource.reload}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>}
       />

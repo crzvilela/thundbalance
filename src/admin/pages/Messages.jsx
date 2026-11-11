@@ -139,7 +139,7 @@ export default function Messages() {
 
   return (
     <div className="admin-fade">
-      <PageHeader
+      <PageHeader pageKey="messages"
         title={t('msg_title')} subtitle={t('msg_sub')}
         actions={<Button variant="secondary" onClick={refresh}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>}
       />

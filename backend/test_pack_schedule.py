@@ -396,6 +396,7 @@ class _Client:
 
 class _Request:
     client = _Client()
+    headers = {}          # no proxy header: the address of the connection is used (web_safety.get_client_ip)
 
 
 def fake_request():

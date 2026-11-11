@@ -1,3 +1,4 @@
+import { usePageText } from './uiSettingsContext'
 import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useFocusTrap } from './useFocusTrap'
@@ -31,7 +32,14 @@ const ICONS = {
   pulse: <path d="M3 12h4l2.5-6 4 12 2.5-6H21" />,
   sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>,
   moon: <path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z" />,
-  send: <><path d="M21 3 3 10.5l7 3 3 7z" /><path d="M10 13.5 21 3" /></>
+  send: <><path d="M21 3 3 10.5l7 3 3 7z" /><path d="M10 13.5 21 3" /></>,
+  pencil: <><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="m13.5 6.5 4 4" /></>,
+  eye: <><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>,
+  eyeoff: <><path d="M3 3l18 18" /><path d="M10.6 5.6A10 10 0 0 1 12 5.5c6.4 0 10 6.5 10 6.5a17 17 0 0 1-3 3.8M6.5 7.6A17 17 0 0 0 2 12s3.6 6.5 10 6.5c1.4 0 2.6-.3 3.7-.7" /><path d="M9.9 10a3 3 0 0 0 4.1 4.2" /></>,
+  lock: <><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></>,
+  up: <path d="M6 14l6-6 6 6" />,
+  down: <path d="M6 10l6 6 6-6" />,
+  grip: <><circle cx="9" cy="6" r="1.4" fill="currentColor" stroke="none" /><circle cx="15" cy="6" r="1.4" fill="currentColor" stroke="none" /><circle cx="9" cy="12" r="1.4" fill="currentColor" stroke="none" /><circle cx="15" cy="12" r="1.4" fill="currentColor" stroke="none" /><circle cx="9" cy="18" r="1.4" fill="currentColor" stroke="none" /><circle cx="15" cy="18" r="1.4" fill="currentColor" stroke="none" /></>
 }
 
 export function Icon({ name, className = 'h-5 w-5' }) {
@@ -50,7 +58,11 @@ export function Card({ className = '', children, ...rest }) {
   )
 }
 
-export function PageHeader({ title, subtitle, actions }) {
+// `pageKey` (a key of uiRegistry.PAGES) lets the studio replace the title and subtitle; without a custom text the originals are shown.
+export function PageHeader({ title, subtitle, actions, pageKey }) {
+  const text = usePageText(pageKey, title, subtitle)
+  title = text.title
+  subtitle = text.subtitle
   return (
     <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
       <div>

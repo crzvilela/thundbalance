@@ -20,10 +20,11 @@ from datetime import datetime
 
 from fastapi import HTTPException, Request
 
+import web_safety
 from availability import WEEKDAYS, slot_problem, within_hours
 from database import get_connection
 
-RATE_LIMIT = 60                 # requests per connection per minute
+RATE_LIMIT = web_safety.env_int("AVAILABILITY_RATE_LIMIT", 60)       # requests per connection per minute
 _hits = defaultdict(deque)
 _lock = threading.Lock()
 
@@ -82,8 +83,7 @@ def register_trainer_choice_routes(app):
     @app.get("/available-trainers")
     def available_trainers(request: Request, time: str, date: str | None = None, weekday: str | None = None,
                            exclude_session_id: int | None = None):
-        ip = (request.client.host if request.client else "") or "unknown"
-        if _too_many(ip):
+        if _too_many(web_safety.get_client_ip(request)):
             raise HTTPException(status_code=429, detail="Too many requests. Please try again in a minute.")
         time = clean_time(time)
         conn = get_connection()

@@ -8,6 +8,17 @@
 - Imágenes: se comprueban los primeros bytes (jpg, png, webp, gif; **sin svg**) y se guardan en la tabla `uploaded_files`
   (el disco de Render se borra en cada deploy). Los vídeos subidos siguen en disco: usa YouTube/Vimeo para los permanentes.
   Las imágenes antiguas que ya se perdieron hay que volver a subirlas.
+- IP del cliente (`web_safety.get_client_ip`): la usan TODOS los límites. Detrás del proxy de Render se usa la entrada de `X-Forwarded-For`
+  que añadió el proxy (la última con `TRUSTED_PROXY_HOPS=1`, nunca la primera, que puede falsificar el cliente). Si Cloudflare + Render
+  añaden dos entradas, pon `TRUSTED_PROXY_HOPS=2`. En el log aparece una línea (solo un número, nunca una IP) con cuántas entradas llegan.
+- Límites configurables (variables de entorno, valores por defecto entre paréntesis): `TRIAL_IP_LIMIT` (5) y `TRIAL_IP_WINDOW_SECONDS` (3600);
+  `TRIAL_EMAIL_LIMIT` (3) y `TRIAL_EMAIL_WINDOW_SECONDS` (86400), por email normalizado y guardado como hash; `CONTACT_IP_LIMIT` (5),
+  `CONTACT_EMAIL_LIMIT` (3), `CONTACT_WINDOW_SECONDS` (3600); `AVAILABILITY_RATE_LIMIT` (60 por minuto); `TOKEN_RATE_LIMIT` (40) y
+  `TOKEN_RATE_WINDOW_SECONDS` (300). Pasado el límite: 429 con el mismo texto genérico (no dice si el email existe).
+- CORS (`web_safety.cors_origins`): en producción solo `https://thundbalance.vercel.app` y lo que ponga `CORS_ORIGINS` (el dominio propio, separado
+  por comas); nunca `*`, y localhost/127.0.0.1 solo si `ENV` o `ENVIRONMENT` es `development` (en tu ordenador, no en Render).
+- Vídeos subidos: el contenido real (primeros bytes) debe ser MP4/MOV/WebM y coincidir con la extensión y el Content-Type (415 si no); el
+  nombre guardado lo genera el servidor (uuid + extensión validada). Tamaño máximo: 300 MB.
 - Errores: define `SENTRY_DSN` (y opcional `SENTRY_ENVIRONMENT`, `SENTRY_TRACES_SAMPLE_RATE`) en Render. Sin PII.
 
 ## Frontend

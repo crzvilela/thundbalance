@@ -390,7 +390,7 @@ function VideoFields({ path, video, updateField }) {
       setPendingUpload(url)
     } catch (err) {
       console.error(err)
-      alert('Could not upload video. Please try a smaller file.')
+      alert(err.status === 415 ? err.message : 'Could not upload video. Please try a smaller file.')
     } finally {
       setUploading(false)
       if (inputRef.current) inputRef.current.value = ''
@@ -938,7 +938,7 @@ function TestimonialsMediaFields({ sectionKey, content, updateField }) {
       setDraftUrl(url)
     } catch (err) {
       console.error(err)
-      alert('Could not upload file. Please try a smaller one.')
+      alert(err.status === 415 ? err.message : 'Could not upload file. Please try a smaller one.')
     } finally {
       setUploading(false)
       if (inputRef.current) inputRef.current.value = ''
@@ -1289,7 +1289,7 @@ function TestimonialMediaPanel({ selection, onClose }) {
       if (isVideo) updateField(`${selection.path}.videoSourceType`, 'upload')
     } catch (err) {
       console.error(err)
-      alert('Could not upload file. Please try a smaller one.')
+      alert(err.status === 415 ? err.message : 'Could not upload file. Please try a smaller one.')
     } finally {
       setUploading(false)
       if (inputRef.current) inputRef.current.value = ''
