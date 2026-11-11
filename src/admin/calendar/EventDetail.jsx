@@ -1,3 +1,4 @@
+import Txt from '../Txt'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { API_URL } from '../../config'
@@ -168,24 +169,24 @@ export default function EventDetail({ event, onClose, onChanged }) {
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
             <dl className="grid gap-3 sm:grid-cols-2">
-              <div className="sm:col-span-2"><Row label={t('ac_when')}><span className="first-letter:uppercase">{describeWhen(start, end, locale)}</span></Row></div>
-              <Row label={t('ac_trainer')}>
+              <div className="sm:col-span-2"><Row label={<Txt id="calendar.d_when" />}><span className="first-letter:uppercase">{describeWhen(start, end, locale)}</span></Row></div>
+              <Row label={<Txt id="calendar.d_trainer" />}>
                 <span className="flex items-center gap-2">
                   <span aria-hidden="true" className="h-3 w-3 shrink-0 rounded-full" style={{ background: color }} />
                   {props.trainer || t('ac_unassigned')}
                 </span>
               </Row>
-              <Row label={t('ac_status')}><Badge tone={STATUS_TONE[props.status] || 'neutral'}>{statusLabel}</Badge></Row>
-              <Row label={t('ac_client')}>{props.clientName}</Row>
+              <Row label={<Txt id="calendar.d_status" />}><Badge tone={STATUS_TONE[props.status] || 'neutral'}>{statusLabel}</Badge></Row>
+              <Row label={<Txt id="calendar.d_client" />}>{props.clientName}</Row>
               <Row label={t('ty_calendar_type')}>
                 {props.sessionType === 'dual'
                   ? <span className="flex flex-wrap items-center gap-2"><TypeBadge type="dual" /><span>{props.secondPersonName}</span></span>
                   : t('ty_individual')}
               </Row>
-              <Row label={t('ac_email')}>{props.email && <a href={`mailto:${props.email}`} className="text-emerald-300 underline underline-offset-4">{props.email}</a>}</Row>
-              <Row label={t('ac_phone')}>{props.phone && <a href={`tel:${props.phone.replace(/\s/g, '')}`} className="underline underline-offset-4">{props.phone}</a>}</Row>
+              <Row label={<Txt id="calendar.d_email" />}>{props.email && <a href={`mailto:${props.email}`} className="text-emerald-300 underline underline-offset-4">{props.email}</a>}</Row>
+              <Row label={<Txt id="calendar.d_phone" />}>{props.phone && <a href={`tel:${props.phone.replace(/\s/g, '')}`} className="underline underline-offset-4">{props.phone}</a>}</Row>
               {isTrial
-                ? <Row label={t('ac_goal')}>{props.goal}</Row>
+                ? <Row label={<Txt id="calendar.d_goal" />}>{props.goal}</Row>
                 : <Row label={`${t('ac_session')} / ${t('ac_pack')}`}>{[props.number, props.pack].filter(Boolean).join(' · ')}</Row>}
               {restorable && (
                 <div className="sm:col-span-2">
@@ -237,15 +238,15 @@ export default function EventDetail({ event, onClose, onChanged }) {
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-white/[0.02] px-6 py-4">
             <div className="flex flex-wrap gap-3">
-              {props.clientId && <Link to={`/admin/clients?client=${props.clientId}`} className="inline-flex min-h-[44px] items-center rounded-xl border border-white/15 px-4 text-sm font-semibold text-gray-100 transition hover:bg-white/10">{t('ac_client_file')}</Link>}
-              {canSync && <Button variant="secondary" onClick={syncGoogle} loading={syncing} disabled={saving}><Icon name="refresh" className="h-4 w-4" />{syncing ? t('ac_syncing') : t('ac_sync_google')}</Button>}
+              {props.clientId && <Link to={`/admin/clients?client=${props.clientId}`} className="inline-flex min-h-[44px] items-center rounded-xl border border-white/15 px-4 text-sm font-semibold text-gray-100 transition hover:bg-white/10"><Txt id="calendar.client_file" /></Link>}
+              {canSync && <Button variant="secondary" onClick={syncGoogle} loading={syncing} disabled={saving}><Icon name="refresh" className="h-4 w-4" />{syncing ? t('ac_syncing') : <Txt id="calendar.sync" />}</Button>}
               {isTrial && <Link to="/admin/trials" className="inline-flex min-h-[44px] items-center rounded-xl border border-white/15 px-4 text-sm font-semibold text-gray-100 transition hover:bg-white/10">{t('ac_trials_page')}</Link>}
             </div>
             <div className="flex flex-wrap gap-3">
-              {restorable && <Button variant="primary" onClick={isTrial ? restoreTrial : () => setRestoring(true)} loading={isTrial && syncing}><Icon name="refresh" className="h-4 w-4" />{t('ac_restore')}</Button>}
+              {restorable && <Button variant="primary" onClick={isTrial ? restoreTrial : () => setRestoring(true)} loading={isTrial && syncing}><Icon name="refresh" className="h-4 w-4" /><Txt id="calendar.restore" /></Button>}
               {changeable && mode === 'view' && <>
-                <Button variant="secondary" onClick={() => { setMode('reschedule'); setMessage('') }}>{t('ac_reschedule')}</Button>
-                <Button variant="danger" onClick={() => setConfirmCancel(true)}>{t('ac_cancel_session')}</Button>
+                <Button variant="secondary" onClick={() => { setMode('reschedule'); setMessage('') }}><Txt id="calendar.reschedule" /></Button>
+                <Button variant="danger" onClick={() => setConfirmCancel(true)}><Txt id="calendar.cancel_session" /></Button>
               </>}
               {changeable && mode === 'reschedule' && <>
                 <Button variant="secondary" onClick={() => { setMode('view'); setMessage('') }} disabled={saving}>{t('ac_back')}</Button>

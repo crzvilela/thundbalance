@@ -1,3 +1,4 @@
+import Txt from './Txt'
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useAdminText } from './useAdminText'
@@ -5,13 +6,15 @@ import { useAdminResource } from './useAdminResource'
 import { dateKey, parseDateKey } from './requests'
 import { PackStatusBadge } from './PackPanel'
 import { Badge, Card, EmptyState, ErrorState, Skeleton, StatCard } from './ui'
+import Editable from './Editable'
+import BlockGroup from './Block'
 
 const INACTIVE = new Set(['cancelled', 'canceled', 'completed', 'rejected'])
 
 // Business view for the Overview: packs that are ending, clients without a
 // pack and the month's workload per trainer. Everything comes from data the
 // admin already loads (/admin/clients, sessions and trial sessions).
-export default function BusinessPanel({ sessions, trials, title }) {
+export default function BusinessPanel({ sessions, trials }) {
   const { t, language } = useAdminText()
   const clientsResource = useAdminResource('/admin/clients')
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
@@ -57,96 +60,102 @@ export default function BusinessPanel({ sessions, trials, title }) {
 
   return (
     <section className="mt-6" aria-labelledby="biz-title">
-      <h2 id="biz-title" className="mb-4 text-lg font-semibold">{title || t('biz_title')}</h2>
+      <Editable as="h2" id="biz-title" keyPath="overview:business" defaultText={t('biz_title')} className="mb-4 text-lg font-semibold" />
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <StatCard label={t('biz_active_packs')} value={activePacks} icon="clients" loading={loading} to="/admin/clients" />
-        <StatCard label={t('biz_to_end')} value={ending.length} icon="calendar" tone="amber" loading={loading} to="/admin/clients?filter=ending" hint={t('biz_to_end_hint')} />
-        <div className="col-span-2 sm:col-span-1">
-          <StatCard label={t('biz_no_pack')} value={withoutPack.length} icon="requests" tone="sky" loading={loading} />
-        </div>
-      </div>
-
-      <div className="mt-6 grid gap-6 lg:grid-cols-5">
-        <Card className="p-6 lg:col-span-3">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold">{t('biz_end_title')}</h3>
-              <p className="text-sm text-gray-500">{t('biz_end_sub')}</p>
+      {/* the parts of this panel can be moved and hidden (blocks: overview / business), in rows of 5 columns */}
+      <BlockGroup pageKey="overview" groupKey="business" gap="mt-6" blocks={{
+        biz_stats: (cls) => (
+          <div className={`grid grid-cols-2 gap-4 sm:grid-cols-3 ${cls}`.trim()}>
+            <StatCard label={<Txt id="overview.biz_active_packs" />} value={activePacks} icon="clients" loading={loading} to="/admin/clients" />
+            <StatCard label={<Txt id="overview.biz_to_end" />} value={ending.length} icon="calendar" tone="amber" loading={loading} to="/admin/clients?filter=ending" hint={<Txt id="overview.biz_to_end_hint" />} />
+            <div className="col-span-2 sm:col-span-1">
+              <StatCard label={<Txt id="overview.biz_no_pack" />} value={withoutPack.length} icon="requests" tone="sky" loading={loading} />
             </div>
-            <Link to="/admin/clients?filter=ending" className="inline-flex min-h-[44px] items-center text-sm text-emerald-300 hover:text-emerald-200">{t('view_all')} →</Link>
           </div>
-          {clientsResource.error
-            ? <ErrorState message={t('load_error')} retryLabel={t('retry')} onRetry={clientsResource.reload} />
-            : loading
-              ? <div className="space-y-3"><Skeleton className="h-14" /><Skeleton className="h-14" /></div>
-              : ending.length === 0
-                ? <EmptyState icon="check" title={t('biz_end_empty')} />
-                : <ul className="space-y-2">
-                  {ending.slice(0, 6).map(client => (
+        ),
+        biz_ending: (cls) => (
+          <Card className={`p-6 ${cls}`.trim()}>
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold"><Txt id="overview.biz_end_title" /></h3>
+                <p className="text-sm text-gray-500"><Txt id="overview.biz_end_sub" /></p>
+              </div>
+              <Link to="/admin/clients?filter=ending" className="inline-flex min-h-[44px] items-center text-sm text-emerald-300 hover:text-emerald-200"><Txt id="overview.view_all" /> →</Link>
+            </div>
+            {clientsResource.error
+              ? <ErrorState message={t('load_error')} retryLabel={t('retry')} onRetry={clientsResource.reload} />
+              : loading
+                ? <div className="space-y-3"><Skeleton className="h-14" /><Skeleton className="h-14" /></div>
+                : ending.length === 0
+                  ? <EmptyState icon="check" title={<Txt id="overview.biz_end_empty" />} />
+                  : <ul className="space-y-2">
+                    {ending.slice(0, 6).map(client => (
+                      <li key={client.id}>
+                        <Link to={`/admin/clients?client=${client.id}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 transition hover:border-amber-400/30 hover:bg-amber-400/5">
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">{client.name}</span>
+                            <span className="block truncate text-xs text-gray-500">{client.plan} · {t('biz_ends')} {fmt(client.pack_end)}</span>
+                          </span>
+                          <PackStatusBadge status={client.pack_status} />
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>}
+          </Card>
+        ),
+        biz_trainer: (cls) => (
+          <Card className={`p-6 ${cls}`.trim()}>
+            <h3 className="text-lg font-semibold"><Txt id="overview.biz_trainer_title" /></h3>
+            <p className="mb-5 text-sm capitalize text-gray-500">{monthName}</p>
+            {loading && sessions.length === 0
+              ? <Skeleton className="h-32 w-full" />
+              : perTrainer.length === 0
+                ? <EmptyState icon="calendar" title={<Txt id="overview.biz_trainer_empty" />} />
+                : <ul className="space-y-4">
+                  {perTrainer.map(row => {
+                    const total = row.done + row.left
+                    return (
+                      <li key={row.trainer}>
+                        <div className="mb-1.5 flex items-baseline justify-between gap-3">
+                          <span className="truncate font-medium">{row.trainer}</span>
+                          <span className="shrink-0 text-sm tabular-nums text-gray-300">{total}</span>
+                        </div>
+                        <div className="flex h-2 overflow-hidden rounded-full bg-white/10" role="img" aria-label={`${row.trainer}: ${total}`}>
+                          <div className="bg-white/40" style={{ width: `${(row.done / maxMonth) * 100}%` }} />
+                          <div className="bg-emerald-400" style={{ width: `${(row.left / maxMonth) * 100}%` }} />
+                        </div>
+                        <p className="mt-1 text-xs text-gray-500">{row.done} {t('biz_done')} · {row.left} {t('biz_left')}</p>
+                      </li>
+                    )
+                  })}
+                </ul>}
+          </Card>
+        ),
+        biz_nopack: (cls) => (
+          <Card className={`p-6 ${cls}`.trim()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold"><Txt id="overview.biz_nopack_title" /></h3>
+            </div>
+            {loading
+              ? <Skeleton className="h-14" />
+              : withoutPack.length === 0
+                ? <EmptyState icon="check" title={<Txt id="overview.biz_nopack_empty" />} />
+                : <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {withoutPack.slice(0, 6).map(client => (
                     <li key={client.id}>
-                      <Link to={`/admin/clients?client=${client.id}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 transition hover:border-amber-400/30 hover:bg-amber-400/5">
+                      <Link to={`/admin/clients?client=${client.id}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 transition hover:border-sky-400/30 hover:bg-sky-400/5">
                         <span className="min-w-0">
                           <span className="block truncate font-medium">{client.name}</span>
-                          <span className="block truncate text-xs text-gray-500">{client.plan} · {t('biz_ends')} {fmt(client.pack_end)}</span>
+                          <span className="block truncate text-xs text-gray-500">{client.email}</span>
                         </span>
-                        <PackStatusBadge status={client.pack_status} />
+                        <Badge>{t('cl_no_plan')}</Badge>
                       </Link>
                     </li>
                   ))}
                 </ul>}
-        </Card>
-
-        <Card className="p-6 lg:col-span-2">
-          <h3 className="text-lg font-semibold">{t('biz_trainer_title')}</h3>
-          <p className="mb-5 text-sm capitalize text-gray-500">{monthName}</p>
-          {loading && sessions.length === 0
-            ? <Skeleton className="h-32 w-full" />
-            : perTrainer.length === 0
-              ? <EmptyState icon="calendar" title={t('biz_trainer_empty')} />
-              : <ul className="space-y-4">
-                {perTrainer.map(row => {
-                  const total = row.done + row.left
-                  return (
-                    <li key={row.trainer}>
-                      <div className="mb-1.5 flex items-baseline justify-between gap-3">
-                        <span className="truncate font-medium">{row.trainer}</span>
-                        <span className="shrink-0 text-sm tabular-nums text-gray-300">{total}</span>
-                      </div>
-                      <div className="flex h-2 overflow-hidden rounded-full bg-white/10" role="img" aria-label={`${row.trainer}: ${total}`}>
-                        <div className="bg-white/40" style={{ width: `${(row.done / maxMonth) * 100}%` }} />
-                        <div className="bg-emerald-400" style={{ width: `${(row.left / maxMonth) * 100}%` }} />
-                      </div>
-                      <p className="mt-1 text-xs text-gray-500">{row.done} {t('biz_done')} · {row.left} {t('biz_left')}</p>
-                    </li>
-                  )
-                })}
-              </ul>}
-        </Card>
-      </div>
-
-      <Card className="mt-6 p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">{t('biz_nopack_title')}</h3>
-        </div>
-        {loading
-          ? <Skeleton className="h-14" />
-          : withoutPack.length === 0
-            ? <EmptyState icon="check" title={t('biz_nopack_empty')} />
-            : <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {withoutPack.slice(0, 6).map(client => (
-                <li key={client.id}>
-                  <Link to={`/admin/clients?client=${client.id}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 transition hover:border-sky-400/30 hover:bg-sky-400/5">
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium">{client.name}</span>
-                      <span className="block truncate text-xs text-gray-500">{client.email}</span>
-                    </span>
-                    <Badge>{t('cl_no_plan')}</Badge>
-                  </Link>
-                </li>
-              ))}
-            </ul>}
-      </Card>
+          </Card>
+        )
+      }} />
     </section>
   )
 }

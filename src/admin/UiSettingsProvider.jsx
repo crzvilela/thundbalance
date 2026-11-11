@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { adminRequest } from './api'
 import { UiSettingsContext } from './uiSettingsContext'
-import { buildDraft, draftProblems, draftToSettings, isDefaultDraft, sameDraft, sanitizeSettings, toPayload } from './uiSettings'
+import { buildDraft, draftToSettings, performReset, performSave, sameDraft, sanitizeSettings } from './uiSettings'
 
 // Loads the panel configuration ONCE (GET /admin/ui-settings) and shares it. It never blocks the panel: until the answer arrives, and if
-// the request fails or the answer is not usable, the original panel is shown. While the editor is open the draft is what the panel shows
-// (the live preview); nothing is saved until Save.
+// the request fails or the answer is not usable, the original panel is shown. While the panel is being edited the draft is what it shows
+// (the live preview); nothing is saved until Save. The editing itself (inline on the panel) is EditModeProvider, which sits inside this one
+// and uses this state; saving and resetting are the pure functions of uiSettings.js.
 export default function UiSettingsProvider({ children }) {
   const [saved, setSaved] = useState(() => sanitizeSettings({}))      // the stored configuration (sanitised), version 0 = none
   const [draft, setDraft] = useState(null)                            // null = not editing
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState(null)                           // { code, message } of the last refused save / reset
+  const [error, setError] = useState(null)                           // { code, field? } of the last refused save / reset
 
   useEffect(() => {
     let cancelled = false
@@ -26,44 +27,28 @@ export default function UiSettingsProvider({ children }) {
   const startEditing = useCallback(() => { setError(null); setDraft(buildDraft(saved)) }, [saved])
   const cancelEditing = useCallback(() => { setError(null); setDraft(null) }, [])
 
-  const fail = (caught) => { setError({ code: caught?.code || '', message: caught?.message || '' }); return false }
-
-  // true when saved (or nothing needed saving)
+  // true when saved (or there was nothing to save)
   const save = useCallback(async () => {
     if (!draft) return true
-    const problems = draftProblems(draft)
-    if (problems.length) { setError({ code: problems[0].code, message: '' }); return false }
     setSaving(true)
     setError(null)
-    try {
-      if (isDefaultDraft(draft)) {
-        if (saved.version > 0) await adminRequest('DELETE', '/admin/ui-settings')
-        setSaved(sanitizeSettings({}))
-      } else {
-        setSaved(sanitizeSettings(await adminRequest('PUT', '/admin/ui-settings', toPayload(draft, saved.version))))
-      }
-      setDraft(null)
-      return true
-    } catch (caught) {
-      return fail(caught)
-    } finally {
-      setSaving(false)
-    }
+    const result = await performSave({ draft, saved, request: adminRequest })
+    setSaving(false)
+    if (!result.ok) { setError(result.error); return false }
+    setSaved(result.saved)
+    setDraft(null)
+    return true
   }, [draft, saved])
 
   const resetAll = useCallback(async () => {
     setSaving(true)
     setError(null)
-    try {
-      await adminRequest('DELETE', '/admin/ui-settings')
-      setSaved(sanitizeSettings({}))
-      setDraft(null)
-      return true
-    } catch (caught) {
-      return fail(caught)
-    } finally {
-      setSaving(false)
-    }
+    const result = await performReset({ request: adminRequest })
+    setSaving(false)
+    if (!result.ok) { setError(result.error); return false }
+    setSaved(result.saved)
+    setDraft(null)
+    return true
   }, [])
 
   // after a 409: the newest saved configuration replaces what was loaded (the draft starts again from it)
@@ -74,7 +59,7 @@ export default function UiSettingsProvider({ children }) {
       setDraft(buildDraft(fresh))
       setError(null)
     } catch (caught) {
-      fail(caught)
+      setError({ code: caught?.code || '' })
     }
   }, [])
 

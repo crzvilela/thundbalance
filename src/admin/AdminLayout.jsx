@@ -2,14 +2,17 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase/auth'
-import { ADMIN_EMAIL } from '../config'
 import { ConfirmDialog, Icon } from './ui'
 import { LeaveGuardContext } from './leaveGuard'
 import AdminErrorBoundary from './AdminErrorBoundary'
 import EmailTest from './EmailTest'
 import UiSettingsProvider from './UiSettingsProvider'
+import EditModeProvider from './EditModeProvider'
+import SidebarNav from './SidebarNav'
+import EditBar from './EditBar'
 import CustomizePanel from './CustomizePanel'
-import { useMenuItems, useUiSettings } from './uiSettingsContext'
+import { useEditMode } from './editModeContext'
+import { useMenuItems } from './uiSettingsContext'
 import { ToastContext } from './toastContext'
 import { useAdminText } from './useAdminText'
 import { useAdminResource } from './useAdminResource'
@@ -51,7 +54,9 @@ function ToastHost({ toasts }) {
 export default function AdminLayout() {
   return (
     <UiSettingsProvider>
-      <AdminShell />
+      <EditModeProvider>
+        <AdminShell />
+      </EditModeProvider>
     </UiSettingsProvider>
   )
 }
@@ -59,7 +64,8 @@ export default function AdminLayout() {
 function AdminShell() {
   const { t, language, setLanguage } = useAdminText()
   const { items: menuItems, customizeLabel } = useMenuItems()
-  const ui = useUiSettings()
+  const edit = useEditMode()                       // edit mode of the panel (only for the main admin)
+  const [editLeaving, setEditLeaving] = useState(null)       // leaving the admin with unsaved panel changes: where to go ('/' or 'logout')
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const [toasts, setToasts] = useState([])
@@ -79,6 +85,12 @@ function AdminShell() {
   const guarded = (target) => (event) => {
     setMenuOpen(false)
     if (guard.current?.()) { event.preventDefault(); setLeaving(target) }
+  }
+  // leaving the admin itself (the site, logout) with panel changes that are not saved asks first; moving between admin pages never does
+  const leaveAdmin = (target) => (event) => {
+    setMenuOpen(false)
+    if (edit?.dirty) { event.preventDefault(); setEditLeaving(target) }
+    else guarded(target)(event)
   }
 
   // Requests are loaded once here: the sidebar badge, the overview and the
@@ -119,8 +131,6 @@ function AdminShell() {
   }
 
   const email = auth.currentUser?.email || ''
-  // only the studio's main admin sees the editor (the trainers never reach this layout)
-  const isAdmin = email.trim().toLowerCase() === ADMIN_EMAIL
 
   const sidebar = (
     <div className="flex h-full flex-col">
@@ -132,25 +142,7 @@ function AdminShell() {
         </p>
       </div>
 
-      <nav className="flex-1 space-y-1 px-3" aria-label="Admin">
-        {menuItems.filter(item => !item.hidden).map(item => (
-          <NavLink key={item.key} to={item.to} end={item.end} className={linkClass} onClick={guarded(item.to)}>
-            <Icon name={item.icon} className="h-[18px] w-[18px]" />
-            <span className="flex-1">{item.custom || t(item.labelKey)}</span>
-            {item.badge && badges[item.badge] > 0 && (
-              <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[11px] font-bold leading-none text-black">{badges[item.badge]}</span>
-            )}
-            {item.arrow && <Icon name="arrow" className="h-4 w-4 opacity-0 transition group-hover:opacity-60" />}
-          </NavLink>
-        ))}
-        {isAdmin && ui && (
-          <button type="button" onClick={() => { setMenuOpen(false); ui.startEditing() }} disabled={ui.editing}
-            className="group mt-3 flex w-full items-center gap-3 rounded-xl border border-dashed border-white/15 px-3.5 py-2.5 text-left text-sm font-medium text-gray-400 transition hover:border-emerald-400/40 hover:bg-white/5 hover:text-white disabled:opacity-50">
-            <Icon name="pencil" className="h-[18px] w-[18px]" />
-            <span className="flex-1">{customizeLabel || t('ui_customize')}</span>
-          </button>
-        )}
-      </nav>
+      <SidebarNav items={menuItems} badges={badges} linkClass={linkClass} guarded={guarded} customizeLabel={customizeLabel} onStart={() => setMenuOpen(false)} />
 
       <div className="space-y-3 border-t border-white/10 p-4">
         <div className="flex items-center justify-between">
@@ -176,10 +168,10 @@ function AdminShell() {
           </div>
         </div>
         <EmailTest defaultTo={email} />
-        <NavLink to="/" onClick={guarded('/')} className="flex items-center gap-3 rounded-xl px-3.5 py-2 text-sm text-gray-400 transition hover:bg-white/5 hover:text-white">
+        <NavLink to="/" onClick={leaveAdmin('/')} className="flex items-center gap-3 rounded-xl px-3.5 py-2 text-sm text-gray-400 transition hover:bg-white/5 hover:text-white">
           <Icon name="globe" className="h-[18px] w-[18px]" />{t('nav_site')}
         </NavLink>
-        <button type="button" onClick={() => { if (guard.current?.()) setLeaving('logout'); else logout() }} className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2 text-sm text-gray-400 transition hover:bg-red-500/10 hover:text-red-300">
+        <button type="button" onClick={() => { if (edit?.dirty) setEditLeaving('logout'); else if (guard.current?.()) setLeaving('logout'); else logout() }} className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2 text-sm text-gray-400 transition hover:bg-red-500/10 hover:text-red-300">
           <Icon name="logout" className="h-[18px] w-[18px]" />{t('nav_logout')}
         </button>
         {email && <p className="truncate px-3.5 text-xs text-gray-600" title={email}>{email}</p>}
@@ -210,13 +202,21 @@ function AdminShell() {
           </div>
         )}
 
-        <main className="px-4 py-8 sm:px-8 lg:ml-64 lg:px-10 lg:py-10">
+        <main className={`px-4 py-8 sm:px-8 lg:ml-64 lg:px-10 lg:py-10 ${edit?.isEditing ? 'pb-32' : ''}`}>
           <div className="mx-auto max-w-6xl">
             <AdminErrorBoundary><Outlet context={{ requests, requestsResource, trials, trialsResource, messagesResource, scheduleResource }} /></AdminErrorBoundary>
           </div>
         </main>
       </div>
-      {ui?.editing && <CustomizePanel />}
+      <EditBar />
+      {edit?.advancedOpen && <CustomizePanel />}
+      <ConfirmDialog
+        open={!!editLeaving} tone="neutral" icon="alert"
+        title={t('ui_leave_title')} text={t('ui_leave_text')}
+        confirmLabel={t('ui_leave_yes')} cancelLabel={t('ui_leave_stay')}
+        onConfirm={() => { const target = editLeaving; setEditLeaving(null); edit.cancel(); if (target === 'logout') logout(); else navigate(target) }}
+        onCancel={() => setEditLeaving(null)}
+      />
       <ToastHost toasts={toasts} />
       <ConfirmDialog
         open={!!leaving} tone="neutral" icon="send"

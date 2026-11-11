@@ -1,8 +1,12 @@
+import Txt from '../Txt'
 import { useMemo } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
 import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useOverviewCards } from '../uiSettingsContext'
+import { useEditMode } from '../editModeContext'
+import Editable from '../Editable'
+import CardFrame from '../EditFrame'
 import { overviewBlocks } from '../uiSettings'
 import { dateKey, normalizeSessions, parseDateKey } from '../requests'
 import BusinessPanel from '../BusinessPanel'
@@ -36,7 +40,9 @@ function WeekChart({ days, t }) {
 export default function Overview() {
   const { t, language } = useAdminText()
   const { requests, requestsResource, trials, trialsResource } = useOutletContext()
-  const { cards, titleOf } = useOverviewCards()      // the studio's order, names and hidden cards (the original ones when nothing is saved)
+  const { cards } = useOverviewCards()      // the studio's order, names and hidden cards (the original ones when nothing is saved)
+  const edit = useEditMode()
+  const editing = !!edit?.isEditing         // while the panel is being edited the hidden cards stay (dimmed) and every card gets its controls
   const stats = useAdminResource('/admin/stats')
   const sessionsResource = useAdminResource('/admin/sessions')
 
@@ -97,22 +103,24 @@ export default function Overview() {
 
   // The small number cards, then the big cards in rows of 5 columns, then the business panel as a full row: with no configuration this is
   // exactly the original layout (the same order, the same rows).
-  const { stats: statCards, blocks } = overviewBlocks(cards)
+  const { stats: statCards, blocks } = overviewBlocks(cards, { showHidden: editing })
   const statNode = {
-    stat_clients: <StatCard label={titleOf('stat_clients', t('stat_clients'))} value={stats.data?.users ?? '—'} icon="clients" loading={stats.loading && !stats.data} to="/admin/clients" />,
-    stat_sessions: <StatCard label={titleOf('stat_sessions', t('stat_sessions'))} value={stats.data?.sessions ?? '—'} icon="calendar" loading={stats.loading && !stats.data} to="/admin/clients" />,
+    stat_clients: <StatCard label={t('stat_clients')} editKey="overview:stat_clients" value={stats.data?.users ?? '—'} icon="clients" loading={stats.loading && !stats.data} to="/admin/clients" />,
+    stat_sessions: <StatCard label={t('stat_sessions')} editKey="overview:stat_sessions" value={stats.data?.sessions ?? '—'} icon="calendar" loading={stats.loading && !stats.data} to="/admin/clients" />,
     stat_pending: (
       <StatCard
-        label={titleOf('stat_pending', t('stat_pending_total'))} value={totalPending} icon="requests" tone="amber" to={pendingTarget}
+        label={t('stat_pending_total')} editKey="overview:stat_pending" value={totalPending} icon="requests" tone="amber" to={pendingTarget}
         hint={pendingHint} loading={pendingLoading}
       />
     )
   }
   const SPAN = { 2: 'lg:col-span-2', 3: 'lg:col-span-3' }
+  const labelOf = (card) => card.custom || t(card.titleKey)             // the name of a card for the buttons of the edit mode
+  const orderOf = (card) => cards.findIndex(candidate => candidate.key === card.key)
   const bigCard = {
     week: (span) => (
       <Card key="week" className={`p-6 ${SPAN[span]}`}>
-        <h2 className="text-lg font-semibold">{titleOf('week', t('week_title'))}</h2>
+        <Editable as="h2" keyPath="overview:week" defaultText={t('week_title')} className="text-lg font-semibold" />
         <p className="mb-6 text-sm text-gray-500">{t('week_sub')}</p>
         {sessionsResource.error
           ? <ErrorState message={t('load_error')} retryLabel={t('retry')} onRetry={sessionsResource.reload} />
@@ -124,15 +132,15 @@ export default function Overview() {
     pending: (span) => (
       <Card key="pending" className={`p-6 ${SPAN[span]}`}>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">{titleOf('pending', t('pending_title'))}</h2>
-          <Link to="/admin/requests" className="inline-flex min-h-[44px] items-center text-sm text-emerald-300 hover:text-emerald-200">{t('view_all')} →</Link>
+          <Editable as="h2" keyPath="overview:pending" defaultText={t('pending_title')} className="text-lg font-semibold" />
+          <Link to="/admin/requests" className="inline-flex min-h-[44px] items-center text-sm text-emerald-300 hover:text-emerald-200"><Txt id="overview.view_all" /> →</Link>
         </div>
         {requestsResource.error
           ? <ErrorState message={t('load_error')} retryLabel={t('retry')} onRetry={requestsResource.reload} />
           : requestsResource.loading && !requestsResource.data
             ? <div className="space-y-3"><Skeleton className="h-14" /><Skeleton className="h-14" /></div>
             : pending.length === 0
-              ? <EmptyState icon="check" title={t('pending_empty')} />
+              ? <EmptyState icon="check" title={<Txt id="overview.pending_empty" />} />
               : <ul className="space-y-2">
                 {pending.slice(0, 4).map(request => (
                   <li key={request.id}>
@@ -150,13 +158,13 @@ export default function Overview() {
     ),
     upcoming: (span) => (
       <Card key="upcoming" className={`p-6 ${SPAN[span]}`}>
-        <h2 className="mb-4 text-lg font-semibold">{titleOf('upcoming', t('upcoming_title'))}</h2>
+        <Editable as="h2" keyPath="overview:upcoming" defaultText={t('upcoming_title')} className="mb-4 text-lg font-semibold" />
         {sessionsResource.error
           ? <ErrorState message={t('load_error')} retryLabel={t('retry')} onRetry={sessionsResource.reload} />
           : sessionsResource.loading && !sessionsResource.data
             ? <div className="space-y-3"><Skeleton className="h-12" /><Skeleton className="h-12" /><Skeleton className="h-12" /></div>
             : upcoming.length === 0
-              ? <EmptyState icon="calendar" title={t('upcoming_empty')} />
+              ? <EmptyState icon="calendar" title={<Txt id="overview.upcoming_empty" />} />
               : <ul className="divide-y divide-white/[0.06]">
                 {upcoming.map(session => (
                   <li key={session.id} className="flex items-center gap-4 py-3">
@@ -179,12 +187,12 @@ export default function Overview() {
     ),
     quick: (span) => (
       <Card key="quick" className={`p-6 ${SPAN[span]}`}>
-        <h2 className="mb-4 text-lg font-semibold">{titleOf('quick', t('quick_title'))}</h2>
+        <Editable as="h2" keyPath="overview:quick" defaultText={t('quick_title')} className="mb-4 text-lg font-semibold" />
         <div className="space-y-2">
           {[
-            { to: '/admin/landing-editor', icon: 'landing', title: t('qa_landing'), text: t('qa_landing_desc') },
-            { to: '/admin/videos', icon: 'video', title: t('qa_videos'), text: t('qa_videos_desc') },
-            { to: '/admin/clients', icon: 'clients', title: t('qa_clients'), text: t('qa_clients_desc') }
+            { to: '/admin/landing-editor', icon: 'landing', title: <Txt id="overview.qa_landing" />, text: t('qa_landing_desc') },
+            { to: '/admin/videos', icon: 'video', title: <Txt id="overview.qa_videos" />, text: <Txt id="overview.qa_videos_desc" /> },
+            { to: '/admin/clients', icon: 'clients', title: <Txt id="overview.qa_clients" />, text: <Txt id="overview.qa_clients_desc" /> }
           ].map(action => (
             <Link key={action.to} to={action.to} className="group flex items-center gap-4 rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 transition hover:border-emerald-400/30 hover:bg-emerald-400/5">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-400/10 text-emerald-300"><Icon name={action.icon} /></span>
@@ -207,28 +215,40 @@ export default function Overview() {
         title="THUNDBALANCE ADMIN"
         subtitle={t('overview_sub')}
         actions={<Button variant="secondary" onClick={() => { stats.reload(); sessionsResource.reload(); requestsResource.reload(); trialsResource.reload() }}>
-          <Icon name="refresh" className="h-4 w-4" />{t('refresh')}
+          <Icon name="refresh" className="h-4 w-4" /><Txt id="overview.refresh" />
         </Button>}
       />
 
       {statCards.length > 0 && (
         <section className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-          {statCards.map((card, index) => (
+          {statCards.map((card, position) => {
             // with an odd number of cards the last one takes the whole row on a phone (the original third card did)
-            statCards.length % 2 === 1 && index === statCards.length - 1
+            const last = statCards.length % 2 === 1 && position === statCards.length - 1
+            if (editing) {
+              return <CardFrame key={card.key} card={card} label={labelOf(card)} index={orderOf(card)} count={cards.length} className={last ? 'col-span-2 sm:col-span-1' : ''}>{statNode[card.key]}</CardFrame>
+            }
+            return last
               ? <div key={card.key} className="col-span-2 sm:col-span-1">{statNode[card.key]}</div>
               : <div key={card.key} className="contents">{statNode[card.key]}</div>
-          ))}
+          })}
         </section>
       )}
 
-      {blocks.map((block, index) => (block.type === 'business'
-        ? <BusinessPanel key="business" sessions={sessions} trials={trials} title={titleOf('business', '')} />
-        : (
+      {blocks.map((block, index) => {
+        if (block.type === 'business') {
+          const panel = <BusinessPanel key="business" sessions={sessions} trials={trials} />
+          return editing
+            ? <CardFrame key="business" card={block.card} label={labelOf(block.card)} index={orderOf(block.card)} count={cards.length} className="mt-6">{panel}</CardFrame>
+            : panel
+        }
+        return (
           <section key={`row-${index}`} className="mt-6 grid gap-6 lg:grid-cols-5">
-            {block.cards.map(card => bigCard[card.key](card.span))}
+            {block.cards.map(card => (editing
+              ? <CardFrame key={card.key} card={card} label={labelOf(card)} index={orderOf(card)} count={cards.length} className={SPAN[card.span]}>{bigCard[card.key](card.span)}</CardFrame>
+              : bigCard[card.key](card.span)))}
           </section>
-        )))}
+        )
+      })}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { usePageText } from './uiSettingsContext'
+import Editable from './Editable'
 import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useFocusTrap } from './useFocusTrap'
@@ -60,14 +60,15 @@ export function Card({ className = '', children, ...rest }) {
 
 // `pageKey` (a key of uiRegistry.PAGES) lets the studio replace the title and subtitle; without a custom text the originals are shown.
 export function PageHeader({ title, subtitle, actions, pageKey }) {
-  const text = usePageText(pageKey, title, subtitle)
-  title = text.title
-  subtitle = text.subtitle
   return (
     <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-4xl tracking-wide text-white md:text-5xl" style={{ fontFamily: 'Bebas Neue, Inter, sans-serif' }}>{title}</h1>
-        {subtitle && <p className="mt-2 max-w-2xl text-sm text-gray-400">{subtitle}</p>}
+        {pageKey
+          ? <Editable as="h1" keyPath={`page:${pageKey}:title`} defaultText={title} className="text-4xl tracking-wide text-white md:text-5xl" style={{ fontFamily: 'Bebas Neue, Inter, sans-serif' }} />
+          : <h1 className="text-4xl tracking-wide text-white md:text-5xl" style={{ fontFamily: 'Bebas Neue, Inter, sans-serif' }}>{title}</h1>}
+        {pageKey
+          ? <Editable as="p" keyPath={`page:${pageKey}:subtitle`} defaultText={subtitle} className="mt-2 max-w-2xl text-sm text-gray-400" />
+          : subtitle && <p className="mt-2 max-w-2xl text-sm text-gray-400">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-3">{actions}</div>}
     </header>
@@ -139,13 +140,15 @@ export function ErrorState({ message, retryLabel, onRetry }) {
   )
 }
 
-export function StatCard({ label, value, icon, tone = 'emerald', hint, to, loading }) {
+export function StatCard({ label, value, icon, tone = 'emerald', hint, to, loading, editKey }) {
   const accent = { emerald: 'text-emerald-300 bg-emerald-400/10', amber: 'text-amber-300 bg-amber-400/10', sky: 'text-sky-300 bg-sky-400/10' }[tone]
   const body = (
     <Card className="group relative h-full overflow-hidden p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-white/20">
       <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-400/5 blur-2xl transition-opacity group-hover:opacity-100" />
       <div className="flex items-start justify-between">
-        <p className="min-w-0 pr-2 text-sm text-gray-400">{label}</p>
+        {editKey
+          ? <Editable as="p" keyPath={editKey} defaultText={label} className="min-w-0 pr-2 text-sm text-gray-400" />
+          : <p className="min-w-0 pr-2 text-sm text-gray-400">{label}</p>}
         <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${accent}`}><Icon name={icon} className="h-[18px] w-[18px]" /></span>
       </div>
       {loading ? <Skeleton className="mt-4 h-9 w-20" /> : <p className="mt-3 text-4xl font-semibold tabular-nums text-white">{value}</p>}

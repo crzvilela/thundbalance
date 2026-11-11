@@ -1,3 +1,4 @@
+import Txt from '../Txt'
 import { useEffect, useRef, useState } from 'react'
 import { API_URL } from '../../config'
 import { adminFetch } from '../../api/admin'
@@ -106,18 +107,18 @@ export default function CalendarFilters({ filters, setFilters, clear, active, tr
         <button type="button" aria-pressed={filters.cancelled} onClick={() => setFilters({ cancelled: !filters.cancelled })}
           className={`flex min-h-[40px] items-center gap-2 rounded-xl border px-4 text-sm font-medium transition ${filters.cancelled ? 'border-red-400/50 bg-red-400/10 text-red-200' : 'border-white/10 bg-black/30 text-gray-300 hover:text-white'}`}>
           <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${filters.cancelled ? 'bg-red-400' : 'bg-gray-500'}`} />
-          {t('ac_show_cancelled')}
+          <Txt id="calendar.f_cancelled" />
         </button>
 
-        <Button variant="secondary" onClick={clear} disabled={!active}>{t('ac_clear_filters')}</Button>
+        <Button variant="secondary" onClick={clear} disabled={!active}><Txt id="calendar.f_clear" /></Button>
       </div>
 
       <fieldset className="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <legend className="sr-only">{t('ac_trainers')}</legend>
-        <span aria-hidden="true" className="text-xs font-medium uppercase tracking-wider text-gray-500">{t('ac_trainers')}</span>
+        <legend className="sr-only"><Txt id="calendar.f_trainers" /></legend>
+        <span aria-hidden="true" className="text-xs font-medium uppercase tracking-wider text-gray-500"><Txt id="calendar.f_trainers" /></span>
         <label className="flex min-h-[36px] cursor-pointer items-center gap-2 text-sm text-gray-200">
           <input type="checkbox" checked={allTrainers} onChange={() => setFilters({ trainers: [] })} className={CHECK} />
-          {t('ac_all')}
+          <Txt id="calendar.f_all" />
         </label>
         {trainers.map(trainer => (
           <label key={trainer.id} className="flex min-h-[36px] cursor-pointer items-center gap-2 text-sm text-gray-200">

@@ -1,3 +1,4 @@
+import Txt from './Txt'
 import { useEffect, useMemo, useState } from 'react'
 import { adminRequest } from './api'
 import { useAdminText } from './useAdminText'
@@ -211,7 +212,7 @@ export default function BroadcastComposer({ draft, setDraft, onSent }) {
       <div>
         <SectionCard title={t('bx_to')} className="mb-5">
           <fieldset>
-            <legend className="sr-only">{t('bx_to')}</legend>
+            <legend className="sr-only"><Txt id="sent-messages.f_to" /></legend>
             <p className="mb-3 text-sm text-gray-400">{t('bx_to_help')}</p>
             <div className="space-y-3">
               {[['all', 'bx_aud_all', 'bx_aud_all_help'], ['active_pack', 'bx_aud_pack', 'bx_aud_pack_help'], ['trainers', 'bx_aud_trainers', 'bx_aud_trainers_help'], ['user', 'bx_aud_user', 'bx_aud_user_help']].map(([value, label, help]) => {
@@ -238,20 +239,20 @@ export default function BroadcastComposer({ draft, setDraft, onSent }) {
           </p>
         </SectionCard>
 
-        <SectionCard title={t('bx_lang')} className="mb-5">
+        <SectionCard title={<Txt id="sent-messages.f_lang" />} className="mb-5">
           <Segmented
             label={t('bx_lang')} value={draft.mainLang}
             options={LANGS.map(code => [code, `${code.toUpperCase()} · ${LANGUAGE_NAMES[code]}`])}
             onChange={code => { patch({ mainLang: code }); setPreviewLang(code) }}
           />
           <div className="mt-5">
-            <Field label={t('bx_field_title')}>
+            <Field label={<Txt id="sent-messages.f_title" />}>
               <TextInput value={draft.title} onChange={event => patch({ title: event.target.value })} onBlur={() => touch('title')} maxLength={TITLE_MAX + 40}
                 aria-invalid={!!shown('title')} aria-describedby={shown('title') ? 'bx-title-error' : undefined} />
               <Counter value={draft.title.length} max={TITLE_MAX} />
             </Field>
             <FieldError id="bx-title-error" text={shown('title')} />
-            <Field label={t('bx_field_body')} hint={t('bx_body_hint')}>
+            <Field label={<Txt id="sent-messages.f_body" />} hint={t('bx_body_hint')}>
               <TextArea rows={7} value={draft.body} onChange={event => patch({ body: event.target.value })} onBlur={() => touch('body')} maxLength={BODY_MAX + 200}
                 aria-invalid={!!shown('body')} aria-describedby={shown('body') ? 'bx-body-error' : undefined} />
               <Counter value={draft.body.length} max={BODY_MAX} />
@@ -261,17 +262,17 @@ export default function BroadcastComposer({ draft, setDraft, onSent }) {
 
           <button type="button" onClick={() => patch({ showTranslations: !draft.showTranslations })} aria-expanded={draft.showTranslations}
             className={`min-h-[44px] rounded-lg text-sm font-semibold text-emerald-300 underline-offset-4 hover:underline ${FOCUS}`}>
-            {draft.showTranslations ? t('bx_hide_translation') : t('bx_add_translation')}
+            {draft.showTranslations ? t('bx_hide_translation') : <Txt id="sent-messages.f_add_translation" />}
           </button>
           <p className="mt-1 rounded-xl border border-amber-400/25 bg-amber-400/[0.06] px-4 py-3 text-sm text-amber-100">{t('bx_translation_note')}</p>
           {draft.showTranslations && otherLangs.map(code => (
             <fieldset key={code} className="mt-5 rounded-2xl border border-white/10 p-4">
               <legend className="px-2 text-sm font-semibold uppercase tracking-wider text-gray-300">{fill(t('bx_translation_of'), { lang: `${code.toUpperCase()} · ${LANGUAGE_NAMES[code]}` })} <span className="font-normal normal-case text-gray-500">{t('bx_optional')}</span></legend>
-              <Field label={t('bx_field_title')}>
+              <Field label={<Txt id="sent-messages.f_title" />}>
                 <TextInput value={draft.translations[code].title} onChange={event => patchTranslation(code, { title: event.target.value })} />
                 <Counter value={draft.translations[code].title.length} max={TITLE_MAX} />
               </Field>
-              <Field label={t('bx_field_body')}>
+              <Field label={<Txt id="sent-messages.f_body" />}>
                 <TextArea rows={4} value={draft.translations[code].body} onChange={event => patchTranslation(code, { body: event.target.value })} />
                 <Counter value={draft.translations[code].body.length} max={BODY_MAX} />
               </Field>
@@ -287,7 +288,7 @@ export default function BroadcastComposer({ draft, setDraft, onSent }) {
         </SectionCard>
 
         <SectionCard title={t('bx_button_title')} className="mb-5">
-          <Switch checked={draft.button} onChange={value => patch({ button: value })}>{t('bx_button_switch')}</Switch>
+          <Switch checked={draft.button} onChange={value => patch({ button: value })}><Txt id="sent-messages.f_add_button" /></Switch>
           {draft.button && (
             <>
               <Field label={t('bx_button_label')}>
@@ -315,8 +316,8 @@ export default function BroadcastComposer({ draft, setDraft, onSent }) {
           )}
         </SectionCard>
 
-        <SectionCard title={t('bx_when')} className="mb-5">
-          <Segmented label={t('bx_when')} value={draft.when} options={[['now', t('bx_when_now')], ['later', t('bx_when_later')]]} onChange={value => patch({ when: value })} />
+        <SectionCard title={<Txt id="sent-messages.f_when" />} className="mb-5">
+          <Segmented label={t('bx_when')} value={draft.when} options={[['now', <Txt id="sent-messages.f_now" />], ['later', <Txt id="sent-messages.f_later" />]]} onChange={value => patch({ when: value })} />
           {draft.when === 'later' && (
             <div className="mt-5">
               <Field label={t('bx_send_at')}>
@@ -328,7 +329,7 @@ export default function BroadcastComposer({ draft, setDraft, onSent }) {
             </div>
           )}
           <div className="mt-5 border-t border-white/10 pt-5">
-            <Switch checked={draft.expires} onChange={value => patch({ expires: value })}>{t('bx_expires_switch')}</Switch>
+            <Switch checked={draft.expires} onChange={value => patch({ expires: value })}><Txt id="sent-messages.f_expires" /></Switch>
             {draft.expires && (
               <>
                 <Field label={t('bx_expires_at')} hint={t('bx_expires_help')}>
@@ -352,7 +353,7 @@ export default function BroadcastComposer({ draft, setDraft, onSent }) {
       </div>
 
       <aside aria-label={t('bx_preview')} className="xl:sticky xl:top-6 xl:self-start">
-        <SectionCard title={t('bx_preview')}>
+        <SectionCard title={<Txt id="sent-messages.f_preview" />}>
           <p className="mb-4 text-sm text-gray-400">{t('bx_preview_help')}</p>
           <div className="mb-4">
             <Segmented label={t('bx_preview_lang')} value={previewLang} options={LANGS.map(code => [code, code.toUpperCase()])} onChange={setPreviewLang} />

@@ -6,12 +6,18 @@ ONE configuration for the whole studio, kept in a single row (admin_ui_settings.
     {"menu":     [{"key", "label"?, "hidden"?}],
      "overview": [{"key", "title"?, "hidden"?}],
      "pages":    {"<pageKey>": {"title"?, "subtitle"?}},
+     "blocks":   {"<pageKey>": {"<group>": [{"key", "hidden"?}]}},
+     "texts":    {"<page>.<element>": "text"},
      "version":  N}
 
 - Only a CLOSED list of keys can be customised (MENU_KEYS / OVERVIEW_KEYS / PAGE_KEYS below, mirrored by src/admin/uiRegistry.js).
   Nothing else is ever stored: no HTML, no free text outside those fields, no unknown field.
 - Texts: label / title up to 30 characters, subtitle up to 120; trimmed, no "<" or ">", no control characters; the whole
-  configuration at most 8 KB.
+  configuration at most 32 KB.
+- Texts inside the pages (section titles, table headers, filters, main buttons, empty-list messages): only the keys of admin_ui_texts.py
+  (mirrored by src/admin/uiTexts.js), each up to its own limit (40 characters, 60 for an empty-list message), no "<" or ">".
+- Blocks (whole parts of a page that can be moved up / down and hidden): only the registered ones, each inside its own group of its page,
+  no repeats; the protected ones are never hidden and every page keeps at least one visible block.
 - Protections: the Overview item and the access to "Personalizar panel" can never be hidden, and at least 3 menu areas stay visible.
 - Concurrency: PUT sends the `version` it loaded; if it is not the stored one the answer is 409. A configuration that does not exist
   has version 0.
@@ -24,6 +30,7 @@ import re
 from fastapi import Body, Depends, HTTPException
 from psycopg2.extras import Json as PgJson
 
+from admin_ui_texts import TEXT_LIMITS
 from database import get_connection
 
 PANEL_KEY = "panel"
@@ -36,11 +43,26 @@ MENU_KEYS = (
 OVERVIEW_KEYS = ("stat_clients", "stat_sessions", "stat_pending", "week", "pending", "business", "upcoming", "quick")
 PAGE_KEYS = ("overview", "requests", "trials", "messages", "sent-messages", "clients", "calendar", "schedule", "trainers", "plans", "videos")
 
+# Reorderable blocks of a page, by group (keep in step with src/admin/uiRegistry.js: BLOCKS). A block moves only inside its own group.
+BLOCK_GROUPS = {
+    "overview": {"business": ("biz_stats", "biz_ending", "biz_trainer", "biz_nopack")},
+    "plans": {"main": ("on_sale", "archived", "trial_prices")},
+    "calendar": {"main": ("filters", "legend", "calendar")},
+    "trainers": {"main": ("note", "access", "list")},
+    "schedule": {"main": ("tabs", "trainer_filter", "list")},
+}
+PROTECTED_BLOCKS = {                                  # never hidden (they can still be moved)
+    "plans": ("on_sale",),
+    "calendar": ("calendar",),
+    "trainers": ("access", "list"),
+    "schedule": ("tabs", "list"),
+}
+
 PROTECTED_MENU_KEYS = ("overview", "customize")      # never hidden
 MIN_VISIBLE_AREAS = 3                                # menu areas (everything but "customize") that must stay visible
 LABEL_MAX = 30
 SUBTITLE_MAX = 120
-MAX_BYTES = 8 * 1024
+MAX_BYTES = 32 * 1024
 MAX_ITEMS = 50
 
 _ready = False
@@ -124,11 +146,73 @@ def _items(raw, registry, where, text_field):
     return result
 
 
+def _texts(raw):
+    """The `texts` section normalised: {"<page>.<element>": "text"} (empty texts dropped), or a 422."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict) or len(raw) > 400:
+        raise _bad("invalid_format", "texts must be an object.", field="texts")
+    result = {}
+    for key, value in raw.items():
+        if key not in TEXT_LIMITS:
+            raise _bad("unknown_key", "Unknown text.", field="texts")
+        text = clean_text(value, TEXT_LIMITS[key], f"texts.{key}")
+        if text:
+            result[key] = text
+    return result
+
+
+def _blocks(raw):
+    """The `blocks` section normalised: {page: {group: [{"key", "hidden"?}]}} (only what was sent), or a 422."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict) or len(raw) > MAX_ITEMS:
+        raise _bad("invalid_format", "blocks must be an object.", field="blocks")
+    result = {}
+    for page, groups in raw.items():
+        if page not in BLOCK_GROUPS:
+            raise _bad("unknown_page", "Unknown page in blocks.", field="blocks")
+        if not isinstance(groups, dict) or len(groups) > MAX_ITEMS:
+            raise _bad("invalid_format", "Each page of blocks must be an object of groups.", field="blocks")
+        page_result = {}
+        for group, entries in groups.items():
+            if group not in BLOCK_GROUPS[page]:
+                raise _bad("unknown_group", "Unknown group in blocks.", field="blocks")
+            if not isinstance(entries, list) or len(entries) > MAX_ITEMS:
+                raise _bad("invalid_format", "Each group of blocks must be a short list.", field="blocks")
+            seen, items = set(), []
+            for entry in entries:
+                _only_fields(entry, ("key", "hidden"), "blocks")
+                key = entry.get("key")
+                if not isinstance(key, str) or not any(key in names for names in BLOCK_GROUPS[page].values()):
+                    raise _bad("unknown_key", "Unknown block.", field="blocks")
+                if key not in BLOCK_GROUPS[page][group]:
+                    raise _bad("wrong_group", "A block can only be moved inside its own group.", field="blocks")
+                if key in seen:
+                    raise _bad("duplicate_key", "A block is repeated.", field="blocks")
+                seen.add(key)
+                hidden = entry.get("hidden", False)
+                if not isinstance(hidden, bool):
+                    raise _bad("invalid_format", "hidden must be true or false in blocks.", field="blocks")
+                if hidden and key in PROTECTED_BLOCKS.get(page, ()):
+                    raise _bad("protected_block", "This block cannot be hidden.", field="blocks")
+                items.append({"key": key, **({"hidden": True} if hidden else {})})
+            page_result[group] = items
+        result[page] = page_result
+    # every page keeps at least one visible block (a block that is not mentioned counts as visible)
+    for page, groups in result.items():
+        all_keys = [key for names in BLOCK_GROUPS[page].values() for key in names]
+        hidden = {item["key"] for items in groups.values() for item in items if item.get("hidden")}
+        if all(key in hidden for key in all_keys):
+            raise _bad("page_empty", "A page must keep at least one visible block.", field="blocks")
+    return result
+
+
 def validate(payload):
     """The configuration normalised (without `version`), or a 422. The protection rules are checked here too."""
     if not isinstance(payload, dict):
         raise _bad("invalid_format", "The configuration must be an object.")
-    unknown = set(payload) - {"menu", "overview", "pages", "version"}
+    unknown = set(payload) - {"menu", "overview", "pages", "blocks", "texts", "version"}
     if unknown:
         raise _bad("unknown_field", "Unknown field in the configuration.")
     menu = _items(payload.get("menu"), MENU_KEYS, "menu", "label")
@@ -159,7 +243,7 @@ def validate(payload):
     if len(visible_areas) < MIN_VISIBLE_AREAS:
         raise _bad("too_few_visible", f"At least {MIN_VISIBLE_AREAS} menu areas must stay visible.", field="menu", minimum=MIN_VISIBLE_AREAS)
 
-    value = {"menu": menu, "overview": overview, "pages": pages}
+    value = {"menu": menu, "overview": overview, "pages": pages, "blocks": _blocks(payload.get("blocks")), "texts": _texts(payload.get("texts"))}
     if len(json.dumps(value, ensure_ascii=False).encode("utf-8")) > MAX_BYTES:
         raise _bad("too_large", "The configuration is too large (8 KB at most).")
     return value

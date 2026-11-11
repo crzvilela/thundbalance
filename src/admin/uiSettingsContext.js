@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo } from 'react'
-import { resolveCustomizeLabel, resolveMenu, resolveOverview, resolvePageText } from './uiSettings'
+import { resolveBlocks, resolveCustomizeLabel, resolveMenu, resolveOverview, resolvePageText } from './uiSettings'
 
 // What the panel is personalised with (the saved configuration, or the draft while it is being edited). Outside the provider (a page
 // rendered on its own, a test) the value is null and every hook answers with the originals: the panel never depends on this.
@@ -33,4 +33,10 @@ export function useOverviewCards() {
 export function usePageText(pageKey, defaultTitle, defaultSubtitle) {
   const settings = useEffectiveSettings()
   return useMemo(() => resolvePageText(settings, pageKey, defaultTitle, defaultSubtitle), [settings, pageKey, defaultTitle, defaultSubtitle])
+}
+
+// The blocks of one group of a page in the studio's order: [{ key, labelKey, protected?, span?, hidden }] (the original order when nothing is saved).
+export function useBlocks(page, group) {
+  const settings = useEffectiveSettings()
+  return useMemo(() => resolveBlocks(settings, page, group), [settings, page, group])
 }

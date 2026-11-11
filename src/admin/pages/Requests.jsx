@@ -1,3 +1,4 @@
+import Txt from '../Txt'
 import { useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { adminRequest } from '../api'
@@ -197,8 +198,8 @@ export default function Requests() {
   }
 
   const filters = [
-    ['pending', t('req_pending')], ['approved', t('req_approved')],
-    ['rejected', t('req_rejected')], ['all', t('req_all')], ['archived', t('req_archived')]
+    ['pending', <Txt id="requests.tab_pending" />], ['approved', <Txt id="requests.tab_approved" />],
+    ['rejected', <Txt id="requests.tab_rejected" />], ['all', <Txt id="requests.tab_all" />], ['archived', <Txt id="requests.tab_archived" />]
   ]
 
   return (
@@ -206,7 +207,7 @@ export default function Requests() {
       <PageHeader pageKey="requests"
         title={t('req_title')}
         subtitle={t('req_sub')}
-        actions={<Button variant="secondary" onClick={reloadAll}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>}
+        actions={<Button variant="secondary" onClick={reloadAll}><Icon name="refresh" className="h-4 w-4" /><Txt id="requests.refresh" /></Button>}
       />
 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -270,12 +271,12 @@ export default function Requests() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {request.status === 'pending' && !request.archived && <>
-                      <Button variant="primary" onClick={() => openApprove(request)}><Icon name="check" className="h-4 w-4" />{t('req_approve')}</Button>
-                      <Button variant="danger" onClick={() => openDecline(request)}>{t('req_reject')}</Button>
+                      <Button variant="primary" onClick={() => openApprove(request)}><Icon name="check" className="h-4 w-4" /><Txt id="requests.approve" /></Button>
+                      <Button variant="danger" onClick={() => openDecline(request)}><Txt id="requests.reject" /></Button>
                     </>}
                     {request.archived
-                      ? <Button variant="secondary" onClick={() => unarchive(request)} disabled={busy}><Icon name="archive" className="h-4 w-4" />{t('req_unarchive')}</Button>
-                      : <Button variant="secondary" onClick={() => setArchiving(request)}><Icon name="archive" className="h-4 w-4" />{t('req_archive')}</Button>}
+                      ? <Button variant="secondary" onClick={() => unarchive(request)} disabled={busy}><Icon name="archive" className="h-4 w-4" /><Txt id="requests.unarchive" /></Button>
+                      : <Button variant="secondary" onClick={() => setArchiving(request)}><Icon name="archive" className="h-4 w-4" /><Txt id="requests.archive" /></Button>}
                   </div>
                 </div>
               </Card>

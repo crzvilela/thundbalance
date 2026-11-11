@@ -1,3 +1,5 @@
+import Txt from '../Txt'
+import BlockGroup from '../Block'
 import { useMemo, useState } from 'react'
 import { adminRequest } from '../api'
 import { useAdminText } from '../useAdminText'
@@ -112,7 +114,7 @@ export default function Plans() {
     <div className="admin-fade">
       <PageHeader pageKey="plans"
         title={t('cat_title')} subtitle={t('cat_sub')}
-        actions={<Button variant="primary" onClick={openNew}><Icon name="bolt" className="h-4 w-4" />{t('cat_new')}</Button>}
+        actions={<Button variant="primary" onClick={openNew}><Icon name="bolt" className="h-4 w-4" /><Txt id="plans.new_pack" /></Button>}
       />
 
       {resource.error ? (
@@ -120,27 +122,26 @@ export default function Plans() {
       ) : resource.loading && !resource.data ? (
         <div className="grid gap-4 md:grid-cols-3"><Skeleton className="h-56" /><Skeleton className="h-56" /><Skeleton className="h-56" /></div>
       ) : (
-        <>
-          {packs.length === 0 ? (
-            <Card><EmptyState icon="inbox" title={t('cat_empty')} action={<Button variant="primary" onClick={openNew}>{t('cat_new')}</Button>} /></Card>
+        // the parts of the page can be moved and hidden (blocks: plans / main); the packs on sale are protected
+        <BlockGroup pageKey="plans" groupKey="main" gap="mt-10" blocks={{
+          on_sale: (cls) => (packs.length === 0 ? (
+            <Card className={cls || undefined}><EmptyState icon="inbox" title={<Txt id="plans.empty" />} action={<Button variant="primary" onClick={openNew}><Txt id="plans.new_pack" /></Button>} /></Card>
           ) : (
-            <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label={t('cat_on_sale')}>
+            <ul className={`grid gap-4 md:grid-cols-2 xl:grid-cols-3 ${cls}`.trim()} aria-label={t('cat_on_sale')}>
               {onSale.map(pack => <PackCard key={pack.id} pack={pack} onEdit={() => openEdit(pack)} onArchive={() => setArchiving(pack)} />)}
             </ul>
-          )}
-
-          {archived.length > 0 && (
-            <section className="mt-10">
-              <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">{t('cat_archived_title')} ({archived.length})</h2>
+          )),
+          archived: archived.length > 0 ? (cls) => (
+            <section className={cls || undefined}>
+              <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400"><Txt id="plans.archived_title" /> ({archived.length})</h2>
               <p className="mb-4 max-w-2xl text-sm text-gray-500">{t('cat_archived_note')}</p>
               <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {archived.map(pack => <PackCard key={pack.id} pack={pack} onEdit={() => openEdit(pack)} onRestore={() => setArchived(pack, false)} busy={busy} />)}
               </ul>
             </section>
-          )}
-
-          <TrialPrices prices={resource.data?.trial} onSaved={changed} />
-        </>
+          ) : null,
+          trial_prices: (cls) => <TrialPrices prices={resource.data?.trial} onSaved={changed} className={cls} />
+        }} />
       )}
 
       <Drawer
@@ -263,10 +264,10 @@ function PackCard({ pack, onEdit, onArchive, onRestore, busy = false }) {
         </dl>
 
         <div className="mt-6 flex gap-2">
-          <Button variant="secondary" className="flex-1" onClick={onEdit}>{t('cat_edit')}</Button>
+          <Button variant="secondary" className="flex-1" onClick={onEdit}><Txt id="plans.edit" /></Button>
           {pack.active
-            ? <Button variant="secondary" onClick={onArchive} aria-label={`${t('cat_archive')} ${pack.name}`}>{t('cat_archive')}</Button>
-            : <Button variant="primary" onClick={onRestore} loading={busy} aria-label={`${t('cat_restore')} ${pack.name}`}>{t('cat_restore')}</Button>}
+            ? <Button variant="secondary" onClick={onArchive} aria-label={`${t('cat_archive')} ${pack.name}`}><Txt id="plans.archive" /></Button>
+            : <Button variant="primary" onClick={onRestore} loading={busy} aria-label={`${t('cat_restore')} ${pack.name}`}><Txt id="plans.restore" /></Button>}
         </div>
       </Card>
     </li>
@@ -274,7 +275,7 @@ function PackCard({ pack, onEdit, onArchive, onRestore, busy = false }) {
 }
 
 // The price of a trial session, individual and dual (the trial form of the site reads them from the server).
-function TrialPrices({ prices, onSaved }) {
+function TrialPrices({ prices, onSaved, className = '' }) {
   const { t } = useAdminText()
   const toast = useToast()
   const [draft, setDraft] = useState(null)            // null = what the server has; edited text once the admin types
@@ -300,9 +301,9 @@ function TrialPrices({ prices, onSaved }) {
   }
 
   return (
-    <section className="mt-10" aria-labelledby="cat-trial-title">
+    <section className={className || undefined} aria-labelledby="cat-trial-title">
       <Card className="p-6">
-        <h2 id="cat-trial-title" className="text-xl font-semibold">{t('cat_trial_title')}</h2>
+        <h2 id="cat-trial-title" className="text-xl font-semibold"><Txt id="plans.trial_title" /></h2>
         <p className="mt-1 max-w-2xl text-sm text-gray-400">{t('cat_trial_sub')}</p>
         <div className="mt-5 grid gap-x-8 sm:grid-cols-2 lg:max-w-xl">
           {['individual', 'dual'].map(type => (
@@ -312,7 +313,7 @@ function TrialPrices({ prices, onSaved }) {
           ))}
         </div>
         {error && <p role="alert" className="mb-4 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</p>}
-        <Button variant="primary" onClick={save} loading={busy} disabled={!draft}>{busy ? t('pl_saving') : t('cat_trial_save')}</Button>
+        <Button variant="primary" onClick={save} loading={busy} disabled={!draft}>{busy ? t('pl_saving') : <Txt id="plans.save_trial" />}</Button>
       </Card>
     </section>
   )

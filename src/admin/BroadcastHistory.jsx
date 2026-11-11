@@ -1,3 +1,4 @@
+import Txt from './Txt'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { adminRequest } from './api'
 import { useAdminText } from './useAdminText'
@@ -53,8 +54,8 @@ function Detail({ id, onClose, onArchive, onRestore, busy }) {
       footer={<>
         <Button variant="secondary" className="flex-1" onClick={onClose} disabled={busy}>{t('bx_close')}</Button>
         {data && (data.archived
-          ? <Button variant="primary" className="flex-1" onClick={() => onRestore(id)} disabled={busy}>{t('bx_restore')}</Button>
-          : <Button variant="secondary" className="flex-1" onClick={() => onArchive(id)} disabled={busy}><Icon name="archive" className="h-4 w-4" />{t('bx_archive')}</Button>)}
+          ? <Button variant="primary" className="flex-1" onClick={() => onRestore(id)} disabled={busy}><Txt id="sent-messages.restore" /></Button>
+          : <Button variant="secondary" className="flex-1" onClick={() => onArchive(id)} disabled={busy}><Icon name="archive" className="h-4 w-4" /><Txt id="sent-messages.archive" /></Button>)}
       </>}
     >
       {detail.error ? (
@@ -64,16 +65,16 @@ function Detail({ id, onClose, onArchive, onRestore, busy }) {
       ) : (
         <>
           <dl className="mb-8 grid gap-x-8 gap-y-5 sm:grid-cols-2">
-            <Info label={t('bx_h_to')}><AudienceTags message={data} />{data.audience === 'user' && data.people?.[0] ? <span className="ml-1 text-gray-300">· {data.people[0].email}</span> : null}</Info>
+            <Info label={<Txt id="sent-messages.h_to" />}><AudienceTags message={data} />{data.audience === 'user' && data.people?.[0] ? <span className="ml-1 text-gray-300">· {data.people[0].email}</span> : null}</Info>
             <Info label={t('bx_h_status')}><StatusBadge status={data.status} /></Info>
             <Info label={t('bx_h_sends')}>{when(data.visible_from)}</Info>
-            <Info label={t('bx_h_expires')}>{data.expires_at ? when(data.expires_at) : t('bx_h_no_expiry')}</Info>
+            <Info label={t('bx_h_expires')}>{data.expires_at ? when(data.expires_at) : <Txt id="sent-messages.h_no_expiry" />}</Info>
             {data.archived && <Info label={t('bx_tab_archived')}>{fill(t('bx_d_archived_on'), { who: data.archived_by || '—', when: when(data.archived_at) })}</Info>}
-            <Info label={t('bx_d_recipients')}>{data.recipients}</Info>
-            <Info label={t('bx_d_reads')}>{fill(t(data.recipients === 1 ? 'bx_h_read_one' : 'bx_h_read'), { read: data.read, total: data.recipients })}</Info>
+            <Info label={<Txt id="sent-messages.d_recipients" />}>{data.recipients}</Info>
+            <Info label={<Txt id="sent-messages.d_reads" />}>{fill(t(data.recipients === 1 ? 'bx_h_read_one' : 'bx_h_read'), { read: data.read, total: data.recipients })}</Info>
           </dl>
 
-          <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">{t('bx_d_content')}</h3>
+          <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400"><Txt id="sent-messages.d_content" /></h3>
           <div className="mb-8 space-y-4">
             {languages.map(code => {
               const mine = code === data.main_lang
@@ -94,12 +95,12 @@ function Detail({ id, onClose, onArchive, onRestore, busy }) {
 
           {data.action_label && (
             <div className="mb-8">
-              <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">{t('bx_d_button')}</h3>
+              <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400"><Txt id="sent-messages.d_button" /></h3>
               <p className="text-base text-gray-300 [overflow-wrap:anywhere]">{t('bx_d_goes_to')} {data.action_target}</p>
             </div>
           )}
 
-          <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">{t('bx_d_readers')}</h3>
+          <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400"><Txt id="sent-messages.d_readers" /></h3>
           {data.audience === 'user' && data.people?.length ? (
             <ul className="space-y-2">
               {data.people.map(person => (
@@ -200,7 +201,7 @@ export default function BroadcastHistory({ highlight }) {
           <TextInput type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder={t('bx_h_search')} aria-label={t('bx_h_search')} className="!pl-10" />
         </div>
         <label className="flex items-center gap-3 text-sm text-gray-300">
-          <span>{t('bx_h_status')}</span>
+          <span><Txt id="sent-messages.h_status" /></span>
           <SelectInput value={status} onChange={event => { setStatus(event.target.value); setPage(1) }} className="!w-auto !py-2.5">
             {['all', 'scheduled', 'sent', 'expired'].map(value => <option key={value} value={value}>{t(`bx_st_${value}`)}</option>)}
           </SelectInput>
@@ -230,8 +231,8 @@ export default function BroadcastHistory({ highlight }) {
                   </span>
                   <span className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-gray-400">
                     <span className="flex flex-wrap items-center gap-1.5 [overflow-wrap:anywhere]"><AudienceTags message={item} />{item.person ? <span>· {item.person}</span> : null}</span>
-                    <span>{t('bx_h_sends')}: {when(item.visible_from)}</span>
-                    <span>{t('bx_h_expires')}: {item.expires_at ? when(item.expires_at) : t('bx_h_no_expiry')}</span>
+                    <span><Txt id="sent-messages.h_sends" />: {when(item.visible_from)}</span>
+                    <span><Txt id="sent-messages.h_expires" />: {item.expires_at ? when(item.expires_at) : <Txt id="sent-messages.h_no_expiry" />}</span>
                   </span>
                   <span className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-gray-300">
                     <span>{item.recipients} {t('bx_d_recipients').toLowerCase()}</span>

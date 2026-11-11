@@ -1,3 +1,4 @@
+import Txt from '../Txt'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { adminRequest } from '../api'
@@ -131,7 +132,7 @@ export default function Messages() {
     }
   }
 
-  const tabs = [['inbox', t('msg_tab_inbox'), counts?.inbox], ['archived', t('msg_tab_archived'), counts?.archived]]
+  const tabs = [['inbox', <Txt id="messages.tab_inbox" />, counts?.inbox], ['archived', <Txt id="messages.tab_archived" />, counts?.archived]]
   const ids = [...selected]
   const emptyTitle = q.trim() ? 'msg_empty_search' : tab === 'archived' ? 'msg_empty_archived' : 'msg_empty_inbox'
   const replyHref = (message) => `mailto:${message.email}?subject=${encodeURIComponent(message.subject ? `Re: ${message.subject}` : t('msg_reply_subject'))}`
@@ -141,7 +142,7 @@ export default function Messages() {
     <div className="admin-fade">
       <PageHeader pageKey="messages"
         title={t('msg_title')} subtitle={t('msg_sub')}
-        actions={<Button variant="secondary" onClick={refresh}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>}
+        actions={<Button variant="secondary" onClick={refresh}><Icon name="refresh" className="h-4 w-4" /><Txt id="messages.refresh" /></Button>}
       />
 
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -175,17 +176,17 @@ export default function Messages() {
           <div className="mb-2 flex min-h-[44px] flex-wrap items-center gap-x-4 gap-y-2 px-1">
             <label className="flex min-h-[44px] cursor-pointer items-center gap-3 text-sm text-gray-300">
               <input type="checkbox" checked={allSelected} onChange={toggleAll} className={CHECK} />
-              {t('msg_select_all')}
+              <Txt id="messages.select_all" />
             </label>
             {ids.length > 0 && (
               <>
                 <span className="text-sm text-emerald-300" role="status">{fill(t('msg_selected'), { n: ids.length })}</span>
                 <div className="flex flex-wrap gap-2">
                   {tab === 'archived'
-                    ? <Button variant="secondary" onClick={() => unarchive(ids)} disabled={busy}>{t('msg_unarchive')}</Button>
-                    : <Button variant="secondary" onClick={() => archive(ids)} disabled={busy}>{t('msg_archive')}</Button>}
-                  <Button variant="secondary" onClick={() => markRead(ids, true)} disabled={busy}>{t('msg_mark_read_many')}</Button>
-                  <Button variant="danger" onClick={() => setDeleting(ids)} disabled={busy}>{t('msg_delete')}</Button>
+                    ? <Button variant="secondary" onClick={() => unarchive(ids)} disabled={busy}><Txt id="messages.unarchive" /></Button>
+                    : <Button variant="secondary" onClick={() => archive(ids)} disabled={busy}><Txt id="messages.archive" /></Button>}
+                  <Button variant="secondary" onClick={() => markRead(ids, true)} disabled={busy}><Txt id="messages.mark_read" /></Button>
+                  <Button variant="danger" onClick={() => setDeleting(ids)} disabled={busy}><Txt id="messages.delete" /></Button>
                 </div>
               </>
             )}
@@ -229,21 +230,21 @@ export default function Messages() {
       <Drawer
         open={!!opened} onClose={() => setOpened(null)} busy={busy} title={opened?.name || ''} subtitle={opened?.email || ''}
         footer={opened && <>
-          <a href={replyHref(opened)} className={`${small} bg-emerald-400 text-black hover:bg-emerald-300`}><Icon name="arrow" className="h-4 w-4" />{t('msg_reply')}</a>
+          <a href={replyHref(opened)} className={`${small} bg-emerald-400 text-black hover:bg-emerald-300`}><Icon name="arrow" className="h-4 w-4" /><Txt id="messages.reply" /></a>
           {opened.archived
-            ? <Button variant="secondary" onClick={() => unarchive([opened.id])} disabled={busy}>{t('msg_unarchive')}</Button>
-            : <Button variant="secondary" onClick={() => archive([opened.id])} disabled={busy}>{t('msg_archive')}</Button>}
-          <Button variant="secondary" onClick={() => markRead([opened.id], false)} disabled={busy}>{t('msg_mark_unread')}</Button>
-          <Button variant="danger" onClick={() => setDeleting([opened.id])} disabled={busy}>{t('msg_delete')}</Button>
+            ? <Button variant="secondary" onClick={() => unarchive([opened.id])} disabled={busy}><Txt id="messages.unarchive" /></Button>
+            : <Button variant="secondary" onClick={() => archive([opened.id])} disabled={busy}><Txt id="messages.archive" /></Button>}
+          <Button variant="secondary" onClick={() => markRead([opened.id], false)} disabled={busy}><Txt id="messages.mark_unread" /></Button>
+          <Button variant="danger" onClick={() => setDeleting([opened.id])} disabled={busy}><Txt id="messages.delete" /></Button>
         </>}
       >
         {opened && (
           <div>
             <dl className="mb-6 grid gap-x-8 gap-y-4 sm:grid-cols-2">
-              <div><dt className="text-xs uppercase tracking-wider text-gray-500">{t('msg_received')}</dt><dd className="mt-1">{when(opened.created_at)}</dd></div>
+              <div><dt className="text-xs uppercase tracking-wider text-gray-500"><Txt id="messages.received" /></dt><dd className="mt-1">{when(opened.created_at)}</dd></div>
               <div><dt className="text-xs uppercase tracking-wider text-gray-500">{t('fx_email')}</dt><dd className="mt-1 [overflow-wrap:anywhere]"><a href={`mailto:${opened.email}`} className="hover:text-emerald-300">{opened.email}</a></dd></div>
-              {opened.phone && <div><dt className="text-xs uppercase tracking-wider text-gray-500">{t('msg_phone')}</dt><dd className="mt-1"><a href={`tel:${opened.phone.replace(/\s/g, '')}`} className="hover:text-emerald-300">{opened.phone}</a></dd></div>}
-              {opened.subject && <div className="sm:col-span-2"><dt className="text-xs uppercase tracking-wider text-gray-500">{t('msg_subject')}</dt><dd className="mt-1 [overflow-wrap:anywhere]">{opened.subject}</dd></div>}
+              {opened.phone && <div><dt className="text-xs uppercase tracking-wider text-gray-500"><Txt id="messages.phone" /></dt><dd className="mt-1"><a href={`tel:${opened.phone.replace(/\s/g, '')}`} className="hover:text-emerald-300">{opened.phone}</a></dd></div>}
+              {opened.subject && <div className="sm:col-span-2"><dt className="text-xs uppercase tracking-wider text-gray-500"><Txt id="messages.subject" /></dt><dd className="mt-1 [overflow-wrap:anywhere]">{opened.subject}</dd></div>}
             </dl>
             <p className="whitespace-pre-wrap rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-gray-100 [overflow-wrap:anywhere]">{opened.message}</p>
           </div>

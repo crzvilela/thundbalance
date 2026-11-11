@@ -1,3 +1,4 @@
+import Txt from '../Txt'
 import { useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { adminRequest } from '../api'
@@ -185,8 +186,8 @@ export default function TrialSessions() {
     'tr_cancelled_ok', () => setCancelling(null))
 
   const filters = [
-    ['pending', t('tr_pending')], ['approved', t('tr_approved')], ['confirmed', t('tr_confirmed')], ['declined', t('tr_declined')],
-    ['rejected', t('tr_rejected')], ['cancelled', t('tr_cancelled')], ['all', t('tr_all')]
+    ['pending', <Txt id="trials.tab_pending" />], ['approved', <Txt id="trials.tab_approved" />], ['confirmed', <Txt id="trials.tab_confirmed" />], ['declined', <Txt id="trials.tab_declined" />],
+    ['rejected', <Txt id="trials.tab_rejected" />], ['cancelled', <Txt id="trials.tab_cancelled" />], ['all', <Txt id="trials.tab_all" />]
   ]
 
   return (
@@ -199,7 +200,7 @@ export default function TrialSessions() {
 
       <PageHeader pageKey="trials"
         title={t('tr_title')} subtitle={t('tr_sub')}
-        actions={<Button variant="secondary" onClick={trialsResource.reload}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>}
+        actions={<Button variant="secondary" onClick={trialsResource.reload}><Icon name="refresh" className="h-4 w-4" /><Txt id="trials.refresh" /></Button>}
       />
 
       <GoogleSyncBanner onChanged={trialsResource.reload} />
@@ -227,7 +228,7 @@ export default function TrialSessions() {
       ) : trialsResource.loading && !trialsResource.data ? (
         <div className="space-y-3"><Skeleton className="h-28" /><Skeleton className="h-28" /></div>
       ) : visible.length === 0 ? (
-        <Card><EmptyState icon="inbox" title={t('tr_empty')} /></Card>
+        <Card><EmptyState icon="inbox" title={<Txt id="trials.empty" />} /></Card>
       ) : (
         <>
         <SelectAllRow selection={selection} />
@@ -255,7 +256,7 @@ export default function TrialSessions() {
                         <Icon name="calendar" className="h-3.5 w-3.5" />
                         {parseDateKey(trial.date).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} · {trial.time}
                       </span>
-                      {trial.goal && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{t('tr_goal')}: {trial.goal}</span>}
+                      {trial.goal && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300"><Txt id="trials.goal" />: {trial.goal}</span>}
                       {trial.experience && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{trial.experience}</span>}
                       {trial.age && <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-gray-300">{trial.age}</span>}
                       {trial.trainer && <span className="rounded-md border border-sky-400/20 bg-sky-400/10 px-2 py-0.5 text-xs text-sky-200">{t(trial.status === 'pending' ? 'tr_trainer_requested' : 'tr_trainer')}: {trial.trainer}</span>}
@@ -264,7 +265,7 @@ export default function TrialSessions() {
                     </div>
                     <div className="mt-4 space-y-2 border-t border-white/[0.06] pt-3">
                     <p className={`text-sm ${trial.received_email?.status === 'failed' ? 'text-red-300' : 'text-gray-400'}`}>
-                      {t('tr_received_label')}:{' '}
+                      <Txt id="trials.received_email" />:{' '}
                       {trial.received_email
                         ? trial.received_email.status === 'sent'
                           ? <span className="text-emerald-300">{t('tr_email_sent')} ✓ ({stamp(trial.received_email.at)})</span>
@@ -273,7 +274,7 @@ export default function TrialSessions() {
                     </p>
                     {(trial.status === 'approved' || trial.approval_email) && (
                       <p className={`text-sm ${trial.approval_email?.status === 'failed' ? 'text-red-300' : 'text-gray-400'}`}>
-                        {t('tr_email_label')}:{' '}
+                        <Txt id="trials.approval_email" />:{' '}
                         {trial.approval_email
                           ? trial.approval_email.status === 'sent'
                             ? <span className="text-emerald-300">{t('tr_email_sent')} ✓ ({stamp(trial.approval_email.at)})</span>
@@ -285,7 +286,7 @@ export default function TrialSessions() {
                       <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
                         <span>{trial.calendar_failed ? t('tr_calendar_failed') : t('tr_calendar_missing')}</span>
                         <Button variant="secondary" onClick={() => createCalendarEvent(trial)} loading={working === `calendar-${trial.id}`}>
-                          {working === `calendar-${trial.id}` ? t('tr_calendar_creating') : t('tr_calendar_create')}
+                          {working === `calendar-${trial.id}` ? t('tr_calendar_creating') : <Txt id="trials.calendar_create" />}
                         </Button>
                       </div>
                     )}
@@ -295,24 +296,24 @@ export default function TrialSessions() {
                   <div className="flex flex-wrap gap-2">
                     {['pending', 'approved', 'confirmed'].includes(trial.status) && (
                       <Button variant="secondary" onClick={() => setResending({ kind: 'received', trial })} loading={working === `received-${trial.id}`}>
-                        {working === `received-${trial.id}` ? t('tr_resending') : t('tr_received_resend')}
+                        {working === `received-${trial.id}` ? t('tr_resending') : <Txt id="trials.resend_received" />}
                       </Button>
                     )}
                     {trial.status === 'pending' && <>
-                      <Button variant="primary" onClick={() => startApproving(trial)}><Icon name="check" className="h-4 w-4" />{t('req_approve')}</Button>
-                      <Button variant="danger" onClick={() => { setReason(''); setFormError(''); setDeclining(trial) }}>{t('req_reject')}</Button>
+                      <Button variant="primary" onClick={() => startApproving(trial)}><Icon name="check" className="h-4 w-4" /><Txt id="trials.approve" /></Button>
+                      <Button variant="danger" onClick={() => { setReason(''); setFormError(''); setDeclining(trial) }}><Txt id="trials.reject" /></Button>
                     </>}
                     {trial.status === 'approved' && (
                       <Button variant="secondary" onClick={() => setResending({ kind: 'approval', trial })} loading={working === `resend-${trial.id}`}>
-                        {working === `resend-${trial.id}` ? t('tr_resending') : t('tr_resend')}
+                        {working === `resend-${trial.id}` ? t('tr_resending') : <Txt id="trials.resend" />}
                       </Button>
                     )}
                     {(trial.status === 'approved' || trial.status === 'confirmed') && (
-                      <Button variant="danger" onClick={() => { setFormError(''); setCancelling(trial) }}>{t('cl_cancel_session')}</Button>
+                      <Button variant="danger" onClick={() => { setFormError(''); setCancelling(trial) }}><Txt id="trials.cancel" /></Button>
                     )}
                     {trial.status === 'cancelled' && trial.cancel_source === 'google' && (
                       <Button variant="primary" onClick={() => run(() => adminRequest('POST', `/admin/trial-sessions/${trial.id}/restore`), 'gs_restore_ok', () => {})}>
-                        <Icon name="refresh" className="h-4 w-4" />{t('ac_restore')}
+                        <Icon name="refresh" className="h-4 w-4" /><Txt id="trials.restore" />
                       </Button>
                     )}
                   </div>

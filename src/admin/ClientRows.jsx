@@ -1,3 +1,4 @@
+import Txt from './Txt'
 import { resolveImageUrl } from '../api/landingPage'
 import { useAdminText } from './useAdminText'
 import { parseDateKey } from './requests'
@@ -57,12 +58,12 @@ export function ClientRow({ client, onOpen, label, check = null, selected = fals
               : <Badge>{t('cl_no_plan')}</Badge>}
             {client.session_type === 'dual' && <TypeBadge type="dual" />}
             {(client.pack_status === 'expiring' || client.pack_status === 'expired') && <Badge tone={client.pack_status === 'expired' ? 'red' : 'amber'}>{t(`pk_status_${client.pack_status}`)}</Badge>}
-            {client.has_pending_request && <Badge tone="amber">{t('cl_pending')}</Badge>}
-            {next && <span className="text-xs text-gray-400 sm:hidden">{t('fx_next_session')}: {next}</span>}
+            {client.has_pending_request && <Badge tone="amber"><Txt id="clients.filter_pending" /></Badge>}
+            {next && <span className="text-xs text-gray-400 sm:hidden"><Txt id="clients.next_session" />: {next}</span>}
           </span>
         </span>
         <span className="hidden shrink-0 text-right sm:block">
-          <span className="block text-xs text-gray-500">{t('fx_next_session')}</span>
+          <span className="block text-xs text-gray-500"><Txt id="clients.next_session" /></span>
           <span className="block text-sm tabular-nums text-gray-200">{next || '—'}</span>
         </span>
       </button>

@@ -1,3 +1,5 @@
+import Txt from '../Txt'
+import BlockGroup from '../Block'
 import { useMemo, useState } from 'react'
 import { adminRequest } from '../api'
 import { useAdminText } from '../useAdminText'
@@ -47,7 +49,7 @@ function ColorPicker({ trainer, onSaved }) {
 
   return (
     <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-      <p className="mb-3 text-xs font-medium uppercase tracking-wider text-gray-400">{t('ac_color')}</p>
+      <p className="mb-3 text-xs font-medium uppercase tracking-wider text-gray-400"><Txt id="trainers.calendar_colour" /></p>
       <div role="radiogroup" aria-label={t('ac_color_pick')} className="flex flex-wrap gap-2">
         {TRAINER_PALETTE.map(option => (
           <button key={option} type="button" role="radio" aria-checked={color === option} aria-label={option} disabled={saving} onClick={() => choose(option)}
@@ -96,14 +98,14 @@ function HoursEditor({ hours, setHours }) {
                   {window.start >= window.end && <Icon name="alert" className="h-5 w-5 text-red-300" />}
                 </div>
               ) : (
-                <span className="col-span-1 text-sm text-gray-600 sm:col-span-2">{t('tn_off')}</span>
+                <span className="col-span-1 text-sm text-gray-600 sm:col-span-2"><Txt id="trainers.day_off" /></span>
               )}
             </div>
           )
         })}
       </div>
       <div className="mt-3">
-        <Button variant="secondary" onClick={copyMonday}>{t('tn_apply_week')}</Button>
+        <Button variant="secondary" onClick={copyMonday}><Txt id="trainers.copy_week" /></Button>
       </div>
     </div>
   )
@@ -174,8 +176,8 @@ function TrainerCard({ trainer, onChanged, check = null, selected = false, selec
       {error && <p role="alert" className="mt-4 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</p>}
 
       <div className="mt-5 flex flex-wrap justify-between gap-3">
-        <Button variant="danger" onClick={() => setConfirmRemove(true)}>{t('tn_remove')}</Button>
-        <Button variant="primary" onClick={save} disabled={!dirty} loading={saving}>{saving ? t('tn_saving') : t('tn_save')}</Button>
+        <Button variant="danger" onClick={() => setConfirmRemove(true)}><Txt id="trainers.remove" /></Button>
+        <Button variant="primary" onClick={save} disabled={!dirty} loading={saving}>{saving ? t('tn_saving') : <Txt id="trainers.save_hours" />}</Button>
       </div>
 
       <ConfirmDialog
@@ -249,35 +251,42 @@ export default function Trainers() {
       <PageHeader pageKey="trainers"
         title={t('tn_title')} subtitle={t('tn_sub')}
         actions={<>
-          <Button variant="secondary" onClick={resource.reload}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>
-          <Button variant="primary" onClick={() => setAdding(true)}><Icon name="bolt" className="h-4 w-4" />{t('tn_add')}</Button>
+          <Button variant="secondary" onClick={resource.reload}><Icon name="refresh" className="h-4 w-4" /><Txt id="trainers.refresh" /></Button>
+          <Button variant="primary" onClick={() => setAdding(true)}><Icon name="bolt" className="h-4 w-4" /><Txt id="trainers.add" /></Button>
         </>}
       />
-      <p className="mb-6 flex items-center gap-2 rounded-xl border border-sky-400/20 bg-sky-400/5 px-4 py-3 text-sm text-sky-100">
-        <Icon name="clock" className="h-4 w-4 shrink-0" />{t('tn_note')}
-      </p>
-
-      <TrainerAccess />
-
-      {resource.error ? (
-        <Card><ErrorState message={`${t('load_error')} (${resource.error})`} retryLabel={t('retry')} onRetry={resource.reload} /></Card>
-      ) : resource.loading && !resource.data ? (
-        <div className="grid gap-5 xl:grid-cols-2"><Skeleton className="h-96" /><Skeleton className="h-96" /></div>
-      ) : trainers.length === 0 ? (
-        <Card><EmptyState icon="clients" title={t('tn_empty')} action={<Button variant="primary" onClick={() => setAdding(true)}>{t('tn_add')}</Button>} /></Card>
-      ) : (
-        <>
-          <SelectAllRow selection={selection} />
-          <div className="grid gap-5 xl:grid-cols-2">
-            {trainers.map(trainer => (
-              // The key includes the saved hours so a saved card re-reads them.
-              <TrainerCard key={`${trainer.id}-${JSON.stringify(trainer.hours)}`} trainer={trainer} onChanged={resource.reload}
-                selected={selection.chosen.has(trainer.id)} selection={selection}
-                check={<RowCheck selection={selection} id={trainer.id} label={t('bk_select_one').replace('{name}', trainer.name)} />} />
-            ))}
-          </div>
-        </>
-      )}
+      {/* the parts of the page can be moved and hidden (blocks: trainers / main); the access of the trainers and the list are protected */}
+      <BlockGroup pageKey="trainers" groupKey="main" blocks={{
+        note: (cls) => (
+          <p className={`mb-6 flex items-center gap-2 rounded-xl border border-sky-400/20 bg-sky-400/5 px-4 py-3 text-sm text-sky-100 ${cls}`.trim()}>
+            <Icon name="clock" className="h-4 w-4 shrink-0" />{t('tn_note')}
+          </p>
+        ),
+        access: () => <TrainerAccess />,
+        list: () => (
+          <>
+            {resource.error ? (
+              <Card><ErrorState message={`${t('load_error')} (${resource.error})`} retryLabel={t('retry')} onRetry={resource.reload} /></Card>
+            ) : resource.loading && !resource.data ? (
+              <div className="grid gap-5 xl:grid-cols-2"><Skeleton className="h-96" /><Skeleton className="h-96" /></div>
+            ) : trainers.length === 0 ? (
+              <Card><EmptyState icon="clients" title={<Txt id="trainers.empty" />} action={<Button variant="primary" onClick={() => setAdding(true)}><Txt id="trainers.add" /></Button>} /></Card>
+            ) : (
+              <>
+                <SelectAllRow selection={selection} />
+                <div className="grid gap-5 xl:grid-cols-2">
+                  {trainers.map(trainer => (
+                    // The key includes the saved hours so a saved card re-reads them.
+                    <TrainerCard key={`${trainer.id}-${JSON.stringify(trainer.hours)}`} trainer={trainer} onChanged={resource.reload}
+                      selected={selection.chosen.has(trainer.id)} selection={selection}
+                      check={<RowCheck selection={selection} id={trainer.id} label={t('bk_select_one').replace('{name}', trainer.name)} />} />
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )
+      }} />
 
       <BulkBar
         selection={selection} onDone={resource.reload}

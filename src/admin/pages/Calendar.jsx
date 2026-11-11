@@ -1,3 +1,5 @@
+import Txt from '../Txt'
+import BlockGroup from '../Block'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
@@ -161,81 +163,88 @@ export default function Calendar() {
     <div className="admin-fade ac-page">
       <PageHeader pageKey="calendar"
         title={t('ac_title')} subtitle={t('ac_sub')}
-        actions={<Button variant="secondary" onClick={reload}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>}
+        actions={<Button variant="secondary" onClick={reload}><Icon name="refresh" className="h-4 w-4" /><Txt id="calendar.refresh" /></Button>}
       />
 
       <GoogleSyncBanner onChanged={reload} />
 
-      <CalendarFilters filters={filters} setFilters={setFilters} clear={clear} active={active} trainers={trainers} />
-
-      <ul aria-label={t('ac_legend')} className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-gray-400">
-        {trainers.map(trainer => (
-          <li key={trainer.id} className="flex items-center gap-2"><span aria-hidden="true" className="h-3 w-3 rounded-full" style={{ background: trainer.color || NEUTRAL_COLOR }} />{trainer.name}</li>
-        ))}
-        <li className="flex items-center gap-2"><span aria-hidden="true" className="h-3.5 w-5 rounded border-2 border-dashed" style={{ borderColor: NEUTRAL_COLOR, background: 'color-mix(in srgb, #9ca3af 22%, transparent)' }} />{t('ac_legend_pending')}</li>
-        <li className="flex items-center gap-2"><span aria-hidden="true" className="h-3.5 w-5 rounded border-2 border-dashed border-gray-300" />{t('ac_legend_trial')}</li>
-        <li className="flex items-center gap-2"><span aria-hidden="true" className="h-3 w-3 rounded-full" style={{ background: NEUTRAL_COLOR }} />{t('ac_unassigned')}</li>
-        <li className="flex items-center gap-2 text-gray-400"><span aria-hidden="true" className="h-3 w-3 rounded-full opacity-45" style={{ background: NEUTRAL_COLOR }} /><span className="line-through">{t('ac_legend_cancelled')}</span></li>
-      </ul>
-
-      <Card className="admin-fc relative overflow-hidden p-2 sm:p-4">
-        {error && (
-          <div role="alert" className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/70 p-6 text-center backdrop-blur-sm">
-            <Icon name="alert" className="h-6 w-6 text-red-300" />
-            <p className="text-sm text-gray-100">{t('ac_error')} <span className="text-gray-400">({error})</span></p>
-            <Button variant="secondary" onClick={retry}>{t('ac_retry')}</Button>
-          </div>
-        )}
-        {loading && !error && <p role="status" className="absolute right-4 top-4 z-10 rounded-full bg-black/60 px-3 py-1 text-xs text-gray-300">{t('ac_loading')}</p>}
-        <div ref={frame} className="ac-frame" style={{ ...(fitHeight ? { height: fitHeight } : {}), '--ac-tz': `"${offset}"` }}>
-          <FullCalendar
-            ref={calendar}
-            plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-            initialView={initialView}
-            {...(date ? { initialDate: date } : {})}
-            locale={language === 'es' ? esLocale : enGbLocale}
-            buttonText={{ today: t('ac_today'), month: t('ac_month'), week: t('ac_week'), day: t('ac_day') }}
-            moreLinkText={(number) => `+${number} ${t('ac_more')}`}
-            headerToolbar={headerToolbar}
-            footerToolbar={footerToolbar}
-            timeZone="UTC"
-            now={madridWallClock}
-            firstDay={1}
-            weekends={false}
-            height="100%"
-            expandRows
-            nowIndicator
-            allDaySlot={false}
-            slotMinTime={studio.start}
-            slotMaxTime={studio.end}
-            scrollTime={studio.start}
-            slotDuration={slotDuration}
-            slotLabelInterval="01:00:00"
-            slotEventOverlap={false}
-            slotLabelFormat={TIME_FORMAT}
-            eventTimeFormat={TIME_FORMAT}
-            dayMaxEvents={4}
-            eventDisplay="block"
-            displayEventEnd={false}
-            events={fetchEvents}
-            loading={setLoading}
-            eventClassNames={classNames}
-            eventDidMount={mounted}
-            eventContent={renderEvent}
-            dayHeaderContent={dayHeader}
-            titleFormat={{ year: 'numeric', month: 'long' }}
-            views={{ timeGridDay: { titleFormat: { year: 'numeric', month: 'long', day: 'numeric' } } }}
-            dayHeaderFormat={{ weekday: 'short' }}
-            eventClick={(info) => { info.jsEvent.preventDefault(); setSelected(info.event) }}
-            datesSet={(info) => {
-              setOffset(madridOffsetLabel(info.start))
-              const key = `${info.view.type}|${dayKey(info.view.currentStart)}`
-              if (key !== lastPosition.current) { lastPosition.current = key; setPosition(info.view.type, dayKey(info.view.currentStart)) }
-            }}
-          />
-        </div>
-        {count === 0 && !loading && !error && <p className="mt-3 text-center text-sm text-gray-500">{t('ac_empty')}</p>}
-      </Card>
+      {/* the parts of the page can be moved and hidden (blocks: calendar / main); the calendar itself is protected */}
+      <BlockGroup pageKey="calendar" groupKey="main" blocks={{
+        filters: () => (
+          <CalendarFilters filters={filters} setFilters={setFilters} clear={clear} active={active} trainers={trainers} />
+        ),
+        legend: (cls) => (
+          <ul aria-label={t('ac_legend')} className={`mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-gray-400 ${cls}`.trim()}>
+            {trainers.map(trainer => (
+              <li key={trainer.id} className="flex items-center gap-2"><span aria-hidden="true" className="h-3 w-3 rounded-full" style={{ background: trainer.color || NEUTRAL_COLOR }} />{trainer.name}</li>
+            ))}
+            <li className="flex items-center gap-2"><span aria-hidden="true" className="h-3.5 w-5 rounded border-2 border-dashed" style={{ borderColor: NEUTRAL_COLOR, background: 'color-mix(in srgb, #9ca3af 22%, transparent)' }} /><Txt id="calendar.legend_pending" /></li>
+            <li className="flex items-center gap-2"><span aria-hidden="true" className="h-3.5 w-5 rounded border-2 border-dashed border-gray-300" />{t('ac_legend_trial')}</li>
+            <li className="flex items-center gap-2"><span aria-hidden="true" className="h-3 w-3 rounded-full" style={{ background: NEUTRAL_COLOR }} /><Txt id="calendar.unassigned" /></li>
+            <li className="flex items-center gap-2 text-gray-400"><span aria-hidden="true" className="h-3 w-3 rounded-full opacity-45" style={{ background: NEUTRAL_COLOR }} /><span className="line-through"><Txt id="calendar.legend_cancelled" /></span></li>
+          </ul>
+        ),
+        calendar: (cls) => (
+          <Card className={`admin-fc relative overflow-hidden p-2 sm:p-4 ${cls}`.trim()}>
+            {error && (
+              <div role="alert" className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/70 p-6 text-center backdrop-blur-sm">
+                <Icon name="alert" className="h-6 w-6 text-red-300" />
+                <p className="text-sm text-gray-100">{t('ac_error')} <span className="text-gray-400">({error})</span></p>
+                <Button variant="secondary" onClick={retry}>{t('ac_retry')}</Button>
+              </div>
+            )}
+            {loading && !error && <p role="status" className="absolute right-4 top-4 z-10 rounded-full bg-black/60 px-3 py-1 text-xs text-gray-300">{t('ac_loading')}</p>}
+            <div ref={frame} className="ac-frame" style={{ ...(fitHeight ? { height: fitHeight } : {}), '--ac-tz': `"${offset}"` }}>
+              <FullCalendar
+                ref={calendar}
+                plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+                initialView={initialView}
+                {...(date ? { initialDate: date } : {})}
+                locale={language === 'es' ? esLocale : enGbLocale}
+                buttonText={{ today: t('ac_today'), month: t('ac_month'), week: t('ac_week'), day: t('ac_day') }}
+                moreLinkText={(number) => `+${number} ${t('ac_more')}`}
+                headerToolbar={headerToolbar}
+                footerToolbar={footerToolbar}
+                timeZone="UTC"
+                now={madridWallClock}
+                firstDay={1}
+                weekends={false}
+                height="100%"
+                expandRows
+                nowIndicator
+                allDaySlot={false}
+                slotMinTime={studio.start}
+                slotMaxTime={studio.end}
+                scrollTime={studio.start}
+                slotDuration={slotDuration}
+                slotLabelInterval="01:00:00"
+                slotEventOverlap={false}
+                slotLabelFormat={TIME_FORMAT}
+                eventTimeFormat={TIME_FORMAT}
+                dayMaxEvents={4}
+                eventDisplay="block"
+                displayEventEnd={false}
+                events={fetchEvents}
+                loading={setLoading}
+                eventClassNames={classNames}
+                eventDidMount={mounted}
+                eventContent={renderEvent}
+                dayHeaderContent={dayHeader}
+                titleFormat={{ year: 'numeric', month: 'long' }}
+                views={{ timeGridDay: { titleFormat: { year: 'numeric', month: 'long', day: 'numeric' } } }}
+                dayHeaderFormat={{ weekday: 'short' }}
+                eventClick={(info) => { info.jsEvent.preventDefault(); setSelected(info.event) }}
+                datesSet={(info) => {
+                  setOffset(madridOffsetLabel(info.start))
+                  const key = `${info.view.type}|${dayKey(info.view.currentStart)}`
+                  if (key !== lastPosition.current) { lastPosition.current = key; setPosition(info.view.type, dayKey(info.view.currentStart)) }
+                }}
+              />
+            </div>
+            {count === 0 && !loading && !error && <p className="mt-3 text-center text-sm text-gray-500"><Txt id="calendar.empty" /></p>}
+          </Card>
+        )
+      }} />
 
       {selected && <EventDetail key={selected.id} event={selected} onClose={() => setSelected(null)} onChanged={reload} />}
     </div>

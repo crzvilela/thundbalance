@@ -1,3 +1,4 @@
+import Txt from '../Txt'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import TrainingVideoPlayer from '../../components/TrainingVideoPlayer'
 import {
@@ -118,7 +119,7 @@ export default function Videos() {
     <div className="admin-fade">
       <PageHeader pageKey="videos"
         title={t('videos_title')} subtitle={t('vd_sub')}
-        actions={<Button variant="primary" onClick={openNew}><Icon name="video" className="h-4 w-4" />{t('vd_add')}</Button>}
+        actions={<Button variant="primary" onClick={openNew}><Icon name="video" className="h-4 w-4" /><Txt id="videos.add" /></Button>}
       />
 
       {error ? (
@@ -126,7 +127,7 @@ export default function Videos() {
       ) : loading ? (
         <div className="space-y-3"><Skeleton className="h-28" /><Skeleton className="h-28" /></div>
       ) : videos.length === 0 ? (
-        <Card><EmptyState icon="video" title={t('vd_empty')} action={<Button variant="primary" onClick={openNew}>{t('vd_add')}</Button>} /></Card>
+        <Card><EmptyState icon="video" title={<Txt id="videos.empty" />} action={<Button variant="primary" onClick={openNew}><Txt id="videos.add" /></Button>} /></Card>
       ) : (
         <>
         <SelectAllRow selection={selection} />
@@ -147,8 +148,8 @@ export default function Videos() {
                 <div className="flex shrink-0 items-center gap-1.5">
                   <button type="button" onClick={() => move(index, -1)} disabled={index === 0} aria-label={t('vd_up')} title={t('vd_up')} className="rounded-lg p-2 text-gray-400 transition hover:bg-white/10 hover:text-white disabled:opacity-30"><Icon name="arrow" className="h-4 w-4 -rotate-90" /></button>
                   <button type="button" onClick={() => move(index, 1)} disabled={index === videos.length - 1} aria-label={t('vd_down')} title={t('vd_down')} className="rounded-lg p-2 text-gray-400 transition hover:bg-white/10 hover:text-white disabled:opacity-30"><Icon name="arrow" className="h-4 w-4 rotate-90" /></button>
-                  <Button variant="secondary" onClick={() => openEdit(video)}>{t('vd_edit')}</Button>
-                  <Button variant="danger" onClick={() => setDeleteTarget(video.id)}>{t('vd_remove')}</Button>
+                  <Button variant="secondary" onClick={() => openEdit(video)}><Txt id="videos.edit" /></Button>
+                  <Button variant="danger" onClick={() => setDeleteTarget(video.id)}><Txt id="videos.delete" /></Button>
                 </div>
               </Card>
             </li>

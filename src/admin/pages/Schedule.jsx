@@ -1,3 +1,5 @@
+import Txt from '../Txt'
+import BlockGroup from '../Block'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useOutletContext, useSearchParams } from 'react-router-dom'
 import { adminRequest } from '../api'
@@ -240,75 +242,82 @@ export default function Schedule() {
       <PageHeader pageKey="schedule"
         title={t('sch_title')}
         subtitle={t('sch_sub')}
-        actions={<Button variant="secondary" onClick={refresh}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>}
+        actions={<Button variant="secondary" onClick={refresh}><Icon name="refresh" className="h-4 w-4" /><Txt id="schedule.refresh" /></Button>}
       />
 
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2" role="tablist" aria-label={t('sch_tabs')}>
-          {TABS.map(item => {
-            const selected = tab === item.key
-            return (
-              <button key={item.key} type="button" role="tab" aria-selected={selected} onClick={() => update({ tab: item.key, page: null, request: null })}
-                className={`flex min-h-[44px] items-center gap-2 rounded-full border px-4 py-2 text-sm transition ${
-                  selected ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300' : 'border-white/10 text-gray-400 hover:border-white/25 hover:text-white'
-                }`}>
-                {t(`sch_tab_${item.key}`)}
-                <span className={`rounded-full px-1.5 text-xs tabular-nums ${selected ? 'bg-emerald-400/20' : 'bg-white/10'}`}>{counts ? tabCount(item.key, counts) : '–'}</span>
-              </button>
-            )
-          })}
-        </div>
-        <div className="relative w-full sm:w-72">
-          <Icon name="search" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-          <TextInput type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder={t('sch_search')} aria-label={t('sch_search')} className="!pl-10" />
-        </div>
-      </div>
-
-      <fieldset className="mb-6 flex flex-wrap items-center gap-x-5 gap-y-2">
-        <legend className="sr-only">{t('sch_trainers')}</legend>
-        <span aria-hidden="true" className="text-xs font-medium uppercase tracking-wider text-gray-500">{t('sch_trainers')}</span>
-        <label className="flex min-h-[36px] cursor-pointer items-center gap-2 text-sm text-gray-200">
-          <input type="checkbox" checked={trainerIds.length === 0} onChange={() => update({ trainers: null, page: null, request: null })} className={CHECK} />
-          {t('sch_all_trainers')}
-        </label>
-        {trainers.map(trainer => (
-          <label key={trainer.id} className="flex min-h-[36px] cursor-pointer items-center gap-2 text-sm text-gray-200">
-            <input type="checkbox" checked={trainerIds.includes(trainer.id)} onChange={() => toggleTrainer(trainer.id)} className={CHECK} />
-            <span aria-hidden="true" className="h-3 w-3 rounded-full" style={{ background: trainer.color || NEUTRAL_COLOR }} />
-            {trainer.name}
-          </label>
-        ))}
-        {filtered && <Button variant="ghost" onClick={clearFilters}>{t('sch_clear')}</Button>}
-      </fieldset>
-
-      <div role="tabpanel">
-        {resource.error ? (
-          <Card><ErrorState message={`${t('load_error')} (${resource.error})`} retryLabel={t('retry')} onRetry={resource.reload} /></Card>
-        ) : resource.loading && !resource.data ? (
-          <div className="space-y-3" role="status" aria-label="…"><Skeleton className="h-48" /><Skeleton className="h-48" /><Skeleton className="h-48" /></div>
-        ) : items.length === 0 ? (
-          <Card><EmptyState icon="inbox" title={t(emptyTitle)} /></Card>
-        ) : (
-          <ul className="space-y-3">
-            {items.map(item => (
-              <ScheduleCard
-                key={item.id} item={item} now={now} highlight={item.id === request}
-                busy={busyId === item.id} locked={!!busyId} syncing={syncingId === item.id}
-                error={errors[item.id]} emailFailed={!!emailFailed[item.id]}
-                onApprove={setApproving} onReject={(target) => { setDialogError(''); setRejecting(target) }}
-                onCounter={(target) => { setDialogError(''); setCountering(target) }}
-                onResend={setResending} onSync={syncGoogle}
-              />
+      {/* the parts of the page can be moved and hidden (blocks: schedule / main); the tabs and the list are protected */}
+      <BlockGroup pageKey="schedule" groupKey="main" blocks={{
+        tabs: (cls) => (
+          <div className={`mb-5 flex flex-wrap items-center justify-between gap-3 ${cls}`.trim()}>
+            <div className="flex flex-wrap gap-2" role="tablist" aria-label={t('sch_tabs')}>
+              {TABS.map(item => {
+                const selected = tab === item.key
+                return (
+                  <button key={item.key} type="button" role="tab" aria-selected={selected} onClick={() => update({ tab: item.key, page: null, request: null })}
+                    className={`flex min-h-[44px] items-center gap-2 rounded-full border px-4 py-2 text-sm transition ${
+                      selected ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300' : 'border-white/10 text-gray-400 hover:border-white/25 hover:text-white'
+                    }`}>
+                    {t(`sch_tab_${item.key}`)}
+                    <span className={`rounded-full px-1.5 text-xs tabular-nums ${selected ? 'bg-emerald-400/20' : 'bg-white/10'}`}>{counts ? tabCount(item.key, counts) : '–'}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <div className="relative w-full sm:w-72">
+              <Icon name="search" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+              <TextInput type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder={t('sch_search')} aria-label={t('sch_search')} className="!pl-10" />
+            </div>
+          </div>
+        ),
+        trainer_filter: (cls) => (
+          <fieldset className={`mb-6 flex flex-wrap items-center gap-x-5 gap-y-2 ${cls}`.trim()}>
+            <legend className="sr-only"><Txt id="schedule.trainers" /></legend>
+            <span aria-hidden="true" className="text-xs font-medium uppercase tracking-wider text-gray-500"><Txt id="schedule.trainers" /></span>
+            <label className="flex min-h-[36px] cursor-pointer items-center gap-2 text-sm text-gray-200">
+              <input type="checkbox" checked={trainerIds.length === 0} onChange={() => update({ trainers: null, page: null, request: null })} className={CHECK} />
+              <Txt id="schedule.all_trainers" />
+            </label>
+            {trainers.map(trainer => (
+              <label key={trainer.id} className="flex min-h-[36px] cursor-pointer items-center gap-2 text-sm text-gray-200">
+                <input type="checkbox" checked={trainerIds.includes(trainer.id)} onChange={() => toggleTrainer(trainer.id)} className={CHECK} />
+                <span aria-hidden="true" className="h-3 w-3 rounded-full" style={{ background: trainer.color || NEUTRAL_COLOR }} />
+                {trainer.name}
+              </label>
             ))}
-          </ul>
-        )}
-      </div>
+            {filtered && <Button variant="ghost" onClick={clearFilters}><Txt id="schedule.clear" /></Button>}
+          </fieldset>
+        ),
+        list: (cls) => (
+          <div role="tabpanel" className={cls || undefined}>
+            {resource.error ? (
+              <Card><ErrorState message={`${t('load_error')} (${resource.error})`} retryLabel={t('retry')} onRetry={resource.reload} /></Card>
+            ) : resource.loading && !resource.data ? (
+              <div className="space-y-3" role="status" aria-label="…"><Skeleton className="h-48" /><Skeleton className="h-48" /><Skeleton className="h-48" /></div>
+            ) : items.length === 0 ? (
+              <Card><EmptyState icon="inbox" title={t(emptyTitle)} /></Card>
+            ) : (
+              <ul className="space-y-3">
+                {items.map(item => (
+                  <ScheduleCard
+                    key={item.id} item={item} now={now} highlight={item.id === request}
+                    busy={busyId === item.id} locked={!!busyId} syncing={syncingId === item.id}
+                    error={errors[item.id]} emailFailed={!!emailFailed[item.id]}
+                    onApprove={setApproving} onReject={(target) => { setDialogError(''); setRejecting(target) }}
+                    onCounter={(target) => { setDialogError(''); setCountering(target) }}
+                    onResend={setResending} onSync={syncGoogle}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        )
+      }} />
 
       {pages > 1 && (
         <nav className="mt-6 flex flex-wrap items-center justify-between gap-3" aria-label="Pagination">
-          <Button variant="secondary" onClick={() => update({ page: page - 1 || null, request: null })} disabled={page <= 1}>{t('sch_prev')}</Button>
+          <Button variant="secondary" onClick={() => update({ page: page - 1 || null, request: null })} disabled={page <= 1}><Txt id="schedule.prev" /></Button>
           <span className="text-sm text-gray-400">{t('sch_page').replace('{page}', page).replace('{pages}', pages)} · {t('sch_requests_found').replace('{total}', total)}</span>
-          <Button variant="secondary" onClick={() => update({ page: page + 1, request: null })} disabled={page >= pages}>{t('sch_next')}</Button>
+          <Button variant="secondary" onClick={() => update({ page: page + 1, request: null })} disabled={page >= pages}><Txt id="schedule.next" /></Button>
         </nav>
       )}
 

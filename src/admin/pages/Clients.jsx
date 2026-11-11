@@ -1,3 +1,4 @@
+import Txt from '../Txt'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { adminRequest } from '../api'
@@ -285,11 +286,11 @@ function ClientDrawer({ clientId, packs, onClose, onChanged }) {
   ] : []
   const actions = client && (
     <>
-      <Button variant="primary" onClick={() => setCreatingPack(true)}><Icon name="plus" className="h-4 w-4" />{t('fx_new_pack')}</Button>
-      <Button variant="secondary" onClick={sendMessage}><Icon name="send" className="h-4 w-4" />{t('fx_send_message')}</Button>
+      <Button variant="primary" onClick={() => setCreatingPack(true)}><Icon name="plus" className="h-4 w-4" /><Txt id="clients.new_pack" /></Button>
+      <Button variant="secondary" onClick={sendMessage}><Icon name="send" className="h-4 w-4" /><Txt id="clients.send_message" /></Button>
       {!protectedClient && (archivedClient
-        ? <Button variant="secondary" onClick={restore} loading={restoring}>{t('lc_unarchive')}</Button>
-        : <Button variant="secondary" onClick={() => setLifecycle('archive')}>{t('lc_archive_menu')}</Button>)}
+        ? <Button variant="secondary" onClick={restore} loading={restoring}><Txt id="clients.unarchive" /></Button>
+        : <Button variant="secondary" onClick={() => setLifecycle('archive')}><Txt id="clients.archive" /></Button>)}
       <MoreMenu items={menuItems} label={t('fx_more')} />
     </>
   )
@@ -303,7 +304,7 @@ function ClientDrawer({ clientId, packs, onClose, onChanged }) {
 
   const sessionList = (
     sessions.length === 0 ? (
-      <EmptyState icon="calendar" title={t('cl_no_sessions')} />
+      <EmptyState icon="calendar" title={<Txt id="clients.empty_sessions" />} />
     ) : (
       <div className="space-y-5">
         <SelectAllRow selection={sessionSelection} />
@@ -385,9 +386,9 @@ function ClientDrawer({ clientId, packs, onClose, onChanged }) {
                         <p className="mt-1 text-gray-400">{nextSession.time} · {nextSession.trainer || '—'}</p>
                       </>
                     ) : <p className="text-gray-400">{t('cl_no_next')}</p>}
-                    <p className="mt-4 text-sm text-gray-500">{t('fx_last_session')}: {lastSession ? fmtDate(lastSession.date, { day: 'numeric', month: 'short', year: 'numeric' }) : t('fx_none')}</p>
+                    <p className="mt-4 text-sm text-gray-500"><Txt id="clients.last_session" />: {lastSession ? fmtDate(lastSession.date, { day: 'numeric', month: 'short', year: 'numeric' }) : t('fx_none')}</p>
                   </SectionCard>
-                  <SectionCard title={t('cl_progress')}>
+                  <SectionCard title={<Txt id="clients.progress" />}>
                     <div className="mb-3 flex items-end justify-between gap-3">
                       <p className="text-5xl font-semibold tabular-nums">{done}<span className="text-2xl text-gray-500">/{active.length}</span></p>
                       <p className="text-right text-sm text-gray-500">{done} {t('cl_completed')} · {active.length - done} {t('cl_upcoming')}</p>
@@ -398,7 +399,7 @@ function ClientDrawer({ clientId, packs, onClose, onChanged }) {
                   {client.must_change_password && (
                     <SectionCard title={t('cc_temp_title')} tone="amber" className="lg:col-span-2">
                       <p className="mb-3 text-sm text-gray-300">{t('cc_temp_text')}</p>
-                      <Button variant="secondary" onClick={resend} loading={resending}>{resending ? t('cc_resending') : t('cc_resend')}</Button>
+                      <Button variant="secondary" onClick={resend} loading={resending}>{resending ? t('cc_resending') : <Txt id="clients.resend_credentials" />}</Button>
                     </SectionCard>
                   )}
 
@@ -424,9 +425,9 @@ function ClientDrawer({ clientId, packs, onClose, onChanged }) {
                   <div><TrainingCalendar sessions={sessions} /></div>
                   <section>
                     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                      <h3 className="text-sm font-medium uppercase tracking-wider text-gray-400">{t('cl_sessions_title')} ({sessions.length})</h3>
+                      <h3 className="text-sm font-medium uppercase tracking-wider text-gray-400"><Txt id="clients.sessions_title" /> ({sessions.length})</h3>
                       <Button variant="secondary" onClick={syncCalendar} loading={syncing} title={t('cs_hint')}>
-                        <Icon name="refresh" className="h-4 w-4" />{syncing ? t('cs_syncing') : t('cs_button')}
+                        <Icon name="refresh" className="h-4 w-4" />{syncing ? t('cs_syncing') : <Txt id="clients.sync" />}
                       </Button>
                     </div>
                     {sessionList}
@@ -438,10 +439,10 @@ function ClientDrawer({ clientId, packs, onClose, onChanged }) {
                 <SectionCard title={t('fx_tab_personal')}
                   actions={<Button variant="secondary" onClick={() => { setEditingBilling(true); goTab('facturacion') }}>{t('fx_edit_address')}</Button>}>
                   <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
-                    <Detail label={t('cc_name')}>{client.name}</Detail>
+                    <Detail label={<Txt id="clients.full_name" />}>{client.name}</Detail>
                     <Detail label={t('fx_email')}><a href={`mailto:${client.email}`} className="hover:text-emerald-300">{client.email}</a></Detail>
-                    <Detail label={t('cl_phone')}>{phoneText && <a href={`tel:${toE164(client.phone, client.country_code)}`} className="hover:text-emerald-300">{phoneText}</a>}</Detail>
-                    <Detail label={t('fx_city')}>{client.city}</Detail>
+                    <Detail label={<Txt id="clients.phone" />}>{phoneText && <a href={`tel:${toE164(client.phone, client.country_code)}`} className="hover:text-emerald-300">{phoneText}</a>}</Detail>
+                    <Detail label={<Txt id="clients.city" />}>{client.city}</Detail>
                   </dl>
                   <p className="mt-5 text-sm text-gray-500">{t('fx_personal_hint')}</p>
                 </SectionCard>
@@ -457,7 +458,7 @@ function ClientDrawer({ clientId, packs, onClose, onChanged }) {
                       </p>
                     </div>
                   )}
-                  <SectionCard title={t('bl_title')}
+                  <SectionCard title={<Txt id="clients.billing_title" />}
                     actions={<div className="flex items-center gap-2">
                       {!editing && <Button variant="secondary" onClick={() => setEditingBilling(true)}>{t('fx_edit')}</Button>}
                     </div>}>
@@ -481,19 +482,19 @@ function ClientDrawer({ clientId, packs, onClose, onChanged }) {
                               </span>
                             )}
                           </Detail>
-                          <Detail label={t('fx_address')} wide>{client.address}</Detail>
-                          <Detail label={t('fx_postal')}>{client.postal_code}</Detail>
-                          <Detail label={t('fx_city')}>{client.city}</Detail>
-                          <Detail label={t('fx_country')}>{client.country}</Detail>
+                          <Detail label={<Txt id="clients.address" />} wide>{client.address}</Detail>
+                          <Detail label={<Txt id="clients.postal" />}>{client.postal_code}</Detail>
+                          <Detail label={<Txt id="clients.city" />}>{client.city}</Detail>
+                          <Detail label={<Txt id="clients.country" />}>{client.country}</Detail>
                         </dl>
                       </>
                     )}
                   </SectionCard>
 
                   {/* every pack is recorded and invoiced on its own: its type, period, price per session and total as sold */}
-                  <SectionCard title={t('bl_packs_title')}>
+                  <SectionCard title={<Txt id="clients.billing_packs_title" />}>
                     <p className="mb-4 text-sm text-gray-500">{t('bl_packs_hint')}</p>
-                    {(client.packs || []).length === 0 ? <p className="text-gray-400">{t('pk_none')}</p> : (
+                    {(client.packs || []).length === 0 ? <p className="text-gray-400"><Txt id="clients.empty_pack" /></p> : (
                       <ul className="space-y-3">
                         {[...client.packs].reverse().map(pack => (
                           <li key={pack.id} className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
@@ -502,9 +503,9 @@ function ClientDrawer({ clientId, packs, onClose, onChanged }) {
                               <TypeBadge type={pack.session_type} secondName={pack.second_person_name} />
                             </div>
                             <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
-                              <div><dt className="text-gray-500">{t('pk_period')}</dt><dd>{fmtDate(pack.start_date)} → {fmtDate(pack.end_date)}</dd></div>
-                              <div><dt className="text-gray-500">{t('ty_price_session')}</dt><dd className="tabular-nums">{pack.price_per_session != null ? formatMoney(pack.price_per_session) : '—'}</dd></div>
-                              <div><dt className="text-gray-500">{t('ty_price_total')}</dt><dd className="tabular-nums">{pack.total_price != null ? formatMoney(pack.total_price) : '—'}</dd></div>
+                              <div><dt className="text-gray-500"><Txt id="clients.period" /></dt><dd>{fmtDate(pack.start_date)} → {fmtDate(pack.end_date)}</dd></div>
+                              <div><dt className="text-gray-500"><Txt id="clients.price_session" /></dt><dd className="tabular-nums">{pack.price_per_session != null ? formatMoney(pack.price_per_session) : '—'}</dd></div>
+                              <div><dt className="text-gray-500"><Txt id="clients.price_total" /></dt><dd className="tabular-nums">{pack.total_price != null ? formatMoney(pack.total_price) : '—'}</dd></div>
                               <div><dt className="text-gray-500">{t('pk_sessions')}</dt><dd className="tabular-nums">{pack.done}/{pack.total}</dd></div>
                             </dl>
                           </li>
@@ -656,15 +657,15 @@ export default function Clients() {
   const changeQuery = (value) => { setQuery(value); setShown(PAGE_SIZE) }
   const changeFilter = (key) => { setFilter(key); setShown(PAGE_SIZE) }
 
-  const filters = [['all', t('cl_all')], ['pending', t('cl_pending')], ['ending', t('biz_to_end')], ['archived', t('lc_archived_filter')]]
+  const filters = [['all', <Txt id="clients.filter_all" />], ['pending', t('cl_pending')], ['ending', <Txt id="clients.filter_ending" />], ['archived', <Txt id="clients.filter_archived" />]]
 
   return (
     <div className="admin-fade">
       <PageHeader pageKey="clients"
         title={t('clients_title')} subtitle={t('clients_sub')}
         actions={<>
-          <Button variant="secondary" onClick={reloadAll}><Icon name="refresh" className="h-4 w-4" />{t('refresh')}</Button>
-          <Button variant="primary" onClick={() => setAdding(true)}><Icon name="plus" className="h-4 w-4" />{t('cc_add')}</Button>
+          <Button variant="secondary" onClick={reloadAll}><Icon name="refresh" className="h-4 w-4" /><Txt id="clients.refresh" /></Button>
+          <Button variant="primary" onClick={() => setAdding(true)}><Icon name="plus" className="h-4 w-4" /><Txt id="clients.add_client" /></Button>
         </>}
       />
 
@@ -706,7 +707,7 @@ export default function Clients() {
           ))}
         </div>
       ) : visible.length === 0 ? (
-        <Card><EmptyState icon="clients" title={clients.length ? t('cl_empty') : filter === 'archived' ? t('lc_none_archived') : t('cl_none')} /></Card>
+        <Card><EmptyState icon="clients" title={clients.length ? <Txt id="clients.empty_search" /> : filter === 'archived' ? <Txt id="clients.empty_archived" /> : <Txt id="clients.empty_none" />} /></Card>
       ) : (
         <>
           <p role="status" className="mb-2 px-1 text-xs text-gray-500">{t(visible.length === 1 ? 'cl_count_one' : 'cl_count_other').replace('{n}', visible.length)}</p>
@@ -724,7 +725,7 @@ export default function Clients() {
           {visible.length > rows.length && (
             <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm text-gray-500">
               <span>{t('cl_showing').replace('{shown}', rows.length).replace('{total}', visible.length)}</span>
-              <Button variant="secondary" onClick={() => setShown(count => count + PAGE_SIZE)}>{t('cl_show_more')}</Button>
+              <Button variant="secondary" onClick={() => setShown(count => count + PAGE_SIZE)}><Txt id="clients.show_more" /></Button>
             </div>
           )}
         </>

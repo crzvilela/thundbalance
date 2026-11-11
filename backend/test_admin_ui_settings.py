@@ -5,6 +5,7 @@
 The local database is used and the row is removed afterwards. require_admin is replaced in the tests that need an admin.
 """
 import unittest
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
@@ -167,6 +168,136 @@ class Settings(unittest.TestCase):
     def test_the_table_is_created_idempotently(self):
         ui.ensure_table()
         ui.ensure_table()
+
+
+    # ----- blocks (whole parts of a page: order and visibility)
+    def blocks(self, **pages):
+        return valid(blocks=pages)
+
+    def test_blocks_are_saved_and_come_back_as_they_were_sent(self):
+        body = self.blocks(
+            plans={"main": [{"key": "trial_prices"}, {"key": "on_sale"}, {"key": "archived", "hidden": True}]},
+            overview={"business": [{"key": "biz_nopack"}, {"key": "biz_stats", "hidden": True}]})
+        saved = self.put(body)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["blocks"]["plans"]["main"][2], {"key": "archived", "hidden": True})
+        self.assertEqual(self.client.get(URL).json()["blocks"], saved.json()["blocks"])
+
+    def test_a_configuration_without_blocks_still_works_and_mixes_with_blocks_later(self):
+        first = self.put(valid())                                                     # an "old" configuration: no blocks
+        self.assertEqual((first.status_code, first.json()["blocks"]), (200, {}))
+        second = self.put(valid(version=1, blocks={"calendar": {"main": [{"key": "legend", "hidden": True}]}}))
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json()["menu"], first.json()["menu"])                 # what was there before is kept
+        self.assertEqual(second.json()["blocks"]["calendar"]["main"], [{"key": "legend", "hidden": True}])
+
+    def test_unknown_pages_groups_and_blocks_are_refused(self):
+        self.assertEqual(self.code(self.put(self.blocks(ghost={"main": []}))), "unknown_page")
+        self.assertEqual(self.code(self.put(self.blocks(plans={"side": [{"key": "on_sale"}]}))), "unknown_group")
+        self.assertEqual(self.code(self.put(self.blocks(plans={"main": [{"key": "secret"}]}))), "unknown_key")
+        self.assertEqual(self.code(self.put(self.blocks(plans={"main": [{"key": "filters"}]}))), "unknown_key")       # a block of another page
+        self.assertEqual(self.code(self.put(self.blocks(plans={"main": [{"key": "on_sale", "color": "red"}]}))), "unknown_field")
+        self.assertEqual(self.code(self.put(self.blocks(plans={"main": [{"key": "on_sale", "hidden": "yes"}]}))), "invalid_format")
+        self.assertEqual(self.code(self.put(self.blocks(plans="main"))), "invalid_format")
+        self.assertEqual(self.code(self.put(valid(blocks=[1]))), "invalid_format")
+
+    def test_a_block_can_only_be_in_its_own_group(self):
+        groups = {**ui.BLOCK_GROUPS, "plans": {"main": ("on_sale", "archived"), "side": ("trial_prices",)}}
+        with mock.patch.object(ui, "BLOCK_GROUPS", groups):
+            self.assertEqual(self.put(self.blocks(plans={"side": [{"key": "trial_prices"}]})).status_code, 200)
+            self.wipe()
+            answer = self.put(self.blocks(plans={"side": [{"key": "on_sale"}]}))                       # a block of "main" sent in "side"
+            self.assertEqual((answer.status_code, self.code(answer)), (422, "wrong_group"))
+
+    def test_duplicates_are_refused(self):
+        self.assertEqual(self.code(self.put(self.blocks(plans={"main": [{"key": "archived"}, {"key": "archived"}]}))), "duplicate_key")
+
+    def test_a_protected_block_cannot_be_hidden_but_can_be_moved(self):
+        for page, group, key in (("plans", "main", "on_sale"), ("calendar", "main", "calendar"), ("trainers", "main", "list"),
+                                 ("trainers", "main", "access"), ("schedule", "main", "tabs"), ("schedule", "main", "list")):
+            answer = self.put(self.blocks(**{page: {group: [{"key": key, "hidden": True}]}}))
+            self.assertEqual((answer.status_code, self.code(answer)), (422, "protected_block"), (page, key))
+        self.assertEqual(self.put(self.blocks(plans={"main": [{"key": "archived"}, {"key": "on_sale"}]})).status_code, 200)     # moved, not hidden
+
+    def test_a_page_never_ends_up_without_a_visible_block(self):
+        every = [{"key": key, "hidden": True} for key in ui.BLOCK_GROUPS["overview"]["business"]]
+        answer = self.put(self.blocks(overview={"business": every}))
+        self.assertEqual((answer.status_code, self.code(answer)), (422, "page_empty"))
+        self.assertEqual(self.put(self.blocks(overview={"business": every[:3]})).status_code, 200)                  # one left (not mentioned = visible)
+        self.wipe()
+        self.assertEqual(self.put(self.blocks(overview={"business": every[:3] + [{"key": "biz_nopack"}]})).status_code, 200)
+
+    def test_the_registry_has_protected_blocks_only_inside_real_groups(self):
+        for page, keys in ui.PROTECTED_BLOCKS.items():
+            for key in keys:
+                self.assertTrue(any(key in names for names in ui.BLOCK_GROUPS[page].values()), (page, key))
+
+    def test_a_stale_version_with_blocks_is_still_a_409(self):
+        self.put(self.blocks(plans={"main": [{"key": "archived"}]}))
+        stale = self.put(valid(version=0, blocks={"plans": {"main": [{"key": "trial_prices"}]}}))
+        self.assertEqual((stale.status_code, self.code(stale)), (409, "version_conflict"))
+
+    def test_the_size_limit_is_32_kb(self):
+        self.assertEqual(ui.MAX_BYTES, 32 * 1024)
+
+
+    # ----- texts inside the pages
+    def texts(self, **entries):
+        return valid(texts={key.replace("__", "."): value for key, value in entries.items()})
+
+    def test_texts_are_saved_and_the_empty_ones_dropped(self):
+        saved = self.put(valid(texts={"requests.approve": "  Aceptar ", "clients.add_client": "Nuevo cliente", "videos.add": "  "}))
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["texts"], {"requests.approve": "Aceptar", "clients.add_client": "Nuevo cliente"})
+        self.assertEqual(self.client.get(URL).json()["texts"], saved.json()["texts"])
+
+    def test_a_text_that_is_not_in_the_closed_list_is_refused(self):
+        for key in ("ghost.nothing", "requests.load_error", "requests.status_pending", "overview.week_sub", "", "requests"):
+            self.assertEqual(self.code(self.put(valid(texts={key: "x"}))), "unknown_key", key)
+        self.assertEqual(self.code(self.put(valid(texts=["requests.approve"]))), "invalid_format")
+        self.assertEqual(self.code(self.put(valid(texts="x"))), "invalid_format")
+
+    def test_texts_have_no_html_no_control_characters_and_their_own_limit(self):
+        self.assertEqual(self.code(self.put(valid(texts={"requests.approve": "<b>x</b>"}))), "html_not_allowed")
+        self.assertEqual(self.code(self.put(valid(texts={"requests.approve": "a>b"}))), "html_not_allowed")
+        self.assertEqual(self.code(self.put(valid(texts={"requests.approve": "a\nb"}))), "control_characters")
+        self.assertEqual(self.code(self.put(valid(texts={"requests.approve": 5}))), "invalid_text")
+        self.assertEqual(self.put(valid(texts={"requests.approve": "x" * 40})).status_code, 200)
+        self.assertEqual(self.code(self.put(valid(texts={"requests.approve": "x" * 41}))), "text_too_long")
+        self.wipe()
+        self.assertEqual(self.put(valid(texts={"overview.pending_empty": "x" * 60})).status_code, 200)               # an empty-list message: 60
+        self.assertEqual(self.code(self.put(valid(texts={"overview.pending_empty": "x" * 61}))), "text_too_long")
+        self.assertEqual(self.code(self.put(valid(texts={"clients.empty_none": "x" * 61}))), "text_too_long")
+
+    def test_the_closed_list_never_holds_errors_states_or_confirmations(self):
+        for key in ui.TEXT_LIMITS:
+            self.assertNotRegex(key, r"load_error|action_error|[._]status_|_err|failed|(^|_)confirm($|_)", key)
+        self.assertTrue(set(ui.TEXT_LIMITS.values()) <= {40, 60})
+        for key, limit in ui.TEXT_LIMITS.items():
+            if limit == 60:
+                self.assertRegex(key, r"empty", key)
+
+    def test_the_backend_and_the_frontend_lists_are_the_same(self):
+        import os
+        import re
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "admin", "uiTexts.js")
+        frontend = {key: int(limit) for key, limit in re.findall(r"key: '([a-z-]+\.[a-z_]+)'.*?max: (\d+)", open(path, encoding="utf-8").read())}
+        self.assertEqual(frontend, dict(ui.TEXT_LIMITS))
+
+    def test_texts_mix_with_an_older_configuration_and_keep_the_version_check(self):
+        first = self.put(valid())                                                       # no texts yet
+        self.assertEqual(first.json()["texts"], {})
+        second = self.put(valid(version=1, texts={"trials.approve": "Aceptar"}, blocks={"calendar": {"main": [{"key": "legend", "hidden": True}]}}))
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json()["menu"], first.json()["menu"])
+        self.assertEqual((second.json()["texts"], second.json()["blocks"]["calendar"]["main"]), ({"trials.approve": "Aceptar"}, [{"key": "legend", "hidden": True}]))
+        stale = self.put(valid(version=1, texts={"trials.approve": "Otro"}))
+        self.assertEqual((stale.status_code, self.code(stale)), (409, "version_conflict"))
+
+    def test_the_whole_configuration_may_be_32_kb_with_every_text_at_its_limit(self):
+        full = {key: "é" * limit for key, limit in ui.TEXT_LIMITS.items()}
+        answer = self.put(valid(texts=full))
+        self.assertEqual(answer.status_code, 200, answer.text[:200])                       # about 165 texts: well inside 32 KB
 
 
 if __name__ == "__main__":
