@@ -173,26 +173,11 @@ class Choice(unittest.TestCase):
         return {"full_name": "Trial Person", "email": f"{email}{DOMAIN}", "phone": "+34600111222", "goals": ["Lose weight"], "experience": "Beginner",
                 "session_date": str(day), "session_time": time, "lang": "es", **({"trainer_id": trainer} if trainer else {})}
 
-    def test_a_trial_with_a_busy_trainer_gets_409_with_the_free_ones(self):
-        self.book("TEST Choice A", self.monday, "10:00")
-        main._trial_hits.clear()
-        answer = self.client.post("/trial-sessions", json=self.trial_body(self.monday, "10:00", self.trainers["TEST Choice A"]))
-        self.assertEqual(answer.status_code, 409)
-        detail = answer.json()["detail"]
-        self.assertEqual(detail["code"], "trainer_unavailable")
-        self.assertIn(self.trainers["TEST Choice B"], {item["id"] for item in detail["alternatives"]})
-        self.assertNotIn(self.trainers["TEST Choice A"], {item["id"] for item in detail["alternatives"]})
-        self.assertEqual(self.sql("SELECT COUNT(*) FROM trial_sessions WHERE email LIKE %s", (f"%{DOMAIN}",))[0][0], 0)    # nothing was saved
-
-    def test_a_trial_with_a_free_trainer_keeps_the_choice_and_holds_the_slot(self):
+    def test_a_trainer_sent_with_a_trial_is_ignored_the_studio_assigns_it_when_approving(self):
         main._trial_hits.clear()
         answer = self.client.post("/trial-sessions", json=self.trial_body(self.monday, "10:00", self.trainers["TEST Choice B"]))
         self.assertEqual(answer.status_code, 200, answer.text)
-        self.assertEqual(self.sql("SELECT trainer_id, status FROM trial_sessions WHERE email LIKE %s", (f"%{DOMAIN}",)), [(self.trainers["TEST Choice B"], "Pending")])
-        main._trial_hits.clear()
-        second = self.client.post("/trial-sessions", json=self.trial_body(self.monday, "10:00", self.trainers["TEST Choice B"], email="second"))
-        self.assertEqual(second.status_code, 409)                                  # the pending one holds B
-        self.assertEqual(second.json()["detail"]["code"], "trainer_unavailable")
+        self.assertEqual(self.sql("SELECT trainer_id, status FROM trial_sessions WHERE email LIKE %s", (f"%{DOMAIN}",)), [(None, "Pending")])
 
     def test_a_trial_without_a_trainer_works_as_before(self):
         main._trial_hits.clear()

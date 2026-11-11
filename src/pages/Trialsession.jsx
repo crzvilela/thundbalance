@@ -10,7 +10,6 @@ import FormField from '../components/forms/FormField'
 import SessionTypeSection, { PriceSummary } from '../components/forms/SessionTypeSection'
 import PhoneInput from '../components/forms/PhoneInput'
 import EmailInput from '../components/forms/EmailInput'
-import TrainerChoice from '../components/forms/TrainerChoice'
 import { focusFirstInvalid } from '../components/forms/focusFirstInvalid'
 import { formText, serverFieldError } from '../i18n/formText'
 import { birthDateProblem, emailProblem, nameProblem, normalizeEmail, phoneProblem } from '../utils/validators'
@@ -33,7 +32,7 @@ function ageFrom(birthDate, today = new Date()) {
   return age
 }
 
-const EMPTY = { fullName: '', email: '', phone: '', birthDate: null, goals: [], experience: '', date: null, time: '', type: 'individual', secondName: '', secondEmail: '', trainerId: '' }
+const EMPTY = { fullName: '', email: '', phone: '', birthDate: null, goals: [], experience: '', date: null, time: '', type: 'individual', secondName: '', secondEmail: '' }
 
 const control = 'w-full rounded-xl border bg-black/40 px-4 py-3.5 text-white outline-none transition focus:ring-2 focus:ring-emerald-400/20'
 
@@ -98,8 +97,6 @@ function TrialSession() {
   const [timesState, setTimesState] = useState('idle') // idle | loading | ready | error
   const [slowTimes, setSlowTimes] = useState(false)
   const requestId = useRef(0)
-  const [trainerStatus, setTrainerStatus] = useState('idle')   // the trainer asked for: idle | checking | ok | busy | none
-  const [trainerRefresh, setTrainerRefresh] = useState(0)       // the server said the trainer was taken: check again
   const loadingTimes = timesState === 'loading'
 
   // As soon as the page opens: wake the server up (it sleeps when idle), read
@@ -203,7 +200,6 @@ function TrialSession() {
           experience: form.experience,
           session_date: sessionDate,
           session_time: form.time,
-          trainer_id: form.trainerId || null,
           // only the kind of session: the server works the price out itself
           ...sessionTypeBody({ type: form.type, name: form.secondName, email: form.secondEmail })
         })
@@ -212,12 +208,6 @@ function TrialSession() {
       if (response.status === 409 && data.detail?.code === 'trial_exists') {
         // This email already has an open request: show where it stands instead of an error.
         setExisting(data.detail)
-        return
-      }
-      if (response.status === 409 && data.detail?.code === 'trainer_unavailable') {
-        // somebody took that trainer a moment ago: the list of free ones is read again
-        setTrainerRefresh(count => count + 1)
-        setServerError('tc_race')
         return
       }
       const fieldError = response.status === 422 ? serverFieldError(data.detail, language) : null
@@ -415,13 +405,6 @@ function TrialSession() {
                   </span>
                 )}
               </Field>
-              <div className="md:col-span-2">
-                <TrainerChoice
-                  value={form.trainerId} onChange={trainerId => setForm(current => ({ ...current, trainerId }))}
-                  date={form.date ? dayKey(form.date) : ''} time={form.time} refreshKey={trainerRefresh} onStatus={setTrainerStatus} disabled={submitting}
-                  selectClass={`${control} border-white/15 focus:border-emerald-400/70`}
-                />
-              </div>
             </div>
 
             <div className="mt-8">
@@ -441,7 +424,7 @@ function TrialSession() {
 
             <button
               type="submit"
-              disabled={submitting || !form.date || !form.time || trainerStatus === 'busy' || trainerStatus === 'none'}
+              disabled={submitting || !form.date || !form.time}
               className="mt-8 inline-flex w-full items-center justify-center gap-3 rounded-xl bg-white px-8 py-4 text-sm font-semibold uppercase tracking-[3px] text-black transition hover:bg-gray-200 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 md:w-auto"
             >
               {submitting && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />}

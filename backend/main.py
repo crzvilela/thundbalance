@@ -566,7 +566,6 @@ class TrialSessionCreate(BaseModel):
     experience: str
     session_date: str
     session_time: str
-    trainer_id: int | None = None      # the trainer the visitor prefers (optional): must be free at that day and hour
     # individual (default) | dual; a dual trial needs the second person (the price is worked out by the server)
     session_type: str | None = None
     second_person_name: str | None = None
@@ -1661,10 +1660,6 @@ def create_trial_session(
                 status_code=422,
                 detail="No trainer is available at that day and time. Please choose another."
             )
-        # A trainer the visitor asked for must still be free (the list may be some seconds old): otherwise 409 with who is.
-        if trial.trainer_id is not None and trial.trainer_id not in [trainer_id for trainer_id, _ in free]:
-            raise trainer_choice.unavailable([{"id": trainer_id, "name": name} for trainer_id, name in free])
-
         trial_price = pricing.trial_price(cursor, session_type)
         if trial_price is None:
             raise HTTPException(status_code=422, detail="No price is defined for this trial session.")
@@ -1700,12 +1695,11 @@ def create_trial_session(
                 session_type,
                 second_person_name,
                 second_person_email,
-                price_per_session,
-                trainer_id
+                price_per_session
             )
 
             VALUES
-            (%s,%s,%s,%s,%s,%s,%s,%s,%s,'Pending',%s,%s,%s,%s,%s,%s)
+            (%s,%s,%s,%s,%s,%s,%s,%s,%s,'Pending',%s,%s,%s,%s,%s)
 
             RETURNING id
             """,
@@ -1723,8 +1717,7 @@ def create_trial_session(
                 session_type,
                 second_name,
                 second_email,
-                trial_price,
-                trial.trainer_id
+                trial_price
             )
         )
 
