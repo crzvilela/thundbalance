@@ -35,7 +35,7 @@ OK, FAILED, PENDING = "ok", "failed", "pending"
 MAX_PARALLEL = 4                     # at most this many requests to Google at the same time
 BASE32HEX = "0123456789abcdefghijklmnopqrstuv"      # the only characters Google accepts in an event id
 KEY_SETTING = "calendar_instance_key"
-EVENT_FIELDS = ("summary", "description", "start", "end", "extendedProperties")
+EVENT_FIELDS = ("summary", "description", "start", "end", "extendedProperties", "reminders")
 GUEST_FIELDS = ("attendees", *event_format.GUEST_FLAGS)         # sent only when the event has guests
 INVITE_PAUSE_SECONDS = 0.15           # a short pause after each event with guests: Google limits how fast guests can be added
 

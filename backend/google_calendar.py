@@ -448,10 +448,10 @@ def update_calendar_event(
         )
         # Keep what the event already has: the colour is the trainer's, the
         # private tag is added only if missing.
-        body = {key: body[key] for key in ("summary", "description", "start", "end", "extendedProperties")}
+        body = {key: body[key] for key in ("summary", "description", "start", "end", "extendedProperties", "reminders")}
     else:
         start, end = event_format.event_times(session_date, session_time)
-        body = {"start": start, "end": end}
+        body = {"start": start, "end": end, "reminders": dict(event_format.NO_REMINDERS)}
 
     service.events().patch(
         calendarId=get_calendar_id(),
@@ -539,7 +539,7 @@ def update_trial_session_event(
         session_type=session_type, second_person_name=second_person_name, pending=pending, attendees=attendees,
     )
     patch_calendar_event(event_id, {
-        key: body[key] for key in ("summary", "description", "start", "end", "colorId", "extendedProperties", *GUEST_FIELDS) if key in body
+        key: body[key] for key in ("summary", "description", "start", "end", "colorId", "extendedProperties", "reminders", *GUEST_FIELDS) if key in body
     })
 
 

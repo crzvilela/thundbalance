@@ -77,6 +77,17 @@ _WEEKDAYS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado",
 
 GUEST_FLAGS = {"guestsCanSeeOtherGuests": False, "guestsCanModify": False, "guestsCanInviteOthers": False}
 
+# No reminders on any event we write. Reminders belong to the calendar of whoever sees the event: this one is the studio's
+# calendar (the guests use their own calendar's defaults, which we do not control). Sent on every create AND every patch so an
+# event that had the calendar's default reminders loses them the next time it is written.
+NO_REMINDERS = {"useDefault": False, "overrides": []}
+
+
+def reminders_off(event):
+    """True when an event already in Google has no reminders (neither the calendar's defaults nor its own)."""
+    reminders = (event or {}).get("reminders") or {}
+    return not reminders.get("useDefault") and not reminders.get("overrides")
+
 
 def guest_list(client_email, extra_emails=(), share=True, exclude=()):
     """The attendees of an event: [{"email": ...}] with the client first, then the extras, lower-cased, without repeats and
@@ -214,6 +225,7 @@ def build_session_event(*, client_name, client_email=None, client_phone=None, se
         "colorId": trainer_color_id(trainer_name),
         "start": start,
         "end": end,
+        "reminders": dict(NO_REMINDERS),
         "extendedProperties": {"private": private},
     }, attendees)
 
@@ -237,14 +249,17 @@ def build_trial_event(*, full_name, email=None, phone=None, session_date, sessio
         "colorId": PENDING_COLOR if pending else TRIAL_COLOR,
         "start": start,
         "end": end,
+        "reminders": dict(NO_REMINDERS),
         "extendedProperties": {"private": private},
     }, attendees)
 
 
 def differs(existing, wanted):
     """True when an event already in Google does not show what `wanted` says
-    (title, description, start or end). Used by "Sincronizar" to decide
+    (title, description, start or end) or still has reminders. Used by "Sincronizar" to decide
     whether to update, so a second press changes nothing."""
+    if not reminders_off(existing):
+        return True
     if (existing.get("summary") or "") != wanted["summary"]:
         return True
     if (existing.get("description") or "").strip() != wanted["description"].strip():
