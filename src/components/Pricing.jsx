@@ -1,18 +1,21 @@
 import { EditableText, useSectionSelection, SectionEditOverlay } from './editor/Editable'
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
 import MovableBox from './editor/MovableBox'
+import { useState } from 'react'
 import { useI18n } from '../i18n/I18nContext'
+import SegmentedType from './forms/SegmentedType'
 import { textOf, visibleEntries } from '../utils/landingCards'
 
 function Pricing({ sectionId }) {
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'Pricing')
   const { t, language } = useI18n()
+  const [sessionType, setSessionType] = useState('individual')
 
   if (!visible && !isEditMode) return null
 
   // The cards are written by hand in the landing editor (section.cards). Nothing here reads the catalogue of packs: changing or
   // deleting a pack in Admin > Packs never changes this page. The button has no destination, as before.
-  const entries = visibleEntries(section)
+  const entries = visibleEntries(section, sessionType)
   const base = `sections.${sectionId}.cards`
 
   return (
@@ -44,6 +47,14 @@ function Pricing({ sectionId }) {
             label="Pricing Title"
             style={{ fontFamily: theme.typography.headingFont }}
             className="text-4xl sm:text-5xl md:text-7xl"
+          />
+        </div>
+
+        <div className="mb-10 flex justify-center">
+          <SegmentedType
+            value={sessionType} onChange={setSessionType}
+            labels={{ legend: t('st_prices_for'), individual: t('st_individual'), dual: t('st_dual') }}
+            tone="light" className="text-center [&_legend]:mx-auto"
           />
         </div>
 

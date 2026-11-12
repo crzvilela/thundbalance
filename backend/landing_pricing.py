@@ -26,6 +26,8 @@ import pack_catalog
 import pricing
 from fastapi import HTTPException
 
+import re
+
 VERSIONS = ("draft", "published")                      # 'default_base' is the immutable snapshot of the first start: not touched
 
 TEXT_LIMITS = {"name": 60, "price": 40, "period": 60, "tag": 60, "objective": 200, "description": 200,
@@ -76,6 +78,8 @@ def validate_card(card):
             raise _invalid(field, f"Máximo {MAX_LIST} elementos. / At most {MAX_LIST} items.")
         for item in items:
             _check_text(field, item, MAX_ITEM)
+    if "type" in card and card["type"] not in ("individual", "dual"):
+        raise _invalid("type", "Tipo no válido. / Invalid type.")
     for field in ("visible", "highlighted"):
         if field in card and not isinstance(card[field], bool):
             raise _invalid(field, "Valor no válido. / Invalid value.")
@@ -147,7 +151,7 @@ def card_from_pack(pack, old):
     """The manual card with the values the page showed for this catalogue pack. `old` is the text card it used (or {})."""
     own = isinstance(old, dict) and bool(old)
     card = {
-        "id": f"card-{pack['id']}", "visible": True, "highlighted": bool(old.get("highlighted")) if own else False,
+        "id": f"card-{pack['id']}", "type": pack["session_type"], "visible": True, "highlighted": bool(old.get("highlighted")) if own else False,
         "name": pack["name"], "price": pricing.money(pack["price_per_session"]), "period": old.get("period", ""),
         "tag": "", "objective": pack.get("objective") or "", "duration": _duration(pack), "totalSessions": _total(pack),
         "description": old.get("description", "") if own else "", "benefits": list(pack.get("benefits") or []),
@@ -204,6 +208,24 @@ def migrate_content(content, packs):
     return changed
 
 
+def type_cards(content, packs):
+    """Gives every manual card without a `type` (individual | dual) one: the type of the pack it was made from (its id is
+    `card-<pack id>`), otherwise individual. The page has the Individual | Dual selector again and filters the cards by it.
+    Runs only on cards that have no type, so it changes nothing the second time. Returns True when something changed."""
+    kinds = {pack["id"]: pack["session_type"] for pack in packs}
+    changed = False
+    sections = content.get("sections") if isinstance(content, dict) else None
+    for section in (sections or {}).values():
+        if not (isinstance(section, dict) and section.get("type") == "pricing" and isinstance(section.get("cards"), list)):
+            continue
+        for card in section["cards"]:
+            if isinstance(card, dict) and "type" not in card:
+                found = re.fullmatch(r"card-(\d+)", str(card.get("id", "")))
+                card["type"] = kinds.get(int(found.group(1)), "individual") if found else "individual"
+                changed = True
+    return changed
+
+
 def migrate_version(cursor, version):
     """One saved version of the landing content (draft | published). Idempotent."""
     cursor.execute("SELECT content FROM landing_page_content WHERE version = %s FOR UPDATE", (version,))
@@ -212,7 +234,9 @@ def migrate_version(cursor, version):
         return False
     content = row[0]
     packs = pack_catalog.list_packs(cursor, include_archived=False)
-    if not migrate_content(content, packs):
+    migrated = migrate_content(content, packs)
+    typed = type_cards(content, pack_catalog.list_packs(cursor))
+    if not (migrated or typed):
         return False
     from psycopg2.extras import Json as PgJson
     cursor.execute("UPDATE landing_page_content SET content = %s WHERE version = %s", (PgJson(content), version))   # updated_at stays

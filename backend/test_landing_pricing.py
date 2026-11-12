@@ -106,6 +106,25 @@ class Migration(unittest.TestCase):
         self.assertFalse(landing_pricing.migrate_content(None, []))
 
 
+class Types(unittest.TestCase):
+    def test_migrated_cards_carry_the_type_of_their_pack(self):
+        content = {"sections": {"pricing": old_section(planItems=[{"plan_id": 1, "visible": True, "card": 0}, {"plan_id": 2, "visible": True, "card": 1}])}}
+        landing_pricing.migrate_content(content, [pack(1), pack(2, "dual")])
+        self.assertEqual([card["type"] for card in content["sections"]["pricing"]["cards"]], ["individual", "dual"])
+
+    def test_cards_already_migrated_without_a_type_get_it_once_from_the_catalogue(self):
+        cards = [{"id": "card-1", "name": "a"}, {"id": "card-2", "name": "b"}, {"id": "manual-9", "name": "c"}, {"id": "card-77", "name": "d"}]
+        content = {"sections": {"pricing": {"type": "pricing", "cards": cards}}}
+        self.assertTrue(landing_pricing.type_cards(content, [pack(1), pack(2, "dual")]))
+        self.assertEqual([card["type"] for card in cards], ["individual", "dual", "individual", "individual"])
+        self.assertFalse(landing_pricing.type_cards(content, [pack(1, "dual"), pack(2)]))        # never changed again
+
+    def test_only_individual_or_dual_is_accepted(self):
+        landing_pricing.validate_card({"id": "a", "type": "dual"})
+        with self.assertRaises(Exception):
+            landing_pricing.validate_card({"id": "a", "type": "trio"})
+
+
 class Validation(unittest.TestCase):
     def check(self, **changes):
         landing_pricing.validate_content({"sections": {"pricing": {"type": "pricing", "cards": [{"id": "a", **changes}]}}})

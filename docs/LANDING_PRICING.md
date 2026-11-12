@@ -35,7 +35,7 @@ In the landing content (`landing_page_content`, draft and published) each Pricin
 
 Before, the section listed catalogue packs (`planItems` with a `plan_id`) or, even earlier, drew every pack on sale. On the first start of the server after this change, every Pricing section **without `cards`** is converted by `backend/landing_pricing.py`: each item becomes a manual card with the values the page showed (name, price as "€65", weeks and sessions per week, total, goal and benefits of the pack, plus the description, features, button and highlight of the text card it used), in the same order and with the same visibility, so the landing looks the same. An item whose pack no longer exists disappears in silence. `planItems` (and its `plan_id`) is removed; the old `plans` text cards stay untouched in the content (not used). A section that already has `cards` is never touched, so running it again changes nothing, and an emptied list stays empty. "Reset" of the landing runs the migration again over the restored content. The old format (no `cards`) is still accepted when saving.
 
-One difference from before: the Individual / Dual selector of the section is gone (a manual card has no type); the cards of both types appear together, individual first.
+The Individual / Dual selector is back: each card has a `type` (`individual` | `dual`, chosen in the card form; a blank card is individual) and the page shows the cards of the chosen type. The migration gave the cards already migrated their type once, from the pack each one came from (`card-<pack id>`), and never changes a card that has a type.
 
 ## Tests
 

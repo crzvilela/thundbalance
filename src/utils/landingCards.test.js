@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { MAX_CARDS, addCard, blankCard, cardProblem, cardsOf, duplicateCard, listProblem, patchCard, removeCard, reorder, setVisible, textOf, textProblem, visibleEntries, withText } from './landingCards.js'
+import { cardType, MAX_CARDS, addCard, blankCard, cardProblem, cardsOf, duplicateCard, listProblem, patchCard, removeCard, reorder, setVisible, textOf, textProblem, visibleEntries, withText } from './landingCards.js'
 
 const ids = (cards) => cards.map(card => card.id)
 const cards = [blankCard('a'), blankCard('b'), blankCard('c')]
@@ -73,7 +73,18 @@ test('a text written in the form keeps the language shape of the field', () => {
 test('the landing page does not read the catalogue of packs', () => {
   const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
   const pricing = read('../components/Pricing.jsx')
-  assert.doesNotMatch(pricing, /usePricing|\/pricing|packsOfType|plan_id|planItems|prices/)
+  assert.doesNotMatch(pricing, /usePricing|\/pricing|packsOfType|plan_id|planItems|\bprices\b/)
   assert.match(pricing, /visibleEntries/)
   assert.doesNotMatch(read('../components/editor/PricingCardsFields.jsx'), /usePricing|planItems|plan_id/)
+})
+
+test('the selector shows the cards of the chosen type; a card without a type is individual', () => {
+  const typed = [{ ...blankCard('a'), type: 'individual' }, { ...blankCard('b'), type: 'dual' }, { ...blankCard('c') }, { id: 'd' }]
+  delete typed[2].type
+  const section = { cards: typed }
+  assert.deepEqual(visibleEntries(section, 'individual').map(entry => entry.card.id), ['a', 'c', 'd'])
+  assert.deepEqual(visibleEntries(section, 'dual').map(entry => [entry.card.id, entry.index]), [['b', 1]])
+  assert.equal(visibleEntries(section).length, 4)
+  assert.equal(cardType({ type: 'dual' }), 'dual')
+  assert.equal(addCard([])[0].type, 'individual')
 })

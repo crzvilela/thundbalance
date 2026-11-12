@@ -14,7 +14,8 @@ export const MAX_CARDS = 30
 export const cardsOf = (section) => (Array.isArray(section?.cards) ? section.cards.filter(card => card && typeof card === 'object') : [])
 
 // What the page draws: the visible cards with their index in section.cards (the inline editing paths need it).
-export const visibleEntries = (section) => cardsOf(section).map((card, index) => ({ card, index })).filter(entry => entry.card.visible !== false)
+export const visibleEntries = (section, type) => cardsOf(section).map((card, index) => ({ card, index }))
+  .filter(entry => entry.card.visible !== false && (!type || cardType(entry.card) === type))
 
 export const newId = (cards) => {
   const used = new Set(cards.map(card => card.id))
@@ -25,7 +26,7 @@ export const newId = (cards) => {
 
 // A blank card, ready to be filled in.
 export const blankCard = (id) => ({
-  id, visible: true, highlighted: false, name: '', price: '', period: '', tag: '', objective: '', duration: '', totalSessions: '',
+  id, type: 'individual', visible: true, highlighted: false, name: '', price: '', period: '', tag: '', objective: '', duration: '', totalSessions: '',
   description: '', benefits: [], features: [], buttonText: '',
 })
 
@@ -52,6 +53,9 @@ export function reorder(cards, from, to) {
   next.splice(to, 0, moved)
   return next
 }
+
+// Individual | Dual: the selector of the page shows the cards of the chosen type (a card without a type is individual).
+export const cardType = (card) => (card?.type === 'dual' ? 'dual' : 'individual')
 
 // Writing a text in the form: a field that already holds an { en, es, ca } object changes only the current language.
 export const withText = (value, language, text) => (value && typeof value === 'object' ? setTextForLanguage(value, language, text) : text)

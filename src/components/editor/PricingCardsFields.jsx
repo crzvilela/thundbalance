@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useI18n } from '../../i18n/I18nContext'
 import { useAdminText } from '../../admin/useAdminText'
 import {
-  LIMITS, MAX_CARDS, MAX_ITEM, MAX_LIST, addCard, cardProblem, cardsOf, duplicateCard, listProblem, patchCard, removeCard, reorder,
+  LIMITS, MAX_CARDS, cardType, MAX_ITEM, MAX_LIST, addCard, cardProblem, cardsOf, duplicateCard, listProblem, patchCard, removeCard, reorder,
   setVisible, textOf, textProblem, withText,
 } from '../../utils/landingCards'
 import ConfirmDialog from './ConfirmDialog'
@@ -193,6 +193,16 @@ export default function PricingCardsFields({ sectionKey, content, updateField })
               {open && (
                 <div className="mt-3 border-t border-white/10 pt-3">
                   <CardPreview card={card} language={language} t={t} />
+                  <div className="mb-4" role="group" aria-label={t('lp_f_type')}>
+                    <p className="mb-1 text-xs uppercase tracking-wider text-gray-400">{t('lp_f_type')}</p>
+                    <div className="flex gap-2">
+                      {['individual', 'dual'].map(type => (
+                        <SmallButton key={type} variant={cardType(card) === type ? 'primary' : 'default'} onClick={() => save(patchCard(cards, index, { type }))}>
+                          {t(type === 'dual' ? 'ty_dual' : 'ty_individual')}
+                        </SmallButton>
+                      ))}
+                    </div>
+                  </div>
                   {FIELDS.map(field => (
                     <TextRow key={field.key} field={field} card={card} language={language} t={t} onChange={value => save(patchCard(cards, index, { [field.key]: value }))} />
                   ))}
