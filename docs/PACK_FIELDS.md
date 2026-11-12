@@ -28,11 +28,11 @@ A sold pack gets its number of sessions from `weeks x sessions per week`, and th
 
 ## What the client sees
 
-The objective and the benefits are drawn ONLY on the card of the plan on the landing page (`src/components/PackExtras.jsx`, used by `Pricing.jsx`; plain text, escaped by React), when the plan has them. They are not shown on the request page, in the client area or in the pack e-mails. Which plans are on the landing is explained in `LANDING_PRICING.md`.
+The objective and the benefits of a catalogue pack are NOT shown to the client anywhere: not on the request page, not in the client area, not in the pack e-mails and not on the landing page, whose pricing cards are written by hand and are not linked to the catalogue (see `LANDING_PRICING.md`). They remain in the database and in the admin form.
 
 ## Admin form
 
-"New pack" / "Edit": objective with a character counter; benefits list (add, edit, move up / down with buttons, delete with a confirmation when the line has text, maximum 8, counter per line); a read-only block with the calculated totals; a live preview of the card as it would look on the landing page. Errors are shown in the admin's language; the server checks everything again.
+"New pack" / "Edit": objective with a character counter; benefits list (add, edit, move up / down with buttons, delete with a confirmation when the line has text, maximum 8, counter per line); a read-only block with the calculated totals; a live preview of the card. Errors are shown in the admin's language; the server checks everything again.
 
 ## Tests
 

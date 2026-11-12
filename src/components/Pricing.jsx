@@ -1,32 +1,19 @@
 import { EditableText, useSectionSelection, SectionEditOverlay } from './editor/Editable'
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
 import MovableBox from './editor/MovableBox'
-import { useState } from 'react'
 import { useI18n } from '../i18n/I18nContext'
-import { resolveText } from '../utils/multilingual'
-import SegmentedType from './forms/SegmentedType'
-import { formatMoney, packQuote } from '../utils/pricing'
-import { entriesFor } from '../utils/landingPricing'
-import { usePricing } from '../utils/usePricing'
-import PackExtras from './PackExtras'
+import { textOf, visibleEntries } from '../utils/landingCards'
 
 function Pricing({ sectionId }) {
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'Pricing')
   const { t, language } = useI18n()
-  // The packs and their prices are not part of the page text: they come from the server (the catalogue edited in Admin > Packs).
-  // There is one card per pack on sale of the chosen type (Individual | Dual), in the order of the catalogue. The cards of this
-  // page give the texts (description, features, button); a pack without a card of its own gets a plain one.
-  const { prices, failed } = usePricing()
-  const [sessionType, setSessionType] = useState('individual')
 
   if (!visible && !isEditMode) return null
 
-  // The page draws only the packs of ITS list (section.planItems, set from the editor: "Añadir plan"). A pack created in
-  // Admin > Packs is not here until the admin adds it. Name, price, goal and benefits are read live from the catalogue; the
-  // texts of the card (description, features, button) come from the card of the item.
-  const pageCards = Array.isArray(section.plans) ? section.plans : []
-  const entries = entriesFor(section, prices?.packs, sessionType)
-  const lastCard = pageCards[pageCards.length - 1] || {}
+  // The cards are written by hand in the landing editor (section.cards). Nothing here reads the catalogue of packs: changing or
+  // deleting a pack in Admin > Packs never changes this page. The button has no destination, as before.
+  const entries = visibleEntries(section)
+  const base = `sections.${sectionId}.cards`
 
   return (
     <section
@@ -60,27 +47,18 @@ function Pricing({ sectionId }) {
           />
         </div>
 
-        <div className="mb-10 flex justify-center">
-          <SegmentedType
-            value={sessionType} onChange={setSessionType}
-            labels={{ legend: t('st_prices_for'), individual: t('st_individual'), dual: t('st_dual') }}
-            tone="light" className="text-center [&_legend]:mx-auto"
-          />
-        </div>
-
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
 
-          {entries.map(({ pack, cardIndex: index }) => {
-            const own = index != null                       // a card of its own (editable) or a plain one
-            const plan = own ? pageCards[index] : { ...lastCard, description: '', features: [], highlighted: false, extra: true }
-            const highlighted = !!plan.highlighted
-            const quote = packQuote(pack, pack?.sessions_per_week_options?.[0])
-            const single = pack && pack.sessions_per_week_options.length === 1
-            const frame = (children) => (own
-              ? <MovableBox key={pack.id} path={`sections.${sectionId}.plans.${index}.card`} label={`Plan ${index + 1} Card`} className="h-full">{children}</MovableBox>
-              : <div key={pack.id} className="h-full">{children}</div>)
+          {entries.map(({ card, index }) => {
+            const highlighted = !!card.highlighted
+            const muted = highlighted ? 'text-gray-400' : 'text-gray-500'
+            const has = (field) => textOf(card[field], language) !== ''
+            const benefits = Array.isArray(card.benefits) ? card.benefits : []
+            const features = Array.isArray(card.features) ? card.features : []
+            const path = `${base}.${index}`
 
-            return frame(
+            return (
+              <MovableBox key={card.id || index} path={`${path}.card`} label={`Pack ${index + 1} Card`} className="h-full">
               <div
                 className={`h-full p-10 hover:-translate-y-2 transition duration-500 ${
                   highlighted
@@ -88,64 +66,110 @@ function Pricing({ sectionId }) {
                     : 'border border-black/10'
                 }`}
               >
-                {/* the name of a pack is the one field of the catalogue (one language: the one the admin wrote) */}
-                <h3 style={{ fontFamily: theme.typography.headingFont }} className="text-3xl mb-1 uppercase block">{pack.name}</h3>
-                {<p className={`mb-4 text-sm ${highlighted ? 'text-gray-400' : 'text-gray-500'}`}>{t('st_weeks').replace('{n}', pack.weeks)} · {pack.sessions_per_week_options.length > 1 ? t('st_per_week_options').replace('{list}', pack.sessions_per_week_options.join(' / ')) : t('st_per_week_one').replace('{n}', pack.sessions_per_week_options[0])}</p>}
+                {has('tag') && (
+                  <EditableText
+                    as="p"
+                    path={`${path}.tag`}
+                    label={`Pack ${index + 1} Tag`}
+                    className={`mb-3 text-xs uppercase tracking-[3px] ${muted}`}
+                  />
+                )}
 
-                <PackExtras pack={pack} t={t} tone={highlighted ? 'dark' : 'light'} className="mb-4" />
+                {has('name') && (
+                  <EditableText
+                    as="h3"
+                    path={`${path}.name`}
+                    styleObj={`${path}.nameStyle`}
+                    label={`Pack ${index + 1} Name`}
+                    style={{ fontFamily: theme.typography.headingFont }}
+                    className="text-3xl mb-1 uppercase block"
+                  />
+                )}
 
-                <div className="mb-6">
-                  <div className="text-5xl font-bold">
-                    <span aria-live="polite">{prices ? formatMoney(quote.perSession) : '—'}</span>
-                    {!own
-                      ? <span className="text-xl ml-1">{resolveText(plan.period, language)}</span>      // the period is stored per language: an extra card (a pack without a card of its own) must not draw the object
-                      : (
+                {has('duration') && (
+                  <EditableText as="p" path={`${path}.duration`} label={`Pack ${index + 1} Duration`} className={`mb-4 text-sm ${muted}`} />
+                )}
+
+                {has('objective') && (
+                  <EditableText
+                    as="p"
+                    path={`${path}.objective`}
+                    label={`Pack ${index + 1} Goal`}
+                    className={`mb-4 text-sm leading-6 ${highlighted ? 'text-gray-300' : 'text-gray-600'}`}
+                  />
+                )}
+
+                {benefits.length > 0 && (
+                  <div className="mb-4">
+                    <p className={`text-xs uppercase tracking-wider ${muted}`}>{t('pk_includes')}</p>
+                    <ul className={`mt-1 space-y-1 text-sm ${highlighted ? 'text-gray-300' : 'text-gray-700'}`}>
+                      {benefits.map((_benefit, benefitIndex) => (
+                        <li key={benefitIndex} className="flex gap-2">
+                          <span aria-hidden="true">{'✓'}</span>
+                          <EditableText as="span" path={`${path}.benefits.${benefitIndex}`} label={`Pack ${index + 1} Benefit ${benefitIndex + 1}`} className="break-words" />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {(has('price') || has('period')) && (
+                  <div className="mb-6">
+                    <div className="text-5xl font-bold">
+                      {has('price') && <EditableText as="span" path={`${path}.price`} label={`Pack ${index + 1} Price`} />}
+                      {has('period') && (
                         <EditableText
                           as="span"
-                          path={`sections.${sectionId}.plans.${index}.period`}
-                          styleObj={`sections.${sectionId}.plans.${index}.periodStyle`}
-                          label={`Plan ${index + 1} Period`}
+                          path={`${path}.period`}
+                          styleObj={`${path}.periodStyle`}
+                          label={`Pack ${index + 1} Price note`}
                           className="text-xl ml-1"
                         />
                       )}
+                    </div>
+                    {has('totalSessions') && (
+                      <EditableText as="p" path={`${path}.totalSessions`} label={`Pack ${index + 1} Total sessions`} className={`mt-1 text-sm ${muted}`} />
+                    )}
                   </div>
-                  {single && <p className={`mt-1 text-sm ${highlighted ? 'text-gray-400' : 'text-gray-500'}`}>{t('pk_total_sessions').replace('{n}', quote.sessions)}</p>}
-                  {single && pack.price_per_pack != null && <p className={`mt-1 text-sm ${highlighted ? 'text-gray-400' : 'text-gray-500'}`}>{t('st_pack_total').replace('{price}', formatMoney(quote.total))}</p>}
-                  {sessionType === 'dual' && <p className={`mt-1 text-sm ${highlighted ? 'text-gray-400' : 'text-gray-500'}`}>{t('st_price_both')}</p>}
-                  {failed && <p className="mt-1 text-sm text-red-500">{t('st_price_error')}</p>}
-                </div>
+                )}
 
-                {own && (
+                {!(has('price') || has('period')) && has('totalSessions') && (
+                  <EditableText as="p" path={`${path}.totalSessions`} label={`Pack ${index + 1} Total sessions`} className={`mb-6 text-sm ${muted}`} />
+                )}
+
+                {has('description') && (
                   <EditableText
                     as="p"
-                    path={`sections.${sectionId}.plans.${index}.description`}
-                    styleObj={`sections.${sectionId}.plans.${index}.descriptionStyle`}
-                    label={`Plan ${index + 1} Description`}
+                    path={`${path}.description`}
+                    styleObj={`${path}.descriptionStyle`}
+                    label={`Pack ${index + 1} Description`}
                     style={{ fontFamily: theme.typography.bodyFont }}
                     className={`leading-7 mb-8 block ${highlighted ? 'text-gray-300' : 'text-gray-600'}`}
                   />
                 )}
 
-                <ul className={`space-y-3 mb-8 ${highlighted ? 'text-gray-300' : 'text-gray-700'}`}>
-                  {(plan.features || []).map((_feature, featureIndex) => (
-                    <li key={featureIndex} className="flex gap-2">
-                      <span aria-hidden="true">{'\u2713'}</span>
-                      <EditableText
-                        as="span"
-                        path={`sections.${sectionId}.plans.${index}.features.${featureIndex}`}
-                        label={`Plan ${index + 1} Feature ${featureIndex + 1}`}
-                        style={{ fontFamily: theme.typography.bodyFont }}
-                      />
-                    </li>
-                  ))}
-                </ul>
+                {features.length > 0 && (
+                  <ul className={`space-y-3 mb-8 ${highlighted ? 'text-gray-300' : 'text-gray-700'}`}>
+                    {features.map((_feature, featureIndex) => (
+                      <li key={featureIndex} className="flex gap-2">
+                        <span aria-hidden="true">{'✓'}</span>
+                        <EditableText
+                          as="span"
+                          path={`${path}.features.${featureIndex}`}
+                          label={`Pack ${index + 1} Feature ${featureIndex + 1}`}
+                          style={{ fontFamily: theme.typography.bodyFont }}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
 
-                {own ? (
+                {has('buttonText') && (
                   <EditableText
                     as="button"
-                    path={`sections.${sectionId}.plans.${index}.buttonText`}
-                    styleObj={`sections.${sectionId}.plans.${index}.buttonTextStyle`}
-                    label={`Plan ${index + 1} Button`}
+                    path={`${path}.buttonText`}
+                    styleObj={`${path}.buttonTextStyle`}
+                    label={`Pack ${index + 1} Button`}
                     style={{ fontFamily: theme.typography.accentFont }}
                     className={`border px-6 py-3 uppercase text-sm tracking-[3px] transition duration-300 ${
                       highlighted
@@ -153,18 +177,9 @@ function Pricing({ sectionId }) {
                         : 'border-black hover:bg-black hover:text-white'
                     }`}
                   />
-                ) : (
-                  <button
-                    type="button"
-                    style={{ fontFamily: theme.typography.accentFont }}
-                    className={`border px-6 py-3 uppercase text-sm tracking-[3px] transition duration-300 ${
-                      highlighted ? 'border-white hover:bg-white hover:text-black' : 'border-black hover:bg-black hover:text-white'
-                    }`}
-                  >
-                    {resolveText(plan.buttonText, language)}
-                  </button>
                 )}
               </div>
+              </MovableBox>
             )
           })}
 

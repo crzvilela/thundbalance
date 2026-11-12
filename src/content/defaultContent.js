@@ -443,7 +443,8 @@ export const SECTION_TYPE_DEFAULTS = {
     title: 'New Section Title',
     titleStyle: textStyle(),
     background: sectionBackground(),
-    plans: [makeDefaultPricingPlan(), makeDefaultPricingPlan(), makeDefaultPricingPlan()]
+    plans: [makeDefaultPricingPlan(), makeDefaultPricingPlan(), makeDefaultPricingPlan()],
+    cards: []
   }),
 
   testimonials: () => ({

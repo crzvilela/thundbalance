@@ -2647,6 +2647,8 @@ def save_footer_content(payload: FooterContentPayload):
 @app.put("/landing-page/content/draft", dependencies=[Depends(require_admin)])
 def save_landing_page_draft(payload: LandingContentPayload):
 
+    landing_pricing.validate_content(payload.content)      # the manual pricing cards: limits, no HTML (422 otherwise)
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -2674,6 +2676,9 @@ def save_landing_page_draft(payload: LandingContentPayload):
 
 @app.post("/landing-page/publish", dependencies=[Depends(require_admin)])
 def publish_landing_page(payload: LandingContentPayload | None = None):
+
+    if payload is not None:
+        landing_pricing.validate_content(payload.content)      # same limits as saving the draft
 
     conn = get_connection()
     cursor = conn.cursor()
