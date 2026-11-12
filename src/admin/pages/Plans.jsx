@@ -11,7 +11,7 @@ import { formatMoney, isPriceText, monthsEquivalent, packPriceLooksOff, packQuot
 import { MAX_BENEFIT, MAX_BENEFITS, MAX_OBJECTIVE, benefitsProblem, cleanBenefits, cleanObjective, moveItem, objectiveProblem } from '../../utils/packFields'
 import { refreshPricing } from '../../utils/usePricing'
 
-const PER_WEEK = [1, 2, 3, 4, 5, 6, 7]
+const PER_WEEK = [1, 2, 3, 4, 5]                 // Monday to Friday only: never more than 5 a week
 const EMPTY = { name: '', type: 'individual', weeks: '', options: [], perSession: '', perPack: '', packTouched: false, objective: '', benefits: [] }
 
 function toForm(pack) {

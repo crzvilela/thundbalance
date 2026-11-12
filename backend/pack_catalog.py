@@ -29,7 +29,7 @@ from psycopg2.extras import Json as PgJson
 import plans_schema
 import pricing
 
-WEEKDAY_OPTIONS = range(1, 8)              # sessions per week a pack may offer: 1 to 7 (what the server accepts today)
+WEEKDAY_OPTIONS = range(1, 6)              # sessions per week a pack may offer: 1 to 5 (Monday to Friday only; Saturday and Sunday never count)
 MAX_WEEKS = 260
 MAX_OBJECTIVE = 160                        # characters of the objective of a pack
 MAX_BENEFITS = 8                           # benefits per pack
@@ -301,7 +301,7 @@ def clean(payload):
     except (TypeError, ValueError):
         raise _invalid("sessions_per_week_options", "Sesiones por semana no válidas. / Invalid sessions per week.") from None
     if not options or any(value not in WEEKDAY_OPTIONS for value in options):
-        raise _invalid("sessions_per_week_options", "Elige entre 1 y 7 sesiones por semana (al menos una). / Choose 1 to 7 sessions per week (at least one).")
+        raise _invalid("sessions_per_week_options", "Elige entre 1 y 5 sesiones por semana (al menos una). / Choose 1 to 5 sessions per week (at least one).")
     per_session = _price(payload.get("price_per_session"), "price_per_session")
     # the pack price only exists with ONE option; with several the client chooses and the total is worked out
     per_pack = _price(payload.get("price_per_pack"), "price_per_pack", allow_none=True) if len(options) == 1 else None

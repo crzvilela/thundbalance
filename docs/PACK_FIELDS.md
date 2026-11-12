@@ -16,7 +16,7 @@ The objective and the benefits are one free text, written once, in the language 
 
 ## Why the totals are calculated and not typed
 
-A sold pack gets its number of sessions from `weeks x sessions per week`, and the client chooses the sessions per week (1–7) when the pack has several options. A typed "total sessions" would contradict that. So the form shows both figures read-only, updating as the admin types (one line per option when there are several), and the server returns them: `total_sessions` and `price_total` when the pack has ONE option (otherwise `null`: it depends on the client's choice), and `totals` = `[{per_week, sessions, total}]` for every option. A `total_sessions` / `price_total` sent by the browser is ignored.
+A sold pack gets its number of sessions from `weeks x sessions per week`, and the client chooses the sessions per week (1–5, Monday to Friday) when the pack has several options. A typed "total sessions" would contradict that. So the form shows both figures read-only, updating as the admin types (one line per option when there are several), and the server returns them: `total_sessions` and `price_total` when the pack has ONE option (otherwise `null`: it depends on the client's choice), and `totals` = `[{per_week, sessions, total}]` for every option. A `total_sessions` / `price_total` sent by the browser is ignored.
 
 ## Database
 
