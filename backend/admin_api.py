@@ -531,6 +531,12 @@ def register_admin_routes(app, require_admin):
         """Edits a pack of the catalogue. The packs already sold keep their own price, weeks and type."""
         return _in_catalog(lambda cursor: pack_catalog.update(cursor, pack_id, data.model_dump(exclude_unset=True)))
 
+    @app.delete("/admin/plans/{plan_id}", dependencies=admin)
+    def admin_delete_plan(plan_id: int):
+        """Excludes a pack of the catalogue: deleted for good when nobody ever used it, archived (hidden from the selectors, the
+        clients' packs keep working) when clients use it or asked for it. The landing page is never touched."""
+        return _in_catalog(lambda cursor: pack_catalog.remove(cursor, plan_id))
+
     @app.post("/admin/pack-catalog/{pack_id}/archive", dependencies=admin)
     def admin_archive_pack(pack_id: int):
         """Takes a pack off sale. Nothing is deleted: the packs already sold keep working and it can be restored."""

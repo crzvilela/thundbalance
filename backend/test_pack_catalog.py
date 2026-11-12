@@ -130,7 +130,7 @@ class Catalog(unittest.TestCase):
     # ----- the admin screen
     def test_creating_a_pack_puts_it_on_the_site_and_the_list_says_how_many_were_sold(self):
         pack = self.create()
-        self.assertEqual((pack["weeks"], pack["months"], pack["sessions_per_week_options"], pack["price_per_pack"]), (8, 2, [2], 960))
+        self.assertEqual((pack["weeks"], pack["months"], pack["sessions_per_week_options"], pack["price_per_pack"]), (8, 2, [2], None))
         self.assertIn(NAME, self.public())                                    # the client can choose it
         listing = self.http.get("/admin/pack-catalog").json()
         mine = next(item for item in listing["packs"] if item["id"] == pack["id"])
@@ -143,10 +143,10 @@ class Catalog(unittest.TestCase):
         result = self.sell(pack["id"], per_week=3)                            # 8 weeks x 3 = 24 sessions at 62.50
         self.assertEqual((result["total_sessions"], result["price_per_session"], result["total_price"]), (24, 62.5, 1500))
 
-    def test_with_one_option_the_pack_price_wins_and_without_it_the_total_is_worked_out(self):
-        overridden = self.create(price_per_pack=960)                          # 8 x 2 x 62.50 would be 1000
-        self.assertEqual(self.sell(overridden["id"])["total_price"], 960)
-        self.assertEqual(self.sold_row()[:4], ("individual", 62.5, 960, 8))
+    def test_a_price_sent_for_the_whole_pack_is_ignored_and_the_total_is_always_worked_out(self):
+        ignored = self.create(price_per_pack=960)                             # 8 x 2 x 62.50 is 1000: the browser's figure is never used
+        self.assertEqual(self.sell(ignored["id"])["total_price"], 1000)
+        self.assertEqual(self.sold_row()[:4], ("individual", 62.5, 1000, 8))
         suggested = self.create(name=f"{NAME} 2", price_per_pack=None)
         self.assertEqual(self.sell(suggested["id"])["total_price"], 1000)
 

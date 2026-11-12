@@ -152,7 +152,7 @@ function contentHistoryReducer(state, action) {
 // The last content loaded for the public site is cached in localStorage so a
 // reload paints the real fonts/texts immediately instead of flashing the code
 // defaults until the API answers. The API response still wins once it arrives.
-const CACHE_PREFIX = 'thundbalance:landing-content:'
+const CACHE_PREFIX = 'thundbalance:landing-content:v3:'      // v3: Individual | Dual prices (an older copy is ignored)
 
 function readCachedContent(version) {
   try {

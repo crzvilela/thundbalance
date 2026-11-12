@@ -40,19 +40,6 @@ export function packQuote(pack, perWeek) {
 export const EQUIVALENT_MONTHS = { 4: 1, 12: 3, 24: 6 }
 export const monthsEquivalent = (weeks) => EQUIVALENT_MONTHS[Number(weeks)] ?? null
 
-// The pack price suggested for ONE option of sessions per week: price per session x weeks x sessions per week.
-export function suggestedPackPrice(perSession, weeks, perWeek) {
-  const sessions = Number(weeks) * Number(perWeek)
-  return perSession === '' || perSession == null || !sessions ? null : totalPrice(Number(perSession), sessions)
-}
-
-// True when a pack price differs a lot (more than 15%) from price per session x total sessions: a warning, never a block.
-export function packPriceLooksOff(perSession, packPrice, weeks, perWeek) {
-  const expected = suggestedPackPrice(perSession, weeks, perWeek)
-  if (expected == null || packPrice === '' || packPrice == null || Number(expected) === 0) return false
-  return Math.abs(Number(packPrice) - expected) / expected > 0.15
-}
-
 // A price typed in a form: a number >= 0 with at most 2 decimals (the server checks it again).
 export const isPriceText = (text) => /^\d+([.,]\d{1,2})?$/.test(String(text ?? '').trim())
 export const priceFromText = (text) => Number(String(text ?? '').trim().replace(',', '.'))

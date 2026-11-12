@@ -6,10 +6,9 @@ whole pack. Packs are never deleted: a pack that is not for sale any more is ARC
 with restore. Archived packs disappear from the site and from every selector; the packs already sold keep working.
 
 PRICES
-  * several options of sessions per week -> the client chooses; total = price per session x weeks x chosen sessions
-    (price_per_pack is not used and is stored empty);
-  * one single option -> total = price_per_pack when the admin set one, otherwise price per session x weeks x sessions.
-  The server works the total out here, from the catalogue, every time. A price sent by the browser is never used.
+  The total is ALWAYS total sessions x price per session (total sessions = weeks x the sessions per week the client chooses). There
+  is no separate pack price: one sent by a browser is ignored (the column stays only for packs saved before, until they are
+  edited). The server works the total out here, from the catalogue, every time.
 
 SOLD PACKS KEEP THEIR PRICE: when a pack is sold (packs.create_pack) the price per session, the total, the weeks and the
 type are COPIED onto the client's pack (user_plans). Editing the catalogue afterwards never touches them.
@@ -303,8 +302,9 @@ def clean(payload):
     if not options or any(value not in WEEKDAY_OPTIONS for value in options):
         raise _invalid("sessions_per_week_options", "Elige entre 1 y 5 sesiones por semana (al menos una). / Choose 1 to 5 sessions per week (at least one).")
     per_session = _price(payload.get("price_per_session"), "price_per_session")
-    # the pack price only exists with ONE option; with several the client chooses and the total is worked out
-    per_pack = _price(payload.get("price_per_pack"), "price_per_pack", allow_none=True) if len(options) == 1 else None
+    # there is no separate pack price any more: the total is ALWAYS worked out (total sessions x price per session). A value sent for it
+    # is ignored (a pack that still holds an old explicit price keeps it until it is edited: saving clears it).
+    per_pack = None
     values = {"name": name, "session_type": session_type, "weeks": weeks, "options": options,
               "per_session": per_session, "per_pack": per_pack}
     # objective and benefits are optional; a body without them leaves what a pack already has (see update)
@@ -422,6 +422,37 @@ def update(cursor, pack_id, payload):
         cursor.execute("UPDATE pack_catalog SET benefits = %s WHERE id = %s",
                        (PgJson(values["benefits"]) if values["benefits"] else None, pack_id))
     return get(cursor, pack_id)
+
+
+def _in_use(cursor, pack):
+    """True when clients have (or asked for) a pack made from this one: it must never be deleted for real."""
+    cursor.execute(
+        """
+        SELECT EXISTS (SELECT 1 FROM user_plans WHERE catalog_pack_id = %(id)s OR (catalog_pack_id IS NULL AND plan_id = %(plan)s))
+            OR EXISTS (SELECT 1 FROM client_requests WHERE catalog_pack_id = %(id)s OR (catalog_pack_id IS NULL AND plan_id = %(plan)s))
+        """,
+        {"id": pack["id"], "plan": pack["plan_id"]},
+    )
+    return cursor.fetchone()[0]
+
+
+def remove(cursor, pack_id):
+    """Excludes a pack. A pack nobody ever used is deleted for good ({"outcome": "deleted"}); one that clients use or asked for
+    is only ARCHIVED ({"outcome": "archived", "pack": ...}): it disappears from every selector and the clients' packs keep
+    working, exactly as before. The landing page is never touched."""
+    cursor.execute("SELECT 1 FROM pack_catalog WHERE id = %s FOR UPDATE", (pack_id,))
+    if not cursor.fetchone():
+        raise HTTPException(status_code=404, detail={"code": "pack_not_found", "message": "Pack no encontrado. / Pack not found."})
+    pack = get(cursor, pack_id)
+    if _in_use(cursor, pack):
+        return {"outcome": "archived", "pack": set_archived(cursor, pack_id, True)}
+    cursor.execute("DELETE FROM pack_catalog WHERE id = %s", (pack_id,))
+    plan_id = pack["plan_id"]
+    if plan_id is not None and not _plan_in_use(cursor, plan_id):                 # its snapshot row goes with it
+        cursor.execute("SELECT 1 FROM pack_catalog WHERE plan_id = %s LIMIT 1", (plan_id,))
+        if not cursor.fetchone():
+            cursor.execute("DELETE FROM plans WHERE id = %s", (plan_id,))
+    return {"outcome": "deleted", "id": pack_id}
 
 
 def set_archived(cursor, pack_id, archived):

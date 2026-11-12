@@ -10,7 +10,7 @@ Admin > Packs. A pack of the catalogue (`pack_catalog`) now carries two optional
 | **Objective** | `objective TEXT` (new, NULL = none) | up to 160 characters, no `<` or `>`, no control characters |
 | **Benefits** | `benefits JSONB` (new, NULL = none) | 0–8 items, each up to 80 characters, no `<` `>`, no repeats (case-insensitive); blank lines are dropped |
 | Total sessions | **calculated**, never stored | weeks x sessions per week |
-| Total price | **calculated**, never stored | the pack price (one option and a price set) or price per session x weeks x sessions per week |
+| Total price | **calculated**, never stored | total sessions x price per session (there is no separate pack price) |
 
 The objective and the benefits are one free text, written once, in the language the admin chooses: they are not translated per language (like the pack name). The labels around them ("Goal", "Included"...) are translated: admin texts ES/EN (`adminText.js`), client texts ES/EN/CA (`pageText.js`), e-mail labels ES/EN/CA (`backend/emails/texts.py`).
 

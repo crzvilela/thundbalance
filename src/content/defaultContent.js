@@ -444,7 +444,7 @@ export const SECTION_TYPE_DEFAULTS = {
     titleStyle: textStyle(),
     background: sectionBackground(),
     plans: [makeDefaultPricingPlan(), makeDefaultPricingPlan(), makeDefaultPricingPlan()],
-    cards: []
+    prices: { individual: [0, 1, 2].map(() => ({ price: '', features: [] })), dual: [0, 1, 2].map(() => ({ price: '', features: [] })) }
   }),
 
   testimonials: () => ({

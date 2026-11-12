@@ -12,7 +12,7 @@ import FooterElementPanel from './FooterElementPanel'
 import NavbarLogoFields from './NavbarLogoFields'
 import PositionFields from './PositionFields'
 import PanelTabs from './PanelTabs'
-import PricingCardsFields from './PricingCardsFields'
+import PricingTiersFields from './PricingTiersFields'
 import { useAdminText } from '../../admin/useAdminText'
 import './EditorChrome.css'
 import TypographyControls from './TypographyControls'
@@ -233,7 +233,7 @@ function SectionPanel({ sectionKey, onClose }) {
       {section.type === 'about' && <AboutTextFields sectionKey={sectionKey} section={section} updateField={updateField} />}
       {section.type === 'contact' && <ContactImageFields sectionKey={sectionKey} section={section} updateField={updateField} />}
       {section.type === 'services' && <ServicesSectionFields sectionKey={sectionKey} content={content} updateField={updateField} />}
-      {section.type === 'pricing' && <PricingCardsFields sectionKey={sectionKey} content={content} updateField={updateField} />}
+      {section.type === 'pricing' && <PricingTiersFields sectionKey={sectionKey} content={content} updateField={updateField} />}
       {section.type === 'testimonials' && <TestimonialsMediaFields sectionKey={sectionKey} content={content} updateField={updateField} />}
       {section.type === 'imageText' && <ImageTextSectionFields sectionKey={sectionKey} section={section} updateField={updateField} />}
       {section.type === 'videoBlock' && <VideoBlockSectionFields sectionKey={sectionKey} section={section} updateField={updateField} />}

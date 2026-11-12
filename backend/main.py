@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, Request, Response
 
 import os
 import hashlib
@@ -2559,12 +2559,17 @@ def clear_google_calendar(data: ClearCalendarPayload):
 
 @app.get("/landing-page/content")
 def get_landing_page_content(
+    response: Response,
     version: str = "published",
     authorization: str | None = Header(default=None),
 ):
 
     if version not in ("draft", "published"):
         raise HTTPException(status_code=400, detail="Invalid version")
+
+    # The published landing is ONE public, read-only answer for everybody (visitor, client, admin): it never looks at a token and
+    # may be cached for a short time. The draft is the admin's own and is never cached.
+    response.headers["Cache-Control"] = "public, max-age=30" if version == "published" else "no-store"
 
     if version == "draft":
         require_admin(authorization)

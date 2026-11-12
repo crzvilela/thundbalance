@@ -1,11 +1,10 @@
-"""The Pricing section of the landing page: manual cards (landing_pricing.py):
+"""The Pricing section of the landing page: Individual | Dual, three prices each, written by hand (landing_pricing.py):
 
     python -m unittest test_landing_pricing -v
 
-The cards are written by hand and have nothing to do with the catalogue of packs. The one-time migration turns what the page
-showed (a list of catalogue packs) into manual cards with the same values; the draft is validated when it is saved; creating,
-editing or deleting a pack never changes the landing. A scratch landing version is used for the migration; the real draft is
-restored after the tests that save it. The local database is used and cleaned up.
+One public answer for everybody; the prices have no link with the catalogue of packs; the content written by the earlier
+versions of the section is migrated once, after a backup, without losing anything. A scratch landing version is used for the
+migration; the real draft is restored after the tests that save it. The local database is used and cleaned up.
 """
 import copy
 import unittest
@@ -20,146 +19,146 @@ from database import get_connection
 
 VERSION = "test-landing-pricing"
 NAME = "TEST landing Pack"
+PERIOD = {"en": "/session", "es": "/sesión", "ca": "/sessió"}
 
 
-def pack(pack_id, session_type="individual", **changes):
-    base = {"id": pack_id, "session_type": session_type, "name": f"P{pack_id}", "weeks": 8, "sessions_per_week_options": [2],
-            "price_per_session": 60, "price_per_pack": None, "objective": None, "benefits": []}
+def pack(pack_id, session_type="individual", weeks=4, **changes):
+    base = {"id": pack_id, "session_type": session_type, "name": f"P{pack_id}", "weeks": weeks, "sessions_per_week_options": [1, 2],
+            "price_per_session": 65, "price_per_pack": None, "objective": None, "benefits": []}
     base.update(changes)
     return base
 
 
-def old_card(**changes):
-    base = {"name": "old", "period": {"en": "/session", "es": "/sesión", "ca": "/sessió"},
-            "description": {"en": "Described", "es": "Descrito", "ca": "Descrit"},
-            "descriptionStyle": {"fontSize": 20}, "features": [{"en": "Feature", "es": "Característica", "ca": "Característica"}],
-            "buttonText": {"en": "Get Started", "es": "Empezar", "ca": "Començar"}, "buttonTextStyle": {"color": "#000"}, "highlighted": True}
+def text_card(**changes):
+    base = {"name": "old", "period": PERIOD, "description": {"en": "Described", "es": "Descrito", "ca": "Descrit"},
+            "features": [{"en": "Feature", "es": "Característica", "ca": "Característica"}],
+            "buttonText": {"en": "Get Started", "es": "Empezar", "ca": "Començar"}, "highlighted": False}
     base.update(changes)
     return base
 
 
-def old_section(**extra):
-    return {"type": "pricing", "visible": True, "plans": [old_card(), old_card(highlighted=False)], **extra}
+CATALOGUE = [pack(1, "individual", 4, name="Monthly Plan", price_per_session=65), pack(2, "individual", 12, name="Quarterly Plan", price_per_session=60),
+             pack(3, "individual", 24, name="Semiannual Plan", price_per_session=55), pack(4, "dual", 4, name="Dual 1 Month Pack", price_per_session=80),
+             pack(5, "dual", 12, name="Dual 3 Months Pack", price_per_session=75), pack(6, "dual", 24, name="Dual 6 Months Pack", price_per_session=70),
+             pack(7, "individual", 8, name="ACTIVE", price_per_session=75), pack(8, "individual", 8, name="oooooo", price_per_session=19)]
+
+
+def manual_cards():
+    """The cards as the Prompt 60 left them on the real site: eight of them, the last two are extra packs."""
+    return [{"id": f"card-{p['id']}", "type": p["session_type"], "visible": True, "name": p["name"], "price": f"€{p['price_per_session']}",
+             "period": PERIOD, "features": [f"feature of {p['id']}"], "benefits": [], "objective": "", "highlighted": False} for p in CATALOGUE]
+
+
+def section(**extra):
+    return {"type": "pricing", "visible": True, "plans": [text_card(), text_card(), text_card()], **extra}
 
 
 class Migration(unittest.TestCase):
-    def test_every_item_becomes_a_manual_card_with_the_values_the_page_showed_in_the_same_order_and_visibility(self):
-        packs = [pack(1, objective="Meta", benefits=["Uno", "Dos"]), pack(2, "dual", weeks=4, sessions_per_week_options=[1, 2, 3], price_per_session=62.5)]
-        section = old_section(planItems=[{"plan_id": 2, "visible": True, "card": 1}, {"plan_id": 1, "visible": False, "card": 0}])
-        content = {"sections": {"pricing": section}}
-        self.assertTrue(landing_pricing.migrate_content(content, packs))
-        cards = content["sections"]["pricing"]["cards"]
-        self.assertEqual([card["name"] for card in cards], ["P2", "P1"])               # same order
-        self.assertEqual([card["visible"] for card in cards], [True, False])            # same visibility
-        second = cards[1]
-        self.assertEqual((second["price"], second["objective"], second["benefits"]), ("€60", "Meta", ["Uno", "Dos"]))
-        self.assertEqual(second["description"], old_card()["description"])             # texts of the old card are copied
-        self.assertEqual(second["features"], old_card()["features"])
-        self.assertEqual(second["buttonText"], old_card()["buttonText"])
-        self.assertEqual((second["period"], second["highlighted"]), (old_card()["period"], True))
-        self.assertEqual(second["descriptionStyle"], {"fontSize": 20})
-        self.assertEqual(second["duration"]["es"], "8 semanas · 2 sesiones por semana")
-        self.assertEqual(second["totalSessions"]["en"], "16 sessions in total")
-        first = cards[0]
-        self.assertEqual(first["price"], "€62.50")
-        self.assertEqual(first["duration"]["en"], "4 weeks · choose 1 / 2 / 3 sessions a week")
-        self.assertEqual(first["totalSessions"]["es"], "un solo precio para las dos personas")   # several options: no fixed total
-        self.assertNotIn("planItems", content["sections"]["pricing"])
-        self.assertNotIn("plan_id", repr(cards))                                          # no link with the catalogue
+    def migrated(self, **extra):
+        content = {"sections": {"pricing": section(**extra)}}
+        reports = landing_pricing.migrate_content(content, CATALOGUE)
+        return content["sections"]["pricing"], reports
 
-    def test_a_pack_that_no_longer_exists_disappears_in_silence(self):
-        section = old_section(planItems=[{"plan_id": 1, "visible": True, "card": 0}, {"plan_id": 99, "visible": True, "card": 1}])
-        content = {"sections": {"pricing": section}}
-        landing_pricing.migrate_content(content, [pack(1)])
-        self.assertEqual([card["name"] for card in content["sections"]["pricing"]["cards"]], ["P1"])
+    def test_the_manual_cards_go_to_their_type_and_tier_with_the_price_and_features_the_page_showed(self):
+        result, reports = self.migrated(cards=manual_cards())
+        prices = result["prices"]
+        self.assertEqual([tier["price"]["en"] for tier in prices["individual"]], ["€65/session", "€60/session", "€55/session"])
+        self.assertEqual([tier["price"]["es"] for tier in prices["dual"]], ["€80/sesión", "€75/sesión", "€70/sesión"])
+        self.assertEqual([tier["features"] for tier in prices["individual"]], [["feature of 1"], ["feature of 2"], ["feature of 3"]])
+        self.assertEqual([tier["features"] for tier in prices["dual"]], [["feature of 4"], ["feature of 5"], ["feature of 6"]])
+        self.assertEqual(reports[0]["placed"], 6)
 
-    def test_the_oldest_format_without_a_list_also_migrates_by_type(self):
-        content = {"sections": {"pricing": old_section()}}
-        landing_pricing.migrate_content(content, [pack(1), pack(2, "dual"), pack(3), pack(4)])
-        self.assertEqual([card["name"] for card in content["sections"]["pricing"]["cards"]], ["P1", "P3", "P4", "P2"])
-        extra = content["sections"]["pricing"]["cards"][2]                                # the third individual had no text card
-        self.assertEqual((extra["description"], extra["features"], extra["highlighted"]), ("", [], False))
+    def test_what_does_not_fit_is_kept_not_deleted_and_reported(self):
+        result, reports = self.migrated(cards=manual_cards())
+        self.assertEqual([card["name"] for card in result["legacyCards"]], ["ACTIVE", "oooooo"])
+        self.assertEqual(reports[0]["kept"], ["ACTIVE", "oooooo"])
+        self.assertEqual(result["legacyCards"][0]["price"], "€75")                        # the whole card, as it was
+        self.assertNotIn("cards", result)
+        self.assertNotIn("planItems", result)
+        self.assertEqual(len(result["plans"]), 3)                                          # the shared texts stay
 
-    def test_it_runs_once_a_section_with_cards_is_never_touched(self):
-        content = {"sections": {"pricing": old_section(planItems=[{"plan_id": 1, "visible": True, "card": 0}])}}
-        landing_pricing.migrate_content(content, [pack(1)])
+    def test_individual_and_dual_never_mix(self):
+        result, _ = self.migrated(cards=manual_cards())
+        individual = repr(result["prices"]["individual"])
+        dual = repr(result["prices"]["dual"])
+        self.assertNotIn("€80", individual)
+        self.assertNotIn("€70", individual)
+        self.assertNotIn("€65", dual)
+        self.assertNotIn("feature of 4", individual)
+        self.assertNotIn("feature of 1", dual)
+
+    def test_a_card_without_a_pack_goes_by_its_name_and_type(self):
+        cards = [{"id": "manual-1", "type": "dual", "name": "Plan Trimestral", "price": "99 €", "features": ["x"]},
+                 {"id": "manual-2", "type": "individual", "name": "Mi extra", "price": "1 €", "features": []}]
+        result, _ = self.migrated(cards=cards)
+        self.assertEqual(result["prices"]["dual"][1], {"price": "99 €", "features": ["x"]})
+        self.assertEqual([card["name"] for card in result["legacyCards"]], ["Mi extra"])
+
+    def test_the_format_of_the_plan_list_and_the_oldest_format_also_migrate(self):
+        items = [{"plan_id": 1, "visible": True, "card": 0}, {"plan_id": 5, "visible": True, "card": 1}, {"plan_id": 99, "visible": True, "card": 2}]
+        listed, _ = self.migrated(planItems=items)
+        self.assertEqual(listed["prices"]["individual"][0]["price"]["en"], "€65/session")
+        self.assertEqual(listed["prices"]["dual"][1]["price"]["en"], "€75/session")
+        self.assertEqual(listed["prices"]["individual"][2]["price"], "")                   # a pack that no longer exists: nothing
+        self.assertNotIn("legacyCards", listed)
+        oldest, _ = self.migrated()
+        self.assertEqual([tier["price"]["en"] for tier in oldest["prices"]["individual"]], ["€65/session", "€60/session", "€55/session"])
+        self.assertEqual(oldest["prices"]["individual"][0]["features"], text_card()["features"])
+
+    def test_it_runs_once_a_section_with_prices_is_never_touched(self):
+        result, _ = self.migrated(cards=manual_cards())
+        content = {"sections": {"pricing": result}}
         first = copy.deepcopy(content)
-        self.assertFalse(landing_pricing.migrate_content(content, [pack(1), pack(2)]))
-        self.assertEqual(content, first)                                                  # nothing duplicated or added
-        emptied = {"sections": {"pricing": {"type": "pricing", "cards": []}}}            # the admin deleted every card
-        self.assertFalse(landing_pricing.migrate_content(emptied, [pack(1)]))
-        self.assertEqual(emptied["sections"]["pricing"]["cards"], [])
+        self.assertEqual(landing_pricing.migrate_content(content, CATALOGUE + [pack(9, "dual", 4, name="New")]), [])
+        self.assertEqual(content, first)
 
-    def test_a_migrated_text_never_exceeds_its_limit_and_the_result_validates(self):
-        content = {"sections": {"pricing": old_section(planItems=[{"plan_id": 1, "visible": True, "card": 0}])}}
-        landing_pricing.migrate_content(content, [pack(1, name="N" * 90, objective="O" * 300, benefits=["B" * 150] * 12)])
-        landing_pricing.validate_content(content)                                        # does not raise
-        card = content["sections"]["pricing"]["cards"][0]
-        self.assertEqual((len(card["name"]), len(card["objective"]), len(card["benefits"]), len(card["benefits"][0])), (60, 200, 10, 100))
+    def test_texts_never_exceed_their_limits_and_the_result_validates(self):
+        cards = manual_cards()
+        cards[0]["price"] = "€" + "9" * 90
+        cards[0]["features"] = ["f" * 150] * 12
+        result, _ = self.migrated(cards=cards)
+        landing_pricing.validate_content({"sections": {"pricing": result}})              # does not raise
+        tier = result["prices"]["individual"][0]
+        self.assertEqual((len(tier["price"]["en"]) <= 60, len(tier["features"]), len(tier["features"][0])), (True, 10, 100))
 
     def test_other_sections_and_odd_content_are_left_alone(self):
-        content = {"sections": {"about": {"type": "about"}, "pricing": old_section()}}
+        content = {"sections": {"about": {"type": "about"}, "pricing": section()}}
         landing_pricing.migrate_content(content, [])
-        self.assertNotIn("cards", content["sections"]["about"])
-        self.assertEqual(content["sections"]["pricing"]["cards"], [])
-        self.assertFalse(landing_pricing.migrate_content({}, []))
-        self.assertFalse(landing_pricing.migrate_content(None, []))
-
-
-class Types(unittest.TestCase):
-    def test_migrated_cards_carry_the_type_of_their_pack(self):
-        content = {"sections": {"pricing": old_section(planItems=[{"plan_id": 1, "visible": True, "card": 0}, {"plan_id": 2, "visible": True, "card": 1}])}}
-        landing_pricing.migrate_content(content, [pack(1), pack(2, "dual")])
-        self.assertEqual([card["type"] for card in content["sections"]["pricing"]["cards"]], ["individual", "dual"])
-
-    def test_cards_already_migrated_without_a_type_get_it_once_from_the_catalogue(self):
-        cards = [{"id": "card-1", "name": "a"}, {"id": "card-2", "name": "b"}, {"id": "manual-9", "name": "c"}, {"id": "card-77", "name": "d"}]
-        content = {"sections": {"pricing": {"type": "pricing", "cards": cards}}}
-        self.assertTrue(landing_pricing.type_cards(content, [pack(1), pack(2, "dual")]))
-        self.assertEqual([card["type"] for card in cards], ["individual", "dual", "individual", "individual"])
-        self.assertFalse(landing_pricing.type_cards(content, [pack(1, "dual"), pack(2)]))        # never changed again
-
-    def test_only_individual_or_dual_is_accepted(self):
-        landing_pricing.validate_card({"id": "a", "type": "dual"})
-        with self.assertRaises(Exception):
-            landing_pricing.validate_card({"id": "a", "type": "trio"})
+        self.assertNotIn("prices", content["sections"]["about"])
+        self.assertEqual(landing_pricing.migrate_content({}, []), [])
+        self.assertEqual(landing_pricing.migrate_content(None, []), [])
 
 
 class Validation(unittest.TestCase):
-    def check(self, **changes):
-        landing_pricing.validate_content({"sections": {"pricing": {"type": "pricing", "cards": [{"id": "a", **changes}]}}})
+    def check(self, prices):
+        landing_pricing.validate_content({"sections": {"pricing": {"type": "pricing", "prices": prices}}})
 
-    def refuse(self, field, **changes):
+    def refuse(self, field, prices):
         with self.assertRaises(Exception) as raised:
-            self.check(**changes)
-        detail = raised.exception.detail
-        self.assertEqual((raised.exception.status_code, detail["field"]), (422, field))
-        self.assertIn(" / ", detail["message"])                                          # Spanish / English
+            self.check(prices)
+        self.assertEqual((raised.exception.status_code, raised.exception.detail["field"]), (422, field))
+        self.assertIn(" / ", raised.exception.detail["message"])                          # Spanish / English
 
-    def test_the_limits_of_every_field(self):
-        for field, limit in landing_pricing.TEXT_LIMITS.items():
-            self.check(**{field: "x" * limit})
-            self.refuse(field, **{field: "x" * (limit + 1)})
-            self.refuse(field, **{field: "<b>x</b>"})
-            self.refuse(field, **{field: {"en": "ok", "es": "a > b"}})                  # every language is checked
-        self.assertEqual(landing_pricing.TEXT_LIMITS["name"], 60)
-        self.assertEqual((landing_pricing.TEXT_LIMITS["price"], landing_pricing.TEXT_LIMITS["objective"]), (40, 200))
+    def tier(self, **changes):
+        return {"individual": [{"price": "45 €", "features": ["a"], **changes}], "dual": []}
 
-    def test_benefits_up_to_ten_of_a_hundred_characters(self):
-        self.check(benefits=["x" * 100] * 10)
-        self.refuse("benefits", benefits=["x"] * 11)
-        self.refuse("benefits", benefits=["x" * 101])
-        self.refuse("benefits", benefits=["<script>"])
-        self.refuse("benefits", benefits="not a list")
-        self.refuse("features", features=["x"] * 11)
+    def test_limits_and_html(self):
+        self.check(self.tier(price="x" * 60, features=["x" * 100] * 10))
+        self.refuse("price", self.tier(price="x" * 61))
+        self.refuse("price", self.tier(price="<b>45</b>"))
+        self.refuse("price", self.tier(price={"en": "ok", "es": "a > b"}))
+        self.refuse("features", self.tier(features=["x"] * 11))
+        self.refuse("features", self.tier(features=["x" * 101]))
+        self.refuse("features", self.tier(features=["<script>"]))
+        self.refuse("features", self.tier(features="no"))
 
-    def test_other_shapes_are_refused_and_the_old_format_is_accepted(self):
-        self.refuse("visible", visible="yes")
-        self.refuse("name", name=5)
-        landing_pricing.validate_content({"sections": {"pricing": old_section(planItems=[{"plan_id": 1, "visible": True, "card": 0}])}})   # no cards: old format
+    def test_shapes(self):
+        self.refuse("prices", {"trio": []})
+        self.refuse("prices", {"individual": [{}, {}, {}, {}]})
+        self.refuse("prices", {"individual": ["x"]})
+        self.refuse("prices", [])
+        landing_pricing.validate_content({"sections": {"pricing": section(cards=[{"id": "a"}])}})   # an older format: accepted
         landing_pricing.validate_content({})
-        with self.assertRaises(Exception):
-            landing_pricing.validate_content({"sections": {"pricing": {"type": "pricing", "cards": [{"id": "a"}] * 31}}})
 
 
 class InDatabase(unittest.TestCase):
@@ -173,7 +172,7 @@ class InDatabase(unittest.TestCase):
     def cleanup(cls):
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("DELETE FROM landing_page_content WHERE version = %s", (VERSION,))
+        cur.execute("DELETE FROM landing_page_content WHERE version IN (%s, %s)", (VERSION, f"backup-{VERSION}"))
         cur.execute("DELETE FROM pack_catalog WHERE name LIKE 'TEST landing%'")
         cur.execute("DELETE FROM plans WHERE nome LIKE 'TEST landing%'")
         conn.commit()
@@ -204,28 +203,32 @@ class InDatabase(unittest.TestCase):
             conn.close()
         self.cleanup()
 
-    def put_scratch(self, content):
+    def scratch(self, content=None):
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("INSERT INTO landing_page_content (version, content) VALUES (%s, %s)", (VERSION, PgJson(content)))
-        conn.commit()
-        conn.close()
-
-    def read_scratch(self):
-        conn = get_connection()
-        cur = conn.cursor()
+        if content is not None:
+            cur.execute("INSERT INTO landing_page_content (version, content) VALUES (%s, %s)", (VERSION, PgJson(content)))
+            conn.commit()
         cur.execute("SELECT content FROM landing_page_content WHERE version = %s", (VERSION,))
-        content = cur.fetchone()[0]
+        row = cur.fetchone()
         conn.close()
-        return content
+        return row[0] if row else None
+
+    def backup(self):
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT content FROM landing_page_content WHERE version = %s", (f"backup-{VERSION}",))
+        row = cur.fetchone()
+        conn.close()
+        return row[0] if row else None
 
     def migrate(self):
         conn = get_connection()
         cur = conn.cursor()
-        changed = landing_pricing.migrate_version(cur, VERSION)
+        reports = landing_pricing.migrate_version(cur, VERSION)
         conn.commit()
         conn.close()
-        return changed
+        return reports
 
     def create_pack(self, **changes):
         body = {"name": NAME, "session_type": "individual", "weeks": 8, "sessions_per_week_options": [2], "price_per_session": 60}
@@ -234,58 +237,69 @@ class InDatabase(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
-    def card_body(self, **changes):
-        card = {"id": "manual-1", "visible": True, "name": "Mi pack", "price": "Desde 120 €", "objective": "Meta", "benefits": ["Uno", "Dos"],
-                "buttonText": "Empezar", "highlighted": False}
-        card.update(changes)
-        draft = copy.deepcopy(self.draft) if self.draft else {"sections": {}}
-        draft.setdefault("sections", {})["pricing"] = {"type": "pricing", "visible": True, "plans": [], "cards": [card]}
-        return {"content": draft}
+    def test_the_json_is_saved_in_a_backup_row_before_migrating_and_nothing_is_lost(self):
+        original = {"sections": {"pricing": section(cards=manual_cards())}, "marker": "kept"}
+        self.scratch(copy.deepcopy(original))
+        reports = self.migrate()
+        self.assertEqual(len(reports), 1)
+        self.assertEqual(self.backup(), original)                                          # the old JSON, byte for byte
+        migrated = self.scratch()
+        self.assertEqual(migrated["marker"], "kept")
+        self.assertIn("prices", migrated["sections"]["pricing"])
+        self.assertEqual(len(migrated["sections"]["pricing"]["plans"]), 3)
 
-    def test_the_saved_content_migrates_once_and_the_cards_hold_no_link_to_the_catalogue(self):
-        created = self.create_pack(objective="Meta", benefits=["Uno"])
-        self.put_scratch({"sections": {"pricing": old_section(planItems=[{"plan_id": created["id"], "visible": True, "card": 0}])}})
-        self.assertTrue(self.migrate())
-        cards = self.read_scratch()["sections"]["pricing"]["cards"]
-        self.assertEqual((len(cards), cards[0]["name"], cards[0]["price"], cards[0]["objective"], cards[0]["benefits"]), (1, NAME, "€60", "Meta", ["Uno"]))
-        self.assertFalse(self.migrate())                                                  # the second run changes nothing
-        self.assertEqual(self.read_scratch()["sections"]["pricing"]["cards"], cards)
+    def test_it_migrates_once_and_the_backup_is_never_overwritten(self):
+        self.scratch({"sections": {"pricing": section(planItems=[])}})
+        self.assertEqual(len(self.migrate()), 1)
+        backup = self.backup()
+        after = self.scratch()
+        self.assertEqual(self.migrate(), [])                                                # the second run changes nothing
+        self.assertEqual((self.scratch(), self.backup()), (after, backup))
 
     def test_creating_editing_or_archiving_a_pack_never_changes_the_landing(self):
-        self.put_scratch({"sections": {"pricing": old_section(planItems=[])}})
+        self.scratch({"sections": {"pricing": section(planItems=[])}})
         self.migrate()
-        before = self.read_scratch()
+        before = self.scratch()
         created = self.create_pack()
         self.http.put(f"/admin/pack-catalog/{created['id']}", json={**created, "name": NAME + " edited", "price_per_session": 99})
         self.http.post(f"/admin/pack-catalog/{created['id']}/archive")
+        self.http.delete(f"/admin/plans/{created['id']}")
         self.migrate()
-        self.assertEqual(self.read_scratch(), before)
+        self.assertEqual(self.scratch(), before)
 
-    def test_the_draft_with_a_manual_card_is_saved_exactly_as_written(self):
-        response = self.http.put("/landing-page/content/draft", json=self.card_body())
-        self.assertEqual(response.status_code, 200, response.text)
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT content FROM landing_page_content WHERE version = 'draft'")
-        saved = cur.fetchone()[0]["sections"]["pricing"]["cards"]
-        conn.close()
-        self.assertEqual((saved[0]["name"], saved[0]["price"], saved[0]["benefits"]), ("Mi pack", "Desde 120 €", ["Uno", "Dos"]))
-
-    def test_the_server_refuses_html_long_texts_and_too_many_benefits(self):
-        for changes in ({"name": "x" * 61}, {"price": "<b>45</b>"}, {"objective": "x" * 201}, {"benefits": ["b"] * 11}, {"benefits": ["x" * 101]}):
-            response = self.http.put("/landing-page/content/draft", json=self.card_body(**changes))
-            self.assertEqual(response.status_code, 422, changes)
-            self.assertEqual(response.json()["detail"]["code"], "invalid_pricing_card")
-        response = self.http.post("/landing-page/publish", json=self.card_body(name="<i>x</i>"))
-        self.assertEqual(response.status_code, 422)
-
-    def test_the_public_landing_content_is_served_without_the_catalogue(self):
+    def test_the_public_landing_is_the_same_with_and_without_a_token_or_a_role(self):
+        anonymous = TestClient(main.app).get("/landing-page/content", params={"version": "published"})
+        self.assertEqual(anonymous.status_code, 200)
+        main.app.dependency_overrides.clear()
+        for headers in ({"Authorization": "Bearer not-a-real-token"}, {"Authorization": "Bearer "}, {}):
+            other = TestClient(main.app).get("/landing-page/content", params={"version": "published"}, headers=headers)
+            self.assertEqual(other.status_code, 200)
+            self.assertEqual(other.json(), anonymous.json())                               # a client's or an admin's token changes nothing
+        self.assertIn("max-age", anonymous.headers["cache-control"])
+        self.assertIn("public", anonymous.headers["cache-control"])
         with open(main.__file__, encoding="utf-8") as handle:
             source = handle.read()
         start = source.index("def get_landing_page_content")
-        self.assertNotIn("pack_catalog", source[start:start + 1500])                       # the endpoint never reads the catalogue
+        self.assertNotIn("pack_catalog", source[start:start + 1800])                       # the endpoint never reads the catalogue
 
-    def test_the_real_draft_and_published_content_already_carry_their_cards(self):
+    def test_the_draft_with_prices_is_saved_and_published_exactly_as_written_and_bad_ones_are_refused(self):
+        prices = {"individual": [{"price": "45 € / sesión", "features": ["Uno", "Dos"]}] * 3, "dual": [{"price": "Desde 120 €", "features": []}] * 3}
+        draft = copy.deepcopy(self.draft) if self.draft else {"sections": {}}
+        draft.setdefault("sections", {})["pricing"] = {**section(), "prices": prices}
+        self.assertEqual(self.http.put("/landing-page/content/draft", json={"content": draft}).status_code, 200)
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT content FROM landing_page_content WHERE version = 'draft'")
+        self.assertEqual(cur.fetchone()[0]["sections"]["pricing"]["prices"], prices)
+        conn.close()
+        for bad in ({"price": "x" * 61}, {"price": "<b>"}, {"features": ["f"] * 11}, {"features": ["x" * 101]}):
+            draft["sections"]["pricing"]["prices"] = {"individual": [{"price": "1", "features": [], **bad}], "dual": []}
+            response = self.http.put("/landing-page/content/draft", json={"content": draft})
+            self.assertEqual(response.status_code, 422, bad)
+            self.assertEqual(response.json()["detail"]["code"], "invalid_pricing")
+        self.assertEqual(self.http.post("/landing-page/publish", json={"content": draft}).status_code, 422)
+
+    def test_the_real_draft_and_published_content_carry_their_prices_after_the_migration(self):
         conn = get_connection()
         cur = conn.cursor()
         landing_pricing.migrate_all(cur)
@@ -293,10 +307,10 @@ class InDatabase(unittest.TestCase):
         for version in ("draft", "published"):
             cur.execute("SELECT content FROM landing_page_content WHERE version = %s", (version,))
             row = cur.fetchone()
-            for section in ((row[0] if row else {}).get("sections") or {}).values():
-                if isinstance(section, dict) and section.get("type") == "pricing":
-                    self.assertIn("cards", section)
-                    self.assertNotIn("planItems", section)
+            for item in ((row[0] if row else {}).get("sections") or {}).values():
+                if isinstance(item, dict) and item.get("type") == "pricing":
+                    self.assertIn("prices", item)
+                    self.assertEqual(set(item["prices"]), {"individual", "dual"})
         conn.close()
 
 

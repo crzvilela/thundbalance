@@ -89,9 +89,9 @@ class PackFields(unittest.TestCase):
         self.assertEqual([(line["per_week"], line["sessions"], line["total"]) for line in many["totals"]], [(1, 8, 400), (3, 24, 1200)])
         self.assertEqual((many["total_sessions"], many["price_total"]), (None, None))   # the client chooses: no single total
 
-    def test_an_explicit_pack_price_is_the_total_with_one_option(self):
+    def test_a_price_sent_for_the_whole_pack_is_ignored(self):
         pack = self.create(price_per_pack=900)
-        self.assertEqual((pack["total_sessions"], pack["price_total"]), (16, 900))
+        self.assertEqual((pack["total_sessions"], pack["price_total"], pack["price_per_pack"]), (16, 960, None))
 
     # ----- validation
     def test_the_objective_is_validated(self):

@@ -1,46 +1,53 @@
-"""The Pricing section of the landing page: a list of MANUAL cards.
+"""The Pricing section of the landing page: Individual | Dual, three prices each (Monthly, Quarterly, Semiannual), written by hand.
 
-Every card is written by hand in the landing editor and has nothing to do with the catalogue of packs (Admin > Packs):
-changing or deleting a pack never changes the landing and the landing never reads the catalogue. The cards live in the
-landing content (the editor's JSON), in `sections.<id>.cards`:
+The landing is ONE site for everybody (visitor, client, admin): its content comes from the public, read-only
+`GET /landing-page/content?version=published` and nothing in the Pricing section depends on a token, a role or a profile.
+The prices and features have no link with the catalogue of packs (Admin > Packs): creating, editing, archiving or deleting a
+pack never changes the landing, and the landing never reads the catalogue.
 
-    {"id": "card-1", "visible": true, "highlighted": false,
-     "name": "...", "price": "...", "period": "...", "tag": "...", "objective": "...", "duration": "...",
-     "totalSessions": "...", "description": "...", "benefits": ["..."], "features": ["..."],
-     "buttonText": "...", "nameStyle": {...}, "descriptionStyle": {...}, "periodStyle": {...}, "buttonTextStyle": {...}}
+STORED (in the landing content, `sections.<id>`):
+    "plans":  the three text cards of always (name, period, description, features, button text, highlighted): they give the
+              description, the button and the highlight of Monthly (plans[0]), Quarterly (plans[1]), Semiannual (plans[2]),
+              the same for Individual and Dual.
+    "prices": {"individual": [t0, t1, t2], "dual": [t0, t1, t2]}   with t = {"price": "...", "features": ["..."]}
+              index 0 Monthly, 1 Quarterly, 2 Semiannual. A text is a plain string or an {"en", "es", "ca"} object.
+LIMITS: price 60 characters; 0 to 10 features of up to 100 characters; no "<" or ">" anywhere.
 
-A text field is a plain string or a {"en", "es", "ca"} object (what a double click on the page writes for one language).
-
-LIMITS (checked here when the draft is saved and again in the editor): name 60, price 40, objective 200, description 200,
-duration / total sessions / tag / price suffix / button text 60; benefits and features: 0 to 10 items of up to 100 characters;
-no "<" or ">" anywhere; at most 30 cards.
-
-MIGRATION (one time). Before, the section listed catalogue packs (`planItems`: plan_id, visible, card) or, even earlier, drew
-every pack on sale. A section WITHOUT `cards` is converted: every item becomes a manual card with the values the page showed
-(the name, the price as "€65", the weeks and sessions per week, the total, the goal and the benefits of the pack, plus the
-description, features, button and highlight of the text card it used), in the same order and with the same visibility. An item
-whose pack no longer exists is dropped in silence. `planItems` is removed (it held the plan_id); the old `plans` text cards are
-left untouched. A section that already has `cards` is never touched, so running it again changes nothing.
+MIGRATION (one time). Content written by the earlier versions of this section (a list `planItems` of catalogue packs, or the
+manual `cards` of Prompt 60, or only the three text cards) is converted to `prices` by `migrate_version`:
+  * the JSON as it was is first saved in a backup row (`backup-draft`, `backup-published`) that is never overwritten;
+  * each card goes to its (type, price) place: by the catalogue pack it came from (4 / 12 / 24 weeks = Monthly / Quarterly /
+    Semiannual), otherwise by its name; its price text is kept as the page showed it ("€65/session") and so are its features;
+  * what does not fit (a second card for the same place, a card that is not Monthly, Quarterly or Semiannual) is NOT deleted:
+    it stays in `sections.<id>.legacyCards` (and in the backup) and the migration reports it;
+  * it only runs on a Pricing section WITHOUT `prices`, so running it again changes nothing.
 """
-import pack_catalog
-import pricing
-from fastapi import HTTPException
-
 import re
 
-VERSIONS = ("draft", "published")                      # 'default_base' is the immutable snapshot of the first start: not touched
+from fastapi import HTTPException
+from psycopg2.extras import Json as PgJson
 
-TEXT_LIMITS = {"name": 60, "price": 40, "period": 60, "tag": 60, "objective": 200, "description": 200,
-               "duration": 60, "totalSessions": 60, "buttonText": 60}
-LIST_FIELDS = ("benefits", "features")
-MAX_LIST = 10
-MAX_ITEM = 100
-MAX_CARDS = 30
+import pack_catalog
+import pricing
+
+VERSIONS = ("draft", "published")                      # 'default_base' is the immutable snapshot of the first start: not touched
+TYPES = ("individual", "dual")
+TIERS = ("monthly", "quarterly", "semiannual")
+PRICE_LIMIT = 60
+FEATURE_LIMIT = 100
+MAX_FEATURES = 10
+TIER_BY_WEEKS = {4: "monthly", 12: "quarterly", 24: "semiannual"}
+# a name that says which duration it is (checked in this order: "3 Months" must not be taken for Monthly)
+NAME_TIERS = (
+    ("quarterly", re.compile(r"quarter|3\s*months?|3\s*mes|trimest", re.I)),
+    ("semiannual", re.compile(r"semi|6\s*months?|6\s*mes|semest|annual|anual", re.I)),
+    ("monthly", re.compile(r"month|mensual|1\s*mes", re.I)),
+)
 
 
 # --------------------------------------------------------------------------------------------- validation
 def _invalid(field, message):
-    return HTTPException(status_code=422, detail={"code": "invalid_pricing_card", "field": field, "message": message})
+    return HTTPException(status_code=422, detail={"code": "invalid_pricing", "field": field, "message": message})
 
 
 def _strings(value):
@@ -65,183 +72,174 @@ def _check_text(field, value, limit):
             raise _invalid(field, f"Máximo {limit} caracteres. / At most {limit} characters.")
 
 
-def validate_card(card):
-    if not isinstance(card, dict):
-        raise _invalid("cards", "Tarjeta no válida. / Invalid card.")
-    for field, limit in TEXT_LIMITS.items():
-        _check_text(field, card.get(field), limit)
-    for field in LIST_FIELDS:
-        items = card.get(field)
-        if items is None:
-            continue
-        if not isinstance(items, list) or len(items) > MAX_LIST:
-            raise _invalid(field, f"Máximo {MAX_LIST} elementos. / At most {MAX_LIST} items.")
-        for item in items:
-            _check_text(field, item, MAX_ITEM)
-    if "type" in card and card["type"] not in ("individual", "dual"):
-        raise _invalid("type", "Tipo no válido. / Invalid type.")
-    for field in ("visible", "highlighted"):
-        if field in card and not isinstance(card[field], bool):
-            raise _invalid(field, "Valor no válido. / Invalid value.")
-    if "id" in card and (not isinstance(card["id"], str) or len(card["id"]) > 64):
-        raise _invalid("id", "Identificador no válido. / Invalid id.")
+def validate_prices(prices):
+    if not isinstance(prices, dict):
+        raise _invalid("prices", "Precios no válidos. / Invalid prices.")
+    for kind, tiers in prices.items():
+        if kind not in TYPES or not isinstance(tiers, list) or len(tiers) > len(TIERS):
+            raise _invalid("prices", "Precios no válidos. / Invalid prices.")
+        for tier in tiers:
+            if not isinstance(tier, dict):
+                raise _invalid("prices", "Precios no válidos. / Invalid prices.")
+            _check_text("price", tier.get("price"), PRICE_LIMIT)
+            features = tier.get("features")
+            if features is None:
+                continue
+            if not isinstance(features, list) or len(features) > MAX_FEATURES:
+                raise _invalid("features", f"Máximo {MAX_FEATURES} características. / At most {MAX_FEATURES} features.")
+            for item in features:
+                _check_text("features", item, FEATURE_LIMIT)
+
+
+def _pricing_sections(content):
+    """The Pricing sections of a landing content: the ones typed "pricing" and the one called "pricing" in content saved before
+    sections carried a type."""
+    sections = content.get("sections") if isinstance(content, dict) else None
+    return [section for key, section in (sections or {}).items()
+            if isinstance(section, dict) and (section.get("type") == "pricing" or (key == "pricing" and "type" not in section))]
 
 
 def validate_content(content):
-    """Checks the manual cards of every Pricing section of a landing content (a section without `cards`, the old format
-    during the migration, is accepted). Raises a 422."""
-    sections = content.get("sections") if isinstance(content, dict) else None
-    for section in (sections or {}).values():
-        if not isinstance(section, dict) or section.get("type") != "pricing" or "cards" not in section:
-            continue
-        cards = section["cards"]
-        if not isinstance(cards, list) or len(cards) > MAX_CARDS:
-            raise _invalid("cards", f"Máximo {MAX_CARDS} tarjetas. / At most {MAX_CARDS} cards.")
-        for card in cards:
-            validate_card(card)
+    """Checks the prices of every Pricing section of a landing content (a section without `prices`, the old format during the
+    migration, is accepted). Raises a 422."""
+    for section in _pricing_sections(content):
+        if "prices" in section:
+            validate_prices(section["prices"])
 
 
 # --------------------------------------------------------------------------------------------- migration
-def _ml(en, es, ca):
-    return {"en": en, "es": es, "ca": ca}
+def _text(value):
+    """The English (or only) text of a field, to read it."""
+    if isinstance(value, dict):
+        return str(value.get("en") or next(iter(value.values()), "") or "")
+    return str(value or "")
 
 
-def _join(parts):
-    """Joins {en, es, ca} texts with ' · ' (parts that are empty are skipped)."""
-    parts = [part for part in parts if part]
-    return {lang: " · ".join(part[lang] for part in parts) for lang in ("en", "es", "ca")} if parts else ""
+def _price_text(price, period):
+    """"€65" + "/session" as the page showed them: "€65/session" (per language when the suffix has languages)."""
+    if isinstance(period, dict):
+        return {lang: f"{_text(price)}{period.get(lang) or period.get('en') or ''}" for lang in ("en", "es", "ca")}
+    return f"{_text(price)}{period or ''}"
 
 
-def _duration(pack):
-    weeks = pack["weeks"]
-    options = pack["sessions_per_week_options"]
-    first = _ml(f"{weeks} weeks", f"{weeks} semanas", f"{weeks} setmanes")
-    if len(options) == 1:
-        n = options[0]
-        second = _ml(f"{n} sessions a week", f"{n} sesiones por semana", f"{n} sessions per setmana")
-    else:
-        listed = " / ".join(str(value) for value in options)
-        second = _ml(f"choose {listed} sessions a week", f"elige {listed} sesiones por semana", f"tria {listed} sessions per setmana")
-    return _join([first, second])
-
-
-def _total(pack):
-    parts = []
-    if len(pack["sessions_per_week_options"]) == 1:
-        n = pack["weeks"] * pack["sessions_per_week_options"][0]
-        parts.append(_ml(f"{n} sessions in total", f"{n} sesiones en total", f"{n} sessions en total"))
-        if pack["price_per_pack"] is not None:
-            price = pricing.money(pack["price_per_pack"])
-            parts.append(_ml(f"Pack price {price}", f"Precio del pack {price}", f"Preu del pack {price}"))
-    if pack["session_type"] == "dual":
-        parts.append(_ml("one price for both people", "un solo precio para las dos personas", "un sol preu per a les dues persones"))
-    return _join(parts)
-
-
-def _shorten(value, limit):
-    """A migrated text never exceeds its limit (a longer one is cut, never rejected)."""
+def _short(value, limit):
     if isinstance(value, str):
         return value[:limit]
     if isinstance(value, dict):
         return {key: text[:limit] if isinstance(text, str) else "" for key, text in value.items()}
-    return value
+    return ""
 
 
-def card_from_pack(pack, old):
-    """The manual card with the values the page showed for this catalogue pack. `old` is the text card it used (or {})."""
-    own = isinstance(old, dict) and bool(old)
-    card = {
-        "id": f"card-{pack['id']}", "type": pack["session_type"], "visible": True, "highlighted": bool(old.get("highlighted")) if own else False,
-        "name": pack["name"], "price": pricing.money(pack["price_per_session"]), "period": old.get("period", ""),
-        "tag": "", "objective": pack.get("objective") or "", "duration": _duration(pack), "totalSessions": _total(pack),
-        "description": old.get("description", "") if own else "", "benefits": list(pack.get("benefits") or []),
-        "features": list(old.get("features") or []) if own else [], "buttonText": old.get("buttonText", ""),
-    }
-    for style in ("descriptionStyle", "periodStyle", "buttonTextStyle"):
-        if isinstance(old.get(style), dict):
-            card[style] = old[style]
-    for field, limit in TEXT_LIMITS.items():
-        card[field] = _shorten(card[field], limit)
-    for field in LIST_FIELDS:
-        card[field] = [_shorten(item, MAX_ITEM) for item in card[field]][:MAX_LIST]
-    return card
+def _features(*lists):
+    for items in lists:
+        if isinstance(items, list) and items:
+            return [_short(item, FEATURE_LIMIT) for item in items if isinstance(item, (str, dict))][:MAX_FEATURES]
+    return []
 
 
-def items_from_catalog(packs, cards):
+def _tier_of(name, weeks=None):
+    if weeks in TIER_BY_WEEKS:
+        return TIER_BY_WEEKS[weeks]
+    for tier, pattern in NAME_TIERS:
+        if pattern.search(_text(name)):
+            return tier
+    return None
+
+
+def _items_from_catalog(packs, texts):
     """What the page drew when it listed every pack on sale (the oldest format): by type, in the order of the catalogue."""
     items = []
-    for session_type in ("individual", "dual"):
-        for position, pack in enumerate(p for p in packs if p["session_type"] == session_type):
-            items.append({"plan_id": pack["id"], "visible": True, "card": position if position < cards else None})
+    for kind in TYPES:
+        for position, pack in enumerate(p for p in packs if p["session_type"] == kind):
+            items.append({"plan_id": pack["id"], "visible": True, "card": position if position < len(texts) else None})
     return items
 
 
-def migrate_content(content, packs):
-    """Gives every Pricing section without `cards` its manual cards. Returns True when something changed."""
-    changed = False
-    by_id = {pack["id"]: pack for pack in packs}
-    sections = content.get("sections") if isinstance(content, dict) else None
-    for section in (sections or {}).values():
-        if not (isinstance(section, dict) and section.get("type") == "pricing") or "cards" in section:
-            continue
-        texts = section.get("plans") if isinstance(section.get("plans"), list) else []
-        items = section.get("planItems")
-        if not isinstance(items, list):
-            items = items_from_catalog(packs, len(texts))
-        last = texts[-1] if texts else {}
-        cards, seen = [], set()
-        for item in items:
-            pack = by_id.get(item.get("plan_id")) if isinstance(item, dict) else None
-            if not pack or pack["id"] in seen:                      # a pack that no longer exists disappears in silence
+def _candidates(section, packs, by_id):
+    """The cards the section had, as {type, tier, price, features, raw}, whatever the earlier format was."""
+    texts = section.get("plans") if isinstance(section.get("plans"), list) else []
+    candidates = []
+    cards = section.get("cards")
+    if isinstance(cards, list):                                                  # Prompt 60: manual cards
+        for card in cards:
+            if not isinstance(card, dict):
                 continue
-            seen.add(pack["id"])
-            index = item.get("card")
-            old = texts[index] if isinstance(index, int) and 0 <= index < len(texts) and isinstance(texts[index], dict) else None
-            card = card_from_pack(pack, old if old else {"period": last.get("period", ""), "buttonText": last.get("buttonText", "")})
-            if old is None:
-                card["description"], card["features"], card["highlighted"] = "", [], False
-            card["visible"] = item.get("visible") is not False
-            cards.append(card)
-        section["cards"] = cards
-        section.pop("planItems", None)
-        changed = True
-    return changed
+            found = re.fullmatch(r"card-(\d+)", str(card.get("id", "")))
+            pack = by_id.get(int(found.group(1))) if found else None
+            kind = card.get("type") if card.get("type") in TYPES else (pack["session_type"] if pack else "individual")
+            candidates.append({"type": kind, "tier": _tier_of(card.get("name"), pack["weeks"] if pack else None),
+                               "price": _price_text(card.get("price"), card.get("period")),
+                               "features": _features(card.get("features"), card.get("benefits")), "raw": card})
+        return candidates
+    items = section.get("planItems")                                             # Prompt 58: a list of catalogue packs
+    if not isinstance(items, list):
+        items = _items_from_catalog(packs, texts)                                # earlier still: every pack on sale
+    for item in items:
+        pack = by_id.get(item.get("plan_id")) if isinstance(item, dict) else None
+        if not pack:
+            continue                                                             # a pack that no longer exists: in silence
+        index = item.get("card")
+        text = texts[index] if isinstance(index, int) and 0 <= index < len(texts) and isinstance(texts[index], dict) else {}
+        raw = {"id": f"card-{pack['id']}", "type": pack["session_type"], "name": pack["name"], "visible": item.get("visible") is not False}
+        candidates.append({"type": pack["session_type"], "tier": _tier_of(pack["name"], pack["weeks"]),
+                           "price": _price_text(pricing.money(pack["price_per_session"]), text.get("period", "")),
+                           "features": _features(text.get("features"), pack.get("benefits")), "raw": raw})
+    return candidates
 
 
-def type_cards(content, packs):
-    """Gives every manual card without a `type` (individual | dual) one: the type of the pack it was made from (its id is
-    `card-<pack id>`), otherwise individual. The page has the Individual | Dual selector again and filters the cards by it.
-    Runs only on cards that have no type, so it changes nothing the second time. Returns True when something changed."""
-    kinds = {pack["id"]: pack["session_type"] for pack in packs}
-    changed = False
-    sections = content.get("sections") if isinstance(content, dict) else None
-    for section in (sections or {}).values():
-        if not (isinstance(section, dict) and section.get("type") == "pricing" and isinstance(section.get("cards"), list)):
+def migrate_section(section, packs, by_id):
+    """Converts one Pricing section without `prices`. Returns {"placed": n, "kept": [names]} or None when nothing was to do."""
+    if "prices" in section:
+        return None
+    prices = {kind: [{"price": "", "features": []} for _ in TIERS] for kind in TYPES}
+    taken, kept = set(), []
+    for item in _candidates(section, packs, by_id):
+        place = (item["type"], item["tier"])
+        if item["tier"] is None or place in taken:
+            kept.append(item["raw"])
             continue
-        for card in section["cards"]:
-            if isinstance(card, dict) and "type" not in card:
-                found = re.fullmatch(r"card-(\d+)", str(card.get("id", "")))
-                card["type"] = kinds.get(int(found.group(1)), "individual") if found else "individual"
-                changed = True
-    return changed
+        taken.add(place)
+        prices[item["type"]][TIERS.index(item["tier"])] = {"price": _short(item["price"], PRICE_LIMIT), "features": item["features"]}
+    section["prices"] = prices
+    for key in ("cards", "planItems"):
+        section.pop(key, None)
+    if kept:
+        section["legacyCards"] = kept                                            # kept, not drawn, never deleted
+    return {"placed": len(taken), "kept": [_text(card.get("name")) for card in kept]}
+
+
+def migrate_content(content, packs):
+    """Converts every Pricing section without `prices`. Returns the list of reports (empty when nothing changed)."""
+    by_id = {pack["id"]: pack for pack in packs}
+    reports = []
+    for section in _pricing_sections(content):
+        report = migrate_section(section, packs, by_id)
+        if report:
+            reports.append(report)
+    return reports
+
+
+def _needs_migration(content):
+    return any("prices" not in section for section in _pricing_sections(content))
 
 
 def migrate_version(cursor, version):
-    """One saved version of the landing content (draft | published). Idempotent."""
+    """One saved version of the landing content (draft | published). Saves the JSON as it was in `backup-<version>` first
+    (never overwritten). Idempotent. Returns the reports ([] when nothing changed)."""
     cursor.execute("SELECT content FROM landing_page_content WHERE version = %s FOR UPDATE", (version,))
     row = cursor.fetchone()
-    if not row or not isinstance(row[0], dict):
-        return False
+    if not row or not isinstance(row[0], dict) or not _needs_migration(row[0]):
+        return []
     content = row[0]
-    packs = pack_catalog.list_packs(cursor, include_archived=False)
-    migrated = migrate_content(content, packs)
-    typed = type_cards(content, pack_catalog.list_packs(cursor))
-    if not (migrated or typed):
-        return False
-    from psycopg2.extras import Json as PgJson
+    cursor.execute(
+        "INSERT INTO landing_page_content (version, content) VALUES (%s, %s) ON CONFLICT (version) DO NOTHING",
+        (f"backup-{version}", PgJson(content)),
+    )
+    packs = pack_catalog.list_packs(cursor)                       # archived ones too: a card made from one still finds its type
+    reports = migrate_content(content, packs)
     cursor.execute("UPDATE landing_page_content SET content = %s WHERE version = %s", (PgJson(content), version))   # updated_at stays
-    return True
+    return reports
 
 
 def migrate_all(cursor):
-    return [version for version in VERSIONS if migrate_version(cursor, version)]
+    return {version: migrate_version(cursor, version) for version in VERSIONS}

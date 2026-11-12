@@ -7,12 +7,12 @@ import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import SegmentedType from '../../components/forms/SegmentedType'
 import { Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon, PageHeader, Skeleton, TextArea, TextInput } from '../ui'
-import { formatMoney, isPriceText, monthsEquivalent, packPriceLooksOff, packQuote, priceFromText, suggestedPackPrice, totalPrice } from '../../utils/pricing'
+import { formatMoney, isPriceText, monthsEquivalent, priceFromText, totalPrice } from '../../utils/pricing'
 import { MAX_BENEFIT, MAX_BENEFITS, MAX_OBJECTIVE, benefitsProblem, cleanBenefits, cleanObjective, moveItem, objectiveProblem } from '../../utils/packFields'
 import { refreshPricing } from '../../utils/usePricing'
 
 const PER_WEEK = [1, 2, 3, 4, 5]                 // Monday to Friday only: never more than 5 a week
-const EMPTY = { name: '', type: 'individual', weeks: '', options: [], perSession: '', perPack: '', packTouched: false, objective: '', benefits: [] }
+const EMPTY = { name: '', type: 'individual', weeks: '', options: [], perSession: '', objective: '', benefits: [] }
 
 function toForm(pack) {
   return {
@@ -21,36 +21,29 @@ function toForm(pack) {
     weeks: String(pack.weeks),
     options: pack.sessions_per_week_options,
     perSession: String(pack.price_per_session),
-    perPack: pack.price_per_pack == null ? '' : String(pack.price_per_pack),
-    packTouched: pack.price_per_pack != null,         // an explicit pack price was set: it is not "suggested" any more
     objective: pack.objective || '',
     benefits: pack.benefits || []
   }
 }
 
-// What the form means: the pack price shown (suggested with ONE option until the admin types one), and the problems found.
+// What the form means: the problems found and the figures the system works out (never typed): the total sessions (weeks x sessions
+// per week) and the total price (total sessions x price per session). With ONE option of sessions per week they are one pair; with
+// several, one line per option (the client chooses).
 function readForm(form) {
   const single = form.options.length === 1
   const weeks = Number(form.weeks)
-  const suggestion = single ? suggestedPackPrice(priceFromText(form.perSession), weeks, form.options[0]) : null
-  const packShown = !single ? '' : (form.packTouched ? form.perPack : (suggestion == null ? '' : String(suggestion)))
   let problem
   if (!form.name.trim()) problem = 'cat_err_name'
   else if (!/^\d+$/.test(form.weeks.trim()) || weeks < 1) problem = 'cat_err_weeks'
   else if (form.options.length === 0) problem = 'cat_err_options'
   else if (!isPriceText(form.perSession)) problem = 'cat_err_price'
-  else if (single && form.packTouched && form.perPack.trim() !== '' && !isPriceText(form.perPack)) problem = 'cat_err_pack_price'
   else problem = objectiveProblem(form.objective) || benefitsProblem(form.benefits)
-  const off = single && form.packTouched && isPriceText(form.perSession) && isPriceText(form.perPack) &&
-    packPriceLooksOff(priceFromText(form.perSession), priceFromText(form.perPack), weeks, form.options[0])
-  // what the system works out (never typed): one line per option of sessions per week; with ONE option the totals directly
   const valid = isPriceText(form.perSession) && weeks >= 1
   const perSessionNumber = valid ? priceFromText(form.perSession) : null
   const lines = valid ? form.options.map(perWeek => ({
-    perWeek, sessions: weeks * perWeek,
-    total: single && packShown !== '' && isPriceText(packShown) ? priceFromText(packShown) : totalPrice(perSessionNumber, weeks * perWeek)
+    perWeek, sessions: weeks * perWeek, total: totalPrice(perSessionNumber, weeks * perWeek)
   })) : []
-  return { single, suggestion, packShown, problem, off, lines, perSessionNumber }
+  return { single, problem, lines, perSessionNumber }
 }
 
 export default function Plans() {
@@ -66,6 +59,7 @@ export default function Plans() {
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState('')
   const [archiving, setArchiving] = useState(null)
+  const [deleting, setDeleting] = useState(null)       // the pack waiting for the confirmation to be excluded
   const [removingBenefit, setRemovingBenefit] = useState(null)   // index of the benefit waiting for the confirmation
 
   const view = readForm(form)
@@ -87,8 +81,7 @@ export default function Plans() {
       weeks: Number(form.weeks),
       sessions_per_week_options: form.options,
       price_per_session: priceFromText(form.perSession),
-      // only an explicit pack price is sent (with one option); otherwise the total is price per session x sessions
-      price_per_pack: view.single && form.packTouched && form.perPack.trim() !== '' ? priceFromText(form.perPack) : null,
+      price_per_pack: null,                     // there is no separate pack price: the total is worked out (sessions x price per session)
       objective: cleanObjective(form.objective),
       benefits: cleanBenefits(form.benefits)
     }
@@ -106,6 +99,22 @@ export default function Plans() {
       changed()
     } catch (error) {
       setFormError(error.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Excluir pack: deleted for good when nobody used it; archived (clients keep their packs) when it is in use. The list is reloaded.
+  const removePack = async (pack) => {
+    setBusy(true)
+    try {
+      const result = await adminRequest('DELETE', `/admin/plans/${pack.id}`)
+      toast.push(t(result?.outcome === 'archived' ? 'cat_delete_archived' : 'cat_deleted'))
+      setDeleting(null)
+      changed()
+    } catch (error) {
+      toast.push(error.message, 'error')
+      setDeleting(null)
     } finally {
       setBusy(false)
     }
@@ -144,7 +153,7 @@ export default function Plans() {
             <Card className={cls || undefined}><EmptyState icon="inbox" title={<Txt id="plans.empty" />} action={<Button variant="primary" onClick={openNew}><Txt id="plans.new_pack" /></Button>} /></Card>
           ) : (
             <ul className={`grid gap-4 md:grid-cols-2 xl:grid-cols-3 ${cls}`.trim()} aria-label={t('cat_on_sale')}>
-              {onSale.map(pack => <PackCard key={pack.id} pack={pack} onEdit={() => openEdit(pack)} onArchive={() => setArchiving(pack)} />)}
+              {onSale.map(pack => <PackCard key={pack.id} pack={pack} onEdit={() => openEdit(pack)} onArchive={() => setArchiving(pack)} onDelete={() => setDeleting(pack)} busy={busy} />)}
             </ul>
           )),
           archived: archived.length > 0 ? (cls) => (
@@ -152,7 +161,7 @@ export default function Plans() {
               <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400"><Txt id="plans.archived_title" /> ({archived.length})</h2>
               <p className="mb-4 max-w-2xl text-sm text-gray-500">{t('cat_archived_note')}</p>
               <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {archived.map(pack => <PackCard key={pack.id} pack={pack} onEdit={() => openEdit(pack)} onRestore={() => setArchived(pack, false)} busy={busy} />)}
+                {archived.map(pack => <PackCard key={pack.id} pack={pack} onEdit={() => openEdit(pack)} onRestore={() => setArchived(pack, false)} onDelete={() => setDeleting(pack)} busy={busy} />)}
               </ul>
             </section>
           ) : null,
@@ -205,17 +214,6 @@ export default function Plans() {
           <Field label={t('cat_price_session')} hint={t('cat_price_session_hint')}>
             <TextInput inputMode="decimal" value={form.perSession} onChange={event => set({ perSession: event.target.value })} placeholder="0.00" disabled={busy} />
           </Field>
-          <Field label={t('cat_price_pack')} hint={!view.single ? t('cat_pack_disabled') : (form.packTouched ? t('cat_pack_custom') : t('cat_pack_suggested'))}>
-            <div className="flex gap-2">
-              <TextInput
-                inputMode="decimal" value={view.packShown} placeholder="—" disabled={busy || !view.single}
-                onChange={event => set({ perPack: event.target.value, packTouched: true })}
-              />
-              {view.single && form.packTouched && (
-                <Button variant="secondary" onClick={() => set({ perPack: '', packTouched: false })} disabled={busy} aria-label={t('cat_pack_reset')}>↺</Button>
-              )}
-            </div>
-          </Field>
         </div>
         <div className="md:col-span-2">
           <Field label={t('cat_objective')} hint={t('cat_objective_hint')}>
@@ -250,11 +248,6 @@ export default function Plans() {
           </Button>
         </section>
         <PackPreview form={form} view={view} />
-        {view.off && (
-          <p role="status" className="mb-4 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
-            {t('cat_warn_off').replace('{expected}', formatMoney(view.suggestion))}
-          </p>
-        )}
         {formError && <p role="alert" className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{formError}</p>}
       </Drawer>
 
@@ -263,6 +256,13 @@ export default function Plans() {
         title={t('cat_benefit_del_title')} text={removingBenefit !== null ? `“${form.benefits[removingBenefit] || ''}” — ${t('cat_benefit_del_text')}` : ''}
         confirmLabel={t('cat_benefit_del')} cancelLabel={t('cancel')}
         onConfirm={() => removeBenefit(removingBenefit)} onCancel={() => setRemovingBenefit(null)}
+      />
+
+      <ConfirmDialog
+        open={!!deleting} busy={busy}
+        title={t('cat_delete_title')} text={deleting ? `${deleting.name} — ${t('cat_delete_text')}` : ''}
+        confirmLabel={t('cat_delete')} cancelLabel={t('cancel')}
+        onConfirm={() => removePack(deleting)} onCancel={() => setDeleting(null)}
       />
 
       <ConfirmDialog
@@ -332,11 +332,9 @@ function WeeksText({ weeks }) {
   return <>{t('cat_weeks_n').replace('{n}', weeks)}{months ? ` = ${t(`cat_eq_${months}`)}` : ''}</>
 }
 
-function PackCard({ pack, onEdit, onArchive, onRestore, busy = false }) {
+function PackCard({ pack, onEdit, onArchive, onRestore, onDelete, busy = false }) {
   const { t } = useAdminText()
   const single = pack.sessions_per_week_options.length === 1
-  const quote = packQuote(pack, pack.sessions_per_week_options[0])
-  const explicit = single && pack.price_per_pack != null
   return (
     <li>
       <Card className={`group relative h-full overflow-hidden p-6 transition-all duration-200 ${pack.active ? 'hover:-translate-y-0.5 hover:border-emerald-400/30' : 'opacity-75'}`}>
@@ -354,12 +352,12 @@ function PackCard({ pack, onEdit, onArchive, onRestore, busy = false }) {
             <dd className="text-2xl font-semibold tabular-nums">{formatMoney(pack.price_per_session)}</dd>
           </div>
           <div className="flex items-baseline justify-between gap-3">
-            <dt className="text-sm text-gray-400">{t('cat_price_pack')}</dt>
-            <dd className="text-right tabular-nums">
-              {single
-                ? <>{formatMoney(quote.total)} <span className="block text-xs text-gray-500">{explicit ? t('cat_pack_custom_short') : t('cat_pack_auto_short')}</span></>
-                : <span className="text-sm text-gray-400">{t('cat_pack_by_choice')}</span>}
-            </dd>
+            <dt className="text-sm text-gray-400">{t('cat_calc_sessions')}</dt>
+            <dd className="text-right tabular-nums">{single ? pack.total_sessions : <span className="text-sm text-gray-400">{t('cat_pack_by_choice')}</span>}</dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-sm text-gray-400">{t('cat_calc_total')}</dt>
+            <dd className="text-right tabular-nums">{single ? formatMoney(pack.price_total) : <span className="text-sm text-gray-400">{t('cat_pack_by_choice')}</span>}</dd>
           </div>
           <div className="flex items-center justify-between gap-3">
             <dt className="text-sm text-gray-400">{t('cat_options')}</dt>
@@ -375,6 +373,10 @@ function PackCard({ pack, onEdit, onArchive, onRestore, busy = false }) {
             ? <Button variant="secondary" onClick={onArchive} aria-label={`${t('cat_archive')} ${pack.name}`}><Txt id="plans.archive" /></Button>
             : <Button variant="primary" onClick={onRestore} loading={busy} aria-label={`${t('cat_restore')} ${pack.name}`}><Txt id="plans.restore" /></Button>}
         </div>
+        <button type="button" onClick={onDelete} disabled={busy} aria-label={`${t('cat_delete')}: ${pack.name}`}
+          className="mt-3 w-full min-h-10 rounded-xl px-3 text-sm text-red-300 transition hover:bg-red-500/10 hover:text-red-200 disabled:opacity-40">
+          {t('cat_delete')}
+        </button>
       </Card>
     </li>
   )

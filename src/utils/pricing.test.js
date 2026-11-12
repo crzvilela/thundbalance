@@ -2,8 +2,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  formatMoney, isPriceText, monthsEquivalent, packPriceLooksOff, packQuote, packsOfType, priceFromText, sessionTypeBody,
-  suggestedPackPrice, totalPrice, trialPricePerSession
+  formatMoney, isPriceText, monthsEquivalent, packQuote, packsOfType, priceFromText, sessionTypeBody,
+  totalPrice, trialPricePerSession
 } from './pricing.js'
 
 // the answer of GET /pricing (the server owns the numbers; these are only test data)
@@ -34,14 +34,6 @@ test('weeks have an equivalence in months only when it is exact', () => {
   assert.equal(monthsEquivalent(12), 3)
   assert.equal(monthsEquivalent(24), 6)
   assert.equal(monthsEquivalent(8), null)
-})
-
-test('the pack price is suggested and only a big difference warns', () => {
-  assert.equal(suggestedPackPrice(62.5, 8, 2), 1000)
-  assert.equal(suggestedPackPrice('', 8, 2), null)
-  assert.equal(packPriceLooksOff(62.5, 960, 8, 2), false)
-  assert.equal(packPriceLooksOff(62.5, 700, 8, 2), true)
-  assert.equal(packPriceLooksOff(62.5, '', 8, 2), false)
 })
 
 test('a price typed in a form is a number with at most two decimals', () => {
