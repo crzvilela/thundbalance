@@ -82,7 +82,7 @@ function Field({ label, error, children, optional, required }) {
 }
 
 function TrialSession() {
-  const { t, language, locale } = useI18n()
+  const { t, language } = useI18n()
   const [form, setForm] = useState(EMPTY)
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
@@ -91,7 +91,7 @@ function TrialSession() {
   const errorText = useErrorText()
   const [done, setDone] = useState(false)
   const { prices } = usePricing()
-  const [existing, setExisting] = useState(null) // an open request of this email: { status, session_date, session_time }
+  const [existing, setExisting] = useState(null) // this email already has an open request (the server says nothing more: no state, day or hour)
   const [schedule, setSchedule] = useState(null) // times offered per weekday
   const [times, setTimes] = useState([]) // free start times on the chosen date
   const [timesState, setTimesState] = useState('idle') // idle | loading | ready | error
@@ -258,12 +258,7 @@ function TrialSession() {
               </svg>
             </span>
             <h2 style={{ fontFamily: 'Bebas Neue' }} className="mb-3 text-4xl">{t('ts_ex_title')}</h2>
-            <p className="mx-auto max-w-md text-gray-300">
-              {t(`ts_ex_${existing.status}`, {
-                date: new Date(`${existing.session_date}T00:00:00`).toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
-                time: existing.session_time
-              })}
-            </p>
+            <p className="mx-auto max-w-md text-gray-300">{t('ts_ex_generic')}</p>
             <p className="mx-auto mt-3 max-w-md text-sm text-gray-500">{t('ts_ex_note')}</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Link to="/my-sessions" className="rounded-xl bg-white px-6 py-3 text-sm font-semibold uppercase tracking-wider text-black transition hover:bg-gray-200">{t('ts_ex_sessions')}</Link>

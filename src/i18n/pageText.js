@@ -6,6 +6,17 @@
 
 export const pageText = {
   en: {
+    // Verify your email (shown only when the server says the address is not verified and has data under it)
+    ve_title: 'Verify your email',
+    ve_text: 'To access your data, verify your email {email}. Press "Resend email" to receive the link, open it, then come back and press "I have verified".',
+    ve_spam: 'If you do not see the email, check your spam folder.',
+    ve_done: 'I have verified', ve_checking: 'Checking…',
+    ve_resend: 'Resend email', ve_resend_wait: 'Resend in {s} s',
+    ve_sent: 'We have sent you the email.',
+    ve_not_yet: 'Your email is not verified yet. Open the link in the email and try again.',
+    ve_too_many: 'Too many attempts. Wait a few minutes and try again.',
+    ve_error: 'Something went wrong. Please try again.',
+    ve_signout: 'Sign out',
     // Shared
     wd_Monday: 'Monday', wd_Tuesday: 'Tuesday', wd_Wednesday: 'Wednesday', wd_Thursday: 'Thursday',
     wd_Friday: 'Friday',
@@ -266,6 +277,7 @@ export const pageText = {
     ts_e_limit: 'Too many requests. Please try again later.',
     ts_e_network: 'We could not reach the server. Check your connection and try again.',
     ts_ex_title: 'You already requested a trial session',
+    ts_ex_generic: 'You already have a request in progress',
     ts_ex_pending: 'Your request for {date} at {time} is waiting for confirmation from our team. We will contact you soon.',
     ts_ex_approved: 'Good news: your request for {date} at {time} was approved. Check your email and confirm the session from the link we sent you.',
     ts_ex_confirmed: 'Your trial session is confirmed for {date} at {time}. See you there!',
@@ -353,6 +365,17 @@ export const pageText = {
   },
 
   es: {
+    // Verifica tu email (solo si el servidor dice que el correo no está verificado y tiene datos)
+    ve_title: 'Verifica tu email',
+    ve_text: 'Para acceder a tus datos, verifica tu email {email}. Pulsa «Reenviar email» para recibir el enlace, ábrelo y vuelve aquí para pulsar «Ya lo verifiqué».',
+    ve_spam: 'Si no ves el correo, revisa la carpeta de spam.',
+    ve_done: 'Ya lo verifiqué', ve_checking: 'Comprobando…',
+    ve_resend: 'Reenviar email', ve_resend_wait: 'Reenviar en {s} s',
+    ve_sent: 'Te hemos enviado el email.',
+    ve_not_yet: 'Tu email todavía no está verificado. Abre el enlace del correo e inténtalo de nuevo.',
+    ve_too_many: 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.',
+    ve_error: 'Algo ha ido mal. Inténtalo de nuevo.',
+    ve_signout: 'Cerrar sesión',
     wd_Monday: 'Lunes', wd_Tuesday: 'Martes', wd_Wednesday: 'Miércoles', wd_Thursday: 'Jueves',
     wd_Friday: 'Viernes',
     pg_try_again: 'Reintentar',
@@ -607,6 +630,7 @@ export const pageText = {
     ts_e_limit: 'Demasiadas solicitudes. Inténtalo de nuevo más tarde.',
     ts_e_network: 'No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.',
     ts_ex_title: 'Ya solicitaste una sesión de prueba',
+    ts_ex_generic: 'Ya tienes una solicitud en curso',
     ts_ex_pending: 'Tu solicitud para el {date} a las {time} está pendiente de confirmación por parte de nuestro equipo. Te contactaremos pronto.',
     ts_ex_approved: 'Buenas noticias: tu solicitud para el {date} a las {time} fue aprobada. Revisa tu correo y confirma la sesión desde el enlace que te enviamos.',
     ts_ex_confirmed: 'Tu sesión de prueba está confirmada para el {date} a las {time}. ¡Te esperamos!',
@@ -694,6 +718,17 @@ export const pageText = {
   },
 
   ca: {
+    // Verifica el teu correu (només si el servidor diu que l'adreça no està verificada i té dades)
+    ve_title: 'Verifica el teu correu',
+    ve_text: "Per accedir a les teves dades, verifica el teu correu {email}. Prem «Reenviar correu» per rebre l'enllaç, obre'l i torna aquí per prémer «Ja ho he verificat».",
+    ve_spam: 'Si no veus el correu, revisa la carpeta de correu brossa.',
+    ve_done: 'Ja ho he verificat', ve_checking: 'Comprovant…',
+    ve_resend: 'Reenviar correu', ve_resend_wait: 'Reenviar en {s} s',
+    ve_sent: "T'hem enviat el correu.",
+    ve_not_yet: "El teu correu encara no està verificat. Obre l'enllaç del correu i torna-ho a provar.",
+    ve_too_many: 'Massa intents. Espera uns minuts i torna-ho a provar.',
+    ve_error: 'Alguna cosa ha anat malament. Torna-ho a provar.',
+    ve_signout: 'Tancar sessió',
     wd_Monday: 'Dilluns', wd_Tuesday: 'Dimarts', wd_Wednesday: 'Dimecres', wd_Thursday: 'Dijous',
     wd_Friday: 'Divendres',
     pg_try_again: 'Torna-ho a provar',
@@ -948,6 +983,7 @@ export const pageText = {
     ts_e_limit: 'Massa sol·licituds. Torna-ho a provar més tard.',
     ts_e_network: 'No hem pogut connectar amb el servidor. Revisa la teva connexió i torna-ho a provar.',
     ts_ex_title: 'Ja has sol·licitat una sessió de prova',
+    ts_ex_generic: 'Ja tens una sol·licitud en curs',
     ts_ex_pending: 'La teva sol·licitud per al {date} a les {time} està pendent de confirmació del nostre equip. Ens posarem en contacte aviat.',
     ts_ex_approved: 'Bones notícies: la teva sol·licitud per al {date} a les {time} ha estat aprovada. Revisa el correu i confirma la sessió des de l\'enllaç que t\'hem enviat.',
     ts_ex_confirmed: 'La teva sessió de prova està confirmada per al {date} a les {time}. T\'esperem!',

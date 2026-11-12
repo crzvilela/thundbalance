@@ -10,7 +10,7 @@ Rules kept here:
   Google Calendar events, the Firebase account).
 """
 import logging
-import traceback
+from safe_log import log_error, safe_error
 
 import psycopg2.errors
 from fastapi import Depends, HTTPException
@@ -287,7 +287,7 @@ def register_client_account_routes(app, require_admin, require_client):
             raise HTTPException(status_code=409, detail={"code": "login_exists", "message": LOGIN_EXISTS}) from None
         except accounts.AccountsUnavailable as error:
             conn.rollback()
-            logger.error("Account creation unavailable: %s", error)
+            log_error(error, op="create_client", logger=logger)
             raise HTTPException(status_code=503, detail=_unavailable(str(error))) from None
         except psycopg2.errors.UniqueViolation:
             # Two requests for the same email at once (double click): the second one loses.
@@ -300,7 +300,7 @@ def register_client_account_routes(app, require_admin, require_client):
             if uid:
                 accounts.delete_login(uid)
             logger.error("Client creation failed (%s)", type(error).__name__)
-            traceback.print_exc()
+            log_error(error)
             raise HTTPException(status_code=500, detail=FAILED) from None
         finally:
             cursor.close()
@@ -346,7 +346,7 @@ def register_client_account_routes(app, require_admin, require_client):
             try:
                 accounts.set_password(uid, password)
             except accounts.AccountsUnavailable as error:
-                logger.error("Resend unavailable: %s", error)
+                log_error(error, op="resend_credentials", logger=logger)
                 raise HTTPException(status_code=503, detail=_unavailable(str(error))) from None
             except accounts.AccountError:
                 raise HTTPException(
@@ -370,9 +370,11 @@ def register_client_account_routes(app, require_admin, require_client):
         conn = get_connection()
         cursor = conn.cursor()
         try:
+            # the e-mail only identifies the record when it is verified (an unverified address could be anybody's)
+            verified = claims.get("email_verified") is True or (claims.get("firebase") or {}).get("sign_in_provider") == "google.com"
             cursor.execute(
-                "UPDATE users SET must_change_password = FALSE WHERE firebase_uid = %s OR LOWER(email) = %s",
-                (claims.get("sub"), email),
+                "UPDATE users SET must_change_password = FALSE WHERE firebase_uid = %s OR (%s AND LOWER(email) = %s)",
+                (claims.get("sub"), verified, email),
             )
             conn.commit()
             return {"ok": True}

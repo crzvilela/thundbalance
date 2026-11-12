@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import Txt from './Txt'
 import { resolveImageUrl } from '../api/landingPage'
 import { useAdminText } from './useAdminText'
@@ -21,14 +22,16 @@ function initialsOf(client) {
 
 // The Google / Firebase photo when there is one, otherwise the initials on a colour taken from the email.
 export function ClientAvatar({ client, size = 'h-10 w-10 text-sm' }) {
-  const photo = resolveImageUrl(client.photo)
+  const [failed, setFailed] = useState('')                    // the address that did not load: the initials are shown instead
+  const source = resolveImageUrl(client.photo)
+  const photo = source && source !== failed ? source : ''
   const hue = hueOf(client.email)
   return (
     <span
       className={`flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold`}
       style={photo ? undefined : { background: `hsl(${hue} 45% 26%)`, color: `hsl(${hue} 85% 88%)` }}
     >
-      {photo ? <img src={photo} alt="" className="h-full w-full object-cover" /> : initialsOf(client)}
+      {photo ? <img src={photo} alt="" className="h-full w-full object-cover" onError={() => setFailed(photo)} referrerPolicy="no-referrer" /> : initialsOf(client)}
     </span>
   )
 }

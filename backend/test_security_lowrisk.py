@@ -265,8 +265,9 @@ class Videos(unittest.TestCase):
         self.assertEqual(len(os.listdir(self.folder)), 1)
         with mock.patch.object(main, "MAX_VIDEO_SIZE_BYTES", 100):
             too_big = self.upload("big.mp4", MP4 + b"0" * 200, "video/mp4")
-            self.assertEqual(too_big.status_code, 400)
+            self.assertEqual(too_big.status_code, 413)                                         # over the limit: 413 (it used to be 400)
             self.assertIn("too large", too_big.json()["detail"])
+            self.assertEqual(len(os.listdir(self.folder)), 1)                                  # the half-written file was removed
 
     def test_the_signature_check_by_itself(self):
         self.assertEqual(web_safety.check_video("a.MP4", "video/mp4; codecs=avc1", MP4), ".mp4")

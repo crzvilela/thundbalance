@@ -25,7 +25,7 @@ The public endpoints accept only the token and return the least possible data.
 """
 import logging
 import secrets
-import traceback
+from safe_log import log_error, safe_error
 from datetime import date, datetime
 
 from fastapi import HTTPException
@@ -218,7 +218,7 @@ def answer_trial(token, wanted):
         raise
     except Exception as error:  # noqa: BLE001
         conn.rollback()
-        traceback.print_exc()
+        log_error(error)
         raise HTTPException(status_code=500, detail="Could not save your answer. Please try again.") from error
     finally:
         cursor.close()

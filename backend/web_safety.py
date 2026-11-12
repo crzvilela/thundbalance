@@ -13,6 +13,7 @@ import logging
 import mimetypes
 import os
 import threading
+import uuid
 import time
 
 from fastapi import HTTPException, Request
@@ -210,6 +211,15 @@ def register_safety(app):
     @app.middleware("http")
     async def safety(request: Request, call_next):
         path = request.url.path
+        if path == "/landing-page/upload-video" and request.method == "POST":
+            # refused from the header, before the body is received (the multipart envelope adds a little to the file)
+            try:
+                declared = int(request.headers.get("content-length", "0") or 0)
+            except ValueError:
+                declared = 0
+            if declared > MAX_VIDEO_BYTES + 2 * VIDEO_CHUNK_BYTES:
+                return JSONResponse({"detail": f"Video is too large (max {MAX_VIDEO_BYTES // (1024 * 1024)} MB)"}, status_code=413,
+                                    headers=SECURITY_HEADERS)
         if path.startswith(TOKEN_PREFIXES) and await run_in_threadpool(token_limit.too_many, get_client_ip(request)):
             return JSONResponse({"detail": "Too many requests. Please try again in a few minutes."}, status_code=429,
                                 headers={"Retry-After": "300", **SECURITY_HEADERS})
@@ -277,6 +287,52 @@ def check_video(filename, content_type, contents):
     return extension
 
 
+MAX_VIDEO_BYTES = 300 * 1024 * 1024    # the largest video that can be uploaded
+VIDEO_CHUNK_BYTES = 1024 * 1024        # the upload is read 1 MB at a time: a big file is never held in memory
+
+
+async def store_video(file, upload_dir, max_bytes=None, chunk_size=None):
+    """Stores an uploaded video in `upload_dir` and returns the stored file name (<uuid>.<ext>: the name sent by the user is never used).
+
+    The file is read in chunks and written to a temporary file next to the final one; the type is checked on the first chunk (415) and
+    the size while it grows (413 as soon as it passes `max_bytes`, without reading the rest). Only a valid video is moved to its final
+    name; the temporary file is always removed when something fails. `file` is a Starlette UploadFile (filename, content_type, async read)."""
+    max_bytes = MAX_VIDEO_BYTES if max_bytes is None else max_bytes
+    chunk_size = VIDEO_CHUNK_BYTES if chunk_size is None else chunk_size
+    extension = os.path.splitext(file.filename or "")[1].lower()
+    if extension not in VIDEO_CONTENT_TYPES:
+        raise HTTPException(status_code=415, detail="Unsupported video type: use MP4, MOV or WebM")
+    # hidden name: /uploads/{name} never serves a name that starts with a dot, so a half-written file can not be read
+    temporary = os.path.join(upload_dir, f".upload-{uuid.uuid4().hex}.part")
+    final_name = f"{uuid.uuid4().hex}{extension}"
+    try:
+        total = 0
+        with open(temporary, "wb") as output:
+            first = True
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                if first:
+                    check_video(file.filename, file.content_type, chunk)        # the signature, on the first bytes (415)
+                    first = False
+                total += len(chunk)
+                if total > max_bytes:
+                    raise HTTPException(status_code=413, detail=f"Video is too large (max {max_bytes // (1024 * 1024)} MB)")
+                output.write(chunk)
+            if first:
+                raise HTTPException(status_code=415, detail="The file is not a valid video of the type its name says")
+        os.replace(temporary, os.path.join(upload_dir, final_name))
+        temporary = None
+        return final_name
+    finally:
+        if temporary and os.path.exists(temporary):
+            try:
+                os.remove(temporary)
+            except OSError:
+                logger.error("A temporary upload file could not be removed")
+
+
 # ----------------------------------------------------------------------------------------------- stored files
 def ensure_upload_table():
     conn = get_connection()
@@ -293,23 +349,62 @@ def ensure_upload_table():
             )
             """
         )
+        # whose photo it is (a profile photo): when the client is deleted every photo of theirs goes, and a new photo replaces the old one
+        cursor.execute("ALTER TABLE uploaded_files ADD COLUMN IF NOT EXISTS owner_user_id INTEGER")
+        cursor.execute("CREATE INDEX IF NOT EXISTS uploaded_files_owner ON uploaded_files (owner_user_id)")
         conn.commit()
     finally:
         cursor.close()
         conn.close()
 
 
-def save_upload(name, contents):
-    """Keeps an uploaded image in the database under `name` (<uuid>.<ext>) and returns its public path."""
+_upload_table_ready = False
+
+
+def delete_stored_photo(photo, upload_dir=None):
+    """Removes the file a "/uploads/<name>" address points to, from the database and from the disk. Anything else is ignored."""
+    text = str(photo or "")
+    if not text.startswith("/uploads/"):
+        return
+    name = os.path.basename(text)
+    if not name or name.startswith("."):
+        return
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM uploaded_files WHERE name = %s", (name,))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    if upload_dir:
+        path = os.path.join(upload_dir, name)
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except OSError:
+            logger.error("A stored photo could not be removed from the disk")
+
+
+def save_upload(name, contents, owner_user_id=None):
+    """Keeps an uploaded image in the database under `name` (<uuid>.<ext>) and returns its public path. With `owner_user_id` (a profile
+    photo) the image remembers whose it is and the owner's previous photos are removed: one photo per person."""
+    global _upload_table_ready
+    if not _upload_table_ready:
+        ensure_upload_table()
+        _upload_table_ready = True
     content_type = IMAGE_TYPES.get(os.path.splitext(name)[1].lower(), "application/octet-stream")
     conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "INSERT INTO uploaded_files (name, content_type, data, size) VALUES (%s, %s, %s, %s) "
-            "ON CONFLICT (name) DO UPDATE SET data = EXCLUDED.data, content_type = EXCLUDED.content_type, size = EXCLUDED.size",
-            (name, content_type, contents, len(contents)),
+            "INSERT INTO uploaded_files (name, content_type, data, size, owner_user_id) VALUES (%s, %s, %s, %s, %s) "
+            "ON CONFLICT (name) DO UPDATE SET data = EXCLUDED.data, content_type = EXCLUDED.content_type, size = EXCLUDED.size, "
+            "owner_user_id = EXCLUDED.owner_user_id",
+            (name, content_type, contents, len(contents), owner_user_id),
         )
+        if owner_user_id is not None:
+            cursor.execute("DELETE FROM uploaded_files WHERE owner_user_id = %s AND name <> %s", (owner_user_id, name))
         conn.commit()
     finally:
         cursor.close()

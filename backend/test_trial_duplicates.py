@@ -26,7 +26,7 @@ class TrialDuplicates(unittest.TestCase):
         self.cleanup()
         main._trial_hits.clear()
         self._claims = main.require_client
-        main.require_client = lambda authorization=None: {"email": EMAIL.upper()}
+        main.require_client = lambda authorization=None: {"email": EMAIL.upper(), "email_verified": True}
 
     def tearDown(self):
         main.require_client = self._claims
@@ -66,26 +66,42 @@ class TrialDuplicates(unittest.TestCase):
         )
         return main.create_trial_session(payload, request)
 
-    def test_each_open_status_is_reported_with_date_and_time(self):
+    def test_each_open_status_gets_the_same_generic_answer_with_no_details(self):
+        answers = []
         for status in ("Pending", "Approved", "Confirmed"):
             self.cleanup()
             main._trial_hits.clear()
-            day = self.weekday()
-            self.insert(status, day)
+            main._trial_email_hits.clear()
+            self.insert(status, self.weekday())
             with self.assertRaises(HTTPException) as caught:
                 self.submit(email=EMAIL.upper())  # case does not matter
             self.assertEqual(caught.exception.status_code, 409)
-            detail = caught.exception.detail
-            self.assertEqual(detail["code"], "trial_exists")
-            self.assertEqual(detail["status"], status.lower())
-            self.assertEqual(detail["session_date"], day.isoformat())
-            self.assertEqual(detail["session_time"], "10:00")
+            answers.append(caught.exception.detail)
+            self.assertEqual(caught.exception.detail["code"], "trial_exists")
+        self.assertEqual(answers[0], answers[1])
+        self.assertEqual(answers[1], answers[2])                      # the answer does not tell the states apart
+        self.assertEqual(answers[0]["message"], "Ya tienes una solicitud en curso")
+
+    def test_the_generic_answer_is_in_the_language_of_the_visitor(self):
+        self.insert("Pending")
+        texts = {}
+        for lang in ("es", "en", "ca"):
+            main._trial_hits.clear()
+            main._trial_email_hits.clear()
+            request = SimpleNamespace(headers={}, client=SimpleNamespace(host="127.0.0.1"))
+            payload = main.TrialSessionCreate(
+                full_name="Ana García", email=EMAIL, phone="600123456", goals=["Lose weight"],
+                experience="Beginner", session_date=self.weekday(14).isoformat(), session_time="10:00", lang=lang)
+            with self.assertRaises(HTTPException) as caught:
+                main.create_trial_session(payload, request)
+            texts[lang] = caught.exception.detail["message"]
+        self.assertEqual(texts, {"es": "Ya tienes una solicitud en curso", "en": "You already have a request in progress", "ca": "Ja tens una sol·licitud en curs"})
 
     def test_the_public_answer_has_no_personal_data(self):
         self.insert("Confirmed")
         with self.assertRaises(HTTPException) as caught:
             self.submit()
-        self.assertEqual(set(caught.exception.detail), {"code", "status", "session_date", "session_time"})
+        self.assertEqual(set(caught.exception.detail), {"code", "message"})              # no state, no day, no hour
 
     def test_declined_cancelled_and_past_requests_do_not_block(self):
         self.insert("Declined")

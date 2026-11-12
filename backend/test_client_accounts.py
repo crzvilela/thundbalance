@@ -471,7 +471,7 @@ class Accounts(unittest.TestCase):
         self.assertEqual(base64.b64decode(client["attachments"][0]["data"]).decode().count("BEGIN:VEVENT"), 4)
         self.assert_password_nowhere(result)
 
-        endpoint("/me/password-changed", "POST")({"sub": "fake-uid-1", "email": "ana" + DOMAIN})
+        endpoint("/me/password-changed", "POST")({"sub": "fake-uid-1", "email": "ana" + DOMAIN, "email_verified": True})
         with self.assertRaises(HTTPException) as caught:
             resend(created["id"])
         self.assertEqual(caught.exception.status_code, 409)
@@ -521,15 +521,15 @@ class Accounts(unittest.TestCase):
         self.create(email="own1" + DOMAIN, lang="es")
         self.create(email="own2" + DOMAIN, lang="es")
         save = endpoint("/me/language", "PUT")
-        self.assertEqual(save(client_lang.LanguagePayload(lang="CA "), {"sub": "fake-uid-1", "email": "own1" + DOMAIN}), {"lang": "ca"})
+        self.assertEqual(save(client_lang.LanguagePayload(lang="CA "), {"sub": "fake-uid-1", "email": "own1" + DOMAIN, "email_verified": True}), {"lang": "ca"})
         self.assertEqual(self.stored_lang("own1" + DOMAIN), "ca")
         self.assertEqual(self.stored_lang("own2" + DOMAIN), "es")                    # nobody else's
         with self.assertRaises(HTTPException) as caught:
-            save(client_lang.LanguagePayload(lang="fr"), {"sub": "fake-uid-1", "email": "own1" + DOMAIN})
+            save(client_lang.LanguagePayload(lang="fr"), {"sub": "fake-uid-1", "email": "own1" + DOMAIN, "email_verified": True})
         self.assertEqual(caught.exception.status_code, 422)
         self.assertEqual(self.stored_lang("own1" + DOMAIN), "ca")
         with self.assertRaises(HTTPException) as caught:
-            save(client_lang.LanguagePayload(lang="es"), {"sub": "nobody", "email": "nobody" + DOMAIN})
+            save(client_lang.LanguagePayload(lang="es"), {"sub": "nobody", "email": "nobody" + DOMAIN, "email_verified": True})
         self.assertEqual(caught.exception.status_code, 404)
 
     def test_language_order_booking_then_profile_then_english(self):
@@ -547,14 +547,14 @@ class Accounts(unittest.TestCase):
     def test_password_changed_only_touches_the_caller(self):
         first = self.create(email="a1" + DOMAIN)
         second = self.create(email="a2" + DOMAIN)
-        endpoint("/me/password-changed", "POST")({"sub": "fake-uid-1", "email": "a1" + DOMAIN})
+        endpoint("/me/password-changed", "POST")({"sub": "fake-uid-1", "email": "a1" + DOMAIN, "email_verified": True})
         self.assertFalse(self.db_user("a1" + DOMAIN)[3])
         self.assertTrue(self.db_user("a2" + DOMAIN)[3])
         self.assertTrue(first["id"] != second["id"])
 
     def test_the_user_lookup_reports_the_flag(self):
         self.create()
-        found = endpoint("/users/email/{email}", "GET")("ana" + DOMAIN, {"email": "ana" + DOMAIN})
+        found = endpoint("/users/email/{email}", "GET")("ana" + DOMAIN, {"email": "ana" + DOMAIN, "email_verified": True})
         self.assertTrue(found["must_change_password"])
 
     def test_routes_are_protected(self):

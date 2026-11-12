@@ -43,7 +43,7 @@ class Pending(unittest.TestCase):
 
     def as_client(self, call):
         real = main.require_client
-        main.require_client = lambda authorization: {"sub": "uid-pending", "email": f"p{DOMAIN}"}
+        main.require_client = lambda authorization: {"sub": "uid-pending", "email": f"p{DOMAIN}", "email_verified": True}
         try:
             return call()
         finally:

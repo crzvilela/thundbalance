@@ -20,6 +20,8 @@ break the request that triggered it.
 import base64
 import json
 import logging
+
+from safe_log import log_error
 import os
 import re
 import socket
@@ -136,7 +138,7 @@ def _deliver(to, subject, html, text, reply_to=None, attachments=None, cc=None, 
     try:
         payload = build_payload(to, subject, html, text, reply_to, attachments, cc, extra, language=lang if lang in ("en", "es", "ca") else None, bcc=bcc)
     except (ValueError, KeyError, TypeError) as error:
-        logger.error("Email rejected before sending: %s", error)
+        log_error(error, op="email_rejected", logger=logger)
         return EmailResult(False, "invalid_input")
 
     request = urllib.request.Request(
@@ -194,7 +196,7 @@ def _gmail_deliver(to, subject, html, text, reply_to, attachments, cc, bcc, kind
                   "content_type": _clean_header(item.get("content_type", "application/octet-stream"), "attachment type"),
                   "data": item["data"]} for item in attachments or []]
     except (ValueError, KeyError, TypeError) as error:
-        logger.error("Email rejected before sending: %s", error)
+        log_error(error, op="email_rejected", logger=logger)
         return EmailResult(False, "invalid_input", provider="gmail_api")
     ok, error = gmail_api.deliver(recipients, subject, html, text, reply, files, copies, blind)
     if ok:
@@ -264,8 +266,8 @@ def send_email_async(*args, on_done=None, **kwargs):
         if on_done:
             try:
                 on_done(result)
-            except Exception:  # noqa: BLE001
-                logger.exception("Email on_done callback failed")
+            except Exception as callback_error:  # noqa: BLE001
+                log_error(callback_error, op="email_on_done", logger=logger)
         return result
 
     return _pool.submit(run)

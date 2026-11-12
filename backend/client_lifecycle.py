@@ -33,12 +33,13 @@ import logging
 import os
 import threading
 import time
-import traceback
+from safe_log import log_error, safe_error
 
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel
 
 import calendar_sync
+import client_erasure
 import firebase_accounts as accounts
 from bulk_actions import BulkPayload, run_each, unknown_action
 import google_calendar
@@ -83,6 +84,7 @@ def ensure_columns():
         cursor.close()
         conn.close()
     inbox.ensure_tables()      # the delete below also removes the client's inbox rows
+    client_erasure.ensure_schema()      # photo owner, packs that may lose their client, unfinished deletions
 
 
 def audit(claims, action, client_id, outcome, detail=None):
@@ -283,7 +285,7 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
             raise
         except Exception as error:  # noqa: BLE001
             conn.rollback()
-            traceback.print_exc()
+            log_error(error)
             audit(claims, "archive", client_id, "error", type(error).__name__)
             raise HTTPException(status_code=500, detail="Could not archive the client") from error
         finally:
@@ -316,7 +318,7 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
             raise
         except Exception as error:  # noqa: BLE001
             conn.rollback()
-            traceback.print_exc()
+            log_error(error)
             audit(claims, "unarchive", client_id, "error", type(error).__name__)
             raise HTTPException(status_code=500, detail="Could not restore the client") from error
         finally:
@@ -324,8 +326,11 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
             conn.close()
 
     # ------------------------------------------------------------------- delete
-    @app.post("/admin/clients/{client_id}/delete")
-    def delete_client(client_id: int, data: DeletePayload, claims=Depends(require_admin)):
+    def perform_delete(client_id, claims):
+        """The steps of a deletion, WITHOUT the confirmation (the route asks for it; repeating an unfinished deletion does not).
+        Order: calendar events -> the database rows (ONE transaction: client_erasure.erase_database) -> Firebase -> profile.
+        When a step cannot finish the deletion stops there, a mark is kept in client_erasure_pending (step + TYPE of the error) and
+        the answer is HTTP 502 delete_incomplete; repeating it continues from there."""
         conn = get_connection()
         cursor = conn.cursor()
         steps = []
@@ -333,9 +338,10 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
         def step(name, ok, detail=None):
             steps.append({"id": name, "ok": ok, **({"detail": detail} if detail is not None else {})})
 
-        def incomplete(name):
+        def incomplete(name, error_type=None):
             remaining = [item for item in ("calendar", "database", "firebase", "profile") if item not in
                          {s["id"] for s in steps if s["ok"]}]
+            client_erasure.mark_pending(client_id, name, error_type)
             audit(claims, "delete", client_id, "partial", f"stopped_at={name}")
             raise HTTPException(
                 status_code=502,
@@ -350,16 +356,6 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
 
         try:
             _, name, email, firebase_uid, _, photo = load_target(cursor, client_id, claims)
-
-            if not data.confirm_data or _norm(data.confirm_name) != _norm(name):
-                raise HTTPException(
-                    status_code=422,
-                    detail={
-                        "code": "confirmation_required",
-                        "message": "Marca la casilla y escribe el nombre completo del cliente. / "
-                                   "Tick the box and type the client's full name.",
-                    },
-                )
 
             # 1) Google Calendar: every event of the client's sessions and trial
             #    sessions (past and future). The stored id, or the deterministic
@@ -384,26 +380,15 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
             conn.commit()
             if failures:
                 step("calendar", False, {"failed": len(failures), "errors": sorted(set(failures))})
-                incomplete("calendar")
+                incomplete("calendar", "GoogleCalendar")
             step("calendar", True, {"deleted": deleted})
 
-            # 2) database: sessions, packs, requests, trial sessions and email log
-            trial_ids = [str(row[0]) for row in trial_rows]
-            cursor.execute("DELETE FROM sessions WHERE user_id = %s", (client_id,))
-            cursor.execute("DELETE FROM user_plans WHERE user_id = %s", (client_id,))
-            cursor.execute("DELETE FROM client_requests WHERE user_id = %s", (client_id,))
-            cursor.execute("DELETE FROM trial_sessions WHERE LOWER(email) = LOWER(%s)", (email,))
-            cursor.execute("DELETE FROM inbox_recipients WHERE recipient_email = LOWER(%s)", (email,))   # also the ones still waiting for an account
-            cursor.execute(
-                """
-                DELETE FROM email_log
-                WHERE LOWER(destinatario) = LOWER(%s)
-                   OR (tipo LIKE 'trial%%' AND referencia = ANY(%s::text[]))
-                """,
-                (email, trial_ids),
-            )
+            # 2) database: everything of the client in ONE transaction (sessions, requests, reschedule requests, trial sessions,
+            #    contact messages, inbox rows and the system messages left without recipients, e-mail log, photos), the packs
+            #    anonymized and the client's address emptied inside other people's records. Counts only.
+            counts = client_erasure.erase_database(cursor, client_id, email, photo)
             conn.commit()
-            step("database", True)
+            step("database", True, counts)
 
             # 3) Firebase (the account may already be gone)
             try:
@@ -411,10 +396,11 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
                 removed = accounts.delete_account(uid) if uid else False
             except (accounts.AccountsUnavailable, accounts.AccountError) as error:
                 step("firebase", False, {"reason": "unavailable" if isinstance(error, accounts.AccountsUnavailable) else "failed"})
-                incomplete("firebase")
+                log_error(error, op="delete_client_firebase", logger=logger)
+                incomplete("firebase", safe_error(error))
             step("firebase", True, {"deleted": bool(removed)})
 
-            # 4) the profile (last: it is what makes a repeat possible) and its photo
+            # 4) the profile (last: it is what makes a repeat possible) and its photo on the disk
             cursor.execute("DELETE FROM users WHERE id = %s", (client_id,))
             conn.commit()
             step("profile", True)
@@ -426,6 +412,7 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
                 except OSError:
                     logger.error("A profile photo could not be removed")
 
+            client_erasure.clear_pending(client_id)
             audit(claims, "delete", client_id, "ok")
             return {"message": "Client deleted", "deleted": True, "steps": steps}
         except HTTPException:
@@ -433,9 +420,49 @@ def register_client_lifecycle_routes(app, require_admin, admin_email, upload_dir
             raise
         except Exception as error:  # noqa: BLE001
             conn.rollback()
-            traceback.print_exc()
+            log_error(error)
             audit(claims, "delete", client_id, "error", type(error).__name__)
             raise HTTPException(status_code=500, detail="Could not delete the client") from error
         finally:
             cursor.close()
             conn.close()
+
+    client_erasure.ERASER = perform_delete          # the daily job repeats the deletions that stopped half way
+
+    @app.post("/admin/clients/{client_id}/delete")
+    def delete_client(client_id: int, data: DeletePayload, claims=Depends(require_admin)):
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            _, name, *_rest = load_target(cursor, client_id, claims)
+        finally:
+            cursor.close()
+            conn.close()
+
+        if not data.confirm_data or _norm(data.confirm_name) != _norm(name):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "confirmation_required",
+                    "message": "Marca la casilla y escribe el nombre completo del cliente. / "
+                               "Tick the box and type the client's full name.",
+                },
+            )
+        return perform_delete(client_id, claims)
+
+    @app.get("/admin/clients/{client_id}/erasure-preview")
+    def erasure_preview(client_id: int, claims=Depends(require_admin)):
+        """What deleting this client would remove, as COUNTS (nothing personal): the admin's confirmation screen shows it."""
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            load_target(cursor, client_id, claims)          # 404 for an unknown client, 403 for the admin's own account
+            return {"counts": client_erasure.preview(cursor, client_id)}
+        finally:
+            cursor.close()
+            conn.close()
+
+    @app.get("/admin/erasure-pending")
+    def erasure_pending(claims=Depends(require_admin)):
+        """Deletions that stopped half way (client id, the step, the TYPE of the error, the number of tries): no personal data."""
+        return {"items": client_erasure.list_pending()}

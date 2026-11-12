@@ -4,7 +4,7 @@ Registered from main.py with register_admin_routes(); every route here is
 protected by the same require_admin dependency as the other /admin/* routes.
 """
 
-import traceback
+from safe_log import log_error, safe_error
 from typing import Optional
 
 from fastapi import Depends, HTTPException
@@ -408,7 +408,7 @@ def register_admin_routes(app, require_admin):
         except HTTPException:
             raise
         except Exception as error:
-            traceback.print_exc()
+            log_error(error)
             raise HTTPException(
                 status_code=500,
                 detail=f"Could not synchronise the calendar: {type(error).__name__}",
@@ -484,10 +484,10 @@ def register_admin_routes(app, require_admin):
             raise
         except Exception as error:
             conn.rollback()
-            traceback.print_exc()
+            log_error(error)
             raise HTTPException(
                 status_code=500,
-                detail=f"Could not cancel the session: {type(error).__name__}: {str(error)[:200]}",
+                detail=f"Could not cancel the session: {type(error).__name__}",
             ) from error
         finally:
             cursor.close()
@@ -507,7 +507,7 @@ def register_admin_routes(app, require_admin):
             raise
         except Exception as error:
             conn.rollback()
-            traceback.print_exc()
+            log_error(error)
             raise HTTPException(
                 status_code=500, detail=f"Could not save the pack: {type(error).__name__}",
             ) from error
@@ -635,10 +635,10 @@ def register_admin_routes(app, require_admin):
         except HTTPException:
             raise
         except Exception as error:
-            traceback.print_exc()
+            log_error(error)
             raise HTTPException(
                 status_code=500,
-                detail=f"Could not approve the trial session: {type(error).__name__}: {str(error)[:200]}",
+                detail=f"Could not approve the trial session: {type(error).__name__}",
             ) from error
         return {"message": "Trial session approved", **result}
 
@@ -795,10 +795,10 @@ def register_admin_routes(app, require_admin):
         try:
             raw_events = list_calendar_events(time_min, time_max)
         except Exception as error:
-            traceback.print_exc()
+            log_error(error)
             raise HTTPException(
                 status_code=502,
-                detail=f"Could not read Google Calendar: {type(error).__name__}: {str(error)[:200]}",
+                detail=f"Could not read Google Calendar: {type(error).__name__}",
             ) from error
 
         ids = [event["id"] for event in raw_events if event.get("id")]
@@ -922,10 +922,10 @@ def register_admin_routes(app, require_admin):
             raise
         except Exception as error:
             conn.rollback()
-            traceback.print_exc()
+            log_error(error)
             raise HTTPException(
                 status_code=500,
-                detail=f"Could not save the hours: {type(error).__name__}: {str(error)[:200]}",
+                detail=f"Could not save the hours: {type(error).__name__}",
             ) from error
         finally:
             cursor.close()
@@ -959,10 +959,10 @@ def register_admin_routes(app, require_admin):
             raise
         except Exception as error:
             conn.rollback()
-            traceback.print_exc()
+            log_error(error)
             raise HTTPException(
                 status_code=500,
-                detail=f"Could not create the trainer: {type(error).__name__}: {str(error)[:200]}",
+                detail=f"Could not create the trainer: {type(error).__name__}",
             ) from error
         finally:
             cursor.close()

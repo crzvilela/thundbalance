@@ -294,7 +294,7 @@ class Sync(unittest.TestCase):
 
     # ----- cancel and move never fail because of the calendar
     def claims(self):
-        return {"sub": "x", "email": f"henrique{DOMAIN}"}
+        return {"sub": "x", "email": f"henrique{DOMAIN}", "email_verified": True}
 
     def test_cancelling_works_when_the_calendar_fails_and_says_so(self):
         sid = self.add_session(10)

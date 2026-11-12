@@ -110,6 +110,10 @@ function Register() {
         }
       )
 
+      // The address already has data under it and is not verified: the verification screen is open (authFetch opened it); the
+      // account is not used until the person verifies. Nothing else to do here.
+      if (response.status === 403) return
+
       if (response.status === 422) {
         const data = await response.json().catch(() => ({}))
         const fieldError = serverFieldError(data.detail, language)

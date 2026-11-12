@@ -7,7 +7,7 @@ import re
 import threading
 import time as _time
 import json
-import traceback
+from safe_log import log_error, safe_error
 import uuid
 from datetime import datetime, timedelta
 from typing import Any
@@ -28,6 +28,9 @@ from google_calendar import (
 )
 from landing_page_default import DEFAULT_LANDING_CONTENT
 from admin_api import register_admin_routes
+import data_retention
+import landing_limits
+import photo_urls
 import landing_pricing
 import pack_catalog
 import pack_schedule
@@ -123,8 +126,39 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "david@admin.es").strip().casefold()
 firebase_token_request = GoogleAuthRequest()
 
 
+_revocation_not_configured_logged = False
+WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
+
+
+def _check_revocation(token, strict):
+    """Asks Firebase whether the login was revoked (account deleted or disabled), so it stops working at once instead of after the hour
+    the ID token lasts. A revoked login is a plain 401 with the same text as any invalid one. If Firebase can not be reached the
+    request goes on (`strict` False: nobody is locked out by a passing problem) or is refused with 503 (`strict` True: the admin
+    routes); only the TYPE of the error is logged. If Firebase Admin is not configured on this server nothing can be checked: the
+    request goes on and a warning is logged once."""
+    global _revocation_not_configured_logged
+    try:
+        firebase_accounts.ensure_not_revoked(token)
+    except firebase_accounts.TokenRevoked:
+        raise HTTPException(status_code=401, detail="Invalid or expired login") from None
+    except firebase_accounts.AccountsUnavailable:
+        if not _revocation_not_configured_logged:
+            _revocation_not_configured_logged = True
+            logging.getLogger("thundbalance.accounts").warning("Revoked logins are NOT checked: Firebase Admin is not configured")
+    except Exception as error:  # noqa: BLE001
+        log_error(error, op="check_revoked")
+        if strict:
+            raise HTTPException(status_code=503, detail="Your login could not be checked right now. Please try again.") from None
+
+
+def _is_sensitive(request):
+    """A route that deletes, approves, cancels or changes data (any write, except the inbox's own read / archive marks)."""
+    return request is not None and request.method in WRITE_METHODS and not request.url.path.startswith("/inbox")
+
+
 def require_admin(authorization: str | None = Header(default=None)):
-    """Verify a Firebase ID token and allow only the configured admin email."""
+    """Verify a Firebase ID token and allow only the configured admin email. Every admin route also checks that the login was not
+    revoked, and refuses when that can not be checked."""
     scheme, _, token = (authorization or "").partition(" ")
     if scheme.casefold() != "bearer" or not token:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -145,12 +179,14 @@ def require_admin(authorization: str | None = Header(default=None)):
     token_email = str(claims.get("email", "")).strip().casefold()
     if not ADMIN_EMAIL or token_email != ADMIN_EMAIL:
         raise HTTPException(status_code=403, detail="Administrator access required")
+    _check_revocation(token, strict=True)
 
     return claims
 
 
-def verified_claims(authorization):
-    """The verified Firebase claims of a Bearer token (401 otherwise); no role is checked."""
+def verified_claims(authorization, check_revoked=False):
+    """The verified Firebase claims of a Bearer token (401 otherwise); no role is checked. With `check_revoked` Firebase is also asked
+    whether the login was revoked (the sensitive client routes)."""
     scheme, _, token = (authorization or "").partition(" ")
     if scheme.casefold() != "bearer" or not token:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -162,23 +198,25 @@ def verified_claims(authorization):
         raise HTTPException(status_code=401, detail="Invalid or expired login")
     if claims.get("iss") != f"https://securetoken.google.com/{FIREBASE_PROJECT_ID}":
         raise HTTPException(status_code=401, detail="Invalid login issuer")
+    if check_revoked:
+        _check_revocation(token, strict=False)
     return claims
 
 
-def require_client(authorization: str | None = Header(default=None)):
+def require_client(authorization: str | None = Header(default=None), request: Request = None):
     """Verify a Firebase token for client-owned workflow endpoints. A trainer account
-    (trainer_area.py) has no client rights and is turned away with 403."""
-    claims = verified_claims(authorization)
+    (trainer_area.py) has no client rights and is turned away with 403. Routes that change data also check the login was not revoked."""
+    claims = verified_claims(authorization, check_revoked=_is_sensitive(request))
     token_email = str(claims.get("email", "")).strip().casefold()
     if token_email != ADMIN_EMAIL and trainer_area.is_active_trainer_email(token_email):
         raise trainer_area.trainer_turned_away()
     return claims
 
 
-def require_inbox_user(authorization: str | None = Header(default=None)):
+def require_inbox_user(authorization: str | None = Header(default=None), request: Request = None):
     """Anyone with an account on the site: a client, the admin or a trainer (require_client turns
     trainers away). Used by the inbox and by the profile (a trainer reads and edits their own)."""
-    return verified_claims(authorization)
+    return verified_claims(authorization, check_revoked=_is_sensitive(request))
 
 
 require_account = require_inbox_user
@@ -241,6 +279,25 @@ def start_google_delete_sync():
 
 
 @app.on_event("startup")
+def clean_saved_photo_addresses():
+    # users.foto that would not be accepted today (an address of some other server) is emptied. Our own uploads are never touched.
+    try:
+        photo_urls.clean_stored_photos()
+    except Exception as error:  # noqa: BLE001
+        print(f"photo addresses could not be checked: {type(error).__name__}")
+
+
+@app.on_event("startup")
+def start_data_retention():
+    # the daily job: unfinished client deletions are repeated, old rate-limit addresses go, and the retention policy runs ONLY when
+    # RETENTION_ENABLED=true (off by default). RETENTION_JOB=off disables the job. See data_retention.py
+    try:
+        data_retention.start_background()
+    except Exception as error:  # noqa: BLE001
+        print(f"data retention job could not start: {type(error).__name__}")
+
+
+@app.on_event("startup")
 def ensure_client_lifecycle_columns():
     # users.archived_at + admin_audit_log (client_lifecycle.py). Idempotent.
     try:
@@ -264,8 +321,29 @@ def _is_admin(claims):
     return str(claims.get("email", "")).strip().casefold() == ADMIN_EMAIL
 
 
+def is_email_verified(decoded_token):
+    """THE one answer to "is the e-mail of this login verified?": the token says email_verified, or the login is made with Google
+    (provider google.com: Google only gives verified addresses). A token that says nothing counts as NOT verified."""
+    claims = decoded_token or {}
+    if claims.get("email_verified") is True:
+        return True
+    return str((claims.get("firebase") or {}).get("sign_in_provider") or "") == "google.com"
+
+
+def email_not_verified():
+    """403 with a stable code the site recognises (it shows "verify your email"). The text is the same whatever the reason: it never
+    says whether the address has data."""
+    return HTTPException(status_code=403, detail={
+        "code": "email_not_verified",
+        "message": "Verify your email to access your data. / Verifica tu email para acceder a tus datos.",
+    })
+
+
 def _own_user_id(claims):
-    """users.id of the signed-in account (matched by login id, then by email)."""
+    """users.id of the signed-in account: matched by login id and, failing that, by e-mail. An e-mail match is a claim on data that
+    already exists, so it only counts when the e-mail is VERIFIED (anybody can sign up with any address): an unverified login that
+    would be tied to a record it is not linked to gets 403 email_not_verified, and nothing is linked. Somebody whose login id is
+    already linked to their record (or who has no record at all) is not affected."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -278,6 +356,8 @@ def _own_user_id(claims):
             cursor.execute("SELECT id FROM users WHERE LOWER(email) = %s", (email,))
             row = cursor.fetchone()
             if row:
+                if not is_email_verified(claims):
+                    raise email_not_verified()
                 return row[0]
         return None
     finally:
@@ -329,7 +409,7 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}      # no .svg: it can carry scripts
 MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024  # 8MB
 
-MAX_VIDEO_SIZE_BYTES = 300 * 1024 * 1024  # 300MB — raised from 50MB, phone-recorded workout clips were hitting the old limit
+MAX_VIDEO_SIZE_BYTES = web_safety.MAX_VIDEO_BYTES  # 300MB — raised from 50MB, phone-recorded workout clips were hitting the old limit
 
 
 @app.on_event("startup")
@@ -729,19 +809,37 @@ def home():
     }
 
 
+PRICING_CACHE_SECONDS = web_safety.env_int("PRICING_CACHE_SECONDS", 30)
+_pricing_cache = {"at": None, "value": None}
+
+
+def invalidate_pricing_cache():
+    """Forgets the cached /pricing answer (called after any successful write; it also expires on its own after PRICING_CACHE_SECONDS)."""
+    _pricing_cache["at"] = None
+    _pricing_cache["value"] = None
+
+
 @app.get("/pricing")
-def get_pricing():
+def get_pricing(response: Response):
     """The packs on sale and the trial prices, public like the prices themselves (the catalogue, see pack_catalog.py):
     {"packs": [{"id", "name", "session_type", "weeks", "months", "sessions_per_week_options", "price_per_session",
     "price_per_pack"}], "trial": {"individual": 40, "dual": 50}}. Archived packs are not listed. Read only; the
-    server never trusts a price sent back by the browser."""
+    server never trusts a price sent back by the browser.
+    The answer is public and the same for everybody: the browser may keep it PRICING_CACHE_SECONDS (30) and the server keeps it in memory
+    for as long, so a visit does not reach the database. An admin change (any successful write) clears the memory at once."""
+    response.headers["Cache-Control"] = f"public, max-age={PRICING_CACHE_SECONDS}"
+    now = _time.monotonic()
+    if _pricing_cache["value"] is not None and _pricing_cache["at"] is not None and now - _pricing_cache["at"] < PRICING_CACHE_SECONDS:
+        return _pricing_cache["value"]
     conn = get_connection()
     cursor = conn.cursor()
     try:
-        return pack_catalog.public_catalog(cursor)
+        value = pack_catalog.public_catalog(cursor)
     finally:
         cursor.close()
         conn.close()
+    _pricing_cache["value"], _pricing_cache["at"] = value, now
+    return value
 
 
 @app.get("/trainers")
@@ -795,6 +893,10 @@ def get_sessions():
 @app.post("/users")
 def create_user(user: UserCreate, claims=Depends(require_account)):
 
+    # The photo is only kept when it is a file of our own uploads or a photo of a Google account; any other address is ignored (the
+    # panel would load it in the admin's browser: a tracking pixel). The registration is not refused for it.
+    user.foto = photo_urls.clean_photo_url(user.foto)
+
     # Who the account is comes from the login, never from the request body.
     user.firebase_uid = claims.get("sub")
     user.email = str(claims.get("email") or user.email).strip()
@@ -816,7 +918,7 @@ def create_user(user: UserCreate, claims=Depends(require_account)):
 
         cursor.execute(
             """
-            SELECT id
+            SELECT id, firebase_uid
             FROM users
             WHERE LOWER(email) = LOWER(%s)
             """,
@@ -826,6 +928,11 @@ def create_user(user: UserCreate, claims=Depends(require_account)):
         existing_user = cursor.fetchone()
 
         if existing_user:
+
+            # A record that already exists is only tied to a login whose e-mail is VERIFIED (or that is already its own login):
+            # an unverified address must not take over somebody else's data. Nothing is read or written then.
+            if existing_user[1] != user.firebase_uid and not is_email_verified(claims):
+                raise email_not_verified()
 
             cursor.execute(
                 "UPDATE users SET firebase_uid = COALESCE(firebase_uid, %s) WHERE id = %s",
@@ -877,12 +984,17 @@ def create_user(user: UserCreate, claims=Depends(require_account)):
             "message": "User created successfully"
         }
 
+    except HTTPException:
+        # a deliberate refusal (email_not_verified) must reach the site as it is, not as a 200 with an "error" text
+        conn.rollback()
+        raise
+
     except Exception as e:
 
         conn.rollback()
 
         return {
-            "error": str(e)
+            "error": safe_error(e)
         }
 
     finally:
@@ -922,6 +1034,8 @@ def get_user_by_email(email: str, claims=Depends(require_account)):
 
     if not _is_admin(claims) and email.strip().casefold() != str(claims.get("email", "")).strip().casefold():
         raise HTTPException(status_code=403, detail="This belongs to another account")
+    if not _is_admin(claims):
+        _own_user_id(claims)        # 403 email_not_verified when an unverified login asks for a record it is not linked to
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -1075,7 +1189,7 @@ def cancel_session(session_id: int, claims=Depends(require_client)):
         conn.rollback()
 
         return {
-            "error": str(e)
+            "error": safe_error(e)
         }
 
     finally:
@@ -1316,13 +1430,17 @@ async def upload_profile_photo(user_id: int, file: UploadFile = File(...), claim
     cursor = conn.cursor()
     destination = None
     try:
-        cursor.execute("SELECT id FROM users WHERE id = %s AND firebase_uid = %s", (user_id, claims.get("sub")))
-        if not cursor.fetchone():
+        cursor.execute("SELECT id, foto FROM users WHERE id = %s AND firebase_uid = %s", (user_id, claims.get("sub")))
+        owner = cursor.fetchone()
+        if not owner:
             raise HTTPException(status_code=403, detail="You can only update your own photo")
+        previous_photo = owner[1]
         filename = f"{uuid.uuid4().hex}{extension}"
-        photo_url = web_safety.save_upload(filename, contents)
+        photo_url = web_safety.save_upload(filename, contents, owner_user_id=user_id)      # also removes the previous photos of this person
         cursor.execute("UPDATE users SET foto = %s WHERE id = %s", (photo_url, user_id))
         conn.commit()
+        if previous_photo and previous_photo != photo_url:
+            web_safety.delete_stored_photo(previous_photo, UPLOAD_DIR)             # an older one that had no owner, or one on the disk
         return {"url": photo_url}
     except Exception:
         conn.rollback()
@@ -1506,6 +1624,7 @@ async def _drop_schedule_cache_after_writes(request, call_next):
     response = await call_next(request)
     if request.method in ("POST", "PUT", "PATCH", "DELETE") and response.status_code < 400:
         schedule_cache.invalidate()
+        invalidate_pricing_cache()          # the packs and prices an admin just changed show at once
     return response
 
 
@@ -1571,6 +1690,11 @@ TRIAL_TIMES = {f"{hour:02d}:00" for hour in range(7, 21)}
 # At most this many requests per address per hour (kept in memory, so it
 # resets when the server restarts; it only needs to stop floods).
 # Both limits are settings (Render environment); the defaults are the values below.
+TRIAL_EXISTS_TEXT = {
+    "es": "Ya tienes una solicitud en curso",
+    "en": "You already have a request in progress",
+    "ca": "Ja tens una sol·licitud en curs",
+}
 TRIAL_LIMIT = web_safety.env_int("TRIAL_IP_LIMIT", 5)                                  # requests per address ...
 TRIAL_WINDOW_SECONDS = web_safety.env_int("TRIAL_IP_WINDOW_SECONDS", 3600)             # ... per hour
 TRIAL_EMAIL_LIMIT = web_safety.env_int("TRIAL_EMAIL_LIMIT", 3)                         # requests with the same e-mail ...
@@ -1632,6 +1756,9 @@ def client_trial(authorization: str | None = Header(default=None)):
     email = str(claims.get("email", "")).strip().lower()
     if not email:
         return {"trial": None}
+    # The trial is found by e-mail alone, so only a VERIFIED e-mail may read it (anybody can sign up with somebody else's address).
+    if not is_email_verified(claims):
+        raise email_not_verified()
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -1722,15 +1849,11 @@ def create_trial_session(
 
         existing = _active_trial_for_email(cursor, email)
         if existing:
-            # Public answer: only what the visitor needs to see, no personal data.
+            # Public answer, so it says NOTHING about the session (no state, day or hour): anybody can type any address here. The
+            # client sees the state of their own session after logging in (GET /client/trial).
             raise HTTPException(
                 status_code=409,
-                detail={
-                    "code": "trial_exists",
-                    "status": existing["status"],
-                    "session_date": existing["session_date"],
-                    "session_time": existing["session_time"],
-                }
+                detail={"code": "trial_exists", "message": TRIAL_EXISTS_TEXT.get(client_lang, TRIAL_EXISTS_TEXT["en"])},
             )
 
         cursor.execute(
@@ -1810,7 +1933,7 @@ def create_trial_session(
         raise
     except Exception as error:
         conn.rollback()
-        traceback.print_exc()
+        log_error(error)
         raise HTTPException(
             status_code=500,
             detail="We could not save your request. Please try again in a moment."
@@ -2209,12 +2332,12 @@ def approve_request(
 
         conn.rollback()
 
-        traceback.print_exc()
+        log_error(e)
         # Admin-only endpoint: surface the real cause so it can be fixed
         # instead of hiding it behind a generic message.
         raise HTTPException(
             status_code=500,
-            detail=f"Could not approve training request: {type(e).__name__}: {str(e)[:300]}"
+            detail=f"Could not approve training request: {type(e).__name__}"
         ) from e
 
     finally:
@@ -2282,10 +2405,10 @@ def admin_new_pack(client_id: int, data: NewPack):
         raise
     except Exception as error:
         conn.rollback()
-        traceback.print_exc()
+        log_error(error)
         raise HTTPException(
             status_code=500,
-            detail=f"Could not create the pack: {type(error).__name__}: {str(error)[:300]}"
+            detail=f"Could not create the pack: {type(error).__name__}"
         ) from error
 
     finally:
@@ -2620,6 +2743,8 @@ class FooterContentPayload(BaseModel):
 @app.put("/landing-page/footer", dependencies=[Depends(require_admin)])
 def save_footer_content(payload: FooterContentPayload):
     """Publish just the footer, retaining unrelated draft and published content."""
+    landing_limits.validate_structure(payload.footer, "footer")
+    landing_limits.validate_structure(payload.previous_footer, "previous_footer")
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -2652,6 +2777,7 @@ def save_footer_content(payload: FooterContentPayload):
 @app.put("/landing-page/content/draft", dependencies=[Depends(require_admin)])
 def save_landing_page_draft(payload: LandingContentPayload):
 
+    landing_limits.validate_structure(payload.content)     # size, depth, items and text length (422 otherwise)
     landing_pricing.validate_content(payload.content)      # the manual pricing cards: limits, no HTML (422 otherwise)
 
     conn = get_connection()
@@ -2683,7 +2809,8 @@ def save_landing_page_draft(payload: LandingContentPayload):
 def publish_landing_page(payload: LandingContentPayload | None = None):
 
     if payload is not None:
-        landing_pricing.validate_content(payload.content)      # same limits as saving the draft
+        landing_limits.validate_structure(payload.content)     # same limits as saving the draft
+        landing_pricing.validate_content(payload.content)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -2810,17 +2937,9 @@ async def upload_landing_page_video(file: UploadFile = File(...)):
 
     # The extension, the declared Content-Type and the first bytes of the file must agree (415 otherwise), and the stored name is made
     # here (uuid + the validated extension): the name sent by the user is never used.
-    contents = await file.read(MAX_VIDEO_SIZE_BYTES + 1)
-
-    if len(contents) > MAX_VIDEO_SIZE_BYTES:
-        raise HTTPException(status_code=400, detail="Video is too large (max 300MB)")
-
-    extension = web_safety.check_video(file.filename, file.content_type, contents)
-    filename = f"{uuid.uuid4().hex}{extension}"
-    destination = os.path.join(UPLOAD_DIR, filename)
-
-    with open(destination, "wb") as f:
-        f.write(contents)
+    # The file is read 1 MB at a time into a temporary file and only moved to its final name when it is a valid video under the limit
+    # (415 for the type, 413 as soon as it is too big): a 300 MB video is never held in memory.
+    filename = await web_safety.store_video(file, UPLOAD_DIR, MAX_VIDEO_SIZE_BYTES)
 
     return {"url": f"/uploads/{filename}"}
 
@@ -2927,7 +3046,7 @@ def create_training_video(video: TrainingVideoCreate):
         conn.rollback()
 
         return {
-            "error": str(e)
+            "error": safe_error(e)
         }
 
     finally:
@@ -2968,7 +3087,7 @@ def reorder_training_videos(payload: TrainingVideoReorder):
         conn.rollback()
 
         return {
-            "error": str(e)
+            "error": safe_error(e)
         }
 
     finally:
@@ -3018,7 +3137,7 @@ def update_training_video(
         conn.rollback()
 
         return {
-            "error": str(e)
+            "error": safe_error(e)
         }
 
     finally:
@@ -3062,7 +3181,7 @@ def delete_training_video(video_id: int):
         conn.rollback()
 
         return {
-            "error": str(e)
+            "error": safe_error(e)
         }
 
     finally:

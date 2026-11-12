@@ -18,7 +18,7 @@ Trial sessions are out of scope: only the sessions of packs are restored.
 """
 import logging
 import re
-import traceback
+from safe_log import log_error, safe_error
 from datetime import datetime
 
 from fastapi import Depends, HTTPException
@@ -109,7 +109,6 @@ def restore_session(session_id, admin="", date=None, time=None, trainer_id=None,
         raise
     except Exception as error:  # noqa: BLE001
         conn.rollback()
-        traceback.print_exc()
         logger.error("session could not be restored (%s)", type(error).__name__)
         raise _fail(500, "error", "The session could not be restored.") from error
     finally:

@@ -331,6 +331,11 @@ function NavbarInner() {
                   encodeURIComponent(user.displayName || 'User')
                 }
                 alt="Profile"
+                referrerPolicy="no-referrer"
+                onError={event => {
+                  const fallback = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.displayName || 'User')
+                  if (event.currentTarget.src !== fallback) event.currentTarget.src = fallback
+                }}
                 onClick={() => setOpenMenu(!openMenu)}
                 className="w-11 h-11 sm:w-12 sm:h-12 rounded-full cursor-pointer border border-white/20 hover:scale-105 transition duration-300"
               />

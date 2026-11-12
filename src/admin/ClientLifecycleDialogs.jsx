@@ -111,6 +111,28 @@ export function ArchiveDialog({ client, futureSessions, onClose, onDone }) {
 // can simply be repeated.
 const STEP_LABELS = { calendar: 'lc_step_calendar', database: 'lc_step_database', firebase: 'lc_step_firebase', profile: 'lc_step_profile' }
 
+// The summary of what the deletion removes, from the server: counts only (a number of sessions, of messages...), never a name or an address.
+const ERASED = ['sessions', 'calendar_events', 'requests', 'reschedule_requests', 'trial_sessions', 'contact_messages', 'inbox_rows', 'emails_logged', 'photos']
+
+function ErasureList({ t, preview }) {
+  if (preview.status === 'loading') return <p className="mt-4 text-sm text-gray-400" role="status">{t('lc_pv_loading')}</p>
+  if (preview.status === 'failed') return <p className="mt-4 text-sm text-amber-200">{t('lc_pv_failed')}</p>
+  const counts = preview.counts || {}
+  const lines = ERASED.filter(key => Number(counts[key]) > 0)
+  return (
+    <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-gray-200">
+      <p className="mb-2 font-medium text-white">{t('lc_pv_title')}</p>
+      <ul className="space-y-1">
+        {lines.map(key => <li key={key}>• {counts[key]} {t(`lc_pv_${key}`)}</li>)}
+        {counts.login_account && <li>• {t('lc_pv_login')}</li>}
+        <li>• {t('lc_pv_profile')}</li>
+      </ul>
+      {Number(counts.packs_anonymized) > 0 && <p className="mt-3 text-gray-400">{t('lc_pv_keep')} {counts.packs_anonymized} {t('lc_pv_packs')}</p>}
+      {Number(counts.mentions_in_other_records) > 0 && <p className="mt-2 text-gray-400">{t('lc_pv_mentions').replace('{n}', counts.mentions_in_other_records)}</p>}
+    </div>
+  )
+}
+
 export function DeleteDialog({ client, onClose, onDone }) {
   const { t } = useAdminText()
   const toast = useToast()
@@ -119,6 +141,15 @@ export function DeleteDialog({ client, onClose, onDone }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [report, setReport] = useState(null)   // { steps, remaining } after a partial failure
+  const [preview, setPreview] = useState({ status: 'loading', counts: null })   // what the deletion removes: counts only, nothing personal
+
+  useEffect(() => {
+    let alive = true
+    adminRequest('GET', `/admin/clients/${client.id}/erasure-preview`)
+      .then(result => { if (alive) setPreview({ status: 'ready', counts: result.counts }) })
+      .catch(() => { if (alive) setPreview({ status: 'failed', counts: null }) })
+    return () => { alive = false }
+  }, [client.id])
 
   const normal = (text) => String(text || '').trim().split(/\s+/).join(' ').toLowerCase()
   const ready = understood && normal(name) === normal(client.name) && normal(name) !== ''
@@ -148,6 +179,7 @@ export function DeleteDialog({ client, onClose, onDone }) {
       </>}
     >
       <p className="mt-3 rounded-xl border border-red-400/25 bg-red-400/10 p-3 text-sm text-red-100">{t('lc_delete_warning')}</p>
+      <ErasureList t={t} preview={preview} />
       <Checkbox checked={understood} onChange={setUnderstood} disabled={busy}>{t('lc_delete_option')}</Checkbox>
       <label className="mt-5 block text-sm text-gray-300">
         {t('lc_type_name')} <strong className="text-white">{client.name}</strong>

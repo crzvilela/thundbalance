@@ -11,7 +11,7 @@ lists, per id, `ok` or the reason it failed.
 Nothing personal goes to the log: only the action, the kind and the counts.
 """
 import logging
-import traceback
+from safe_log import log_error, safe_error
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
@@ -65,7 +65,6 @@ def run_each(kind, action, ids, handler):
         except HTTPException as error:
             results.append({"id": item, "ok": False, "error": reason_of(error)})
         except Exception as error:  # noqa: BLE001 - one item never stops the others
-            traceback.print_exc()
             logger.error("bulk %s/%s: one item failed (%s)", kind, action, type(error).__name__)
             results.append({"id": item, "ok": False, "error": "error"})
     done = sum(1 for item in results if item["ok"])

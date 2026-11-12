@@ -12,6 +12,8 @@ render_pack_summary_block(summary, lang) -> Block   (HTML + text, reusable in ot
 send_pack_summary_email(summary, ...)   -> PackEmailResult
 """
 import logging
+
+from safe_log import log_error
 from dataclasses import dataclass, field
 
 from .dates import WEEKDAYS_CA, WEEKDAYS_EN, WEEKDAYS_ES, format_date_bilingual
@@ -201,7 +203,7 @@ def send_pack_summary_email(summary, to_client=True, extra_recipients=()):
                 result.problem = result.problem or (answer.error if answer is not None else "timeout")
     except ValueError as error:
         result.problem = "invalid_recipients"
-        logger.error("Pack email not sent: %s", error)
+        log_error(error, op="pack_email", logger=logger)
     except Exception as error:  # noqa: BLE001
         result.problem = "error"
         logger.error("Pack email failed (%s)", type(error).__name__)

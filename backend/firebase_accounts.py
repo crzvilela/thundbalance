@@ -11,10 +11,12 @@ the outcome is logged as one line. If the key is missing the server still
 starts and every other route keeps working; only the routes that need Firebase
 Admin answer 503, naming the reason (never a secret).
 """
+import hashlib
 import logging
 import os
 import secrets
 import threading
+import time
 
 logger = logging.getLogger("thundbalance.accounts")
 
@@ -44,6 +46,10 @@ class EmailAlreadyRegistered(Exception):
 
 class AccountError(Exception):
     """Firebase refused or failed (the message never includes secrets)."""
+
+
+class TokenRevoked(Exception):
+    """The login (ID token) can not be used any more: its account was deleted or disabled, or its sessions were revoked."""
 
 
 def generate_password():
@@ -124,6 +130,44 @@ def init_firebase_admin():
 def status():
     """(ready, reason) for the health endpoint; reason is one of REASON_*."""
     return init_firebase_admin()
+
+
+# ---------------------------------------------------------------------------------------------- revoked logins
+# A Firebase ID token is valid for an hour even when the account is deleted or disabled meanwhile. For the sensitive routes the token is
+# also asked of Firebase (verify_id_token(check_revoked=True): the account is looked up). A good answer is remembered for a few seconds
+# so the panel, which makes many requests at once, does not ask Firebase every time.
+REVOCATION_CACHE_SECONDS = int(os.getenv("REVOCATION_CACHE_SECONDS", "15") or 15)
+_checked = {}
+_checked_lock = threading.Lock()
+
+
+def forget_checked_tokens():
+    with _checked_lock:
+        _checked.clear()
+
+
+def ensure_not_revoked(token):
+    """Returns when the login is still valid; raises TokenRevoked (account deleted / disabled / sessions revoked),
+    AccountsUnavailable (Firebase Admin is not configured here: nothing can be checked) or AccountError (Firebase did not answer:
+    a network or certificate problem). Never writes a token or an address anywhere."""
+    key = hashlib.sha256(str(token).encode("utf-8")).hexdigest()[:32]
+    now = time.monotonic()
+    with _checked_lock:
+        until = _checked.get(key)
+        if until is not None and until > now:
+            return
+    auth = _auth()
+    try:
+        auth.verify_id_token(token, check_revoked=True)
+    except tuple(getattr(auth, name) for name in ("RevokedIdTokenError", "UserDisabledError", "UserNotFoundError", "ExpiredIdTokenError")
+                 if hasattr(auth, name)):
+        raise TokenRevoked() from None
+    except Exception as error:  # noqa: BLE001
+        raise AccountError(type(error).__name__) from None
+    with _checked_lock:
+        if len(_checked) > 1000:
+            _checked.clear()
+        _checked[key] = now + REVOCATION_CACHE_SECONDS
 
 
 def _auth():

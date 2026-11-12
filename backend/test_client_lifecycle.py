@@ -58,6 +58,7 @@ class Lifecycle(unittest.TestCase):
         cls.cleanup()
         conn = get_connection()
         cur = conn.cursor()
+        cur.execute("DELETE FROM user_plans WHERE plan_id = %s", (cls.plan_id,))          # packs of deleted clients stay, anonymized
         cur.execute("DELETE FROM plans WHERE id = %s", (cls.plan_id,))
         conn.commit()
         conn.close()
@@ -68,6 +69,7 @@ class Lifecycle(unittest.TestCase):
         cur = conn.cursor()
         cur.execute("SELECT id FROM users WHERE email LIKE %s", (f"%{DOMAIN}",))
         ids = [r[0] for r in cur.fetchall()]
+        cur.execute("DELETE FROM user_plans WHERE plan_id IN (SELECT id FROM plans WHERE nome = 'TEST lifecycle')")
         if ids:
             cur.execute("DELETE FROM sessions WHERE user_id = ANY(%s)", (ids,))
             cur.execute("DELETE FROM user_plans WHERE user_id = ANY(%s)", (ids,))

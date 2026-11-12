@@ -46,6 +46,7 @@ function Profile() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [failedPhoto, setFailedPhoto] = useState('')          // a photo that did not load: the initials are shown instead
   const [preview, setPreview] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -157,7 +158,8 @@ function Profile() {
 
   const isAdmin = user?.email?.trim().toLowerCase() === ADMIN_EMAIL
   const name = profile?.nome || user?.displayName || t('pf_your_profile')
-  const photo = preview || resolveImageUrl(profile?.foto) || user?.photoURL
+  const photoSource = preview || resolveImageUrl(profile?.foto) || user?.photoURL
+  const photo = photoSource && photoSource !== failedPhoto ? photoSource : ''
 
   return <LandingContentProvider mode="view" version="published">
     <div className="min-h-screen bg-[#080a09] text-white">
@@ -178,7 +180,7 @@ function Profile() {
             <div className="h-24 bg-gradient-to-br from-emerald-500/25 via-emerald-800/15 to-transparent" />
             <div className="px-7 pb-8 text-center">
               <div className="relative mx-auto -mt-14 mb-5 flex h-28 w-28 items-center justify-center overflow-hidden rounded-full border-4 border-[#101512] bg-emerald-950 text-3xl font-semibold text-emerald-200">
-                {photo ? <img src={photo} alt={name} className="h-full w-full object-cover" /> : name.split(' ').slice(0, 2).map(part => part[0]).join('').toUpperCase()}
+                {photo ? <img src={photo} alt={name} className="h-full w-full object-cover" onError={() => setFailedPhoto(photo)} referrerPolicy="no-referrer" /> : name.split(' ').slice(0, 2).map(part => part[0]).join('').toUpperCase()}
               </div>
               <h2 className="break-words text-2xl font-semibold">{name}</h2>
               <p className="mt-2 break-all text-sm text-gray-400">{profile.email || user?.email}</p>
