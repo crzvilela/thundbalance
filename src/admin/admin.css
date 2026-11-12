@@ -10,6 +10,11 @@
 /* Dark native controls: scrollbars, date picker and select menus. */
 .admin-shell, .admin-drawer, .admin-modal { color-scheme: dark; }
 
+/* The scrolling parts of the side panel: a thin, quiet scrollbar whose space is always reserved (nothing jumps when it appears). */
+.admin-nav-scroll { scrollbar-width: thin; scrollbar-color: rgba(148, 163, 184, 0.28) transparent; scrollbar-gutter: stable; }
+.admin-nav-scroll::-webkit-scrollbar { width: 6px; }
+.admin-nav-scroll::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.28); border-radius: 9999px; }
+.admin-nav-scroll::-webkit-scrollbar-track { background: transparent; }
 .admin-drawer { animation: admin-slide-in 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
 .admin-modal { animation: admin-pop 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
 .admin-toast { animation: admin-toast-in 0.25s cubic-bezier(0.22, 1, 0.36, 1); }

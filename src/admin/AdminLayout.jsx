@@ -8,7 +8,7 @@ import AdminErrorBoundary from './AdminErrorBoundary'
 import EmailTest from './EmailTest'
 import UiSettingsProvider from './UiSettingsProvider'
 import EditModeProvider from './EditModeProvider'
-import SidebarNav from './SidebarNav'
+import SidebarNav, { CustomizeButton } from './SidebarNav'
 import EditBar from './EditBar'
 import CustomizePanel from './CustomizePanel'
 import { useEditMode } from './editModeContext'
@@ -28,7 +28,7 @@ function readTheme() {
 }
 
 const linkClass = ({ isActive }) =>
-  `group flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all duration-150 ${
+  `group flex min-h-10 items-center gap-3 rounded-xl px-3.5 py-2 text-sm font-medium transition-all duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400 ${
     isActive
       ? 'bg-emerald-400/10 text-emerald-300 shadow-[inset_0_0_0_1px_rgba(52,211,153,0.2)]'
       : 'text-gray-400 hover:bg-white/5 hover:text-white'
@@ -133,48 +133,49 @@ function AdminShell() {
   const email = auth.currentUser?.email || ''
 
   const sidebar = (
-    <div className="flex h-full flex-col">
-      <div className="px-5 pb-6 pt-6">
-        <p className="text-2xl tracking-[0.18em] text-white" style={{ fontFamily: 'Bebas Neue, Inter, sans-serif' }}>THUNDBALANCE</p>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 pb-3 pl-5 pr-12 pt-4 lg:pr-5">
+        <p className="text-xl tracking-[0.14em] text-white" style={{ fontFamily: 'Bebas Neue, Inter, sans-serif' }}>THUNDBALANCE</p>
         <p className="mt-0.5 flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-emerald-400">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]" />
           {t('brand_sub')}
         </p>
       </div>
 
-      <SidebarNav items={menuItems} badges={badges} linkClass={linkClass} guarded={guarded} customizeLabel={customizeLabel} onStart={() => setMenuOpen(false)} />
+      <SidebarNav items={menuItems} badges={badges} linkClass={linkClass} guarded={guarded} customizeLabel={customizeLabel} />
 
-      <div className="space-y-3 border-t border-white/10 p-4">
-        <div className="flex items-center justify-between">
-          <span className="text-xs uppercase tracking-wider text-gray-500">{t('theme')}</span>
+      {/* the footer never scrolls away: Personalizar panel, theme, language, the site and sign out are always reachable
+          (it only scrolls inside itself on a very short screen, so the menu above keeps some room) */}
+      <div className="admin-nav-scroll max-h-[50dvh] shrink-0 space-y-2 overflow-y-auto border-t border-white/10 p-3">
+        <CustomizeButton customizeLabel={customizeLabel} onStart={() => setMenuOpen(false)} />
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="group" aria-label={t('theme')}>
             {[['light', 'sun'], ['dark', 'moon']].map(([mode, icon]) => (
               <button key={mode} type="button" onClick={() => chooseTheme(mode)} aria-pressed={theme === mode} aria-label={t(`theme_${mode}`)} title={t(`theme_${mode}`)}
-                className={`flex items-center rounded-md px-3 py-1 transition ${theme === mode ? 'bg-emerald-400 text-black' : 'text-gray-400 hover:text-white'}`}>
+                className={`flex min-h-9 items-center rounded-md px-3 py-1 transition ${theme === mode ? 'bg-emerald-400 text-black' : 'text-gray-400 hover:text-white'}`}>
                 <Icon name={icon} className="h-4 w-4" />
               </button>
             ))}
           </div>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-xs uppercase tracking-wider text-gray-500">{t('language')}</span>
           <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="group" aria-label={t('language')}>
             {['en', 'es'].map(code => (
               <button key={code} type="button" onClick={() => setLanguage(code)} aria-pressed={language === code}
-                className={`rounded-md px-3 py-1 text-xs font-semibold uppercase transition ${language === code ? 'bg-emerald-400 text-black' : 'text-gray-400 hover:text-white'}`}>
+                className={`min-h-9 rounded-md px-3 py-1 text-xs font-semibold uppercase transition ${language === code ? 'bg-emerald-400 text-black' : 'text-gray-400 hover:text-white'}`}>
                 {code}
               </button>
             ))}
           </div>
         </div>
         <EmailTest defaultTo={email} />
-        <NavLink to="/" onClick={leaveAdmin('/')} className="flex items-center gap-3 rounded-xl px-3.5 py-2 text-sm text-gray-400 transition hover:bg-white/5 hover:text-white">
-          <Icon name="globe" className="h-[18px] w-[18px]" />{t('nav_site')}
-        </NavLink>
-        <button type="button" onClick={() => { if (edit?.dirty) setEditLeaving('logout'); else if (guard.current?.()) setLeaving('logout'); else logout() }} className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2 text-sm text-gray-400 transition hover:bg-red-500/10 hover:text-red-300">
-          <Icon name="logout" className="h-[18px] w-[18px]" />{t('nav_logout')}
-        </button>
-        {email && <p className="truncate px-3.5 text-xs text-gray-600" title={email}>{email}</p>}
+        <div className="flex gap-1">
+          <NavLink to="/" onClick={leaveAdmin('/')} className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm text-gray-400 transition hover:bg-white/5 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400">
+            <Icon name="globe" className="h-[18px] w-[18px] shrink-0" /><span className="truncate">{t('nav_site')}</span>
+          </NavLink>
+          <button type="button" onClick={() => { if (edit?.dirty) setEditLeaving('logout'); else if (guard.current?.()) setLeaving('logout'); else logout() }} className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm text-gray-400 transition hover:bg-red-500/10 hover:text-red-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400">
+            <Icon name="logout" className="h-[18px] w-[18px] shrink-0" /><span className="truncate">{t('nav_logout')}</span>
+          </button>
+        </div>
+        {email && <p className="truncate px-2.5 text-xs text-gray-600" title={email}>{email}</p>}
       </div>
     </div>
   )
@@ -183,7 +184,7 @@ function AdminShell() {
     <ToastContext.Provider value={toastValue}>
       <LeaveGuardContext.Provider value={guardValue}>
       <div className={`admin-shell min-h-screen text-white ${theme === 'light' ? 'admin-light' : ''}`}>
-        <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-white/[0.07] bg-[#080b0a]/90 backdrop-blur lg:block">
+        <aside className="fixed left-0 top-0 z-30 hidden h-dvh w-64 border-r border-white/[0.07] bg-[#080b0a]/90 backdrop-blur lg:block">
           {sidebar}
         </aside>
 
@@ -193,9 +194,9 @@ function AdminShell() {
         </div>
 
         {menuOpen && (
-          <div className="fixed inset-0 z-40 lg:hidden">
+          <div className="fixed inset-x-0 top-0 z-50 h-dvh lg:hidden">
             <div className="absolute inset-0 bg-black/70" onClick={() => setMenuOpen(false)} />
-            <aside className="admin-drawer absolute inset-y-0 left-0 w-72 max-w-[85vw] border-r border-white/10 bg-[#080b0a]">
+            <aside className="admin-drawer absolute left-0 top-0 h-dvh w-72 max-w-[85vw] border-r border-white/10 bg-[#080b0a]">
               <button type="button" onClick={() => setMenuOpen(false)} aria-label={t('nav_close')} className="absolute right-3 top-4 rounded-lg p-2 text-gray-400 hover:bg-white/10"><Icon name="close" /></button>
               {sidebar}
             </aside>

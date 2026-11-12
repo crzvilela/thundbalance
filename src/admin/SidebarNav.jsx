@@ -1,25 +1,56 @@
-import { useRef, useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
 import { useAdminText } from './useAdminText'
 import { useEditMode } from './editModeContext'
 import Editable, { InlineTextField } from './Editable'
 import { Icon } from './ui'
 import { CUSTOMIZE_KEY, CUSTOMIZE_LABEL_KEY, LABEL_MAX, PROTECTED_MENU_KEYS } from './uiRegistry'
+import { scrollDelta } from './sidebarScroll'
 
-const TOOL = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/15 text-gray-300 transition hover:border-white/40 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30'
+const TOOL = 'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/15 text-gray-300 transition hover:border-white/40 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30'
 
 // The menu of the side panel (and of the phone drawer). Normally it is exactly the original menu: the items in the studio's order, the hidden ones
 // left out, plus the "Personalizar panel" button for the main admin. While the panel is being edited every item also shows a drag handle, up / down,
 // the pencil to rename it and the eye to hide it (hidden items stay, dimmed); a click on the item itself still navigates, so the draft is not lost.
-export default function SidebarNav({ items, badges, linkClass, guarded, customizeLabel, onStart }) {
+// The "Personalizar panel" button: it lives in the fixed footer of the side panel (always visible), not in the scrolling list.
+export function CustomizeButton({ customizeLabel, onStart }) {
+  const { t } = useAdminText()
+  const edit = useEditMode()
+  if (!edit?.canEdit || edit.isEditing) return null
+  return (
+    <button type="button" onClick={() => { if (onStart) onStart(); edit.start() }}
+      className="group flex min-h-10 w-full items-center gap-3 rounded-xl border border-dashed border-white/15 px-3 py-1.5 text-left text-sm font-medium text-gray-400 transition hover:border-emerald-400/40 hover:bg-white/5 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400">
+      <Icon name="pencil" className="h-[18px] w-[18px]" />
+      <span className="flex-1">{customizeLabel || t(CUSTOMIZE_LABEL_KEY)}</span>
+    </button>
+  )
+}
+
+// The list scrolls inside the menu (the top and the footer of the panel never move). The item of the page that is open is brought into view.
+const NAV_SCROLL = 'admin-nav-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-3'
+
+export default function SidebarNav({ items, badges, linkClass, guarded, customizeLabel }) {
   const { t } = useAdminText()
   const edit = useEditMode()
   const [renaming, setRenaming] = useState('')
   const dragging = useRef('')
+  const navRef = useRef(null)
+  const { pathname } = useLocation()
+  const editing = !!edit?.isEditing
+
+  useEffect(() => {
+    const nav = navRef.current
+    const active = nav?.querySelector('[aria-current="page"]')
+    if (!nav || !active) return
+    const delta = scrollDelta(nav.getBoundingClientRect(), active.getBoundingClientRect())
+    if (!delta) return
+    const calm = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    nav.scrollBy({ top: delta, behavior: calm ? 'auto' : 'smooth' })
+  }, [pathname, editing])
 
   if (!edit?.isEditing) {
     return (
-      <nav className="flex-1 space-y-1 px-3" aria-label="Admin">
+      <nav ref={navRef} className={`${NAV_SCROLL} space-y-0.5 pb-2`} aria-label="Admin">
         {items.filter(item => !item.hidden).map(item => (
           <NavLink key={item.key} to={item.to} end={item.end} className={linkClass} onClick={guarded(item.to)}>
             <Icon name={item.icon} className="h-[18px] w-[18px]" />
@@ -30,13 +61,6 @@ export default function SidebarNav({ items, badges, linkClass, guarded, customiz
             {item.arrow && <Icon name="arrow" className="h-4 w-4 opacity-0 transition group-hover:opacity-60" />}
           </NavLink>
         ))}
-        {edit?.canEdit && (
-          <button type="button" onClick={() => { if (onStart) onStart(); edit.start() }}
-            className="group mt-3 flex w-full items-center gap-3 rounded-xl border border-dashed border-white/15 px-3.5 py-2.5 text-left text-sm font-medium text-gray-400 transition hover:border-emerald-400/40 hover:bg-white/5 hover:text-white">
-            <Icon name="pencil" className="h-[18px] w-[18px]" />
-            <span className="flex-1">{customizeLabel || t(CUSTOMIZE_LABEL_KEY)}</span>
-          </button>
-        )}
       </nav>
     )
   }
@@ -45,7 +69,7 @@ export default function SidebarNav({ items, badges, linkClass, guarded, customiz
   const areas = edit.draft.menu.filter(item => item.key !== CUSTOMIZE_KEY)
 
   return (
-    <nav className="flex-1 space-y-2 overflow-y-auto px-3 pb-24" aria-label="Admin">
+    <nav ref={navRef} className={`${NAV_SCROLL} space-y-2 pb-3`} aria-label="Admin">
       {items.map((item, index) => {
         const original = t(item.labelKey)
         const name = item.custom || original
