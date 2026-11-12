@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { API_URL } from '../config'
 import { authFetch } from '../api/authFetch'
+import { useI18n } from '../i18n/I18nContext'
+import { loginErrorKey } from '../utils/loginErrors'
 
 import {
   signInWithPopup,
@@ -16,6 +18,8 @@ import {
 function Login() {
 
   const navigate = useNavigate()
+  const { t } = useI18n()
+  const [problem, setProblem] = useState('')            // a text key: the error is a line in the form, never a pop-up
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -23,6 +27,7 @@ function Login() {
   const handleLogin = async (e) => {
 
     e.preventDefault()
+    setProblem('')
 
     try {
 
@@ -32,21 +37,19 @@ function Login() {
         password
       )
 
-      alert('Login successful!')
-
       navigate('/dashboard')
 
     } catch (error) {
 
-      console.error(error)
-
-      alert(error.message)
+      setProblem(loginErrorKey(error) || '')
 
     }
 
   }
 
   const handleGoogleLogin = async () => {
+
+    setProblem('')
 
     try {
 
@@ -78,15 +81,11 @@ function Login() {
         }
       )
 
-      alert('Login successful!')
-
       navigate('/dashboard')
 
     } catch (error) {
 
-      console.error(error)
-
-      alert(error.message)
+      setProblem(loginErrorKey(error) || '')
 
     }
 
@@ -127,6 +126,8 @@ function Login() {
             className="bg-transparent border border-white/20 px-6 py-4 outline-none"
             required
           />
+
+          {problem && <p role="alert" className="text-sm text-red-300">{t(problem)}</p>}
 
           <button
             type="submit"
