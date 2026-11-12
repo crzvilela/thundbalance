@@ -81,6 +81,7 @@ def render_pack_summary_block(summary, lang="en"):
     return _join([
         key_value([
             (tr(lang, "lbl_plan"), summary.get("plan_name")),
+            *([(tr(lang, "lbl_objective"), summary["objective"])] if summary.get("objective") else []),
             *([(tr(lang, "lbl_duration"), tr(lang, "dur_weeks", n=summary["duration_weeks"]))] if summary.get("duration_weeks") else []),
             (tr(lang, "lbl_start"), _day_label(sessions[0]["start"], lang)),
             (tr(lang, "lbl_end"), _day_label(sessions[-1]["start"], lang)),
@@ -88,6 +89,7 @@ def render_pack_summary_block(summary, lang="en"):
             (tr(lang, "lbl_days"), _day_names(summary.get("days") or [], lang)),
             (tr(lang, "lbl_total"), len(sessions)),
             *kind_rows(lang, summary, total=True),
+            *([(tr(lang, "lbl_benefits"), "; ".join(summary["benefits"]))] if summary.get("benefits") else []),
         ]),
         paragraph(tr(lang, "pack_sessions_title")),
         sessions_table([{"start": item["start"], "trainer": item.get("trainer")} for item in sessions], lang),

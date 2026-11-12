@@ -271,6 +271,8 @@ def create_pack(
         "total_price": quote["total_price"],
         "duration_weeks": weeks,
         "total_sessions": total_sessions,
+        "objective": sale["pack"].get("objective"),
+        "benefits": sale["pack"].get("benefits") or [],
         "session_dates": session_dates,
         "sessions": sessions,
         "calendar_failed": 0,
@@ -350,6 +352,8 @@ def email_pack(created, *, client_name, client_email, days, sessions_per_week, t
             "price_per_session": created["price_per_session"],
             "total_price": created["total_price"],
             "duration_weeks": created.get("duration_weeks"),
+            "objective": created.get("objective"),
+            "benefits": created.get("benefits") or [],
         }
         if to_client:
             summary["calendar_links"] = calendar_feed.links_for_email(client_email)

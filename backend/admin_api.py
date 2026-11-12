@@ -57,6 +57,9 @@ class PackPayload(BaseModel):
     sessions_per_week_options: list[int | str] = Field(default_factory=list, max_length=20)
     price_per_session: float | str | None = None
     price_per_pack: float | str | None = None
+    # optional text about the pack (pack_catalog.clean_objective / clean_benefits check them); absent = leave as it is
+    objective: str | None = Field(default=None, max_length=2000)
+    benefits: list | None = Field(default=None, max_length=100)
 
 
 class TrialPricesPayload(BaseModel):
@@ -521,12 +524,12 @@ def register_admin_routes(app, require_admin):
 
     @app.post("/admin/pack-catalog", dependencies=admin)
     def admin_create_pack(data: PackPayload):
-        return _in_catalog(lambda cursor: pack_catalog.create(cursor, data.model_dump()))
+        return _in_catalog(lambda cursor: pack_catalog.create(cursor, data.model_dump(exclude_unset=True)))
 
     @app.put("/admin/pack-catalog/{pack_id}", dependencies=admin)
     def admin_update_pack(pack_id: int, data: PackPayload):
         """Edits a pack of the catalogue. The packs already sold keep their own price, weeks and type."""
-        return _in_catalog(lambda cursor: pack_catalog.update(cursor, pack_id, data.model_dump()))
+        return _in_catalog(lambda cursor: pack_catalog.update(cursor, pack_id, data.model_dump(exclude_unset=True)))
 
     @app.post("/admin/pack-catalog/{pack_id}/archive", dependencies=admin)
     def admin_archive_pack(pack_id: int):

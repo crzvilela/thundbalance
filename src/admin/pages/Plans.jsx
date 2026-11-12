@@ -6,12 +6,13 @@ import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import SegmentedType from '../../components/forms/SegmentedType'
-import { Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon, PageHeader, Skeleton, TextInput } from '../ui'
-import { formatMoney, isPriceText, monthsEquivalent, packPriceLooksOff, packQuote, priceFromText, suggestedPackPrice } from '../../utils/pricing'
+import { Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Field, Icon, PageHeader, Skeleton, TextArea, TextInput } from '../ui'
+import { formatMoney, isPriceText, monthsEquivalent, packPriceLooksOff, packQuote, priceFromText, suggestedPackPrice, totalPrice } from '../../utils/pricing'
+import { MAX_BENEFIT, MAX_BENEFITS, MAX_OBJECTIVE, benefitsProblem, cleanBenefits, cleanObjective, moveItem, objectiveProblem } from '../../utils/packFields'
 import { refreshPricing } from '../../utils/usePricing'
 
 const PER_WEEK = [1, 2, 3, 4, 5, 6, 7]
-const EMPTY = { name: '', type: 'individual', weeks: '', options: [], perSession: '', perPack: '', packTouched: false }
+const EMPTY = { name: '', type: 'individual', weeks: '', options: [], perSession: '', perPack: '', packTouched: false, objective: '', benefits: [] }
 
 function toForm(pack) {
   return {
@@ -21,7 +22,9 @@ function toForm(pack) {
     options: pack.sessions_per_week_options,
     perSession: String(pack.price_per_session),
     perPack: pack.price_per_pack == null ? '' : String(pack.price_per_pack),
-    packTouched: pack.price_per_pack != null          // an explicit pack price was set: it is not "suggested" any more
+    packTouched: pack.price_per_pack != null,         // an explicit pack price was set: it is not "suggested" any more
+    objective: pack.objective || '',
+    benefits: pack.benefits || []
   }
 }
 
@@ -31,15 +34,23 @@ function readForm(form) {
   const weeks = Number(form.weeks)
   const suggestion = single ? suggestedPackPrice(priceFromText(form.perSession), weeks, form.options[0]) : null
   const packShown = !single ? '' : (form.packTouched ? form.perPack : (suggestion == null ? '' : String(suggestion)))
-  let problem = ''
+  let problem
   if (!form.name.trim()) problem = 'cat_err_name'
   else if (!/^\d+$/.test(form.weeks.trim()) || weeks < 1) problem = 'cat_err_weeks'
   else if (form.options.length === 0) problem = 'cat_err_options'
   else if (!isPriceText(form.perSession)) problem = 'cat_err_price'
   else if (single && form.packTouched && form.perPack.trim() !== '' && !isPriceText(form.perPack)) problem = 'cat_err_pack_price'
+  else problem = objectiveProblem(form.objective) || benefitsProblem(form.benefits)
   const off = single && form.packTouched && isPriceText(form.perSession) && isPriceText(form.perPack) &&
     packPriceLooksOff(priceFromText(form.perSession), priceFromText(form.perPack), weeks, form.options[0])
-  return { single, suggestion, packShown, problem, off }
+  // what the system works out (never typed): one line per option of sessions per week; with ONE option the totals directly
+  const valid = isPriceText(form.perSession) && weeks >= 1
+  const perSessionNumber = valid ? priceFromText(form.perSession) : null
+  const lines = valid ? form.options.map(perWeek => ({
+    perWeek, sessions: weeks * perWeek,
+    total: single && packShown !== '' && isPriceText(packShown) ? priceFromText(packShown) : totalPrice(perSessionNumber, weeks * perWeek)
+  })) : []
+  return { single, suggestion, packShown, problem, off, lines, perSessionNumber }
 }
 
 export default function Plans() {
@@ -55,6 +66,7 @@ export default function Plans() {
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState('')
   const [archiving, setArchiving] = useState(null)
+  const [removingBenefit, setRemovingBenefit] = useState(null)   // index of the benefit waiting for the confirmation
 
   const view = readForm(form)
   const openNew = () => { setForm(EMPTY); setFormError(''); setEditing('new') }
@@ -64,6 +76,8 @@ export default function Plans() {
     options: form.options.includes(value) ? form.options.filter(item => item !== value) : [...form.options, value].sort((a, b) => a - b)
   })
   const changed = () => { refreshPricing(); resource.reload() }
+  const setBenefit = (index, text) => set({ benefits: form.benefits.map((item, at) => (at === index ? text : item)) })
+  const removeBenefit = (index) => { set({ benefits: form.benefits.filter((_item, at) => at !== index) }); setRemovingBenefit(null) }
 
   const save = async () => {
     if (view.problem) { setFormError(t(view.problem)); return }
@@ -74,7 +88,9 @@ export default function Plans() {
       sessions_per_week_options: form.options,
       price_per_session: priceFromText(form.perSession),
       // only an explicit pack price is sent (with one option); otherwise the total is price per session x sessions
-      price_per_pack: view.single && form.packTouched && form.perPack.trim() !== '' ? priceFromText(form.perPack) : null
+      price_per_pack: view.single && form.packTouched && form.perPack.trim() !== '' ? priceFromText(form.perPack) : null,
+      objective: cleanObjective(form.objective),
+      benefits: cleanBenefits(form.benefits)
     }
     setBusy(true)
     setFormError('')
@@ -201,6 +217,39 @@ export default function Plans() {
             </div>
           </Field>
         </div>
+        <div className="md:col-span-2">
+          <Field label={t('cat_objective')} hint={t('cat_objective_hint')}>
+            <TextArea rows={2} value={form.objective} onChange={event => set({ objective: event.target.value })} maxLength={MAX_OBJECTIVE + 40}
+              placeholder={t('cat_objective_ph')} disabled={busy} aria-invalid={objectiveProblem(form.objective) !== ''} />
+            <span className={`mt-1 block text-right text-xs tabular-nums ${cleanObjective(form.objective).length > MAX_OBJECTIVE ? 'text-red-300' : 'text-gray-500'}`}>
+              {t('cat_chars').replace('{n}', cleanObjective(form.objective).length).replace('{max}', MAX_OBJECTIVE)}
+            </span>
+          </Field>
+        </div>
+        <section className="mb-5" aria-labelledby="cat-benefits-label">
+          <span id="cat-benefits-label" className="mb-2.5 block text-sm font-medium uppercase tracking-wider text-gray-400">{t('cat_benefits')}</span>
+          <p className="mb-3 text-sm text-gray-500">{t('cat_benefits_hint').replace('{max}', MAX_BENEFITS)}</p>
+          <ul className="space-y-3">
+            {form.benefits.map((item, index) => (
+              <li key={index} className="rounded-xl border border-white/10 p-3">
+                <TextInput value={item} onChange={event => setBenefit(index, event.target.value)} maxLength={MAX_BENEFIT + 20}
+                  placeholder={t('cat_benefit_ph')} aria-label={t('cat_benefit_n').replace('{n}', index + 1)} disabled={busy} />
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className={`mr-auto text-xs tabular-nums ${cleanObjective(item).length > MAX_BENEFIT ? 'text-red-300' : 'text-gray-500'}`}>
+                    {t('cat_chars').replace('{n}', cleanObjective(item).length).replace('{max}', MAX_BENEFIT)}
+                  </span>
+                  <Button variant="secondary" onClick={() => set({ benefits: moveItem(form.benefits, index, -1) })} disabled={busy || index === 0} aria-label={`${t('cat_benefit_up')}: ${t('cat_benefit_n').replace('{n}', index + 1)}`}>↑</Button>
+                  <Button variant="secondary" onClick={() => set({ benefits: moveItem(form.benefits, index, 1) })} disabled={busy || index === form.benefits.length - 1} aria-label={`${t('cat_benefit_down')}: ${t('cat_benefit_n').replace('{n}', index + 1)}`}>↓</Button>
+                  <Button variant="secondary" onClick={() => (item.trim() ? setRemovingBenefit(index) : removeBenefit(index))} disabled={busy} aria-label={`${t('cat_benefit_del')}: ${t('cat_benefit_n').replace('{n}', index + 1)}`}>{t('cat_benefit_del')}</Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <Button variant="secondary" className="mt-3" onClick={() => set({ benefits: [...form.benefits, ''] })} disabled={busy || form.benefits.length >= MAX_BENEFITS}>
+            {t('cat_benefit_add')} ({form.benefits.length}/{MAX_BENEFITS})
+          </Button>
+        </section>
+        <PackPreview form={form} view={view} />
         {view.off && (
           <p role="status" className="mb-4 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
             {t('cat_warn_off').replace('{expected}', formatMoney(view.suggestion))}
@@ -210,12 +259,69 @@ export default function Plans() {
       </Drawer>
 
       <ConfirmDialog
+        open={removingBenefit !== null} busy={busy}
+        title={t('cat_benefit_del_title')} text={removingBenefit !== null ? `“${form.benefits[removingBenefit] || ''}” — ${t('cat_benefit_del_text')}` : ''}
+        confirmLabel={t('cat_benefit_del')} cancelLabel={t('cancel')}
+        onConfirm={() => removeBenefit(removingBenefit)} onCancel={() => setRemovingBenefit(null)}
+      />
+
+      <ConfirmDialog
         open={!!archiving} busy={busy}
         title={t('cat_archive_title')} text={archiving ? `${archiving.name} — ${t('cat_archive_text')}` : ''}
         confirmLabel={t('cat_archive')} cancelLabel={t('cancel')}
         onConfirm={() => setArchived(archiving, true)} onCancel={() => setArchiving(null)}
       />
     </div>
+  )
+}
+
+// The two figures the system works out (read-only) and a preview of the card the client will see, drawn from the form as it is typed.
+function PackPreview({ form, view }) {
+  const { t } = useAdminText()
+  const weeks = Number(form.weeks)
+  const first = view.lines[0]
+  const benefits = cleanBenefits(form.benefits)
+  const objective = cleanObjective(form.objective)
+  return (
+    <section className="mb-5 grid gap-4 md:grid-cols-2" aria-label={t('cat_preview_title')}>
+      <div className="rounded-xl border border-white/10 p-4">
+        <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">{t('cat_calc_title')}</h3>
+        <dl className="space-y-2">
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-sm text-gray-400">{t('cat_calc_sessions')}</dt>
+            <dd className="tabular-nums" data-testid="calc-sessions">{view.single && first ? first.sessions : '—'}</dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-sm text-gray-400">{t('cat_calc_total')}</dt>
+            <dd className="tabular-nums" data-testid="calc-total">{view.single && first && first.total != null ? formatMoney(first.total) : '—'}</dd>
+          </div>
+        </dl>
+        {view.lines.length > 1 && (
+          <ul className="mt-3 space-y-1 text-sm text-gray-300">
+            {view.lines.map(line => (
+              <li key={line.perWeek}>{t('cat_calc_line').replace('{n}', line.perWeek).replace('{sessions}', line.sessions).replace('{total}', formatMoney(line.total))}</li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-3 text-xs text-gray-500">{view.lines.length > 1 ? t('cat_calc_choice') : t('cat_calc_note')}</p>
+      </div>
+      <div className="rounded-xl border border-white/15 bg-white/[0.03] p-4">
+        <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">{t('cat_preview_title')}</h3>
+        <p className="break-words text-lg font-semibold">{form.name.trim() || t('cat_preview_name')}</p>
+        {weeks >= 1 && <p className="mt-1 text-sm text-gray-400">{t('cat_weeks_n').replace('{n}', weeks)}</p>}
+        {objective && <p className="mt-2 break-words text-sm text-gray-300">{objective}</p>}
+        <p className="mt-3 text-2xl font-semibold tabular-nums">{view.perSessionNumber != null ? formatMoney(view.perSessionNumber) : '—'} <span className="text-sm font-normal text-gray-400">{t('cat_price_session')}</span></p>
+        {view.single && first && first.total != null && <p className="text-sm text-gray-400">{t('cat_calc_total')}: {formatMoney(first.total)}</p>}
+        {benefits.length > 0 && (
+          <>
+            <p className="mt-3 text-xs uppercase tracking-wider text-gray-500">{t('cat_preview_incl')}</p>
+            <ul className="mt-1 space-y-1 text-sm text-gray-200">
+              {benefits.map((item, index) => <li key={index} className="flex gap-2"><span aria-hidden="true">✓</span><span className="break-words">{item}</span></li>)}
+            </ul>
+          </>
+        )}
+      </div>
+    </section>
   )
 }
 

@@ -7,6 +7,7 @@ import { resolveText } from '../utils/multilingual'
 import SegmentedType from './forms/SegmentedType'
 import { formatMoney, packQuote, packsOfType } from '../utils/pricing'
 import { usePricing } from '../utils/usePricing'
+import PackExtras from './PackExtras'
 
 function Pricing({ sectionId }) {
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'Pricing')
@@ -97,6 +98,8 @@ function Pricing({ sectionId }) {
                 )}
                 {pack && <p className={`mb-4 text-sm ${highlighted ? 'text-gray-400' : 'text-gray-500'}`}>{t('st_weeks').replace('{n}', pack.weeks)} · {pack.sessions_per_week_options.length > 1 ? t('st_per_week_options').replace('{list}', pack.sessions_per_week_options.join(' / ')) : t('st_per_week_one').replace('{n}', pack.sessions_per_week_options[0])}</p>}
 
+                {pack && <PackExtras pack={pack} t={t} tone={highlighted ? 'dark' : 'light'} className="mb-4" />}
+
                 <div className="mb-6">
                   <div className="text-5xl font-bold">
                     <span aria-live="polite">{prices ? formatMoney(quote.perSession) : '—'}</span>
@@ -112,6 +115,7 @@ function Pricing({ sectionId }) {
                         />
                       )}
                   </div>
+                  {single && <p className={`mt-1 text-sm ${highlighted ? 'text-gray-400' : 'text-gray-500'}`}>{t('pk_total_sessions').replace('{n}', quote.sessions)}</p>}
                   {single && pack.price_per_pack != null && <p className={`mt-1 text-sm ${highlighted ? 'text-gray-400' : 'text-gray-500'}`}>{t('st_pack_total').replace('{price}', formatMoney(quote.total))}</p>}
                   {sessionType === 'dual' && <p className={`mt-1 text-sm ${highlighted ? 'text-gray-400' : 'text-gray-500'}`}>{t('st_price_both')}</p>}
                   {failed && <p className="mt-1 text-sm text-red-500">{t('st_price_error')}</p>}

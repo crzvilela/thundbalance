@@ -122,10 +122,12 @@ def _pack_summary(cursor, user_id):
     cursor.execute(
         """
         SELECT p.nome, up.sessions_per_week, up.preferred_days, up.start_date, up.end_date, t.nome,
-               up.session_type, up.second_person_name, up.price_per_session, up.total_price
+               up.session_type, up.second_person_name, up.price_per_session, up.total_price,
+               c.objective, c.benefits
         FROM user_plans up
         JOIN plans p ON p.id = up.plan_id
         LEFT JOIN trainers t ON t.id = up.trainer_id
+        LEFT JOIN pack_catalog c ON c.id = up.catalog_pack_id
         WHERE up.user_id = %s AND up.active
         ORDER BY up.id DESC LIMIT 1
         """,
@@ -134,7 +136,7 @@ def _pack_summary(cursor, user_id):
     plan = cursor.fetchone()
     if not plan:
         return None
-    plan_name, per_week, days, start, end, trainer, session_type, second_name, price, total_price = plan
+    plan_name, per_week, days, start, end, trainer, session_type, second_name, price, total_price, objective, benefits = plan
     cursor.execute(
         """
         SELECT s.id, s.session_date, s.session_time, s.session_number, t.nome
@@ -157,6 +159,7 @@ def _pack_summary(cursor, user_id):
         "days": [day.strip() for day in str(days or "").split(",") if day.strip()],
         "trainer": trainer, "sessions": sessions, "session_type": session_type, "second_person_name": second_name,
         "price_per_session": price, "total_price": total_price,
+        "objective": objective, "benefits": [item for item in (benefits or []) if isinstance(item, str)],
     }
 
 

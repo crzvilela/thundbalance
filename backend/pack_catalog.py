@@ -24,12 +24,16 @@ Trial prices (individual | dual) stay in the small `pricing` table (kind 'trial'
 from decimal import Decimal, InvalidOperation
 
 from fastapi import HTTPException
+from psycopg2.extras import Json as PgJson
 
 import plans_schema
 import pricing
 
 WEEKDAY_OPTIONS = range(1, 8)              # sessions per week a pack may offer: 1 to 7 (what the server accepts today)
 MAX_WEEKS = 260
+MAX_OBJECTIVE = 160                        # characters of the objective of a pack
+MAX_BENEFITS = 8                           # benefits per pack
+MAX_BENEFIT = 80                           # characters of one benefit
 MAX_PRICE = Decimal("100000")
 DEFAULT_OPTIONS = [1, 2, 3, 4, 5]          # what the site offered before the catalogue existed (1 to 5 per week)
 
@@ -66,6 +70,9 @@ def ensure_schema(cursor):
         )
         """
     )
+    # what the admin writes about a pack (optional: an older pack has none). One free text, not translated.
+    for column in ("objective TEXT", "benefits JSONB"):
+        cursor.execute(f"ALTER TABLE pack_catalog ADD COLUMN IF NOT EXISTS {column}")
     # a pack sold or requested remembers which catalogue pack it came from and the weeks it was sold with
     for table, columns in (
         ("user_plans", ("catalog_pack_id INTEGER", "weeks INTEGER")),
@@ -142,20 +149,34 @@ def _money(value):
 
 
 def _view(row, sold=None):
-    (pack_id, name, session_type, weeks, options, per_session, per_pack, plan_id, active, order, created, archived) = row
+    (pack_id, name, session_type, weeks, options, per_session, per_pack, plan_id, active, order, created, archived,
+     objective, benefits) = row
     view = {
         "id": pack_id, "name": name, "session_type": session_type, "weeks": weeks, "months": months_for(weeks),
         "sessions_per_week_options": list(options or []), "price_per_session": _money(per_session),
         "price_per_pack": _money(per_pack), "plan_id": plan_id, "active": bool(active), "sort_order": order,
         "created_at": created.isoformat() if created else None, "archived_at": archived.isoformat() if archived else None,
+        "objective": objective or None, "benefits": [item for item in (benefits or []) if isinstance(item, str)],
     }
+    view.update(_totals(view))
     if sold is not None:
         view["sold"] = sold
     return view
 
 
 COLUMNS = ("id, name, session_type, weeks, sessions_per_week_options, price_per_session, price_per_pack, plan_id, "
-           "active, sort_order, created_at, archived_at")
+           "active, sort_order, created_at, archived_at, objective, benefits")
+
+
+def _totals(pack):
+    """What the pack adds up to, worked out here and never stored: one line per option of sessions per week
+    ({"per_week", "sessions", "total"}) and, when there is ONE option, the total sessions and the total price directly."""
+    lines = []
+    for per_week in pack["sessions_per_week_options"]:
+        lines.append({"per_week": per_week, "sessions": pack["weeks"] * per_week, "total": _money(total_for(pack, per_week))})
+    single = lines[0] if len(lines) == 1 else None
+    return {"totals": lines, "total_sessions": single["sessions"] if single else None,
+            "price_total": single["total"] if single else None}
 
 
 def get(cursor, pack_id):
@@ -186,7 +207,8 @@ def public_catalog(cursor):
     """What the site and the selectors need: the packs on sale and the trial prices.
     {"packs": [{id, name, session_type, weeks, months, sessions_per_week_options, price_per_session, price_per_pack}],
      "trial": {"individual": 40, "dual": 50}}"""
-    keys = ("id", "name", "session_type", "weeks", "months", "sessions_per_week_options", "price_per_session", "price_per_pack")
+    keys = ("id", "name", "session_type", "weeks", "months", "sessions_per_week_options", "price_per_session", "price_per_pack",
+            "objective", "benefits", "totals", "total_sessions", "price_total")
     packs = [{key: pack[key] for key in keys} for pack in list_packs(cursor, include_archived=False)]
     return {"packs": packs, "trial": trial_prices(cursor)}
 
@@ -283,8 +305,58 @@ def clean(payload):
     per_session = _price(payload.get("price_per_session"), "price_per_session")
     # the pack price only exists with ONE option; with several the client chooses and the total is worked out
     per_pack = _price(payload.get("price_per_pack"), "price_per_pack", allow_none=True) if len(options) == 1 else None
-    return {"name": name, "session_type": session_type, "weeks": weeks, "options": options,
-            "per_session": per_session, "per_pack": per_pack}
+    values = {"name": name, "session_type": session_type, "weeks": weeks, "options": options,
+              "per_session": per_session, "per_pack": per_pack}
+    # objective and benefits are optional; a body without them leaves what a pack already has (see update)
+    if "objective" in payload:
+        values["objective"] = clean_objective(payload.get("objective"))
+    if "benefits" in payload:
+        values["benefits"] = clean_benefits(payload.get("benefits"))
+    return values
+
+
+def _no_markup(text):
+    return "<" not in text and ">" not in text and not any(ord(char) < 32 or ord(char) == 127 for char in text)
+
+
+def clean_objective(value):
+    """The objective of a pack: one short free text, max 160 characters, no HTML. Empty = none (None)."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise _invalid("objective", "El objetivo debe ser texto. / The objective must be text.")
+    text = " ".join(value.split())
+    if len(text) > MAX_OBJECTIVE:
+        raise _invalid("objective", f"El objetivo admite como máximo {MAX_OBJECTIVE} caracteres. / The objective allows at most {MAX_OBJECTIVE} characters.")
+    if not _no_markup(text):
+        raise _invalid("objective", "El objetivo no admite < ni > (ni HTML). / The objective cannot contain < or > (no HTML).")
+    return text or None
+
+
+def clean_benefits(value):
+    """The benefits of a pack: 0 to 8 short texts (max 80 characters each), no HTML, no repeats. Empty lines are dropped."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise _invalid("benefits", "Los beneficios deben ser una lista. / The benefits must be a list.")
+    items, seen = [], set()
+    for entry in value:
+        if not isinstance(entry, str):
+            raise _invalid("benefits", "Cada beneficio debe ser texto. / Every benefit must be text.")
+        text = " ".join(entry.split())
+        if not text:
+            continue
+        if len(text) > MAX_BENEFIT:
+            raise _invalid("benefits", f"Cada beneficio admite como máximo {MAX_BENEFIT} caracteres. / Every benefit allows at most {MAX_BENEFIT} characters.")
+        if not _no_markup(text):
+            raise _invalid("benefits", "Los beneficios no admiten < ni > (ni HTML). / Benefits cannot contain < or > (no HTML).")
+        if text.casefold() in seen:
+            raise _invalid("benefits", "Hay beneficios repetidos. / There are repeated benefits.")
+        seen.add(text.casefold())
+        items.append(text)
+    if len(items) > MAX_BENEFITS:
+        raise _invalid("benefits", f"Máximo {MAX_BENEFITS} beneficios. / At most {MAX_BENEFITS} benefits.")
+    return items
 
 
 def _plan_in_use(cursor, plan_id):
@@ -317,10 +389,12 @@ def create(cursor, payload):
     order = cursor.fetchone()[0]
     cursor.execute(
         """
-        INSERT INTO pack_catalog (name, session_type, weeks, sessions_per_week_options, price_per_session, price_per_pack, plan_id, sort_order)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+        INSERT INTO pack_catalog (name, session_type, weeks, sessions_per_week_options, price_per_session, price_per_pack, plan_id, sort_order,
+                                  objective, benefits)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
         """,
-        (values["name"], values["session_type"], values["weeks"], values["options"], values["per_session"], values["per_pack"], plan_id, order),
+        (values["name"], values["session_type"], values["weeks"], values["options"], values["per_session"], values["per_pack"], plan_id, order,
+         values.get("objective"), PgJson(values["benefits"]) if values.get("benefits") else None),
     )
     return get(cursor, cursor.fetchone()[0])
 
@@ -341,6 +415,12 @@ def update(cursor, pack_id, payload):
         """,
         (values["name"], values["session_type"], values["weeks"], values["options"], values["per_session"], values["per_pack"], plan_id, pack_id),
     )
+    # the objective and the benefits are only overwritten when the body carries them (an older client keeps what is there)
+    if "objective" in values:
+        cursor.execute("UPDATE pack_catalog SET objective = %s WHERE id = %s", (values["objective"], pack_id))
+    if "benefits" in values:
+        cursor.execute("UPDATE pack_catalog SET benefits = %s WHERE id = %s",
+                       (PgJson(values["benefits"]) if values["benefits"] else None, pack_id))
     return get(cursor, pack_id)
 
 
