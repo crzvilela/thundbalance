@@ -6,12 +6,13 @@ import { resolveText, setTextForLanguage } from '../../utils/multilingual'
 import { useI18n } from '../../i18n/I18nContext'
 import { resolveImageUrl, uploadLandingImage, uploadLandingVideo } from '../../api/landingPage'
 import { isKnownEmbedProvider } from '../../utils/videoEmbed'
-import { SECTION_LABELS, SECTION_TYPE_INFO, makeDefaultServiceItem, makeDefaultPricingPlan, makeDefaultTestimonialMedia } from '../../content/defaultContent'
+import { SECTION_LABELS, SECTION_TYPE_INFO, makeDefaultServiceItem, makeDefaultTestimonialMedia } from '../../content/defaultContent'
 import ConfirmDialog from './ConfirmDialog'
 import FooterElementPanel from './FooterElementPanel'
 import NavbarLogoFields from './NavbarLogoFields'
 import PositionFields from './PositionFields'
 import PanelTabs from './PanelTabs'
+import PricingPlansFields from './PricingPlansFields'
 import { useAdminText } from '../../admin/useAdminText'
 import './EditorChrome.css'
 import TypographyControls from './TypographyControls'
@@ -232,7 +233,7 @@ function SectionPanel({ sectionKey, onClose }) {
       {section.type === 'about' && <AboutTextFields sectionKey={sectionKey} section={section} updateField={updateField} />}
       {section.type === 'contact' && <ContactImageFields sectionKey={sectionKey} section={section} updateField={updateField} />}
       {section.type === 'services' && <ServicesSectionFields sectionKey={sectionKey} content={content} updateField={updateField} />}
-      {section.type === 'pricing' && <PricingSectionFields sectionKey={sectionKey} content={content} updateField={updateField} />}
+      {section.type === 'pricing' && <PricingPlansFields sectionKey={sectionKey} content={content} updateField={updateField} />}
       {section.type === 'testimonials' && <TestimonialsMediaFields sectionKey={sectionKey} content={content} updateField={updateField} />}
       {section.type === 'imageText' && <ImageTextSectionFields sectionKey={sectionKey} section={section} updateField={updateField} />}
       {section.type === 'videoBlock' && <VideoBlockSectionFields sectionKey={sectionKey} section={section} updateField={updateField} />}
@@ -806,101 +807,6 @@ function ServicesSectionFields({ sectionKey, content, updateField }) {
       ))}
 
       <SmallButton variant="primary" onClick={addItem}>+ Add Service Card</SmallButton>
-    </>
-  )
-}
-
-function PricingSectionFields({ sectionKey, content, updateField }) {
-  const { language } = useI18n()
-  const plans = content.sections[sectionKey]?.plans || []
-  const path = `sections.${sectionKey}.plans`
-
-  const addPlan = () => {
-    updateField(path, [...plans, makeDefaultPricingPlan()])
-  }
-
-  const removePlan = (index) => {
-    updateField(path, plans.filter((_, i) => i !== index))
-  }
-
-  const movePlan = (index, direction) => {
-    const target = index + direction
-    if (target < 0 || target >= plans.length) return
-    const next = [...plans]
-    ;[next[index], next[target]] = [next[target], next[index]]
-    updateField(path, next)
-  }
-
-  const toggleHighlight = (index) => {
-    const newPlans = plans.map((p, i) => (i === index ? { ...p, highlighted: !p.highlighted } : p))
-    updateField(path, newPlans)
-  }
-
-  const addFeature = (index) => {
-    const plan = plans[index]
-    const newFeatures = [...(plan.features || []), { en: 'New feature', es: 'Nueva característica', ca: 'Nova característica' }]
-    const newPlans = plans.map((p, i) => (i === index ? { ...p, features: newFeatures } : p))
-    updateField(path, newPlans)
-  }
-
-  const removeFeature = (planIndex, featureIndex) => {
-    const plan = plans[planIndex]
-    const newFeatures = (plan.features || []).filter((_, i) => i !== featureIndex)
-    const newPlans = plans.map((p, i) => (i === planIndex ? { ...p, features: newFeatures } : p))
-    updateField(path, newPlans)
-  }
-
-  return (
-    <>
-      <p className="text-xs uppercase tracking-wider text-emerald-400 mb-4 mt-6">
-        Pricing Plans ({plans.length})
-      </p>
-
-      {plans.map((plan, index) => (
-        <div key={index} className="border border-white/10 rounded-lg px-3 py-3 mb-3">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium truncate">{resolveText(plan.name, language) || `Plan ${index + 1}`}</span>
-            <button
-              onClick={() => removePlan(index)}
-              className="text-red-400 text-xs uppercase tracking-wider hover:text-red-300"
-            >
-              Remove
-            </button>
-          </div>
-
-          <ButtonRow>
-            <SmallButton onClick={() => movePlan(index, -1)} disabled={index === 0}>Move Up</SmallButton>
-            <SmallButton onClick={() => movePlan(index, 1)} disabled={index === plans.length - 1}>Move Down</SmallButton>
-          </ButtonRow>
-
-          <ToggleField
-            label="Highlighted plan"
-            value={!!plan.highlighted}
-            onChange={() => toggleHighlight(index)}
-          />
-
-          <p className="text-[11px] uppercase tracking-wider text-gray-500 mb-2">Features</p>
-          {(plan.features || []).map((feature, featureIndex) => (
-            <div key={featureIndex} className="flex items-center justify-between text-xs text-gray-300 mb-1">
-              <span className="truncate">• {resolveText(feature, language)}</span>
-              <button
-                onClick={() => removeFeature(index, featureIndex)}
-                className="text-red-400 hover:text-red-300 ml-2"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-          <button
-            onClick={() => addFeature(index)}
-            className="text-emerald-400 text-xs uppercase tracking-wider hover:text-emerald-300 mt-1"
-          >
-            + Add feature
-          </button>
-        </div>
-      ))}
-
-      <SmallButton variant="primary" onClick={addPlan}>+ Add Pricing Plan</SmallButton>
     </>
   )
 }

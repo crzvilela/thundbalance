@@ -13,7 +13,6 @@ import SessionTypeSection, { PriceSummary } from '../components/forms/SessionTyp
 import { formatMoney, packQuote, packsOfType, sessionTypeBody } from '../utils/pricing'
 import { secondPersonProblems, usePricing } from '../utils/usePricing'
 import { formText } from '../i18n/formText'
-import PackExtras from '../components/PackExtras'
 
 function TrainingRequest() {
   const navigate = useNavigate()
@@ -163,7 +162,6 @@ function TrainingRequest() {
 
             </select>
 
-            <PackExtras pack={chosenPack} t={t} tone="site" className="mt-4" />
 
           </div>
 

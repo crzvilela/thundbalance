@@ -28,6 +28,7 @@ from google_calendar import (
 )
 from landing_page_default import DEFAULT_LANDING_CONTENT
 from admin_api import register_admin_routes
+import landing_pricing
 import pack_catalog
 import pack_schedule
 import plans_schema
@@ -537,6 +538,23 @@ def ensure_client_workflow_fields():
     finally:
         cursor.close()
         conn.close()
+
+
+@app.on_event("startup")
+def migrate_landing_pricing():
+    # The Pricing section keeps its own list of packs (landing_pricing.py); a section without one gets the list that
+    # reproduces what it showed. Runs after the landing table and the catalogue exist; changes nothing the second time.
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            landing_pricing.migrate_all(cursor)
+            conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+    except Exception as error:  # noqa: BLE001
+        print(f"landing pricing list could not be migrated: {type(error).__name__}")
 
 
 class LandingContentPayload(BaseModel):
@@ -2749,6 +2767,7 @@ def reset_landing_page(version: str = "draft"):
             """,
             (version, PgJson(base_content))
         )
+        landing_pricing.migrate_version(cursor, version)     # the restored Pricing section gets its list of packs too
 
         conn.commit()
 

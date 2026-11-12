@@ -26,17 +26,14 @@ A sold pack gets its number of sessions from `weeks x sessions per week`, and th
 
 `POST /admin/pack-catalog` and `PUT /admin/pack-catalog/{id}` accept `objective` (text) and `benefits` (list of text). A `PUT` that does not carry the key leaves what the pack has; an empty text / empty list clears it. Anything invalid answers `422` with `{code: "invalid_objective" | "invalid_benefits", field, message}` (message in Spanish and English). `GET /pricing` (public, packs on sale) and `GET /admin/pack-catalog` return `objective`, `benefits`, `totals`, `total_sessions`, `price_total`.
 
-## What the client sees (only when the pack has them)
+## What the client sees
 
-* Landing page pricing cards and the pack picker of the request page (`src/components/PackExtras.jsx`; plain text, escaped by React).
-* The pack summary e-mail (`backend/emails/pack_emails.py`): rows "Goal" and "Included" in the client's language (ES/EN/CA), HTML-escaped. The data is read from the catalogue pack the client's pack was sold from (`user_plans.catalog_pack_id`). The team copy is in Spanish.
-
-A pack that was sold keeps its price, weeks and type (copied onto `user_plans`); the objective and benefits shown in later e-mails are those the catalogue pack has at that moment.
+The objective and the benefits are drawn ONLY on the card of the plan on the landing page (`src/components/PackExtras.jsx`, used by `Pricing.jsx`; plain text, escaped by React), when the plan has them. They are not shown on the request page, in the client area or in the pack e-mails. Which plans are on the landing is explained in `LANDING_PRICING.md`.
 
 ## Admin form
 
-"New pack" / "Edit": objective with a character counter; benefits list (add, edit, move up / down with buttons, delete with a confirmation when the line has text, maximum 8, counter per line); a read-only block with the calculated totals; a live preview of the card as the client sees it. Errors are shown in the admin's language; the server checks everything again.
+"New pack" / "Edit": objective with a character counter; benefits list (add, edit, move up / down with buttons, delete with a confirmation when the line has text, maximum 8, counter per line); a read-only block with the calculated totals; a live preview of the card as it would look on the landing page. Errors are shown in the admin's language; the server checks everything again.
 
 ## Tests
 
-`backend/test_pack_fields.py` (create with all fields / without them, computed totals, browser totals ignored, every validation, editing an old pack, the client endpoint, the e-mail with and without the fields in ES/EN/CA and escaping) and `src/utils/packFields.test.js` (the same limits in the form).
+`backend/test_pack_fields.py` (create with all fields / without them, computed totals, browser totals ignored, every validation, editing an old pack, the public endpoint that feeds the landing card, and the e-mail never carrying them) and `src/utils/packFields.test.js` (the same limits in the form).

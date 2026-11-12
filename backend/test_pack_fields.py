@@ -3,8 +3,8 @@
     python -m unittest test_pack_fields -v
 
 Optional text fields on a pack: nothing breaks for a pack that has none; the server validates them (the browser is never
-trusted); the total sessions and the total price are CALCULATED by the server; the client sees them on GET /pricing and in
-the pack e-mail, in the client's language, only when they exist. The local database is used and cleaned up.
+trusted); the total sessions and the total price are CALCULATED by the server; the client sees them on the landing card only
+(GET /pricing feeds it): not in the e-mail nor on the request page. The local database is used and cleaned up.
 """
 import unittest
 from datetime import datetime
@@ -152,22 +152,17 @@ class PackFields(unittest.TestCase):
                 "days": ["Monday"], "trainer": "Carles",
                 "sessions": [{"id": 1, "start": datetime(2026, 10, 12, 9), "trainer": "Carles", "number": "1/1"}], **extra}
 
-    def test_the_email_shows_objective_and_benefits_in_the_language_of_the_client_only_when_present(self):
+    def test_the_pack_email_never_shows_objective_or_benefits(self):
+        # they only appear on the card of the landing page: not in the e-mail, even if the summary happens to carry them
         extra = {"objective": "Ganar fuerza", "benefits": ["Plan de nutrición", "Seguimiento semanal"]}
-        for lang, objective_label, benefits_label in (("es", "Objetivo", "Incluye"), ("en", "Goal", "Included"), ("ca", "Objectiu", "Inclou")):
+        for lang in ("es", "en", "ca"):
             block = render_pack_summary_block(self.summary(**extra), lang)
             for text in (block.html, block.text):
-                self.assertIn(objective_label, text)
-                self.assertIn(benefits_label, text)
-                self.assertIn("Ganar fuerza", text)
-                self.assertIn("Plan de nutrición; Seguimiento semanal", text)
-        plain = render_pack_summary_block(self.summary(), "es")
-        self.assertNotIn("Objetivo", plain.html)
-        self.assertNotIn("Incluye", plain.html)
-
-    def test_the_email_escapes_what_the_admin_wrote(self):
-        block = render_pack_summary_block(self.summary(objective="a & b", benefits=["x"]), "en")
-        self.assertIn("a &amp; b", block.html)
+                self.assertNotIn("Ganar fuerza", text)
+                self.assertNotIn("Plan de nutrición", text)
+            plain = render_pack_summary_block(self.summary(), lang)
+            self.assertEqual(plain.html, block.html)
+            self.assertEqual(plain.text, block.text)
 
 
 if __name__ == "__main__":

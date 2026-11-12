@@ -5,7 +5,8 @@ import { useState } from 'react'
 import { useI18n } from '../i18n/I18nContext'
 import { resolveText } from '../utils/multilingual'
 import SegmentedType from './forms/SegmentedType'
-import { formatMoney, packQuote, packsOfType } from '../utils/pricing'
+import { formatMoney, packQuote } from '../utils/pricing'
+import { entriesFor } from '../utils/landingPricing'
 import { usePricing } from '../utils/usePricing'
 import PackExtras from './PackExtras'
 
@@ -20,11 +21,12 @@ function Pricing({ sectionId }) {
 
   if (!visible && !isEditMode) return null
 
-  const pageCards = section.plans && section.plans.length ? section.plans : []
-  const packs = packsOfType(prices, sessionType)
-  // while the prices load (or in the editor) the cards of the page are drawn as they were
-  const count = prices ? Math.max(packs.length, isEditMode ? pageCards.length : 0) : pageCards.length
-  const plans = Array.from({ length: count }, (_unused, index) => pageCards[index] || { ...(pageCards[pageCards.length - 1] || {}), name: '', description: '', features: [], highlighted: false, extra: true })
+  // The page draws only the packs of ITS list (section.planItems, set from the editor: "Añadir plan"). A pack created in
+  // Admin > Packs is not here until the admin adds it. Name, price, goal and benefits are read live from the catalogue; the
+  // texts of the card (description, features, button) come from the card of the item.
+  const pageCards = Array.isArray(section.plans) ? section.plans : []
+  const entries = entriesFor(section, prices?.packs, sessionType)
+  const lastCard = pageCards[pageCards.length - 1] || {}
 
   return (
     <section
@@ -68,14 +70,17 @@ function Pricing({ sectionId }) {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
 
-          {plans.map((plan, index) => {
+          {entries.map(({ pack, cardIndex: index }) => {
+            const own = index != null                       // a card of its own (editable) or a plain one
+            const plan = own ? pageCards[index] : { ...lastCard, description: '', features: [], highlighted: false, extra: true }
             const highlighted = !!plan.highlighted
-            const pack = packs[index] || null
             const quote = packQuote(pack, pack?.sessions_per_week_options?.[0])
             const single = pack && pack.sessions_per_week_options.length === 1
+            const frame = (children) => (own
+              ? <MovableBox key={pack.id} path={`sections.${sectionId}.plans.${index}.card`} label={`Plan ${index + 1} Card`} className="h-full">{children}</MovableBox>
+              : <div key={pack.id} className="h-full">{children}</div>)
 
-            return (
-              <MovableBox key={index} path={`sections.${sectionId}.plans.${index}.card`} label={`Plan ${index + 1} Card`} className="h-full">
+            return frame(
               <div
                 className={`h-full p-10 hover:-translate-y-2 transition duration-500 ${
                   highlighted
@@ -83,27 +88,16 @@ function Pricing({ sectionId }) {
                     : 'border border-black/10'
                 }`}
               >
-                {pack ? (
-                  // the name of a pack is the one field of the catalogue (one language: the one the admin wrote)
-                  <h3 style={{ fontFamily: theme.typography.headingFont }} className="text-3xl mb-1 uppercase block">{pack.name}</h3>
-                ) : (
-                  <EditableText
-                    as="h3"
-                    path={`sections.${sectionId}.plans.${index}.name`}
-                    styleObj={`sections.${sectionId}.plans.${index}.nameStyle`}
-                    label={`Plan ${index + 1} Name`}
-                    style={{ fontFamily: theme.typography.headingFont }}
-                    className="text-3xl mb-4 uppercase block"
-                  />
-                )}
-                {pack && <p className={`mb-4 text-sm ${highlighted ? 'text-gray-400' : 'text-gray-500'}`}>{t('st_weeks').replace('{n}', pack.weeks)} · {pack.sessions_per_week_options.length > 1 ? t('st_per_week_options').replace('{list}', pack.sessions_per_week_options.join(' / ')) : t('st_per_week_one').replace('{n}', pack.sessions_per_week_options[0])}</p>}
+                {/* the name of a pack is the one field of the catalogue (one language: the one the admin wrote) */}
+                <h3 style={{ fontFamily: theme.typography.headingFont }} className="text-3xl mb-1 uppercase block">{pack.name}</h3>
+                {<p className={`mb-4 text-sm ${highlighted ? 'text-gray-400' : 'text-gray-500'}`}>{t('st_weeks').replace('{n}', pack.weeks)} · {pack.sessions_per_week_options.length > 1 ? t('st_per_week_options').replace('{list}', pack.sessions_per_week_options.join(' / ')) : t('st_per_week_one').replace('{n}', pack.sessions_per_week_options[0])}</p>}
 
-                {pack && <PackExtras pack={pack} t={t} tone={highlighted ? 'dark' : 'light'} className="mb-4" />}
+                <PackExtras pack={pack} t={t} tone={highlighted ? 'dark' : 'light'} className="mb-4" />
 
                 <div className="mb-6">
                   <div className="text-5xl font-bold">
                     <span aria-live="polite">{prices ? formatMoney(quote.perSession) : '—'}</span>
-                    {plan.extra
+                    {!own
                       ? <span className="text-xl ml-1">{resolveText(plan.period, language)}</span>      // the period is stored per language: an extra card (a pack without a card of its own) must not draw the object
                       : (
                         <EditableText
@@ -121,14 +115,16 @@ function Pricing({ sectionId }) {
                   {failed && <p className="mt-1 text-sm text-red-500">{t('st_price_error')}</p>}
                 </div>
 
-                <EditableText
-                  as="p"
-                  path={`sections.${sectionId}.plans.${index}.description`}
-                  styleObj={`sections.${sectionId}.plans.${index}.descriptionStyle`}
-                  label={`Plan ${index + 1} Description`}
-                  style={{ fontFamily: theme.typography.bodyFont }}
-                  className={`leading-7 mb-8 block ${highlighted ? 'text-gray-300' : 'text-gray-600'}`}
-                />
+                {own && (
+                  <EditableText
+                    as="p"
+                    path={`sections.${sectionId}.plans.${index}.description`}
+                    styleObj={`sections.${sectionId}.plans.${index}.descriptionStyle`}
+                    label={`Plan ${index + 1} Description`}
+                    style={{ fontFamily: theme.typography.bodyFont }}
+                    className={`leading-7 mb-8 block ${highlighted ? 'text-gray-300' : 'text-gray-600'}`}
+                  />
+                )}
 
                 <ul className={`space-y-3 mb-8 ${highlighted ? 'text-gray-300' : 'text-gray-700'}`}>
                   {(plan.features || []).map((_feature, featureIndex) => (
@@ -144,20 +140,31 @@ function Pricing({ sectionId }) {
                   ))}
                 </ul>
 
-                <EditableText
-                  as="button"
-                  path={`sections.${sectionId}.plans.${index}.buttonText`}
-                  styleObj={`sections.${sectionId}.plans.${index}.buttonTextStyle`}
-                  label={`Plan ${index + 1} Button`}
-                  style={{ fontFamily: theme.typography.accentFont }}
-                  className={`border px-6 py-3 uppercase text-sm tracking-[3px] transition duration-300 ${
-                    highlighted
-                      ? 'border-white hover:bg-white hover:text-black'
-                      : 'border-black hover:bg-black hover:text-white'
-                  }`}
-                />
+                {own ? (
+                  <EditableText
+                    as="button"
+                    path={`sections.${sectionId}.plans.${index}.buttonText`}
+                    styleObj={`sections.${sectionId}.plans.${index}.buttonTextStyle`}
+                    label={`Plan ${index + 1} Button`}
+                    style={{ fontFamily: theme.typography.accentFont }}
+                    className={`border px-6 py-3 uppercase text-sm tracking-[3px] transition duration-300 ${
+                      highlighted
+                        ? 'border-white hover:bg-white hover:text-black'
+                        : 'border-black hover:bg-black hover:text-white'
+                    }`}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    style={{ fontFamily: theme.typography.accentFont }}
+                    className={`border px-6 py-3 uppercase text-sm tracking-[3px] transition duration-300 ${
+                      highlighted ? 'border-white hover:bg-white hover:text-black' : 'border-black hover:bg-black hover:text-white'
+                    }`}
+                  >
+                    {resolveText(plan.buttonText, language)}
+                  </button>
+                )}
               </div>
-              </MovableBox>
             )
           })}
 

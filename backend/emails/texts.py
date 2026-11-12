@@ -69,7 +69,6 @@ TEXTS_ES = {
     "cal_delay_note": "Google puede tardar hasta 24 horas en reflejar los cambios de un calendario suscrito. Para verlas ya, usa el archivo adjunto.",
     "pack_sessions_title": "Tus sesiones",
     "lbl_plan": "Plan", "lbl_start": "Empieza", "lbl_end": "Termina (última sesión)",
-    "lbl_objective": "Objetivo", "lbl_benefits": "Incluye",
     "lbl_duration": "Duración", "dur_weeks": "{n} semanas",
     "lbl_per_week": "Sesiones por semana", "lbl_days": "Días de entrenamiento", "lbl_total": "Total de sesiones",
     # welcome (new client created by the admin)
@@ -132,7 +131,6 @@ TEXTS_EN = {
     "cal_delay_note": "Google can take up to 24 hours to show changes to a subscribed calendar. To see them right away, use the attached file.",
     "pack_sessions_title": "Your sessions",
     "lbl_plan": "Plan", "lbl_start": "Starts", "lbl_end": "Ends (last session)",
-    "lbl_objective": "Goal", "lbl_benefits": "Included",
     "lbl_duration": "Duration", "dur_weeks": "{n} weeks",
     "lbl_per_week": "Sessions per week", "lbl_days": "Training days", "lbl_total": "Total sessions",
     "welcome_subject": "Your ThundBalance profile",
@@ -193,7 +191,6 @@ TEXTS_CA = {
     "cal_delay_note": "Google pot trigar fins a 24 hores a mostrar els canvis d'un calendari subscrit. Per veure'ls ja, fes servir el fitxer adjunt.",
     "pack_sessions_title": "Les teves sessions",
     "lbl_plan": "Pla", "lbl_start": "Comença", "lbl_end": "Acaba (última sessió)",
-    "lbl_objective": "Objectiu", "lbl_benefits": "Inclou",
     "lbl_duration": "Durada", "dur_weeks": "{n} setmanes",
     "lbl_per_week": "Sessions per setmana", "lbl_days": "Dies d'entrenament", "lbl_total": "Total de sessions",
     # welcome (new client created by the admin)
