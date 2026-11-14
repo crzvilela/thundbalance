@@ -21,17 +21,14 @@ const who = lang => [LEGAL.brand, holderLine[lang](), LEGAL.address, LEGAL.email
 
 export const UI = {
   en: { back: 'Back to the website', updated: 'Last updated', privacy: 'Privacy policy', cookies: 'Cookies', legal: 'Legal notice',
-    notFoundTitle: 'Page not found', notFoundText: 'The page you are looking for does not exist or has moved.', home: 'Go to the home page',
     cookieTitle: 'Your privacy', cookieText: 'We only use the cookies and storage the site needs to work. Reviews, maps and videos come from other companies (Google, YouTube, Vimeo, Instagram) and only load if you accept.',
     accept: 'Accept external content', reject: 'Only essential', more: 'More information',
     consentTitle: 'External content', consentText: 'This content is provided by a third party and may use cookies. It loads only with your consent.', consentLoad: 'Accept and show' },
   es: { back: 'Volver a la web', updated: 'Última actualización', privacy: 'Política de privacidad', cookies: 'Cookies', legal: 'Aviso legal',
-    notFoundTitle: 'Página no encontrada', notFoundText: 'La página que buscas no existe o ha cambiado de sitio.', home: 'Ir al inicio',
     cookieTitle: 'Tu privacidad', cookieText: 'Solo usamos las cookies y el almacenamiento necesarios para que la web funcione. Las reseñas, los mapas y los vídeos vienen de otras empresas (Google, YouTube, Vimeo, Instagram) y solo se cargan si lo aceptas.',
     accept: 'Aceptar contenido externo', reject: 'Solo lo esencial', more: 'Más información',
     consentTitle: 'Contenido externo', consentText: 'Este contenido lo ofrece un tercero y puede usar cookies. Solo se carga con tu consentimiento.', consentLoad: 'Aceptar y mostrar' },
   ca: { back: 'Tornar al web', updated: 'Darrera actualització', privacy: 'Política de privacitat', cookies: 'Galetes', legal: 'Avís legal',
-    notFoundTitle: 'Pàgina no trobada', notFoundText: 'La pàgina que cerques no existeix o ha canviat de lloc.', home: 'Anar a l\'inici',
     cookieTitle: 'La teva privacitat', cookieText: 'Només fem servir les galetes i l\'emmagatzematge necessaris perquè el web funcioni. Les ressenyes, els mapes i els vídeos vénen d\'altres empreses (Google, YouTube, Vimeo, Instagram) i només es carreguen si ho acceptes.',
     accept: 'Acceptar contingut extern', reject: 'Només l\'essencial', more: 'Més informació',
     consentTitle: 'Contingut extern', consentText: 'Aquest contingut l\'ofereix un tercer i pot fer servir galetes. Només es carrega amb el teu consentiment.', consentLoad: 'Acceptar i mostrar' }

@@ -15,6 +15,8 @@ from pydantic import BaseModel
 from database import get_connection, run_read
 import schedule_cache
 from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import http_exception_handler
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -120,6 +122,30 @@ async def validation_error_without_input(request, exc):
         status_code=422,
         content={"detail": [{"loc": list(e.get("loc", [])), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()]},
     )
+
+
+# A path or a method that does not exist answers in the same shape as the errors of the routes ({"detail": {"code", "message"}}, the message in
+# Spanish and English), never a bare "Not Found". Any other HTTP error keeps the shape its route gave it.
+_ROUTE_ERRORS = {
+    404: ("not_found", "Not Found", "No encontrado. / Not found."),
+    405: ("method_not_allowed", "Method Not Allowed", "Método no permitido. / Method not allowed."),
+}
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error_in_the_common_shape(request, exc):
+    known = _ROUTE_ERRORS.get(exc.status_code)
+    if known and exc.detail == known[1]:
+        return JSONResponse(status_code=exc.status_code, content={"detail": {"code": known[0], "message": known[2]}},
+                            headers=getattr(exc, "headers", None))
+    return await http_exception_handler(request, exc)
+
+
+@app.exception_handler(Exception)
+async def unexpected_error_without_details(request, exc):
+    """A bug is a 500 in the same shape, with no stack trace, no message of the error and no data: only the TYPE of the error is logged."""
+    log_error(exc, op="unhandled_error")
+    return JSONResponse(status_code=500, content={"detail": {"code": "internal_error", "message": "Ha ocurrido un error. / Something went wrong."}})
 
 
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "thundbalance").strip()

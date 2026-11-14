@@ -3,16 +3,19 @@ import { I18nProvider } from './i18n/I18nContext'
 import LanguageSync from './components/LanguageSync'
 import RolesProvider from './roles/RolesProvider'
 import EmailVerificationGate from './auth/EmailVerificationGate'
+import AppErrorBoundary from './components/AppErrorBoundary'
 
 
 function App() {
   return (
     <I18nProvider>
-      <LanguageSync />
-      <EmailVerificationGate />
-      <RolesProvider>
-        <AppRoutes />
-      </RolesProvider>
+      <AppErrorBoundary>
+        <LanguageSync />
+        <EmailVerificationGate />
+        <RolesProvider>
+          <AppRoutes />
+        </RolesProvider>
+      </AppErrorBoundary>
     </I18nProvider>
   )
 }
