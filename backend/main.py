@@ -32,6 +32,7 @@ import data_retention
 import landing_limits
 import photo_urls
 import landing_pricing
+import privacy
 import pack_catalog
 import pack_schedule
 import plans_schema
@@ -241,6 +242,15 @@ def ensure_reschedule_tables():
 
 
 @app.on_event("startup")
+def ensure_privacy_tables():
+    # deletion_requests: the clients' requests to delete their account (privacy.py). Idempotent.
+    try:
+        privacy.ensure_schema()
+    except Exception as error:  # noqa: BLE001
+        print(f"privacy tables could not be created: {type(error).__name__}")
+
+
+@app.on_event("startup")
 def ensure_admin_calendar_columns():
     # trainers.color (+ a colour for each trainer) and the calendar's indexes (admin_calendar.py)
     try:
@@ -315,6 +325,11 @@ def _log_email_status():
 register_contact_routes(app, require_admin)
 register_trial_confirmation_routes(app)
 register_client_account_routes(app, require_admin, require_client)
+# defined further down: looked up when a request arrives
+privacy.register_privacy_routes(
+    app, require_admin, require_client, lambda claims: _own_user_id(claims), lambda claims: is_email_verified(claims),
+    lambda: email_not_verified(), ADMIN_EMAIL,
+)
 
 
 def _is_admin(claims):

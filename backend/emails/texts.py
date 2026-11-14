@@ -219,6 +219,12 @@ from . import reschedule_texts as _rs  # noqa: E402
 TEXTS_ES.update(_rs.ES)
 TEXTS_EN.update(_rs.EN)
 TEXTS_CA.update(_rs.CA)
+
+# emails about a request to delete an account (their texts live in their own file)
+from . import privacy_texts as _pv  # noqa: E402
+TEXTS_ES.update(_pv.ES)
+TEXTS_EN.update(_pv.EN)
+TEXTS_CA.update(_pv.CA)
 LANGUAGES = ("en", "es", "ca")
 
 

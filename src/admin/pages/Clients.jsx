@@ -21,6 +21,7 @@ import { formatPhone, toE164 } from '../../utils/validators'
 import { ADMIN_EMAIL } from '../../config'
 import { auth } from '../../firebase/auth'
 import { ArchiveDialog, DeleteDialog } from '../ClientLifecycleDialogs'
+import { downloadClientExport } from '../privacyApi'
 import { BulkBar, RowCheck, SelectAllRow } from '../BulkBar'
 import RestoreSessionDialog from '../RestoreSessionDialog'
 import { useBulkSelection, SELECTING_CLASS, selectableProps } from '../bulk'
@@ -73,6 +74,7 @@ function ClientDrawer({ clientId, packs, onClose, onChanged }) {
   // a link from the list (the "···" menu of a row) can ask for an action: the dialogs open when the file has loaded
   const [creatingPack, setCreatingPack] = useState(() => searchParams.get('action') === 'newpack')
   const [resending, setResending] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [copyingLink, setCopyingLink] = useState(false)
   const [billingDirty, setBillingDirty] = useState(false)
@@ -189,6 +191,19 @@ function ClientDrawer({ clientId, packs, onClose, onChanged }) {
     }
   }
 
+  // the data of this client as a JSON file (what they ask for by e-mail); the server records the export in the audit log
+  const exportData = async () => {
+    setExporting(true)
+    try {
+      await downloadClientExport(clientId)
+      toast.push(t('pv_export_done'))
+    } catch (error) {
+      toast.push(error.message, 'error')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const syncCalendar = async () => {
     setSyncing(true)
     try {
@@ -288,6 +303,7 @@ function ClientDrawer({ clientId, packs, onClose, onChanged }) {
     <>
       <Button variant="primary" onClick={() => setCreatingPack(true)}><Icon name="plus" className="h-4 w-4" /><Txt id="clients.new_pack" /></Button>
       <Button variant="secondary" onClick={sendMessage}><Icon name="send" className="h-4 w-4" /><Txt id="clients.send_message" /></Button>
+      <Button variant="secondary" onClick={exportData} loading={exporting}>{t('pv_export')}</Button>
       {!protectedClient && (archivedClient
         ? <Button variant="secondary" onClick={restore} loading={restoring}><Txt id="clients.unarchive" /></Button>
         : <Button variant="secondary" onClick={() => setLifecycle('archive')}><Txt id="clients.archive" /></Button>)}

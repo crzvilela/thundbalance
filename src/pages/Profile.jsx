@@ -4,6 +4,7 @@ import { onAuthStateChanged, updateProfile } from 'firebase/auth'
 import { auth } from '../firebase/auth'
 import Navbar from '../components/Navbar'
 import ChangePassword from '../components/ChangePassword'
+import MyData from '../components/MyData'
 import TempPasswordNotice from '../components/TempPasswordNotice'
 import { markPasswordChanged } from '../api/account'
 import { LandingContentProvider } from '../content/LandingContentContext'
@@ -243,6 +244,7 @@ function Profile() {
             </div>}
           </form>
           <ChangePassword user={user} onChanged={markPasswordChanged} />
+          {!isAdmin && <MyData />}
           </div>
         </div>}
       </main>

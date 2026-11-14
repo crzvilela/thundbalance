@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
 import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
+import DeletionRequests from '../DeletionRequests'
 import { useOverviewCards } from '../uiSettingsContext'
 import { useEditMode } from '../editModeContext'
 import Editable from '../Editable'
@@ -218,6 +219,8 @@ export default function Overview() {
           <Icon name="refresh" className="h-4 w-4" /><Txt id="overview.refresh" />
         </Button>}
       />
+
+      <DeletionRequests />
 
       {statCards.length > 0 && (
         <section className="grid grid-cols-2 gap-4 sm:grid-cols-3">
