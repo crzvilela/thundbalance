@@ -20,11 +20,11 @@ export default function MyData() {
     return () => { active = false }
   }, [])
 
-  const download = async () => {
-    setBusy('download')
+  const download = async (format) => {
+    setBusy(format === 'json' ? 'json' : 'download')
     setMessage({ tone: '', key: '' })
     try {
-      await downloadMyData()
+      await downloadMyData(format)
       setMessage({ tone: 'ok', key: 'pv_download_ok' })
     } catch (error) {
       if (error.code !== 'email_not_verified') setMessage({ tone: 'error', key: error.code === 'too_many_exports' ? 'pv_err_many' : 'pv_err_generic' })
@@ -55,9 +55,12 @@ export default function MyData() {
       <h2 id="my-data-title" className="text-2xl font-semibold">{t('pv_title')}</h2>
       <p className="mt-2 text-sm text-gray-400">{t('pv_intro')}</p>
 
-      <div className="mt-6">
-        <button type="button" onClick={download} disabled={busy !== ''} className={`${BUTTON} border border-white/15 hover:bg-white/10`}>
+      <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
+        <button type="button" onClick={() => download('html')} disabled={busy !== ''} className={`${BUTTON} border border-white/15 hover:bg-white/10`}>
           {busy === 'download' ? t('pv_working') : t('pv_download')}
+        </button>
+        <button type="button" onClick={() => download('json')} disabled={busy !== ''} className="min-h-11 text-xs text-gray-500 underline underline-offset-4 transition hover:text-gray-300 disabled:opacity-50">
+          {busy === 'json' ? t('pv_working') : t('pv_download_json')}
         </button>
       </div>
 

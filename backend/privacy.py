@@ -20,12 +20,13 @@ import logging
 from datetime import date, datetime, time as dtime
 from decimal import Decimal
 
-from fastapi import Depends, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 import client_erasure
 import client_lifecycle
+import export_html
 import emails.privacy_emails as privacy_emails
 from database import get_connection
 from emails import team_emails
@@ -202,11 +203,18 @@ def build_export(cursor, user_id):
     }
 
 
-def _download(data):
-    name = f"thundbalance-datos-{date.today().isoformat()}.json"
-    return JSONResponse(content=data, headers={
-        "Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
-    })
+def _download(data, fmt="html"):
+    """The export as a file. "html" (the main format: one readable page in the client's language) and "json" (the technical one) are
+    written from the SAME data, so their content never differs. Never cached."""
+    if fmt not in ("html", "json"):
+        raise HTTPException(status_code=422, detail={"code": "invalid_format", "message": "Formato no válido (html o json). / Invalid format (html or json)."})
+    headers = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
+    name = f"thundbalance-datos-{date.today().isoformat()}.{fmt}"
+    headers["Content-Disposition"] = f'attachment; filename="{name}"'
+    if fmt == "json":
+        return JSONResponse(content=data, headers=headers)
+    headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    return HTMLResponse(content=export_html.render_html(data, (data.get("profile") or {}).get("language")), headers=headers)
 
 
 # --------------------------------------------------------------------------------------------------------- deletion requests
@@ -259,7 +267,9 @@ def register_privacy_routes(app, require_admin, require_client, own_user_id, is_
 
     # ----------------------------------------------------------------------------------------------------------- the client
     @app.get("/me/export")
-    def my_export(claims=Depends(require_client)):
+    def my_export(format: str = Query("html"), claims=Depends(require_client)):
+        if format not in ("html", "json"):
+            raise HTTPException(status_code=422, detail={"code": "invalid_format", "message": "Formato no válido (html o json). / Invalid format (html or json)."})
         user_id = me(claims)
         if EXPORT_LIMIT.too_many(f"u{user_id}"):
             raise HTTPException(status_code=429, detail={
@@ -268,7 +278,7 @@ def register_privacy_routes(app, require_admin, require_client, own_user_id, is_
             })
         data = with_cursor(lambda cursor: build_export(cursor, user_id))
         client_lifecycle.audit({"sub": _short_uid(claims)}, "me_export", user_id, "ok")
-        return _download(data)
+        return _download(data, format)
 
     @app.get("/me/deletion-request")
     def my_deletion_request(claims=Depends(require_client)):
@@ -313,12 +323,12 @@ def register_privacy_routes(app, require_admin, require_client, own_user_id, is_
 
     # ------------------------------------------------------------------------------------------------------------ the admin
     @app.get("/admin/clients/{client_id}/export")
-    def admin_export(client_id: int, claims=Depends(require_admin)):
+    def admin_export(client_id: int, format: str = Query("html"), claims=Depends(require_admin)):
         data = with_cursor(lambda cursor: build_export(cursor, client_id))
         if data is None:
             raise HTTPException(status_code=404, detail="Client not found")
         client_lifecycle.audit({"sub": _short_uid(claims)}, "export", client_id, "ok")
-        return _download(data)
+        return _download(data, format)
 
     @app.get("/admin/deletion-requests")
     def list_requests(claims=Depends(require_admin)):

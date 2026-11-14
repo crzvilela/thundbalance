@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 import client_erasure
 import client_lifecycle
 import contact_messages
+import export_html
 import inbox
 import main
 import plans_schema
@@ -178,8 +179,125 @@ class Privacy(unittest.TestCase):
         conn.close()
         return ids["a"], ids["b"]
 
-    def export(self, **kwargs):
-        return self.http.get("/me/export", **kwargs)
+    def export(self, fmt="json", **kwargs):
+        return self.http.get("/me/export", params={"format": fmt}, **kwargs)
+
+
+    # --------------------------------------------------------------------------------------------------- the readable page (HTML)
+    SECTIONS = {
+        "es": ("Datos personales", "Mis packs", "Mis sesiones", "Solicitudes de reprogramación", "Mensajes recibidos", "Mis mensajes de contacto",
+               "Solicitudes y pruebas (trial)", "Emails enviados"),
+        "en": ("Personal data", "My packs", "My sessions", "Reschedule requests", "Messages received", "My contact messages",
+               "Requests and trial sessions", "Emails sent"),
+        "ca": ("Dades personals", "Els meus packs", "Les meves sessions", "Sol·licituds de reprogramació", "Missatges rebuts", "Els meus missatges de contacte",
+               "Sol·licituds i proves (trial)", "Emails enviats"),
+    }
+
+    def html(self, lang=None):
+        if lang:
+            self.sql("UPDATE users SET lang = %s WHERE id = %s", (lang, self.ana))
+        privacy.EXPORT_LIMIT.clear()
+        return self.http.get("/me/export")
+
+    def test_the_main_download_is_a_readable_page_with_a_json_as_the_second_option(self):
+        response = self.html()
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("text/html", response.headers["content-type"])
+        self.assertRegex(response.headers["content-disposition"], r'^attachment; filename="thundbalance-datos-\d{4}-\d{2}-\d{2}\.html"$')
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        page = response.text
+        for title in self.SECTIONS["es"]:
+            self.assertIn(f"<h2>{title}</h2>", page, title)
+        for human in ("Ana Privtest Zuniga", ANA, "Teléfono", "Ciudad", "City-A", "Second-A", "NOTE-A", "ADMINNOTE-A", "GOAL-A", "CONTACT-A", "INBOX-A", "Pendiente", "Reservada"):
+            self.assertIn(human, page, human)
+        body = page.split("</style>", 1)[1]                                                   # the stylesheet has braces, the content has none
+        for technical in ("user_id", "session_type", "google_event_id", "firebase", "sessions_per_week", "created_at", "second_person", "null", "None", "{", "uid-pa", "FEEDTOKEN"):
+            self.assertNotIn(technical, body, technical)                                     # no ids, no field names of the database
+        self.assertNotIn("Bea Privtest", page)
+        self.assertEqual(self.export(fmt="json").status_code, 200)                           # the technical JSON is still there
+        privacy.EXPORT_LIMIT.clear()
+        self.assertEqual(self.http.get("/me/export", params={"format": "pdf"}).status_code, 422)
+
+    def test_the_page_is_written_in_the_language_of_the_client(self):
+        for lang in ("es", "en", "ca"):
+            page = self.html(lang=lang).text
+            self.assertIn(f'<html lang="{lang}"', page)
+            for title in self.SECTIONS[lang]:
+                self.assertIn(title, page, f"{lang}: {title}")
+            self.assertIn(export_html.day_text(lang, (date.today() + timedelta(days=10)).isoformat()), page, lang)      # a date in words, in that language
+            for other in ("es", "en", "ca"):
+                if other != lang and self.SECTIONS[other][1] != self.SECTIONS[lang][1]:
+                    self.assertNotIn(f"<h2>{self.SECTIONS[other][1]}</h2>", page, f"{lang} holds the {other} title")
+
+    def test_what_comes_from_the_database_is_text_and_never_markup(self):
+        evil_name = 'Ana <script>alert(1)</script> "Quote" & Co'
+        evil_message = '<img src="https://evil.example/x.png" onerror="alert(1)"> <a href="https://evil.example">click</a> onload=x'
+        self.sql("UPDATE users SET nome = %s, cidade = %s WHERE id = %s", (evil_name, "<b>City</b>", self.ana))
+        self.sql("UPDATE contact_messages SET message = %s WHERE email = %s", (evil_message, ANA))
+        self.sql("UPDATE inbox_messages SET title = %s, body = %s WHERE title = 'PRIVTEST A'", ("PRIVTEST <iframe src=//evil.example>", evil_message))
+        self.sql("UPDATE reschedule_requests SET client_note = %s WHERE user_id = %s", ("</td><script>steal()</script>", self.ana))
+        page = self.html().text
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", page)                        # shown as text
+        self.assertIn("&quot;Quote&quot; &amp; Co", page)
+        self.assertIn("&lt;img src=&quot;https://evil.example/x.png&quot;", page)
+        self.assertIn("&lt;b&gt;City&lt;/b&gt;", page)
+        self.assertIn("&lt;/td&gt;&lt;script&gt;steal()&lt;/script&gt;", page)
+        self.assertEqual(re.findall(r"<(script|img|iframe|object|embed|link|form|input|base|a|svg|video|audio)\b", page, re.I), [])     # no such tag at all
+        for tag in re.findall(r"<[^>]+>", page.split("</style>", 1)[1]):                                                             # the real tags of the page
+            self.assertNotRegex(tag, r"(?i)\s(on\w+|href|src|srcset|action|formaction)\s*=", tag)                                    # none loads or runs anything
+        style, body = page.split("</style>", 1)[0], page.split("</style>", 1)[1]
+        for tag in re.findall(r"<[^>]+>", body):
+            self.assertNotRegex(tag, r"(?i)https?:|//", tag)                                 # no tag points anywhere outside the file
+        self.assertNotRegex(style, r"(?i)https?:|@import|url\(")                             # nor does the stylesheet (a URL written as TEXT is only text)
+        self.assertIn("default-src 'none'", page)                                           # and the page itself forbids everything external
+
+    def test_the_page_never_holds_the_data_of_another_client(self):
+        mine = self.html().text
+        self.current = claims("uid-pb", BEA)
+        privacy.EXPORT_LIMIT.clear()
+        other = self.http.get("/me/export").text
+        for mark in ("Bea Privtest", BEA, "City-B", "Second-B", "NOTE-B", "GOAL-B", "CONTACT-B", "INBOX-B"):
+            self.assertIn(mark, other, mark)
+            self.assertNotIn(mark, mine, mark)
+        for mark in ("Ana Privtest", ANA, "City-A", "Second-A", "NOTE-A", "GOAL-A", "CONTACT-A", "INBOX-A"):
+            self.assertNotIn(mark, other, mark)
+        self.current = claims("uid-pa", ANA)
+        privacy.EXPORT_LIMIT.clear()
+        self.assertNotIn("Bea Privtest", self.http.get("/me/export", params={"user_id": self.bea, "client_id": self.bea}).text)   # an id changes nothing
+
+    def test_the_page_and_the_json_hold_the_same_data(self):
+        page = self.html().text
+        data = self.export(fmt="json").json()
+        values = [data["profile"]["name"], data["profile"]["email"], data["packs"][0]["second_person_name"], data["sessions"][0]["trainer"],
+                  data["reschedule_requests"][0]["client_note"], data["inbox"][0]["body"], data["contact_messages"][0]["message"], data["trial_sessions"][0]["goal"]]
+        for value in values:
+            self.assertIn(value, page, value)
+        self.assertEqual(set(data), {"export", "profile", "photo", "packs", "sessions", "pack_requests", "reschedule_requests", "inbox", "contact_messages",
+                                     "trial_sessions", "emails_sent"})                          # the JSON is the one of the first version
+
+    def test_the_admin_gets_the_same_page_and_the_json_as_a_second_option(self):
+        self.sql("UPDATE users SET lang = 'en' WHERE id = %s", (self.ana,))
+        response = self.http.get(f"/admin/clients/{self.ana}/export")
+        self.assertIn("text/html", response.headers["content-type"])
+        self.assertIn('<html lang="en"', response.text)                                      # in the language of the client
+        self.assertIn("Ana Privtest", response.text)
+        self.assertNotIn("Bea Privtest", response.text)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertIn(".html", response.headers["content-disposition"])
+        as_json = self.http.get(f"/admin/clients/{self.ana}/export", params={"format": "json"})
+        self.assertIn("application/json", as_json.headers["content-type"])
+        self.assertEqual(self.http.get(f"/admin/clients/{self.ana}/export", params={"format": "zip"}).status_code, 422)
+
+    def test_a_client_with_no_other_data_gets_a_valid_page_with_only_the_sections_that_have_data(self):
+        nobody = self.sql("INSERT INTO users (nome, email, firebase_uid, lang) VALUES ('Nadie Privtest', %s, 'uid-pn', 'en') RETURNING id", (f"nadie{DOMAIN}",))[0][0]
+        conn = get_connection()
+        try:
+            page = export_html.render_html(privacy.build_export(conn.cursor(), nobody), "en")
+        finally:
+            conn.close()
+        self.assertIn("Personal data", page)
+        for title in self.SECTIONS["en"][1:]:
+            self.assertNotIn(f"<h2>{title}</h2>", page, title)
 
     # ------------------------------------------------------------------------------------------------------ the client export
     def test_a_client_only_exports_her_own_data(self):
@@ -222,7 +340,7 @@ class Privacy(unittest.TestCase):
 
     def test_an_id_in_the_request_changes_nothing(self):
         mine = self.export().json()
-        for url in (f"/me/export?user_id={self.bea}", f"/me/export?client_id={self.bea}&id={self.bea}", f"/me/export?email={BEA}"):
+        for url in (f"/me/export?format=json&user_id={self.bea}", f"/me/export?format=json&client_id={self.bea}&id={self.bea}", f"/me/export?format=json&email={BEA}"):
             privacy.EXPORT_LIMIT.clear()
             other = self.http.get(url, headers={"X-User-Id": str(self.bea)})
             self.assertEqual(other.status_code, 200)
@@ -297,7 +415,7 @@ class Privacy(unittest.TestCase):
 
     # --------------------------------------------------------------------------------------------------------- the admin
     def test_the_admin_exports_a_client_and_it_is_audited_without_personal_data(self):
-        response = self.http.get(f"/admin/clients/{self.ana}/export")
+        response = self.http.get(f"/admin/clients/{self.ana}/export", params={"format": "json"})
         self.assertEqual(response.status_code, 200)
         self.assertIn("Ana Privtest", response.text)
         self.assertNotIn("Bea Privtest", response.text)

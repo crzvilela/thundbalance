@@ -192,10 +192,10 @@ function ClientDrawer({ clientId, packs, onClose, onChanged }) {
   }
 
   // the data of this client as a JSON file (what they ask for by e-mail); the server records the export in the audit log
-  const exportData = async () => {
+  const exportData = async (format = 'html') => {
     setExporting(true)
     try {
-      await downloadClientExport(clientId)
+      await downloadClientExport(clientId, format)
       toast.push(t('pv_export_done'))
     } catch (error) {
       toast.push(error.message, 'error')
@@ -297,13 +297,14 @@ function ClientDrawer({ clientId, packs, onClose, onChanged }) {
   // The main actions are visible (New pack, send a message, archive / restore); the rest go in the "···" menu.
   const menuItems = client ? [
     { label: t('cal_copy'), icon: 'copy', onClick: copyCalendarLink, disabled: copyingLink, hidden: !clientCalendar },
+    { label: t('pv_export_json'), icon: 'copy', onClick: () => exportData('json'), disabled: exporting },
     { label: t('lc_delete_menu'), icon: 'alert', onClick: () => setLifecycle('delete'), danger: true, hidden: protectedClient },
   ] : []
   const actions = client && (
     <>
       <Button variant="primary" onClick={() => setCreatingPack(true)}><Icon name="plus" className="h-4 w-4" /><Txt id="clients.new_pack" /></Button>
       <Button variant="secondary" onClick={sendMessage}><Icon name="send" className="h-4 w-4" /><Txt id="clients.send_message" /></Button>
-      <Button variant="secondary" onClick={exportData} loading={exporting}>{t('pv_export')}</Button>
+      <Button variant="secondary" onClick={() => exportData('html')} loading={exporting}>{t('pv_export')}</Button>
       {!protectedClient && (archivedClient
         ? <Button variant="secondary" onClick={restore} loading={restoring}><Txt id="clients.unarchive" /></Button>
         : <Button variant="secondary" onClick={() => setLifecycle('archive')}><Txt id="clients.archive" /></Button>)}

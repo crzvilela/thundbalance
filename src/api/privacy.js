@@ -11,10 +11,12 @@ async function failure(response) {
   return Object.assign(new Error(problem.message || 'request failed'), { code: problem.code, status: response.status })
 }
 
-export async function downloadMyData() {
-  const response = await authFetch(`${API_URL}/me/export`)
+// format: 'html' (the readable page, the main download) or 'json' (the technical file)
+export async function downloadMyData(format = 'html') {
+  const kind = format === 'json' ? 'json' : 'html'
+  const response = await authFetch(`${API_URL}/me/export?format=${kind}`)
   if (!response.ok) throw await failure(response)
-  const fallback = `thundbalance-datos-${new Date().toISOString().slice(0, 10)}.json`
+  const fallback = `thundbalance-datos-${new Date().toISOString().slice(0, 10)}.${kind}`
   saveBlob(await response.blob(), filenameFrom(response.headers.get('Content-Disposition'), fallback))
 }
 

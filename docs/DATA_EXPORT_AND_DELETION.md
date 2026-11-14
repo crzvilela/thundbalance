@@ -4,7 +4,7 @@ The right of access (a copy of one's data) and the right to erasure. The complet
 
 ## What the client can do (Profile > "Mis datos")
 
-* **Download my data**: `GET /me/export` returns one JSON file (`thundbalance-datos-AAAA-MM-DD.json`, `Cache-Control: no-store`), at most 3 times per hour per client (`429 too_many_exports` after that).
+* **Download my data**: `GET /me/export` returns, by default, ONE readable page, a self-contained `.html` file (`thundbalance-datos-AAAA-MM-DD.html`) that opens with a double click in any browser, in the client's language (es / en / ca), with the sections that have data, and that can be printed or saved as a PDF. A second, more discreet button, "Descargar en formato JSON (técnico)", gets the technical file (`?format=json`, `thundbalance-datos-AAAA-MM-DD.json`). Both are never cached (`Cache-Control: no-store`) and count in the same limit: at most 3 downloads per hour per client (`429 too_many_exports` after that).
 * **Request deletion of my account**: after a clear warning and a confirmation, `POST /me/deletion-request` creates a request. **Nothing is deleted**: the studio reviews it. The client sees its state (`GET /me/deletion-request`: pending, completed or rejected, with the reason when it was rejected) and is told the answer takes at most 30 days. A client has at most ONE pending request; asking again while it is pending changes nothing.
 * The admin account has no "Mis datos" (it cannot be deleted from here).
 
@@ -12,13 +12,15 @@ Both routes need a valid login and a **verified e-mail** (`email_not_verified` 4
 
 ## What the export holds
 
+The page and the JSON are written from the same data (`privacy.build_export`), so they never differ in content. The page (`backend/export_html.py`) shows human names and values (no ids, no field names of the database) and dates in words, and has no script, image, font, link or other external resource: every text from the database is escaped (a name or a message with `<script>` is shown as text), and the file carries its own Content-Security-Policy that forbids everything external.
+
 Profile (name, e-mail, phone, country, city, address, postal code, tax id, language, creation date) and the profile photo (a file of ours is embedded, a Google photo is a link); packs and their history (plan, type, dates, sessions per week, trainer name, prices, the second person and extra addresses the client gave); sessions; pack requests; reschedule requests (including the studio's note about the request); the inbox messages addressed to the client; the contact messages and trial sessions made with their e-mail; and the list of e-mails sent to them (type, date, state, language: the subject and the text are not stored).
 
 It **never** holds: data of other clients, the login id, the calendar feed token or any other token, the ids of calendar events, the uid of the admin who handled something, the audit log, or any configuration (a test checks the forbidden names and values).
 
 ## What the admin does
 
-* **Export a client's data** (when the client asks by e-mail): Clients > the client > **Exportar datos** (`GET /admin/clients/{id}/export`, the same JSON). It is recorded in `admin_audit_log` (the action, the client's number and the admin's uid shortened to 6 characters: no personal data).
+* **Export a client's data** (when the client asks by e-mail): Clients > the client > **Exportar datos** (`GET /admin/clients/{id}/export`, the readable page in the client's language; the technical JSON is in the "···" menu as **Exportar en JSON (técnico)**). It is recorded in `admin_audit_log` (the action, the client's number and the admin's uid shortened to 6 characters: no personal data).
 * **Solicitudes de eliminación**: on the Overview, a list of the pending requests (it only appears when there are any; `GET /admin/deletion-requests`). The team also gets an e-mail (TEAM_NOTIFICATION_EMAILS) with the client's name and the date only.
   * **Aprobar** (asks "¿Seguro?"): `POST /admin/deletion-requests/{id}/approve` runs the complete deletion of `client_lifecycle.perform_delete` (calendar events, database rows, photos, Firebase account, profile; packs stay anonymized) and marks the request completed. If a step cannot finish (the calendar or Firebase did not answer), the answer is the usual `delete_incomplete` 502, the request stays pending and approving again continues the deletion. The admin's own account is never deleted.
   * **Rechazar**: `POST /admin/deletion-requests/{id}/reject` needs a short reason (up to 200 characters, no `<` or `>`); the client sees it. Nothing is deleted.
@@ -31,4 +33,4 @@ It **never** holds: data of other clients, the login id, the calendar feed token
 
 ## Technical notes
 
-`backend/privacy.py` (export, requests, routes), the table `deletion_requests` (`id, user_id, created_at, status pending | completed | rejected, handled_by, handled_at, reason`; one pending request per client through a partial unique index; created idempotently at startup), the e-mails in `backend/emails/privacy_emails.py`, tests in `backend/test_privacy.py` and `src/utils/downloadFile.test.js`. Nothing in it writes an e-mail address, a name or exported content to a log.
+`backend/privacy.py` (export data, requests, routes), `backend/export_html.py` (the page), the table `deletion_requests` (`id, user_id, created_at, status pending | completed | rejected, handled_by, handled_at, reason`; one pending request per client through a partial unique index; created idempotently at startup), the e-mails in `backend/emails/privacy_emails.py`, tests in `backend/test_privacy.py` and `src/utils/downloadFile.test.js`. Nothing in it writes an e-mail address, a name or exported content to a log.
