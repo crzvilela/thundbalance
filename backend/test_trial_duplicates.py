@@ -60,7 +60,7 @@ class TrialDuplicates(unittest.TestCase):
     def submit(self, email=EMAIL, day=None):
         day = day or self.weekday(14)
         request = SimpleNamespace(headers={}, client=SimpleNamespace(host="127.0.0.1"))
-        payload = main.TrialSessionCreate(
+        payload = main.TrialSessionCreate(privacy_consent=True, consent_version="test", 
             full_name="Ana García", email=email, phone="600123456", goals=["Lose weight"],
             experience="Beginner", session_date=day.isoformat(), session_time="10:00", lang="es",
         )
@@ -89,7 +89,7 @@ class TrialDuplicates(unittest.TestCase):
             main._trial_hits.clear()
             main._trial_email_hits.clear()
             request = SimpleNamespace(headers={}, client=SimpleNamespace(host="127.0.0.1"))
-            payload = main.TrialSessionCreate(
+            payload = main.TrialSessionCreate(privacy_consent=True, consent_version="test", 
                 full_name="Ana García", email=EMAIL, phone="600123456", goals=["Lose weight"],
                 experience="Beginner", session_date=self.weekday(14).isoformat(), session_time="10:00", lang=lang)
             with self.assertRaises(HTTPException) as caught:

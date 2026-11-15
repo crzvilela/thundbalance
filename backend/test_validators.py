@@ -144,7 +144,7 @@ class Endpoints(unittest.TestCase):
                     goals=["Lose weight"], experience="Beginner", session_date=(date.today() + timedelta(days=9)).isoformat(),
                     session_time="10:00", lang="en")
         base.update(changes)
-        return self.main.TrialSessionCreate(**base)
+        return self.main.TrialSessionCreate(privacy_consent=True, consent_version="test", **base)
 
     def book(self, **changes):
         self.main._trial_hits.clear()

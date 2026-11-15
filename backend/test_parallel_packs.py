@@ -331,7 +331,7 @@ class Parallel(unittest.TestCase):
         conn.close()
         from unittest import mock
         with mock.patch.object(main, "require_client", lambda authorization=None: {"sub": "uid-hp", "email": f"hp{DOMAIN}"}):
-            main.create_client_request(main.ClientRequestCreate(
+            main.create_client_request(main.ClientRequestCreate(privacy_consent=True, consent_version="test", 
                 pack_id=self.pack_ids["individual"], sessions_per_week=1, schedule=pack_schedule.uniform("Wednesday", "09:00", None)), "Bearer x")
         conn = get_connection()
         cur = conn.cursor()

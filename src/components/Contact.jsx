@@ -6,6 +6,9 @@ import { API_URL } from '../config'
 import { useI18n } from '../i18n/I18nContext'
 import { formText, serverFieldError } from '../i18n/formText'
 import { emailProblem, emailSuggestion, nameProblem, normalizeEmail } from '../utils/validators'
+import ConsentCheckbox from './ConsentCheckbox'
+import { uiText } from '../legal/legalText'
+import { useLegalVersion } from '../legal/useLegalVersion'
 
 const MESSAGE_MAX = 3000
 
@@ -31,6 +34,9 @@ function Contact({ sectionId }) {
   const [fieldErrors, setFieldErrors] = useState({})
   const [messageLength, setMessageLength] = useState(0)
   const [suggestion, setSuggestion] = useState('')
+  const [accepted, setAccepted] = useState(false)       // "I have read and accept the Privacy policy": unchecked, required
+  const [consentError, setConsentError] = useState('')
+  const consentVersion = useLegalVersion()
 
   if (!visible && !isEditMode) return null
 
@@ -53,6 +59,7 @@ function Contact({ sectionId }) {
   async function handleSubmit(event) {
     event.preventDefault()
     if (isEditMode || status === 'sending') return
+    if (!accepted) { setConsentError(uiText(language).consentRequired); return }
     const form = event.currentTarget
     const values = new FormData(form)
     const found = Object.fromEntries(['name', 'email', 'message'].map(field => [field, problemOf(field, values.get(field))]))
@@ -75,7 +82,9 @@ function Contact({ sectionId }) {
           email: normalizeEmail(values.get('email')),
           message: values.get('message'),
           website: values.get('website'),
-          language
+          language,
+          privacy_consent: true,
+          consent_version: consentVersion
         })
       })
       if (!response.ok) {
@@ -89,6 +98,7 @@ function Contact({ sectionId }) {
         throw new Error(response.status === 422 && typeof data.detail === 'string' ? data.detail : '')
       }
       form.reset()
+      setAccepted(false)
       setMessageLength(0)
       setSuggestion('')
       setStatus('sent')
@@ -110,9 +120,10 @@ function Contact({ sectionId }) {
         {suggestion && !isEditMode && <p className="-mt-4 flex flex-wrap items-center gap-2 text-sm text-amber-700"><span>{formText(language, 'email_suggest', { email: suggestion })}</span><button type="button" className="min-h-[36px] rounded-lg border border-amber-600/40 px-3" onClick={event => { const input = event.currentTarget.form.elements.namedItem('email'); input.value = suggestion; setSuggestion(''); setFieldErrors(current => ({ ...current, email: '' })) }}>{formText(language, 'email_suggest_accept')}</button></p>}
         {!isEditMode && <FieldError id={`${sectionId}-email-error`} text={fieldErrors.email} />}
         <EditableFormField onBlur={check} aria-invalid={fieldErrors.message ? true : undefined} aria-describedby={`${sectionId}-message-error`} onChange={event => setMessageLength(event.target.value.length)} as="textarea" name="message" path={`sections.${sectionId}.formLabels.message`} label="Contact Message Placeholder" required rows={6} maxLength={3000} className="border border-black/20 px-6 py-4 outline-none focus:border-black resize-none" />
-        {!isEditMode && <p className="-mt-4 text-right text-xs text-gray-500" aria-live="polite">{formText(language, 'characters', { n: messageLength, max: MESSAGE_MAX })}</p>}
+        {!isEditMode && <p className="-mt-4 flex flex-wrap justify-between gap-x-4 text-left text-xs text-gray-500"><span>{uiText(language).freeTextWarning}</span><span aria-live="polite">{formText(language, 'characters', { n: messageLength, max: MESSAGE_MAX })}</span></p>}
         {!isEditMode && <FieldError id={`${sectionId}-message-error`} text={fieldErrors.message} />}
-        <EditableText as="button" path={`sections.${sectionId}.buttonText`} label="Contact Send Button" disabled={!isEditMode && status === 'sending'} style={{ fontFamily: theme.typography.accentFont }} className="mt-10 border border-black px-10 py-4 uppercase text-sm tracking-[3px] hover:bg-black hover:text-white transition-all duration-300 disabled:opacity-50" />
+        {!isEditMode && <ConsentCheckbox light checked={accepted} error={consentError} onChange={(value) => { setAccepted(value); if (value) setConsentError('') }} />}
+        <EditableText as="button" path={`sections.${sectionId}.buttonText`} label="Contact Send Button" disabled={!isEditMode && (status === 'sending' || !accepted)} style={{ fontFamily: theme.typography.accentFont }} className="mt-10 border border-black px-10 py-4 uppercase text-sm tracking-[3px] hover:bg-black hover:text-white transition-all duration-300 disabled:opacity-50" />
         <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" className="absolute left-[-9999px] h-0 w-0 opacity-0" />
         {status === 'sending' && <p role="status" className="text-sm text-gray-500">{t('contact_sending')}</p>}
         {status === 'sent' && <p role="status" className="text-sm text-emerald-700">{t('contact_sent')}</p>}

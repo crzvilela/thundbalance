@@ -11,7 +11,7 @@ from safe_log import log_error, safe_error
 import uuid
 from datetime import datetime, timedelta
 from typing import Any
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictBool
 from database import get_connection, run_read
 import schedule_cache
 from fastapi.exceptions import RequestValidationError
@@ -35,6 +35,7 @@ import landing_limits
 import photo_urls
 import keepalive
 import landing_pricing
+import legal
 import monitoring
 import monitoring_routes
 import privacy
@@ -369,6 +370,7 @@ def _log_email_status():
 register_contact_routes(app, require_admin)
 register_trial_confirmation_routes(app)
 register_client_account_routes(app, require_admin, require_client)
+legal.register_legal_routes(app, require_admin)                     # /legal (public), /admin/legal/* (company data and legal texts)
 monitoring_routes.register_monitoring_routes(app, require_admin)      # /client-errors/report, /health/ready, /admin/system-errors
 
 # defined further down: looked up when a request arrives
@@ -562,6 +564,9 @@ def ensure_trial_session_fields():
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'Pending'")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS trainer_id INTEGER REFERENCES trainers(id)")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS google_event_id TEXT")
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS consent_version TEXT")
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS consent_at TIMESTAMP")
+        cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS health_consent_at TIMESTAMP")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS rejection_reason TEXT")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW()")
         cursor.execute("ALTER TABLE trial_sessions ADD COLUMN IF NOT EXISTS birth_date DATE")
@@ -698,11 +703,23 @@ def migrate_landing_pricing():
         print(f"landing pricing list could not be migrated: {type(error).__name__}")
 
 
+@app.on_event("startup")
+def ensure_legal_tables():
+    # legal_settings, legal_documents, consents and the consent columns of the trial and contact tables (legal.py). Idempotent.
+    try:
+        legal.ensure_schema()
+    except Exception as error:  # noqa: BLE001
+        print(f"legal tables could not be created: {type(error).__name__}")
+
+
 class LandingContentPayload(BaseModel):
     content: dict[str, Any]
 
 
 class UserCreate(BaseModel):
+    # proof of the privacy consent given when registering (only the version of the text; the date is the server's)
+    privacy_consent: StrictBool | None = None
+    consent_version: str | None = None
     firebase_uid: str
     nome: str
     email: str
@@ -732,6 +749,11 @@ class UpdateProfile(BaseModel):
 
 
 class TrialSessionCreate(BaseModel):
+    # the box "I have read and accept the Privacy policy" and the version of the text; health_consent is the extra box for the
+    # rehabilitation / injury goal (data about health: explicit consent)
+    privacy_consent: StrictBool | None = None
+    consent_version: str | None = None
+    health_consent: StrictBool | None = None
     # Language the visitor had on the site (en | es | ca); anything else is stored as 'en'.
     lang: str | None = None
     # Hidden field real visitors never fill; bots usually do.
@@ -753,6 +775,8 @@ class TrialSessionCreate(BaseModel):
 
 
 class ClientRequestCreate(BaseModel):
+    privacy_consent: StrictBool | None = None
+    consent_version: str | None = None
     user_id: int | None = None
     pack_id: int                       # a pack of the catalogue (GET /pricing)
     sessions_per_week: int
@@ -1038,6 +1062,15 @@ def create_user(user: UserCreate, claims=Depends(require_account)):
                 user.cep
             )
         )
+        if user.privacy_consent is True and user.consent_version:
+            try:
+                version = legal.clean_version(user.consent_version)
+            except HTTPException:
+                version = None
+            cursor.execute("SELECT id FROM users WHERE firebase_uid = %s", (user.firebase_uid,))
+            created = cursor.fetchone()
+            if created and version:
+                legal.record_consents(cursor, created[0], ("privacy", "terms"), version)
 
         conn.commit()
 
@@ -1734,6 +1767,8 @@ def get_schedule_for_date(session_date: str):
     return value
 
 
+# goals that say something about the person's health: the form asks for an extra, explicit consent (RGPD art. 9)
+HEALTH_GOALS = ("Rehabilitation/injury recovery",)
 TRIAL_GOALS = [
     "Body recomposition", "Lose weight", "Build muscle", "Increase strength",
     "Rehabilitation/injury recovery", "Conditioning", "Endurance", "Tone/define",
@@ -1844,6 +1879,7 @@ def create_trial_session(
 
     # Checked against a fixed list; the site starts in English, so that is the fallback.
     client_lang = normalize_language(trial.lang) or "en"
+    consent_version = legal.require_consent(trial.privacy_consent, trial.consent_version, client_lang)
 
     if _too_many_trial_requests(web_safety.get_client_ip(request)):
         raise HTTPException(
@@ -1874,6 +1910,9 @@ def create_trial_session(
     if not goals:
         raise HTTPException(status_code=422, detail="Please select at least one training goal.")
     goal_text = ", ".join(goals)
+    health_consent = any(goal in HEALTH_GOALS for goal in goals)
+    if health_consent:
+        legal.require_health_consent(trial.health_consent, client_lang)
     if trial.session_time not in TRIAL_TIMES:
         raise HTTPException(status_code=422, detail="Please choose a time between 07:00 and 20:00.")
 
@@ -1935,11 +1974,14 @@ def create_trial_session(
                 session_type,
                 second_person_name,
                 second_person_email,
-                price_per_session
+                price_per_session,
+                consent_version,
+                consent_at,
+                health_consent_at
             )
 
             VALUES
-            (%s,%s,%s,%s,%s,%s,%s,%s,%s,'Pending',%s,%s,%s,%s,%s)
+            (%s,%s,%s,%s,%s,%s,%s,%s,%s,'Pending',%s,%s,%s,%s,%s,%s,NOW(),CASE WHEN %s THEN NOW() END)
 
             RETURNING id
             """,
@@ -1957,7 +1999,9 @@ def create_trial_session(
                 session_type,
                 second_name,
                 second_email,
-                trial_price
+                trial_price,
+                consent_version,
+                health_consent
             )
         )
 
@@ -2095,6 +2139,7 @@ def create_client_request(
         if not user:
             raise HTTPException(status_code=404, detail="Client profile not found")
         user_id = user[0]
+        consent_version = legal.require_consent(request.privacy_consent, request.consent_version, None)
 
         session_type = pricing.normalize_type(request.session_type)
         second_name, second_email = pricing.second_person(session_type, request.second_person_name, request.second_person_email)
@@ -2156,6 +2201,7 @@ def create_client_request(
                 pack_schedule.main_trainer(entries)
             )
         )
+        legal.record_consents(cursor, user_id, ("privacy", "terms"), consent_version)
 
         conn.commit()
 

@@ -119,7 +119,7 @@ class Languages(unittest.TestCase):
 
     def book(self, lang, email, offset=12, hour="10:00"):
         request = SimpleNamespace(headers={}, client=SimpleNamespace(host="127.0.0.1"))
-        payload = main.TrialSessionCreate(
+        payload = main.TrialSessionCreate(privacy_consent=True, consent_version="test", 
             full_name="Ana García", email=email, phone="600123456", goals=["Lose weight"],
             experience="Beginner", session_date=self.day(offset).isoformat(), session_time=hour, lang=lang)
         out = io.StringIO()

@@ -171,7 +171,7 @@ class Choice(unittest.TestCase):
 
     # ----- the trial form
     def trial_body(self, day, time, trainer=None, email="t"):
-        return {"full_name": "Trial Person", "email": f"{email}{DOMAIN}", "phone": "+34600111222", "goals": ["Lose weight"], "experience": "Beginner",
+        return {"privacy_consent": True, "consent_version": "test", "full_name": "Trial Person", "email": f"{email}{DOMAIN}", "phone": "+34600111222", "goals": ["Lose weight"], "experience": "Beginner",
                 "session_date": str(day), "session_time": time, "lang": "es", **({"trainer_id": trainer} if trainer else {})}
 
     def test_a_trainer_sent_with_a_trial_is_ignored_the_studio_assigns_it_when_approving(self):
@@ -192,7 +192,7 @@ class Choice(unittest.TestCase):
         main.require_client = lambda authorization: {"sub": "uid-choice", "email": f"c{DOMAIN}"}
         try:
             return main.create_client_request(
-                main.ClientRequestCreate(pack_id=self.pack_ids["individual"], sessions_per_week=len(days.split(",")), schedule=pack_schedule.uniform(days, time, trainer)), authorization="Bearer x")
+                main.ClientRequestCreate(privacy_consent=True, consent_version="test", pack_id=self.pack_ids["individual"], sessions_per_week=len(days.split(",")), schedule=pack_schedule.uniform(days, time, trainer)), authorization="Bearer x")
         finally:
             main.require_client = real
 

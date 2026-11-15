@@ -13,6 +13,9 @@ import SessionTypeSection, { PriceSummary } from '../components/forms/SessionTyp
 import { formatMoney, packQuote, packsOfType, sessionTypeBody } from '../utils/pricing'
 import { secondPersonProblems, usePricing } from '../utils/usePricing'
 import { formText } from '../i18n/formText'
+import ConsentCheckbox from '../components/ConsentCheckbox'
+import { uiText } from '../legal/legalText'
+import { useLegalVersion } from '../legal/useLegalVersion'
 
 function TrainingRequest() {
   const navigate = useNavigate()
@@ -21,6 +24,9 @@ function TrainingRequest() {
   const [kind, setKind] = useState({ type: 'individual', name: '', email: '' })
   const [kindErrors, setKindErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
+  const [accepted, setAccepted] = useState(false)          // "I have read and accept the Privacy policy and the Terms": unchecked, required
+  const [consentError, setConsentError] = useState('')
+  const consentVersion = useLegalVersion({ terms: true })
   const [packId, setPackId] = useState('')                 // a pack of the catalogue (the first one of the type until another is chosen)
 
   const [sessionsPerWeek, setSessionsPerWeek] = useState('1')
@@ -45,6 +51,7 @@ function TrainingRequest() {
 
     if (!auth.currentUser) { navigate('/login'); return }
     setProblem('')
+    if (!accepted) { setConsentError(uiText(language).consentRequired); return }
     if (!isComplete(entries, effectivePerWeek, { trainerRequired: false })) { setProblem('ps_choose_hours'); return }
     const second = secondPersonProblems(kind)
     if (second.name || second.email) {
@@ -70,6 +77,8 @@ function TrainingRequest() {
           body: JSON.stringify({
 
             pack_id: chosenPack.id,
+            privacy_consent: true,
+            consent_version: consentVersion,
 
             sessions_per_week: parseInt(effectivePerWeek),
 
@@ -218,9 +227,13 @@ function TrainingRequest() {
             <p role="alert" className="mb-6 rounded-lg border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">{problem.startsWith('msg:') ? problem.slice(4) : t(problem)}</p>
           )}
 
+          <div className="mb-6">
+            <ConsentCheckbox terms checked={accepted} error={consentError} onChange={(value) => { setAccepted(value); setConsentError('') }} />
+          </div>
+
           <button
             onClick={handleSubmit}
-            disabled={submitting || !chosenPack}
+            disabled={submitting || !chosenPack || !accepted}
             className="w-full sm:w-auto bg-white text-black px-8 py-4 uppercase tracking-[3px] hover:bg-gray-300 transition duration-300"
           >
             {submitting ? t('tr_submitting') : chosenPack ? t('tr_submit') : t('tr_unavailable')}

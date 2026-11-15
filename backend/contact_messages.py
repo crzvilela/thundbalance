@@ -21,8 +21,9 @@ import os
 import re
 
 from fastapi import Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictBool
 
+import legal
 import web_safety
 from database import get_connection
 from emails import send_email_async
@@ -49,6 +50,9 @@ class ContactCreate(BaseModel):
     language: str | None = None
     phone: str | None = None     # optional
     subject: str | None = None   # optional
+    # the box "I have read and accept the Privacy policy" and the version of the text that was shown
+    privacy_consent: StrictBool | None = None
+    consent_version: str | None = None
 
 
 class BulkPayload(BaseModel):
@@ -91,6 +95,8 @@ def ensure_contact_table():
         cursor.execute("ALTER TABLE contact_messages ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP")
         cursor.execute("ALTER TABLE contact_messages ADD COLUMN IF NOT EXISTS phone TEXT")
         cursor.execute("ALTER TABLE contact_messages ADD COLUMN IF NOT EXISTS subject TEXT")
+        cursor.execute("ALTER TABLE contact_messages ADD COLUMN IF NOT EXISTS consent_version TEXT")
+        cursor.execute("ALTER TABLE contact_messages ADD COLUMN IF NOT EXISTS consent_at TIMESTAMP")
         cursor.execute("CREATE INDEX IF NOT EXISTS contact_messages_archived_idx ON contact_messages (archived_at)")
         cursor.execute(
             """
@@ -228,7 +234,7 @@ def apply(action, ids, admin=""):
     return {"ok": True, "matched": matched}
 
 
-def create_message(name, email, message, language, phone=None, subject=None):
+def create_message(name, email, message, language, phone=None, subject=None, consent_version=None):
     """Saves a message of the public form and returns (id, created_at). The per-email limit is checked here."""
     conn = get_connection()
     cursor = conn.cursor()
@@ -240,9 +246,9 @@ def create_message(name, email, message, language, phone=None, subject=None):
         if cursor.fetchone()[0] >= PER_EMAIL_LIMIT:
             raise HTTPException(status_code=429, detail="Too many messages. Please try again later.")
         cursor.execute(
-            "INSERT INTO contact_messages (name, email, message, language, phone, subject) VALUES (%s, %s, %s, %s, %s, %s) "
-            "RETURNING id, created_at",
-            (name, email, message, language, phone, subject),
+            "INSERT INTO contact_messages (name, email, message, language, phone, subject, consent_version, consent_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, CASE WHEN %s IS NULL THEN NULL ELSE NOW() END) RETURNING id, created_at",
+            (name, email, message, language, phone, subject, consent_version, consent_version),
         )
         message_id, created = cursor.fetchone()
         conn.commit()
@@ -271,6 +277,7 @@ def register_contact_routes(app, require_admin):
         if (data.website or "").strip():
             return {"ok": True}
 
+        consent_version = legal.require_consent(data.privacy_consent, data.consent_version, _clean(data.language, 5) or None)
         message = _clean(data.message, 3000, multiline=True)
         try:
             name = validators.validate_name(data.name, "name")
@@ -285,7 +292,7 @@ def register_contact_routes(app, require_admin):
         language = _clean(data.language, 5) or None
         phone = _clean(data.phone, 30) or None
         subject = _clean(data.subject, 150) or None
-        message_id, created = create_message(name, email, message, language, phone, subject)
+        message_id, created = create_message(name, email, message, language, phone, subject, consent_version)
 
         # The message is already saved; a mail problem must not fail the request.
         try:

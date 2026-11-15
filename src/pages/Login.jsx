@@ -4,6 +4,7 @@ import { API_URL } from '../config'
 import { authFetch } from '../api/authFetch'
 import { useI18n } from '../i18n/I18nContext'
 import { loginErrorKey } from '../utils/loginErrors'
+import { uiText } from '../legal/legalText'
 
 import {
   signInWithPopup,
@@ -18,7 +19,8 @@ import {
 function Login() {
 
   const navigate = useNavigate()
-  const { t } = useI18n()
+  const { t, language } = useI18n()
+  const legal = uiText(language)
   const [problem, setProblem] = useState('')            // a text key: the error is a line in the form, never a pop-up
 
   const [email, setEmail] = useState('')
@@ -143,6 +145,12 @@ function Login() {
           >
             Continue With Google
           </button>
+
+          <p className="text-center text-xs leading-relaxed text-gray-500">
+            {legal.registerNotice}{' '}
+            <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-white">{legal.privacy}</a>{' '}{legal.registerNoticeAnd}{' '}
+            <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-white">{legal.terms}</a>.
+          </p>
 
           <p className="text-center text-gray-400 text-sm mt-4">
 

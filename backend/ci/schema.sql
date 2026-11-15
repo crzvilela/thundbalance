@@ -1713,6 +1713,19 @@ ALTER TABLE ONLY public.user_plans
     ADD CONSTRAINT user_plans_trainer_id_fkey FOREIGN KEY (trainer_id) REFERENCES public.trainers(id);
 
 
+ALTER TABLE public.trial_sessions ADD COLUMN IF NOT EXISTS consent_version text;
+ALTER TABLE public.trial_sessions ADD COLUMN IF NOT EXISTS consent_at timestamp without time zone;
+ALTER TABLE public.trial_sessions ADD COLUMN IF NOT EXISTS health_consent_at timestamp without time zone;
+ALTER TABLE public.contact_messages ADD COLUMN IF NOT EXISTS consent_version text;
+ALTER TABLE public.contact_messages ADD COLUMN IF NOT EXISTS consent_at timestamp without time zone;
+CREATE TABLE IF NOT EXISTS public.consents (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    consent_type TEXT NOT NULL,
+    version TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 --
 -- PostgreSQL database dump complete
 --

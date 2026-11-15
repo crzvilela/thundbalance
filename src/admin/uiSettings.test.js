@@ -27,6 +27,7 @@ const ORIGINAL_MENU = [
   ['/admin/plans', undefined, 'bolt', 'nav_plans', undefined],
   ['/admin/videos', undefined, 'video', 'nav_videos', undefined],
   ['/admin/system', undefined, 'alert', 'nav_system', undefined],
+  ['/admin/legal', undefined, 'doc', 'nav_legal', undefined],
   ['/admin/landing-editor', undefined, 'landing', 'nav_landing', undefined]
 ]
 const shape = (items) => items.map(item => [item.to, item.end, item.icon, item.labelKey, item.badge])
@@ -47,7 +48,7 @@ test('without a configuration the overview, the pages and the button are the ori
   assert.deepEqual(resolvePageText({}, 'requests', 'Requests', 'sub'), { title: 'Requests', subtitle: 'sub' })
   assert.deepEqual(resolvePageText({}, 'not-in-the-registry', 'T', 'S'), { title: 'T', subtitle: 'S' })
   assert.equal(resolveCustomizeLabel({}), '')
-  assert.equal(PAGES.length, 12)
+  assert.equal(PAGES.length, 13)
   assert.equal(OVERVIEW_CARDS.length, 8)
 })
 
@@ -56,7 +57,7 @@ test('a configuration orders, renames and hides; the original shows through wher
   assert.deepEqual(keys(menu).slice(0, 3), ['clients', 'requests', 'videos'])      // the keys it mentions come first, in its order
   assert.equal(menu.find(item => item.key === 'requests').custom, 'Pedidos')
   assert.equal(menu.find(item => item.key === 'videos').hidden, true)
-  assert.equal(menu.length, 13)                                                    // nothing is lost: the rest follow in their own order
+  assert.equal(menu.length, 14)                                                    // nothing is lost: the rest follow in their own order
   assert.deepEqual(keys(menu).slice(3, 6), ['overview', 'trials', 'messages'])
   assert.equal(menu.find(item => item.key === 'messages').custom, '')
 })
@@ -64,7 +65,7 @@ test('a configuration orders, renames and hides; the original shows through wher
 test('a key the configuration does not know (a new area) goes to the end; keys that no longer exist are ignored', () => {
   const partial = resolveMenu({ menu: [{ key: 'overview' }, { key: 'clients' }, { key: 'gone-area' }] })
   assert.deepEqual(keys(partial).slice(0, 2), ['overview', 'clients'])
-  assert.equal(keys(partial).length, 13)
+  assert.equal(keys(partial).length, 14)
   assert.equal(keys(partial).at(-1), 'landing')
   assert.ok(!keys(partial).includes('gone-area'))
 })
@@ -74,9 +75,9 @@ test('the protections always hold, whatever is stored', () => {
   assert.equal(hiddenOverview.find(item => item.key === 'overview').hidden, false)
   const allHidden = resolveMenu({ menu: MENU_ITEMS.map(item => ({ key: item.key, hidden: true })) })
   assert.ok(allHidden.every(item => !item.hidden))                                // fewer than 3 visible: nothing is hidden
-  const nine = MENU_ITEMS.filter(item => item.key !== 'overview').slice(0, 10).map(item => ({ key: item.key, hidden: true }))
+  const nine = MENU_ITEMS.filter(item => item.key !== 'overview').slice(0, 11).map(item => ({ key: item.key, hidden: true }))
   assert.equal(visibleAreas(resolveMenu({ menu: nine })), 3)                      // exactly 3 left: the hiding is kept
-  assert.equal(resolveMenu({ menu: nine }).filter(item => item.hidden).length, 10)
+  assert.equal(resolveMenu({ menu: nine }).filter(item => item.hidden).length, 11)
 })
 
 test('names with html, control characters or more than 30 characters are ignored, not shown', () => {
@@ -120,8 +121,8 @@ test('the draft: reorder with buttons and with drag, "Personalizar panel" stays 
   assert.equal(moveItem(draft.menu, 'customize', -1), draft.menu)                             // the button is never moved
   menu = moveToItem(draft.menu, 'videos', 'requests')
   assert.equal(keys(menu).indexOf('videos'), keys(draft.menu).indexOf('requests'))
-  assert.equal(keys(menu).length, 14)
-  assert.equal(keys(moveToItem(draft.menu, 'requests', 'customize')).length, 14)             // dropping on the button does nothing odd
+  assert.equal(keys(menu).length, 15)
+  assert.equal(keys(moveToItem(draft.menu, 'requests', 'customize')).length, 15)             // dropping on the button does nothing odd
   assert.equal(moveToItem(draft.menu, 'requests', 'requests'), draft.menu)
 })
 
@@ -143,14 +144,14 @@ test('the draft: rename, hide, reset', () => {
 
 test('the draft: the menu cannot go under 3 visible areas', () => {
   let menu = buildDraft({}).menu
-  const hideable = MENU_ITEMS.filter(item => !item.protected).map(item => item.key)               // 12 areas besides the Overview
-  for (const key of hideable.slice(0, 10)) {
+  const hideable = MENU_ITEMS.filter(item => !item.protected).map(item => item.key)               // 13 areas besides the Overview
+  for (const key of hideable.slice(0, 11)) {
     const step = toggleHidden(menu, key, { isMenu: true })
     assert.equal(step.error, null, key)
     menu = step.list
   }
   assert.equal(visibleAreas(menu), 3)
-  const refused = toggleHidden(menu, hideable[10], { isMenu: true })
+  const refused = toggleHidden(menu, hideable[11], { isMenu: true })
   assert.equal(refused.error, 'too_few_visible')
   assert.equal(refused.list, menu)                                                                  // unchanged
   assert.deepEqual(draftProblems({ ...buildDraft({}), menu }), [])
@@ -174,7 +175,7 @@ test('the draft becomes the payload and the preview; nothing changed means "the 
   assert.deepEqual(payload.menu.find(entry => entry.key === 'requests'), { key: 'requests', label: 'Pedidos' })
   assert.deepEqual(payload.menu.find(entry => entry.key === 'videos'), { key: 'videos', hidden: true })
   assert.deepEqual(payload.pages, { trials: { title: 'Pruebas' } })
-  assert.equal(payload.menu.length, 14)
+  assert.equal(payload.menu.length, 15)
   const preview = draftToSettings(draft)
   assert.equal(resolveMenu(preview).find(item => item.key === 'requests').custom, 'Pedidos')
   // what the server stores comes back to the same draft

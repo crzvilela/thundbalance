@@ -166,7 +166,7 @@ class Pricing(unittest.TestCase):
 
     def book_trial(self, session_type=None, name=None, email=None, address=None, hour="10:00", offset=12):
         request = SimpleNamespace(headers={}, client=SimpleNamespace(host="127.0.0.1"))
-        payload = main.TrialSessionCreate(
+        payload = main.TrialSessionCreate(privacy_consent=True, consent_version="test", 
             full_name="Ana Garcia", email=address or f"ana{DOMAIN}", phone="600123456", goals=["Lose weight"],
             experience="Beginner", session_date=weekday_after(offset).isoformat(), session_time=hour, lang="es",
             session_type=session_type, second_person_name=name, second_person_email=email)
@@ -379,10 +379,10 @@ class Pricing(unittest.TestCase):
         with mock.patch.object(main, "require_client", lambda authorization=None: {"sub": "uid-pricing", "email": f"hp{DOMAIN}"}):
             create = endpoint("/client-requests", "POST")
             with self.assertRaises(HTTPException) as error:
-                create(main.ClientRequestCreate(pack_id=self.pack_of("dual", 3), sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", None),
+                create(main.ClientRequestCreate(privacy_consent=True, consent_version="test", pack_id=self.pack_of("dual", 3), sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", None),
                                                 session_type="dual"), "Bearer x")
             self.assertEqual(code(error), ("invalid_name", "second_person_name"))
-            create(main.ClientRequestCreate(pack_id=self.pack_of("dual", 3), sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", None),
+            create(main.ClientRequestCreate(privacy_consent=True, consent_version="test", pack_id=self.pack_of("dual", 3), sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", None),
                                             session_type="dual", second_person_name="Beatriz Prueba",
                                             second_person_email=SECOND), "Bearer x")
         rows = [row for row in endpoint("/admin/client-requests", "GET")() if row[1] == "Henrique Preco"]

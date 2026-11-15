@@ -249,14 +249,14 @@ class Catalog(unittest.TestCase):
         with mock.patch.object(main, "require_client", lambda authorization=None: {"sub": "uid-catalog", "email": f"hc{DOMAIN}"}):
             create = next(r.endpoint for r in main.app.routes if getattr(r, "path", None) == "/client-requests" and "POST" in r.methods)
             with self.assertRaises(HTTPException) as error:                    # the pack does not offer 4 a week
-                create(main.ClientRequestCreate(pack_id=pack["id"], sessions_per_week=4, schedule=pack_schedule.uniform("Monday,Wednesday,Friday,Tuesday", "09:00", None)), "Bearer x")
+                create(main.ClientRequestCreate(privacy_consent=True, consent_version="test", pack_id=pack["id"], sessions_per_week=4, schedule=pack_schedule.uniform("Monday,Wednesday,Friday,Tuesday", "09:00", None)), "Bearer x")
             self.assertEqual(error.exception.detail["code"], "invalid_sessions_per_week")
             with self.assertRaises(HTTPException) as error:                    # a dual request for an individual pack
-                create(main.ClientRequestCreate(pack_id=pack["id"], sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", None),
+                create(main.ClientRequestCreate(privacy_consent=True, consent_version="test", pack_id=pack["id"], sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", None),
                                                 session_type="dual", second_person_name="Beatriz Prueba",
                                                 second_person_email=f"b{DOMAIN}"), "Bearer x")
             self.assertEqual(error.exception.detail["code"], "invalid_session_type")
-            create(main.ClientRequestCreate(pack_id=pack["id"], sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", None)), "Bearer x")
+            create(main.ClientRequestCreate(privacy_consent=True, consent_version="test", pack_id=pack["id"], sessions_per_week=2, schedule=pack_schedule.uniform("Monday,Wednesday", "09:00", None)), "Bearer x")
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("SELECT catalog_pack_id, plan_id FROM client_requests WHERE user_id = %s", (self.user_id,))

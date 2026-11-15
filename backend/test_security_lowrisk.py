@@ -103,7 +103,7 @@ class Limits(unittest.TestCase):
             self.assertEqual(other.status_code, 200)                                                  # another client is not affected
 
     def test_a_forged_first_value_does_not_get_around_the_trial_limit(self):
-        body = {"full_name": "Ana García", "email": "not-an-email", "phone": "600123456", "goals": ["Lose weight"], "experience": "Beginner",
+        body = {"privacy_consent": True, "consent_version": "test", "full_name": "Ana García", "email": "not-an-email", "phone": "600123456", "goals": ["Lose weight"], "experience": "Beginner",
                 "session_date": (date.today() + timedelta(days=10)).isoformat(), "session_time": "10:00"}
         with mock.patch.object(main._trial_hits, "limit", 2):
             codes = [self.client.post("/trial-sessions", json=body, headers={"X-Forwarded-For": f"8.8.8.{n}, 203.0.113.60"}).status_code for n in range(4)]
@@ -117,7 +117,7 @@ class Limits(unittest.TestCase):
     # ----- the limit per e-mail
     def trial(self, email, ip="203.0.113.70"):
         return self.client.post("/trial-sessions", headers={"X-Forwarded-For": f"1.1.1.1, {ip}"}, json={
-            "full_name": "Ana García", "email": email, "phone": "600123456", "goals": ["Lose weight"], "experience": "Beginner",
+            "privacy_consent": True, "consent_version": "test", "full_name": "Ana García", "email": email, "phone": "600123456", "goals": ["Lose weight"], "experience": "Beginner",
             "session_date": self.slot(), "session_time": "10:00"})
 
     @staticmethod

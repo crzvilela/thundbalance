@@ -157,7 +157,7 @@ class Schedule(unittest.TestCase):
             cur.execute("UPDATE users SET firebase_uid = 'uid-sched' WHERE id = %s", (self.user_id,))
             conn.commit()
             conn.close()
-            return route("/client-requests", "POST")(main.ClientRequestCreate(
+            return route("/client-requests", "POST")(main.ClientRequestCreate(privacy_consent=True, consent_version="test", 
                 pack_id=self.pack_ids["individual"], sessions_per_week=per_week, schedule=schedule), "Bearer x")
 
     # ----- the rules

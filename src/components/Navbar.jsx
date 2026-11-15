@@ -1,4 +1,5 @@
 import { auth } from '../firebase/auth'
+import { initialsAvatar } from '../utils/avatar'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
@@ -325,15 +326,11 @@ function NavbarInner() {
             <div className="relative">
 
               <img
-                src={
-                  profilePhoto ||
-                  'https://ui-avatars.com/api/?name=' +
-                  encodeURIComponent(user.displayName || 'User')
-                }
+                src={profilePhoto || initialsAvatar(user.displayName)}
                 alt="Profile"
                 referrerPolicy="no-referrer"
                 onError={event => {
-                  const fallback = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.displayName || 'User')
+                  const fallback = initialsAvatar(user.displayName)
                   if (event.currentTarget.src !== fallback) event.currentTarget.src = fallback
                 }}
                 onClick={() => setOpenMenu(!openMenu)}

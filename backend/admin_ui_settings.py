@@ -38,10 +38,10 @@ PANEL_KEY = "panel"
 # The closed registry (keep in step with src/admin/uiRegistry.js).
 MENU_KEYS = (
     "overview", "requests", "trials", "messages", "sent-messages", "clients", "calendar", "schedule", "trainers", "plans", "videos",
-    "system", "landing", "customize",
+    "system", "legal", "landing", "customize",
 )
 OVERVIEW_KEYS = ("stat_clients", "stat_sessions", "stat_pending", "week", "pending", "business", "upcoming", "quick")
-PAGE_KEYS = ("overview", "requests", "trials", "messages", "sent-messages", "clients", "calendar", "schedule", "trainers", "plans", "videos", "system")
+PAGE_KEYS = ("overview", "requests", "trials", "messages", "sent-messages", "clients", "calendar", "schedule", "trainers", "plans", "videos", "system", "legal")
 
 # Reorderable blocks of a page, by group (keep in step with src/admin/uiRegistry.js: BLOCKS). A block moves only inside its own group.
 BLOCK_GROUPS = {

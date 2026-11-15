@@ -130,7 +130,7 @@ class ScheduleSpeed(unittest.TestCase):
         self.client.post("/contact-messages", json={"name": "x", "email": "bad", "message": "hola hola"})  # 422
         self.assertTrue(schedule_cache._store, "a refused request changes nothing")
         ok = self.client.post("/contact-messages", json={
-            "name": "Cache Test", "email": f"cache{DOMAIN}", "message": "hola, esto es una prueba"})
+            "privacy_consent": True, "consent_version": "test", "name": "Cache Test", "email": f"cache{DOMAIN}", "message": "hola, esto es una prueba"})
         self.assertEqual(ok.status_code, 200)
         self.assertFalse(schedule_cache._store, "a successful write starts the cache again")
         conn = get_connection()
@@ -146,7 +146,7 @@ class ScheduleSpeed(unittest.TestCase):
             self.busy_trial(trainer_id, day, "10:00")
         self.assertIn("10:00", self.client.get(f"/schedule/{day.isoformat()}").json(), "stale on purpose")
         response = self.client.post("/trial-sessions", json={
-            "full_name": "Ana García", "email": f"late{DOMAIN}", "phone": "600123456", "goals": ["Lose weight"],
+            "privacy_consent": True, "consent_version": "test", "full_name": "Ana García", "email": f"late{DOMAIN}", "phone": "600123456", "goals": ["Lose weight"],
             "experience": "Beginner", "session_date": day.isoformat(), "session_time": "10:00", "lang": "en"})
         self.assertEqual(response.status_code, 422)
         self.assertIn("No trainer is available", response.json()["detail"])

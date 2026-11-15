@@ -66,3 +66,9 @@ test('the page has no inline script (the only inline block is data: JSON-LD)', (
     assert.ok(external || data, `an inline script would be blocked by the policy: <script${attributes}>`)
   }
 })
+
+test('fonts and styles come only from our own site: Google Fonts and the avatar service are not allowed any more', () => {
+  assert.deepEqual(directives['font-src'], ["'self'", 'data:'])
+  assert.deepEqual(directives['style-src'], ["'self'", "'unsafe-inline'"])
+  assert.ok(!csp.includes('fonts.googleapis.com') && !csp.includes('fonts.gstatic.com') && !csp.includes('ui-avatars.com'))
+})

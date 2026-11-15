@@ -60,7 +60,7 @@ function ElfsightReviews() {
 }
 
 export default function GoogleReviews() {
-  return <ConsentGate className="min-h-56"><GoogleReviewsContent /></ConsentGate>
+  return <ConsentGate className="min-h-56" kind="reviews"><GoogleReviewsContent /></ConsentGate>
 }
 
 function GoogleReviewsContent() {

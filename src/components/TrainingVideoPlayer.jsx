@@ -12,7 +12,7 @@ function TrainingVideoPlayer({ source, url, className = '', compact = false }) {
   if (source === 'instagram') {
     return (
       <div className={`w-full max-w-sm mx-auto aspect-[9/16] ${className}`}>
-        <ConsentGate className="h-full"><iframe
+        <ConsentGate className="h-full" kind="video"><iframe
           src={getInstagramEmbedUrl(url)}
           className="w-full h-full rounded-lg border-0"
           title="Instagram Reel"
@@ -26,7 +26,7 @@ function TrainingVideoPlayer({ source, url, className = '', compact = false }) {
   if (source === 'youtube' || source === 'vimeo') {
     return (
       <div className={`w-full aspect-video ${className}`}>
-        <ConsentGate className="h-full"><iframe
+        <ConsentGate className="h-full" kind="video"><iframe
           src={getEmbedUrl(url)}
           className="w-full h-full rounded-lg border-0"
           title="Video"

@@ -1,36 +1,80 @@
-// The visitor's choice about external content (Google reviews and maps, YouTube / Vimeo / Instagram videos).
-// 'accepted' | 'rejected' | null (not chosen yet). Saved in this browser only.
+// The visitor's choice about cookies and external content (see consentCore.js), saved in this browser only (every access in try/catch:
+// private windows and blocked storage must not break the site). Nothing optional loads until the category is accepted.
 import { useSyncExternalStore } from 'react'
+import { CONSENT_KEY, allows, buildConsent, parseConsent } from './consentCore'
 
-const KEY = 'tb_consent'
-const EVENT = 'tb-consent-change'
+const CHANGE = 'tb-consent-change'
+const OPEN = 'tb-consent-open'
 
-export function readConsent() {
+let lastRaw
+let lastValue = null
+let memory = null            // when storage is unavailable the choice lives until the page is reloaded
+let panelOpen = false
+
+function readRaw() {
   try {
-    const value = window.localStorage.getItem(KEY)
-    return value === 'accepted' || value === 'rejected' ? value : null
+    return window.localStorage.getItem(CONSENT_KEY)
   } catch {
-    return null
+    return memory
   }
 }
 
-export function saveConsent(value) {
+/** The current choice (the same object while nothing changed, so React does not re-render for nothing) or null. */
+export function readConsent() {
+  const raw = readRaw()
+  if (raw !== lastRaw) {
+    lastRaw = raw
+    lastValue = parseConsent(raw)
+  }
+  return lastValue
+}
+
+export function saveConsent(choices) {
+  const raw = JSON.stringify(buildConsent(choices))
+  memory = raw
   try {
-    if (value) window.localStorage.setItem(KEY, value)
-    else window.localStorage.removeItem(KEY)
+    window.localStorage.setItem(CONSENT_KEY, raw)
   } catch {
     // storage unavailable: the choice only lasts until the page is reloaded
   }
-  window.dispatchEvent(new Event(EVENT))
+  panelOpen = false
+  window.dispatchEvent(new Event(CHANGE))
+}
+
+export function clearConsent() {
+  memory = null
+  try {
+    window.localStorage.removeItem(CONSENT_KEY)
+  } catch {
+    // nothing to remove
+  }
+  window.dispatchEvent(new Event(CHANGE))
+}
+
+/** The footer link "Cookie settings": opens the panel again so the choice can be changed or withdrawn. */
+export function openPreferences() {
+  panelOpen = true
+  window.dispatchEvent(new Event(OPEN))
+}
+
+export function closePreferences() {
+  panelOpen = false
+  window.dispatchEvent(new Event(OPEN))
 }
 
 const subscribe = (callback) => {
-  window.addEventListener(EVENT, callback)
+  window.addEventListener(CHANGE, callback)
+  window.addEventListener(OPEN, callback)
   window.addEventListener('storage', callback)
   return () => {
-    window.removeEventListener(EVENT, callback)
+    window.removeEventListener(CHANGE, callback)
+    window.removeEventListener(OPEN, callback)
     window.removeEventListener('storage', callback)
   }
 }
 
 export const useConsent = () => useSyncExternalStore(subscribe, readConsent, () => null)
+export const usePreferencesOpen = () => useSyncExternalStore(subscribe, () => panelOpen, () => false)
+/** Is this category accepted right now? false until the visitor accepts it. */
+export const useAllowed = (category) => allows(useConsent(), category)
+export const isAllowed = (category) => allows(readConsent(), category)

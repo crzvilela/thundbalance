@@ -26,6 +26,7 @@ const Videos = lazy(() => import('../admin/pages/Videos'))
 const Messages = lazy(() => import('../admin/pages/Messages'))
 const AdminNotFound = lazy(() => import('../admin/AdminNotFound'))
 const SystemStatus = lazy(() => import('../admin/pages/SystemStatus'))
+const LegalTexts = lazy(() => import('../admin/pages/LegalTexts'))
 const TrainingTips = lazy(() => import('../pages/TrainingTips'))
 const TrainerArea = lazy(() => import('../pages/TrainerArea'))
 const TrainerPanelView = lazy(() => import('../admin/pages/TrainerPanelView'))
@@ -78,6 +79,7 @@ function AppRoutes() {
           <Route path="videos" element={<Videos />} />
           <Route path="messages" element={<Messages />} />
           <Route path="system" element={<SystemStatus />} />
+          <Route path="legal" element={<LegalTexts />} />
           <Route path="*" element={<AdminNotFound />} />
         </Route>
 
@@ -101,6 +103,8 @@ function AppRoutes() {
         <Route path="/privacy" element={<LegalPage page="privacy" />} />
         <Route path="/cookies" element={<LegalPage page="cookies" />} />
         <Route path="/legal-notice" element={<LegalPage page="legal" />} />
+        <Route path="/terms" element={<LegalPage page="terms" />} />
+        <Route path="/cancellations" element={<LegalPage page="cancellations" />} />
         <Route path="*" element={<NotFound />} />
       
       </Routes>

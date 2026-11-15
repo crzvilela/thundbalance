@@ -130,10 +130,10 @@ class Settings(unittest.TestCase):
     def test_at_least_three_menu_areas_stay_visible(self):
         areas = [key for key in ui.MENU_KEYS if key not in ui.PROTECTED_MENU_KEYS]
         hide = lambda keys: [{"key": key, "hidden": True} for key in keys]           # noqa: E731
-        # 13 areas: Overview + 12 others. Hiding 10 of the 12 leaves 3 (Overview and two) visible.
-        self.assertEqual(self.put(valid(menu=hide(areas[:10]))).status_code, 200)
+        # 14 areas: Overview + 13 others. Hiding 11 of the 13 leaves 3 (Overview and two) visible.
+        self.assertEqual(self.put(valid(menu=hide(areas[:11]))).status_code, 200)
         self.wipe()
-        answer = self.put(valid(menu=hide(areas[:11])))
+        answer = self.put(valid(menu=hide(areas[:12])))
         self.assertEqual((answer.status_code, self.code(answer)), (422, "too_few_visible"))
         self.assertEqual(answer.json()["detail"]["minimum"], 3)
 

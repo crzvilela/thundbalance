@@ -25,6 +25,7 @@ export const MENU_ITEMS = [
   { key: 'plans', to: '/admin/plans', icon: 'bolt', labelKey: 'nav_plans' },
   { key: 'videos', to: '/admin/videos', icon: 'video', labelKey: 'nav_videos' },
   { key: 'system', to: '/admin/system', icon: 'alert', labelKey: 'nav_system' },
+  { key: 'legal', to: '/admin/legal', icon: 'doc', labelKey: 'nav_legal' },
   { key: 'landing', to: '/admin/landing-editor', icon: 'landing', labelKey: 'nav_landing', arrow: true }
 ]
 
@@ -59,7 +60,8 @@ export const PAGES = [
   { key: 'trainers', titleKey: 'tn_title', subtitleKey: 'tn_sub' },
   { key: 'plans', titleKey: 'cat_title', subtitleKey: 'cat_sub' },
   { key: 'videos', titleKey: 'videos_title', subtitleKey: 'vd_sub' },
-  { key: 'system', titleKey: 'sys_title', subtitleKey: 'sys_sub' }
+  { key: 'system', titleKey: 'sys_title', subtitleKey: 'sys_sub' },
+  { key: 'legal', titleKey: 'lt_title', subtitleKey: 'lt_sub' }
 ]
 
 export const MENU_KEYS = MENU_ITEMS.map(item => item.key)

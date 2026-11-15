@@ -4,6 +4,7 @@ import { loadTrainers } from '../../api/trainers'
 import { downloadSessionIcs } from '../../api/calendarFeed'
 import { useModalFocus } from '../../hooks/useModalFocus'
 import { useI18n } from '../../i18n/I18nContext'
+import { uiText } from '../../legal/legalText'
 import { formatDay, formatTime, googleCalendarUrl } from '../../utils/sessionDates'
 import { Spinner, StatusBadge } from './SessionParts'
 import { changeReason, eventDetails, sessionLabel } from './sessionText'
@@ -19,7 +20,7 @@ export default function SessionModal({
   session, status, initialMode = 'view', todayKey, onClose, onLoadTimes, onRequest, onCancel, onRespond,
   showCalendar = false, change, hours, noteMax = 300, answering = null, readOnly = false, trainerId = ''
 }) {
-  const { t, locale } = useI18n()
+  const { t, locale, language } = useI18n()
   const [mode, setMode] = useState(initialMode)           // view | request | confirm | cancel
   const [newDate, setNewDate] = useState('')
   const [newTime, setNewTime] = useState('')
@@ -200,6 +201,7 @@ export default function SessionModal({
                   <textarea id="session-note-text" value={note} maxLength={noteMax} rows={3} disabled={working}
                     onChange={(event) => setNote(event.target.value)} aria-describedby="session-note-count"
                     className={`w-full rounded-xl border border-white/20 bg-black/40 px-4 py-3 text-white outline-none transition focus:border-emerald-400/70 ${FOCUS}`} />
+                  <p className="mt-1 text-xs text-gray-400">{uiText(language).freeTextWarning}</p>
                   <p id="session-note-count" className="mt-1 text-right text-xs tabular-nums text-gray-400">{t('ms_note_count', { n: note.length, max: noteMax })}</p>
                 </div>
               )}

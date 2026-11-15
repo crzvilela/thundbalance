@@ -5,6 +5,7 @@ import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import DeletionRequests from '../DeletionRequests'
 import SystemErrorsNotice from '../SystemErrorsNotice'
+import LegalNotice from '../LegalNotice'
 import { useOverviewCards } from '../uiSettingsContext'
 import { useEditMode } from '../editModeContext'
 import Editable from '../Editable'
@@ -222,6 +223,7 @@ export default function Overview() {
       />
 
       <SystemErrorsNotice />
+      <LegalNotice />
       <DeletionRequests />
 
       {statCards.length > 0 && (

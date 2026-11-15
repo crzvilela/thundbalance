@@ -52,7 +52,7 @@ class Contact(unittest.TestCase):
         conn.close()
 
     def post(self, key="ana", message="Hola, quiero informacion de las clases.", **extra):
-        body = {"name": "Ana Ruiz", "email": f"{key}{DOMAIN}", "message": message, "language": "es", **extra}
+        body = {"privacy_consent": True, "consent_version": "test", "name": "Ana Ruiz", "email": f"{key}{DOMAIN}", "message": message, "language": "es", **extra}
         return self.client.post("/contact-messages", json=body)
 
     def add(self, key, message="mensaje de prueba", **extra):

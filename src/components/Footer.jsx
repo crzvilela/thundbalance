@@ -6,6 +6,7 @@ import { safeLink } from '../utils/footerContent'
 import { useLayoutItem } from './editor/useLayoutItem'
 import './Footer.css'
 import { UI as LEGAL_LINKS } from '../legal/legalText'
+import { openPreferences } from '../utils/consent'
 
 const ICONS = {
   location: <><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>,
@@ -119,8 +120,11 @@ function Footer() {
       {!isEditMode && (
         <nav className="footer-legal" aria-label="Legal">
           <a href="/privacy">{LEGAL_LINKS[language]?.privacy || LEGAL_LINKS.en.privacy}</a>
+          <a href="/terms">{LEGAL_LINKS[language]?.terms || LEGAL_LINKS.en.terms}</a>
+          <a href="/cancellations">{LEGAL_LINKS[language]?.cancellations || LEGAL_LINKS.en.cancellations}</a>
           <a href="/cookies">{LEGAL_LINKS[language]?.cookies || LEGAL_LINKS.en.cookies}</a>
           <a href="/legal-notice">{LEGAL_LINKS[language]?.legal || LEGAL_LINKS.en.legal}</a>
+          <button type="button" onClick={openPreferences}>{LEGAL_LINKS[language]?.cookieSettings || LEGAL_LINKS.en.cookieSettings}</button>
         </nav>
       )}
     </div>

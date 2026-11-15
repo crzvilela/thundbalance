@@ -32,4 +32,5 @@
 
 .footer-legal { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; width: 100%; margin-top: 8px; }
 .footer-legal a { color: #a6a6a6; text-decoration: underline; text-underline-offset: 2px; padding: 6px 2px; }
-.footer-legal a:hover { color: #fff; }
+.footer-legal button { color: #a6a6a6; text-decoration: underline; text-underline-offset: 2px; padding: 6px 2px; background: none; border: 0; cursor: pointer; font: inherit; }
+.footer-legal a:hover, .footer-legal button:hover { color: #fff; }

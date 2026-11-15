@@ -15,12 +15,17 @@ import { formText, serverFieldError } from '../i18n/formText'
 import { birthDateProblem, emailProblem, nameProblem, normalizeEmail, phoneProblem } from '../utils/validators'
 import { formatMoney, sessionTypeBody, trialPricePerSession } from '../utils/pricing'
 import { secondPersonProblems, usePricing } from '../utils/usePricing'
+import ConsentCheckbox from '../components/ConsentCheckbox'
+import { uiText } from '../legal/legalText'
+import { useLegalVersion } from '../legal/useLegalVersion'
 
 // The English text is what the server stores; the visitor sees the translation.
 const GOALS = [
   'Body recomposition', 'Lose weight', 'Build muscle', 'Increase strength', 'Rehabilitation/injury recovery',
   'Conditioning', 'Endurance', 'Tone/define', 'Improve mobility & flexibility', 'Increase energy'
 ]
+// the goal that says something about the person's health: it needs its own explicit consent (RGPD art. 9)
+const HEALTH_GOAL = 'Rehabilitation/injury recovery'
 const LEVELS = ['Beginner', 'Intermediate', 'Advanced']
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
 const dayKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -86,6 +91,10 @@ function TrialSession() {
   const [form, setForm] = useState(EMPTY)
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
+  const [accepted, setAccepted] = useState(false)          // "I have read and accept the Privacy policy": unchecked, required
+  const [healthAccepted, setHealthAccepted] = useState(false)
+  const [consentError, setConsentError] = useState('')
+  const consentVersion = useLegalVersion()
   const [serverError, setServerError] = useState('')
   const formRef = useRef(null)
   const errorText = useErrorText()
@@ -175,10 +184,15 @@ function TrialSession() {
     const found = validate(form)
     setErrors(found)
     setServerError('')
+    const needsHealth = form.goals.includes(HEALTH_GOAL)
+    if (!accepted) setConsentError(uiText(language).consentRequired)
+    else if (needsHealth && !healthAccepted) setConsentError(uiText(language).healthRequired)
+    else setConsentError('')
     if (Object.keys(found).length) {
       focusFirstInvalid(formRef.current)
       return
     }
+    if (!accepted || (needsHealth && !healthAccepted)) return
 
     const { date } = form
     const sessionDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -197,6 +211,9 @@ function TrialSession() {
           phone: form.phone,
           birth_date: form.birthDate ? dayKey(form.birthDate) : null,
           goals: form.goals,
+          privacy_consent: true,
+          consent_version: consentVersion,
+          health_consent: form.goals.includes(HEALTH_GOAL) ? true : undefined,
           experience: form.experience,
           session_date: sessionDate,
           session_time: form.time,
@@ -226,6 +243,8 @@ function TrialSession() {
       }
       setDone(true)
       setForm(EMPTY)
+      setAccepted(false)
+      setHealthAccepted(false)
     } catch (error) {
       setServerError(error instanceof TypeError ? 'ts_e_network' : error.message)
     } finally {
@@ -361,6 +380,11 @@ function TrialSession() {
                   })}
                 </div>
                 {errors.goals && <span role="alert" className="mt-1.5 block text-sm text-red-300">{t(errors.goals)}</span>}
+                {form.goals.includes(HEALTH_GOAL) && (
+                  <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/5 p-3">
+                    <ConsentCheckbox health checked={healthAccepted} onChange={(value) => { setHealthAccepted(value); setConsentError('') }} />
+                  </div>
+                )}
               </fieldset>
               <Field label={t('ts_date')} error={errors.date}>
                 <DatePicker
@@ -414,13 +438,17 @@ function TrialSession() {
               />
             </div>
 
+            <div className="mt-6">
+              <ConsentCheckbox checked={accepted} error={consentError} onChange={(value) => { setAccepted(value); setConsentError('') }} />
+            </div>
+
             {serverError && (
               <p role="alert" className="mt-6 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{errorText(serverError)}</p>
             )}
 
             <button
               type="submit"
-              disabled={submitting || !form.date || !form.time}
+              disabled={submitting || !form.date || !form.time || !accepted || (form.goals.includes(HEALTH_GOAL) && !healthAccepted)}
               className="mt-8 inline-flex w-full items-center justify-center gap-3 rounded-xl bg-white px-8 py-4 text-sm font-semibold uppercase tracking-[3px] text-black transition hover:bg-gray-200 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 md:w-auto"
             >
               {submitting && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />}

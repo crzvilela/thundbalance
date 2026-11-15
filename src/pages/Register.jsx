@@ -17,6 +17,9 @@ import PhoneInput from '../components/forms/PhoneInput'
 import EmailInput from '../components/forms/EmailInput'
 import PostalCodeInput from '../components/forms/PostalCodeInput'
 import { focusFirstInvalid } from '../components/forms/focusFirstInvalid'
+import ConsentCheckbox from '../components/ConsentCheckbox'
+import { uiText } from '../legal/legalText'
+import { useLegalVersion } from '../legal/useLegalVersion'
 import {
   callingCodeOf, emailProblem, nameProblem, normalizeEmail, phoneProblem, postalCodeProblem, regionOfPhone
 } from '../utils/validators'
@@ -40,6 +43,9 @@ function Register() {
   const [errors, setErrors] = useState({})
   const [formError, setFormError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [accepted, setAccepted] = useState(false)          // "I have read and accept the Privacy policy and the Terms": unchecked, required
+  const [consentError, setConsentError] = useState('')
+  const consentVersion = useLegalVersion({ terms: true })
 
   const country = regionOfPhone(phone) || 'ES'
 
@@ -64,7 +70,8 @@ function Register() {
     const found = validate()
     setErrors(found)
     setFormError('')
-    if (Object.keys(found).length) {
+    if (!accepted) setConsentError(uiText(language).consentRequired)
+    if (Object.keys(found).length || !accepted) {
       focusFirstInvalid(formRef.current)
       return
     }
@@ -105,7 +112,9 @@ function Register() {
             codigo_pais: callingCodeOf(phone),
             cidade: city.trim(),
             morada: address.trim(),
-            cep: zipCode.trim()
+            cep: zipCode.trim(),
+            privacy_consent: true,
+            consent_version: consentVersion
           })
         }
       )
@@ -211,13 +220,15 @@ function Register() {
 
           {textField('password', text('label_password'), password, setPassword, { required: true, type: 'password', autoComplete: 'new-password' })}
 
+          <ConsentCheckbox terms checked={accepted} error={consentError} onChange={(value) => { setAccepted(value); setConsentError('') }} />
+
           {formError && (
             <p role="alert" className="mb-2 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{formError}</p>
           )}
 
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || !accepted}
             className="mt-3 inline-flex items-center justify-center gap-3 bg-white text-black py-4 uppercase tracking-[3px] rounded-lg hover:bg-gray-300 transition duration-300 disabled:cursor-wait disabled:opacity-60"
           >
             {submitting && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />}
