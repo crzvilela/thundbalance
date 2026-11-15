@@ -291,10 +291,11 @@ class Parallel(unittest.TestCase):
         past = today - timedelta(days=today.weekday() + 7)
         result = self.renew(per_week=1, days="Monday", start=past)
         self.assertEqual(result["start_date"], past.isoformat())
-        today_result = self.renew(per_week=1, days=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][today.weekday()],
-                                  start=today, time="11:00", trainer=self.other_trainer_id,
-                                  allow=True)             # the point is the date; today may be a weekend
-        self.assertEqual(today_result["start_date"], today.isoformat())
+        # the start date is TODAY whatever day it is (a weekend included): the sessions fall on the next Tuesday, a weekday, because no
+        # pack is ever planned on a Saturday or a Sunday. The test never depends on which day of the week it runs.
+        today_result = self.renew(per_week=1, days="Tuesday", start=today, time="11:00", trainer=self.other_trainer_id, allow=True)
+        first_tuesday = today + timedelta(days=(1 - today.weekday()) % 7)         # the pack starts with its first session: today if it is a Tuesday
+        self.assertEqual(today_result["start_date"], first_tuesday.isoformat())
 
     def test_a_start_inside_the_current_pack_is_not_refused(self):
         monday = next_weekday(14, 0)

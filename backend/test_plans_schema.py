@@ -66,8 +66,12 @@ class PlanFormsAreGone(unittest.TestCase):
 
     def test_the_old_plan_endpoints_do_not_exist_and_change_plan_stays_gone(self):
         paths = {getattr(route, "path", "") for route in main.app.routes}
-        for path in ("/admin/plans", "/admin/plans/{plan_id}", "/admin/plans/bulk", "/plans", "/admin/assign-plan"):
+        for path in ("/admin/plans", "/admin/plans/bulk", "/plans", "/admin/assign-plan"):
             self.assertNotIn(path, paths, path)
+        # the ONE route under /admin/plans is "Excluir pack": DELETE /admin/plans/{id} (deleted when nobody used the pack, archived when
+        # clients use it: see test_pack_delete). There is still no way to create or edit a plan through it.
+        methods = {method for route in main.app.routes if getattr(route, "path", "") == "/admin/plans/{plan_id}" for method in getattr(route, "methods", ())}
+        self.assertEqual(methods, {"DELETE"})
         self.assertIn("/admin/pack-catalog", paths)
         self.assertIn("/admin/clients/{client_id}/renew-pack", paths)            # the shared endpoint of "Nuevo pack" stays
 

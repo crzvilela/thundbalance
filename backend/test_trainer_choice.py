@@ -46,7 +46,8 @@ class Choice(unittest.TestCase):
         cur = conn.cursor()
         self.trainers = {}
         for name in NAMES:
-            cur.execute("INSERT INTO trainers (nome, active) VALUES (%s, TRUE) RETURNING id", (name,))
+            # trainers.email is NOT NULL: each test trainer has its own invented address
+            cur.execute("INSERT INTO trainers (nome, email, active) VALUES (%s, %s, TRUE) RETURNING id", (name, f"{name.lower().replace(' ', '-')}{DOMAIN}"))
             self.trainers[name] = cur.fetchone()[0]
         weekdays = {"TEST Choice A": ("Monday", "Wednesday"), "TEST Choice B": ("Monday", "Wednesday"), "TEST Choice Tuesday": ("Tuesday",)}
         for name, days in weekdays.items():

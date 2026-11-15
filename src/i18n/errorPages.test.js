@@ -61,7 +61,13 @@ test('the admin 404 has Spanish and English texts', () => {
   assert.match(code(read('../admin/AdminNotFound.jsx')), /<Link to="\/admin"/)
 })
 
-test('Vercel answers every path with the app (a reload on a route works) and the 404 is drawn by the app', () => {
+test('Vercel answers the routes of the app with the app (a reload works) but a missing file or asset is a real 404', () => {
   const vercel = JSON.parse(read('../../vercel.json'))
-  assert.deepEqual(vercel.rewrites, [{ source: '/(.*)', destination: '/index.html' }])
+  assert.equal(vercel.rewrites.length, 1)
+  assert.equal(vercel.rewrites[0].destination, '/index.html')
+  const matches = (path) => new RegExp(`^/${vercel.rewrites[0].source.replace(/^\//, '')}$`).test(path)
+  for (const route of ['/', '/dashboard', '/admin/clients', '/trial-session/confirm/abc_DEF-123', '/does-not-exist']) assert.equal(matches(route), true, route)
+  for (const file of ['/assets/index-old.js', '/assets/chunk-abc.css', '/missing.js', '/x.css', '/a.png', '/b.svg', '/c.json', '/sitemap.xml', '/robots.txt', '/favicon.ico', '/f.woff2']) assert.equal(matches(file), false, file)
+  const headers = JSON.stringify(vercel.headers)
+  assert.match(headers, /public, max-age=31536000, immutable/)                                         // hashed assets are cached for a year
 })

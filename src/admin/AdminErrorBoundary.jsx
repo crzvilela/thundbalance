@@ -1,4 +1,5 @@
 import { Component } from 'react'
+import { reportError } from '../utils/reportError'
 
 // A render error in an admin page used to leave a black screen until F5. This
 // shows the error text (so it can be reported) and a reload button instead.
@@ -11,6 +12,7 @@ export default class AdminErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     console.error('Admin page crashed:', error, info?.componentStack)
+    reportError(error)
   }
 
   render() {

@@ -25,6 +25,7 @@ const Plans = lazy(() => import('../admin/pages/Plans'))
 const Videos = lazy(() => import('../admin/pages/Videos'))
 const Messages = lazy(() => import('../admin/pages/Messages'))
 const AdminNotFound = lazy(() => import('../admin/AdminNotFound'))
+const SystemStatus = lazy(() => import('../admin/pages/SystemStatus'))
 const TrainingTips = lazy(() => import('../pages/TrainingTips'))
 const TrainerArea = lazy(() => import('../pages/TrainerArea'))
 const TrainerPanelView = lazy(() => import('../admin/pages/TrainerPanelView'))
@@ -76,6 +77,7 @@ function AppRoutes() {
           <Route path="plans" element={<Plans />} />
           <Route path="videos" element={<Videos />} />
           <Route path="messages" element={<Messages />} />
+          <Route path="system" element={<SystemStatus />} />
           <Route path="*" element={<AdminNotFound />} />
         </Route>
 

@@ -33,7 +33,10 @@ from admin_api import register_admin_routes
 import data_retention
 import landing_limits
 import photo_urls
+import keepalive
 import landing_pricing
+import monitoring
+import monitoring_routes
 import privacy
 import pack_catalog
 import pack_schedule
@@ -134,6 +137,7 @@ _ROUTE_ERRORS = {
 
 @app.exception_handler(StarletteHTTPException)
 async def http_error_in_the_common_shape(request, exc):
+    monitoring.record_http_error(request, exc.status_code)            # a 5xx answered on purpose; never raises, never blocks
     known = _ROUTE_ERRORS.get(exc.status_code)
     if known and exc.detail == known[1]:
         return JSONResponse(status_code=exc.status_code, content={"detail": {"code": known[0], "message": known[2]}},
@@ -145,6 +149,7 @@ async def http_error_in_the_common_shape(request, exc):
 async def unexpected_error_without_details(request, exc):
     """A bug is a 500 in the same shape, with no stack trace, no message of the error and no data: only the TYPE of the error is logged."""
     log_error(exc, op="unhandled_error")
+    monitoring.record_exception(request, exc)                         # type, place and route pattern only; never raises, never blocks
     return JSONResponse(status_code=500, content={"detail": {"code": "internal_error", "message": "Ha ocurrido un error. / Something went wrong."}})
 
 
@@ -268,6 +273,19 @@ def ensure_reschedule_tables():
 
 
 @app.on_event("startup")
+def start_monitoring():
+    # app_errors (monitoring.py) and the keep-alive thread (only in production, only when Render says where the service lives). Idempotent.
+    try:
+        monitoring.ensure_schema()
+    except Exception as error:  # noqa: BLE001
+        print(f"monitoring table could not be created: {type(error).__name__}")
+    try:
+        keepalive.start()
+    except Exception as error:  # noqa: BLE001
+        print(f"keep-alive could not start: {type(error).__name__}")
+
+
+@app.on_event("startup")
 def ensure_privacy_tables():
     # deletion_requests: the clients' requests to delete their account (privacy.py). Idempotent.
     try:
@@ -351,6 +369,8 @@ def _log_email_status():
 register_contact_routes(app, require_admin)
 register_trial_confirmation_routes(app)
 register_client_account_routes(app, require_admin, require_client)
+monitoring_routes.register_monitoring_routes(app, require_admin)      # /client-errors/report, /health/ready, /admin/system-errors
+
 # defined further down: looked up when a request arrives
 privacy.register_privacy_routes(
     app, require_admin, require_client, lambda claims: _own_user_id(claims), lambda claims: is_email_verified(claims),

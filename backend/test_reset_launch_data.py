@@ -122,7 +122,7 @@ class ResetLaunchData(unittest.TestCase):
         cur.execute("INSERT INTO users (firebase_uid, nome, email) VALUES ('uid-a', 'Ana A', 'ana@x.test') RETURNING id")
         ana = cur.fetchone()[0]
         cur.execute("INSERT INTO users (firebase_uid, nome, email) VALUES ('uid-b', 'Bia B', 'BIA@x.test') RETURNING id")
-        cur.execute("INSERT INTO users (nome, email) VALUES ('No Uid', NULL)")
+        cur.execute("INSERT INTO users (nome, email) VALUES ('No Uid', '')")           # users.email is NOT NULL: a profile without login id and without address is an empty one
         cur.execute("INSERT INTO user_plans (user_id, plan_id, active) VALUES (%s, %s, TRUE)", (ana, plan_id))
         cur.execute("INSERT INTO sessions (user_id, trainer_id, session_date, session_time, status) "
                     "VALUES (%s, %s, CURRENT_DATE + 3, '10:00', 'Booked')", (ana, trainer_id))

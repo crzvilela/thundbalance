@@ -19,6 +19,7 @@ import threading
 import time
 
 import client_erasure
+import monitoring
 from database import get_connection
 from safe_log import safe_error
 
@@ -132,6 +133,7 @@ def run_daily():
     result = {"rate_limits": purge_rate_limits()}
     result["erasures"] = client_erasure.retry_pending()
     result["retention"] = run_retention()
+    result["monitoring"] = monitoring.run_daily()                    # old resolved errors out, the daily summary of new ones
     retention = result["retention"]
     logger.info(
         "daily job: rate_limit_rows=%d erasures_retried=%d erasures_finished=%d retention=%s contact_messages=%s trial_sessions=%s email_log=%s",

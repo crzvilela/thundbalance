@@ -4,6 +4,7 @@ import { Link, useOutletContext } from 'react-router-dom'
 import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import DeletionRequests from '../DeletionRequests'
+import SystemErrorsNotice from '../SystemErrorsNotice'
 import { useOverviewCards } from '../uiSettingsContext'
 import { useEditMode } from '../editModeContext'
 import Editable from '../Editable'
@@ -220,6 +221,7 @@ export default function Overview() {
         </Button>}
       />
 
+      <SystemErrorsNotice />
       <DeletionRequests />
 
       {statCards.length > 0 && (

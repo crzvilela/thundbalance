@@ -2,6 +2,7 @@ import { Component } from 'react'
 import { useI18n } from '../i18n/I18nContext'
 import { isStaleBuildError, textsFor } from '../i18n/errorPages'
 import logo from '../assets/images/thundbalance-logo.svg?inline'
+import { reportError } from '../utils/reportError'
 
 // The last safety net of the whole site: a render error anywhere shows a simple page (never the technical error) with a button to reload,
 // instead of a blank screen. When the error is the one a new version causes (a file of the old version that no longer exists), the page
@@ -36,6 +37,7 @@ export default class AppErrorBoundary extends Component {
   componentDidCatch(error) {
     // only the kind of error goes to the console: no message, no data
     console.error('The page crashed:', error?.name || 'Error')
+    if (!isStaleBuildError(error)) reportError(error)         // the studio sees it in Estado del sistema (no data, never blocks)
     if (isStaleBuildError(error)) {
       try {
         if (window.sessionStorage.getItem(RELOADED_KEY) !== '1') {
