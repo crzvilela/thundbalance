@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { translations } from './translations.js'
 import { FORM_TEXT } from './formText.js'
 import { adminText } from '../admin/adminText.js'
-import { PAGES, UI } from '../legal/legalText.js'
+import { UI } from '../legal/legalText.js'
+import { DOCS, MODELS, TITLES } from '../legal/legalModels.js'
 
 // The site speaks English, Spanish and Catalan (the admin panel English and Spanish). A text that exists in one language and not in the
 // others shows as a raw key on screen: these tests fail when that happens.
@@ -53,12 +54,15 @@ test('the admin panel has every text in English and Spanish', () => {
   sameTexts(adminText, ['en', 'es'], 'adminText')
 })
 
-test('the legal pages and the cookie notice have the same sections in the three languages', () => {
+test('the legal documents and the cookie notice exist in the three languages, with the same number of sections', () => {
   sameKeys(UI, ['en', 'es', 'ca'], 'legal UI')
-  for (const page of Object.keys(PAGES)) {
-    const lengths = ['en', 'es', 'ca'].map(language => PAGES[page][language].sections.length)
-    assert.equal(new Set(lengths).size, 1, `${page}: the three languages have different numbers of sections (${lengths})`)
-    for (const language of ['en', 'es', 'ca']) assert.ok(PAGES[page][language].title, `${page}.${language} has no title`)
+  for (const doc of DOCS) {
+    const sections = ['en', 'es', 'ca'].map(language => {
+      assert.ok(MODELS[doc][language]?.trim(), `${doc}.${language} has no text`)
+      assert.ok(TITLES[doc]?.[language], `${doc}.${language} has no title`)
+      return (MODELS[doc][language].match(/^## /gm) || []).length
+    })
+    assert.equal(new Set(sections).size, 1, `${doc}: the three languages have different numbers of sections (${sections})`)
   }
 })
 
