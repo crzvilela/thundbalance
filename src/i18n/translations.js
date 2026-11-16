@@ -5,11 +5,12 @@
 // descriptions) is NEVER looked up here — it always stays in English,
 // regardless of the selected language. See I18nContext.jsx for the t()
 // lookup function and its fallback chain.
-import { pageText } from './pageText'
-import { trainerText } from './trainerText'
+import { pageText } from './pageText.js'
+import { trainerText } from './trainerText.js'
 
 const base = {
   en: {
+    contact_send: 'Send message',
     contact_eyebrow_form: "YOUR NEXT CHAPTER",
     contact_baseline: "Your goals. Our energy.",
     contact_label_name: "Name",
@@ -64,6 +65,7 @@ const base = {
   },
 
   es: {
+    contact_send: 'Enviar mensaje',
     contact_eyebrow_form: "TU PRÓXIMA ETAPA",
     contact_baseline: "Tus objetivos. Nuestra energía.",
     contact_label_name: "Nombre",
@@ -118,6 +120,7 @@ const base = {
   },
 
   ca: {
+    contact_send: 'Envia el missatge',
     contact_eyebrow_form: "LA TEVA PRÓXIMA ETAPA",
     contact_baseline: "Els teus objectius. La nostra energia.",
     contact_label_name: "Nom",

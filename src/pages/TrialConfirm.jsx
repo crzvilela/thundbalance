@@ -129,11 +129,11 @@ function TrialConfirm() {
         <p className="mb-6 text-gray-300">{t(declining ? 'tc_decline_text' : 'tc_ready_text')}</p>
         <dl className="mb-8 grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl border border-white/10 bg-black/40 p-4">
-            <dt className="text-xs uppercase tracking-wider text-gray-500">{t('tc_when')}</dt>
+            <dt className="text-xs uppercase tracking-wider text-hint">{t('tc_when')}</dt>
             <dd className="mt-1 text-lg capitalize">{when}</dd>
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/40 p-4">
-            <dt className="text-xs uppercase tracking-wider text-gray-500">{t('tc_place')}</dt>
+            <dt className="text-xs uppercase tracking-wider text-hint">{t('tc_place')}</dt>
             <dd className="mt-1 text-lg">{PLACE}</dd>
           </div>
         </dl>
@@ -164,7 +164,7 @@ function TrialConfirm() {
   return (
     <div className="min-h-screen bg-black text-white">
       <Navbar />
-      <main className="mx-auto max-w-2xl px-5 pb-24 pt-36">
+      <main id="main" className="mx-auto max-w-2xl px-5 pb-24 pt-36">
         <p className="mb-3 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-400">{t('tc_eyebrow')}</p>
         <h1 style={{ fontFamily: 'Bebas Neue' }} className="mb-8 text-5xl md:text-6xl">{heading}</h1>
         {content}

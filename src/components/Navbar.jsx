@@ -162,7 +162,7 @@ function NavbarInner() {
         path="sections.navbar.logoImage"
         defaultSrc={logo}
         srcOverride={showUploadedLogo ? undefined : logo}
-        alt="ThundBalance"
+        alt={section.showBrandText !== false ? '' : 'ThundBalance'}
         containerClassName="h-full w-full overflow-hidden"
         imageClassName={isVectorLogo ? 'h-full w-full object-contain' : 'h-full w-full object-cover object-[45%_50%] scale-[1.6] invert mix-blend-screen'}
         label="Navbar Logo"
@@ -327,7 +327,7 @@ function NavbarInner() {
 
               <img
                 src={profilePhoto || initialsAvatar(user.displayName)}
-                alt="Profile"
+                alt={t('a11y_profile_photo')}
                 referrerPolicy="no-referrer"
                 onError={event => {
                   const fallback = initialsAvatar(user.displayName)
@@ -459,7 +459,7 @@ function NavbarInner() {
               </ul>
 
               <div className="px-6 py-4 border-t border-white/10 flex items-center justify-between">
-                <span className="text-xs text-gray-500 uppercase tracking-wider">
+                <span className="text-xs text-hint uppercase tracking-wider">
                   {t('language_switcher_aria')}
                 </span>
                 <LanguageSwitcher />

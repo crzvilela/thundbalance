@@ -61,7 +61,7 @@ function FooterIconLink({ path, href, newTab, label, selected, editProps, childr
 
 function Footer() {
   const { content, device, select, selection } = useLandingContent()
-  const { language } = useI18n()
+  const { language, t } = useI18n()
   const { section, isEditMode, isSelected, onSectionClick, visible } = useSectionSelection('footer')
   const sectionSettings = section.settings || {}
   const configuredIcons = Array.isArray(section.footerIcons) ? section.footerIcons : DEFAULT_ICONS.map(icon => {
@@ -105,7 +105,7 @@ function Footer() {
       <div className="footer-brand">
         <EditableText as="span" path="sections.footer.brand" label="Footer Brand" />
       </div>
-      <nav className="footer-icons" aria-label="Social and contact links">
+      <nav className="footer-icons" aria-label={t('a11y_social')}>
         {icons.map(icon => {
           const href = linkFor(icon)
           const label = resolveText(icon.label, language)
@@ -118,7 +118,7 @@ function Footer() {
     <div className="footer-meta">
       <EditableText as="span" path="sections.footer.text" label="Footer Copyright" />
       {!isEditMode && (
-        <nav className="footer-legal" aria-label="Legal">
+        <nav className="footer-legal" aria-label={t('a11y_legal')}>
           <a href="/privacy">{LEGAL_LINKS[language]?.privacy || LEGAL_LINKS.en.privacy}</a>
           <a href="/terms">{LEGAL_LINKS[language]?.terms || LEGAL_LINKS.en.terms}</a>
           <a href="/cancellations">{LEGAL_LINKS[language]?.cancellations || LEGAL_LINKS.en.cancellations}</a>

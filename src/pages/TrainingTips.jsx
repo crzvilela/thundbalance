@@ -39,6 +39,7 @@ function TrainingTips() {
 
         <Navbar />
 
+        <main id="main">
         <section className="relative pt-32 pb-20 md:pt-48 md:pb-40 px-6">
           <div className="max-w-7xl mx-auto">
 
@@ -69,6 +70,7 @@ function TrainingTips() {
 
           </div>
         </section>
+        </main>
 
         <Footer />
 

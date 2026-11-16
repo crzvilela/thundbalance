@@ -23,7 +23,7 @@ export default function NotFound() {
   }, [text.notFoundTitle])
 
   return (
-    <main className="flex min-h-[100dvh] flex-col items-center justify-center bg-black px-6 py-12 text-center text-white">
+    <main id="main" className="flex min-h-[100dvh] flex-col items-center justify-center bg-black px-6 py-12 text-center text-white">
       <Link to="/" aria-label="ThundBalance" className="mb-10 inline-block rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400">
         <img src={logo} alt="ThundBalance" className="h-10 w-auto" />
       </Link>

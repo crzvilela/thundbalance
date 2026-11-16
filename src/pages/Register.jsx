@@ -11,6 +11,7 @@ import {
 import { auth } from '../firebase/auth'
 import { useI18n } from '../i18n/I18nContext'
 import { formText, serverFieldError } from '../i18n/formText'
+import { registerErrorKey } from '../utils/loginErrors'
 import FormField from '../components/forms/FormField'
 import { INPUT_CLASS, inputBorder } from '../components/forms/inputStyles'
 import PhoneInput from '../components/forms/PhoneInput'
@@ -29,7 +30,7 @@ const SERVER_FIELDS = { name: 'name', phone: 'phone', postal_code: 'zipCode', em
 function Register() {
 
   const navigate = useNavigate()
-  const { language } = useI18n()
+  const { language, t } = useI18n()
   const text = (key, values) => formText(language, key, values)
   const formRef = useRef(null)
 
@@ -135,15 +136,11 @@ function Register() {
         return
       }
 
-      alert('Account created successfully!')
-
       navigate('/dashboard')
 
     } catch (error) {
 
-      console.log(error)
-
-      setFormError(error.message)
+      setFormError(t(registerErrorKey(error)))          // a text in the visitor's language, never the English message of Firebase
 
     } finally {
 
@@ -176,7 +173,7 @@ function Register() {
   const clear = (key) => { if (errors[key]) setErrors(current => ({ ...current, [key]: undefined })) }
 
   return (
-    <div className="min-h-screen bg-black text-white flex items-center justify-center px-6 py-10">
+    <main id="main" className="min-h-screen bg-black text-white flex items-center justify-center px-6 py-10">
 
       <div className="w-full max-w-lg border border-white/10 p-6 sm:p-10 rounded-2xl">
 
@@ -184,7 +181,7 @@ function Register() {
           style={{ fontFamily: 'Bebas Neue' }}
           className="text-5xl mb-10 text-center"
         >
-          Register
+          {t('rg_title')}
         </h1>
 
         <form
@@ -232,18 +229,18 @@ function Register() {
             className="mt-3 inline-flex items-center justify-center gap-3 bg-white text-black py-4 uppercase tracking-[3px] rounded-lg hover:bg-gray-300 transition duration-300 disabled:cursor-wait disabled:opacity-60"
           >
             {submitting && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />}
-            Create Account
+            {t('rg_submit')}
           </button>
 
           <p className="text-center text-gray-400 text-sm mt-2">
 
-            Already have an account?{' '}
+            {t('rg_have_account')}{' '}
 
             <Link
               to="/login"
               className="inline-block py-2 text-white hover:text-gray-300"
             >
-              Login
+              {t('rg_login')}
             </Link>
 
           </p>
@@ -252,7 +249,7 @@ function Register() {
 
       </div>
 
-    </div>
+    </main>
   )
 }
 

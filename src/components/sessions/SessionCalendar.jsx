@@ -104,7 +104,7 @@ export default function SessionCalendar({ month, onMonth, sessionsByDay, statusO
                 isSelected ? 'border-emerald-400 bg-emerald-400/15'
                   : live.some(status => status === 'upcoming') ? 'border-emerald-400/25 bg-emerald-400/[0.07] hover:bg-emerald-400/15'
                     : isToday ? 'border-transparent hover:bg-white/5' : 'border-transparent hover:border-white/15 hover:bg-white/5'
-              } ${isToday ? 'ring-2 ring-inset ring-emerald-400/70' : ''} ${cell.inMonth ? '' : 'opacity-30'} ${live.length === 0 && statuses.length > 0 ? 'opacity-70' : ''}`}
+              } ${isToday ? 'ring-2 ring-inset ring-emerald-400/70' : ''} ${cell.inMonth ? '' : 'opacity-50'} ${live.length === 0 && statuses.length > 0 ? 'opacity-70' : ''}`}
             >
               <span className={`tabular-nums ${statuses.length && statuses.every(status => status === 'cancelled') ? 'text-red-300/80 line-through' : ''} ${statuses.length && statuses.every(status => status === 'completed') ? 'text-gray-400' : ''}`}>{cell.day}</span>
               {(list.length > 0 || hasTrial) && (

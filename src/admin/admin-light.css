@@ -18,6 +18,7 @@
   --color-gray-400: #5b6677;
   --color-gray-500: #667184;
   --color-gray-600: #7a8496;
+  --color-hint: #667184;          /* the same hint colour, for white */
 }
 .admin-light .admin-drawer, .admin-light .admin-modal { color-scheme: light; }
 

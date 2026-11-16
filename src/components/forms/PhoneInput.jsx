@@ -156,7 +156,7 @@ export default function PhoneInput({
               value={shown} onChange={handleInput}
               onBlur={(event) => { setTouched(true); onBlur?.(event) }}
               aria-invalid={invalid || undefined} aria-required={required || undefined} aria-describedby={describedBy}
-              className="min-w-0 flex-1 rounded-r-xl bg-transparent px-4 py-3.5 text-base text-white outline-none placeholder:text-gray-500"
+              className="min-w-0 flex-1 rounded-r-xl bg-transparent px-4 py-3.5 text-base text-white outline-none placeholder:text-hint"
               placeholder={country === 'ES' ? '612 34 56 78' : ''}
             />
           </div>
@@ -177,7 +177,7 @@ export default function PhoneInput({
                   </button>
                 </div>
                 <ul ref={listRef} id={`${inputId}-countries`} role="listbox" aria-label={formText(language, 'phone_country')} className="flex-1 overflow-y-auto py-1">
-                  {selectable.length === 0 && <li className="px-4 py-3 text-sm text-gray-500">{formText(language, 'phone_none')}</li>}
+                  {selectable.length === 0 && <li className="px-4 py-3 text-sm text-hint">{formText(language, 'phone_none')}</li>}
                   {rows.map(({ item, index: mine }, position) => {
                     if (!item) return <li key={`sep-${position}`} role="separator" className="my-1 border-t border-white/10" />
                     return (

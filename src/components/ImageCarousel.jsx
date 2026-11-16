@@ -16,7 +16,7 @@ import { resolveText } from '../utils/multilingual'
 function ImageCarousel({ items = [] }) {
   const [index, setIndex] = useState(0)
   const [direction, setDirection] = useState(0)
-  const { language } = useI18n()
+  const { language, t } = useI18n()
 
   if (!items.length) return null
 
@@ -60,7 +60,7 @@ function ImageCarousel({ items = [] }) {
             <button
               type="button"
               onClick={() => goTo(index - 1, -1)}
-              aria-label="Previous photo"
+              aria-label={t('a11y_prev_photo')}
               className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 transition text-white text-xl"
             >
               ‹
@@ -68,7 +68,7 @@ function ImageCarousel({ items = [] }) {
             <button
               type="button"
               onClick={() => goTo(index + 1, 1)}
-              aria-label="Next photo"
+              aria-label={t('a11y_next_photo')}
               className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 transition text-white text-xl"
             >
               ›

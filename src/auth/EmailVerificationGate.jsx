@@ -90,7 +90,7 @@ function VerifyDialog({ t, onVerified }) {
       <div role="alertdialog" aria-modal="true" aria-labelledby="ve-title" className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0d1110] p-8 text-white shadow-2xl">
         <h1 id="ve-title" style={{ fontFamily: 'Bebas Neue' }} className="mb-4 text-center text-4xl">{t('ve_title')}</h1>
         <p className="text-base leading-relaxed text-gray-200">{t('ve_text', { email: user?.email || '' })}</p>
-        <p className="mt-2 text-sm text-gray-500">{t('ve_spam')}</p>
+        <p className="mt-2 text-sm text-hint">{t('ve_spam')}</p>
 
         <div className="mt-6 flex flex-col gap-3">
           <button ref={first} type="button" onClick={check} disabled={Boolean(busy)} className={`${button} bg-emerald-400 text-black hover:bg-emerald-300`}>

@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, useEffect, useRef, useState } from 'react'
+import { Children, cloneElement, isValidElement, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import DatePicker from 'react-datepicker'
@@ -79,9 +79,17 @@ function Field({ label, error, children, optional, required }) {
   const errorText = useErrorText()
   return (
     <FormField label={label} required={required} error={errorText(error)} suffix={optional ? t('ts_optional') : undefined}>
-      {({ id, describedBy, invalid }) => (isValidElement(children) && typeof children.type === 'string'
-        ? cloneElement(children, { id, 'aria-describedby': describedBy, 'aria-invalid': invalid || undefined, 'aria-required': required || undefined })
-        : children)}
+      {({ id, describedBy, invalid }) => {
+        // the FIRST native control among the children gets the id of the label (a field can also hold a note below the control)
+        let tied = false
+        return Children.map(children, child => {
+          if (!tied && isValidElement(child) && typeof child.type === 'string' && ['input', 'select', 'textarea'].includes(child.type)) {
+            tied = true
+            return cloneElement(child, { id, 'aria-describedby': describedBy, 'aria-invalid': invalid || undefined, 'aria-required': required || undefined })
+          }
+          return child
+        })
+      }}
     </FormField>
   )
 }
@@ -256,7 +264,7 @@ function TrialSession() {
     <div className="min-h-screen bg-black text-white">
       <Navbar />
 
-      <main className="mx-auto max-w-3xl px-5 pb-24 pt-36">
+      <main id="main" className="mx-auto max-w-3xl px-5 pb-24 pt-36">
         {/* The intro header is hidden once the request was sent, so only the confirmation card remains. */}
         {!done && !existing && (
           <>
@@ -278,7 +286,7 @@ function TrialSession() {
             </span>
             <h2 style={{ fontFamily: 'Bebas Neue' }} className="mb-3 text-4xl">{t('ts_ex_title')}</h2>
             <p className="mx-auto max-w-md text-gray-300">{t('ts_ex_generic')}</p>
-            <p className="mx-auto mt-3 max-w-md text-sm text-gray-500">{t('ts_ex_note')}</p>
+            <p className="mx-auto mt-3 max-w-md text-sm text-hint">{t('ts_ex_note')}</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Link to="/my-sessions" className="rounded-xl bg-white px-6 py-3 text-sm font-semibold uppercase tracking-wider text-black transition hover:bg-gray-200">{t('ts_ex_sessions')}</Link>
               <Link to="/" className="rounded-xl border border-white/20 px-6 py-3 text-sm uppercase tracking-wider transition hover:bg-white/10">{t('ts_home')}</Link>
@@ -358,7 +366,7 @@ function TrialSession() {
               </Field>
               <fieldset className="md:col-span-2">
                 <legend className="mb-2 block text-xs font-medium uppercase tracking-wider text-gray-400">
-                  {t('ts_goal')}<span className="ml-1 normal-case tracking-normal text-gray-600">{t('ts_goal_hint')}</span>
+                  {t('ts_goal')}<span className="ml-1 normal-case tracking-normal text-hint">{t('ts_goal_hint')}</span>
                 </legend>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {GOALS.map((goal, index) => {

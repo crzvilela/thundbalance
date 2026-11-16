@@ -92,7 +92,7 @@ export default function ChangePassword({ user, banner = null, onChanged }) {
       {banner}
       <div className="mb-8 border-b border-white/10 pb-6">
         <h2 id="change-password-title" className="text-xl font-semibold">{t('cp_title')}</h2>
-        <p className="mt-2 text-sm text-gray-500">{t('cp_intro')}</p>
+        <p className="mt-2 text-sm text-hint">{t('cp_intro')}</p>
       </div>
 
       <form onSubmit={submit} noValidate>
@@ -114,7 +114,7 @@ export default function ChangePassword({ user, banner = null, onChanged }) {
                   <EyeIcon off={!!visible[name]} />
                 </button>
               </div>
-              {name === 'next' && <p className="mt-2 text-xs text-gray-500">{t('cp_hint')}</p>}
+              {name === 'next' && <p className="mt-2 text-xs text-hint">{t('cp_hint')}</p>}
             </div>
           ))}
         </div>

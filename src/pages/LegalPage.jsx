@@ -28,9 +28,9 @@ export default function LegalPage({ page }) {
         <Link to="/" className="text-sm text-emerald-300 underline underline-offset-2">← {ui.back}</Link>
         <LanguageSwitcher />
       </header>
-      <main className="mx-auto max-w-3xl px-4 pb-16">
+      <main id="main" className="mx-auto max-w-3xl px-4 pb-16">
         <h1 className="text-3xl font-semibold sm:text-4xl">{title}</h1>
-        <p className="mt-2 text-sm text-gray-500">{ui.updated}: {dateFor(page, language, documents, settings)}</p>
+        <p className="mt-2 text-sm text-hint">{ui.updated}: {dateFor(page, language, documents, settings)}</p>
         {pending > 0 && <p role="note" className="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">{ui.pendingNotice} ({pending})</p>}
         <LegalBlocks text={body} settings={settings} admin={admin} />
         {page === 'cookies' && (

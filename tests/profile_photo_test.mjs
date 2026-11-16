@@ -18,16 +18,16 @@ test('uploads a multipart photo with the authenticated token', async () => {
 
 test('explains when the deployed backend does not have the upload route', async () => {
   for (const status of [404, 405]) {
-    await assert.rejects(uploadProfilePhoto({ ...options, fetchImpl: async () => new Response('Not Found', { status }) }), /publicar a atualização da API/)
+    await assert.rejects(uploadProfilePhoto({ ...options, fetchImpl: async () => new Response('Not Found', { status }) }), { message: "pf_up_unavailable" })
   }
 })
 
 test('handles expired authentication and malformed server responses', async () => {
-  await assert.rejects(uploadProfilePhoto({ ...options, fetchImpl: async () => new Response('', { status: 401 }) }), /sessão expirou/)
-  await assert.rejects(uploadProfilePhoto({ ...options, fetchImpl: async () => new Response('<html>Bad Gateway</html>', { status: 502 }) }), /não conseguiu processar/)
-  await assert.rejects(uploadProfilePhoto({ ...options, fetchImpl: async () => Response.json({ message: 'ok' }) }), /não confirmou/)
+  await assert.rejects(uploadProfilePhoto({ ...options, fetchImpl: async () => new Response('', { status: 401 }) }), { message: "pf_err_signin" })
+  await assert.rejects(uploadProfilePhoto({ ...options, fetchImpl: async () => new Response('<html>Bad Gateway</html>', { status: 502 }) }), { message: "pf_up_server" })
+  await assert.rejects(uploadProfilePhoto({ ...options, fetchImpl: async () => Response.json({ message: 'ok' }) }), { message: "pf_up_unconfirmed" })
 })
 
 test('shows connection failures without claiming the photo was saved', async () => {
-  await assert.rejects(uploadProfilePhoto({ ...options, fetchImpl: async () => { throw new TypeError('fetch failed') } }), /ligar ao servidor/)
+  await assert.rejects(uploadProfilePhoto({ ...options, fetchImpl: async () => { throw new TypeError('fetch failed') } }), { message: "pf_up_connection" })
 })

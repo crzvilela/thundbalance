@@ -34,7 +34,7 @@ export default function SessionTypeSection({ value, onChange, errors = {}, disab
               onChange={email => onChange({ email })}
             />
           </div>
-          <p className="text-xs text-gray-500">{t('st_second_note')}</p>
+          <p className="text-xs text-hint">{t('st_second_note')}</p>
         </>
       )}
     </div>

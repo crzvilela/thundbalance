@@ -99,7 +99,7 @@ export default function InboxBell({ unread }) {
                       <span className="min-w-0 flex-1">
                         <span className={`block truncate text-sm ${item.read ? 'text-gray-200' : 'font-semibold text-white'}`}>{item.title}</span>
                         <span className="mt-0.5 block truncate text-xs text-gray-400">{preview(item.body, 80)}</span>
-                        <time dateTime={item.date} title={fullDate(item.date, locale)} className="mt-1 block text-[11px] text-gray-500">{relativeTime(item.date, panel.at, locale)}</time>
+                        <time dateTime={item.date} title={fullDate(item.date, locale)} className="mt-1 block text-[11px] text-hint">{relativeTime(item.date, panel.at, locale)}</time>
                       </span>
                     </span>
                   </Link>

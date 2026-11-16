@@ -4,11 +4,13 @@ import { signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import { auth } from '../../firebase/auth'
 import { ADMIN_EMAIL } from '../../config'
 import { useAdminText } from '../../admin/useAdminText'
+import { useDocumentLanguage } from '../../utils/documentLanguage'
 import { Button, Field, TextInput } from '../../admin/ui'
 import '../../admin/admin.css'
 
 export default function AdminLogin() {
   const { t, language, setLanguage } = useAdminText()
+  useDocumentLanguage(language)
   const navigate = useNavigate()
   const location = useLocation()
   const [email, setEmail] = useState('')
@@ -39,7 +41,7 @@ export default function AdminLogin() {
   }
 
   return (
-    <main className="admin-shell relative flex min-h-screen items-center justify-center px-4 py-10 text-white">
+    <main id="main" className="admin-shell relative flex min-h-screen items-center justify-center px-4 py-10 text-white">
       <div className="absolute right-4 top-4 flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="group" aria-label="Language">
         {['en', 'es'].map(code => (
           <button key={code} type="button" onClick={() => setLanguage(code)} aria-pressed={language === code}

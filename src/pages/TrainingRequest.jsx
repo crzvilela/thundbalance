@@ -134,7 +134,7 @@ function TrainingRequest() {
 
       <Navbar />
 
-      <div className="max-w-4xl mx-auto pt-28 sm:pt-36 px-5 sm:px-6 pb-16">
+      <main id="main" className="max-w-4xl mx-auto pt-28 sm:pt-36 px-5 sm:px-6 pb-16">
 
         <TempPasswordNotice />
 
@@ -156,11 +156,12 @@ function TrainingRequest() {
 
           <div className="mb-8">
 
-            <label className="block mb-2 text-gray-400">
+            <label htmlFor="tr-pack" className="block mb-2 text-gray-400">
               {t('tr_package')}
             </label>
 
             <select
+              id="tr-pack"
               value={chosenPack ? String(chosenPack.id) : ''}
               onChange={(e) =>
                 setPackId(e.target.value)
@@ -176,11 +177,12 @@ function TrainingRequest() {
 
           <div className="mb-8">
 
-            <label className="block mb-2 text-gray-400">
+            <label htmlFor="tr-week" className="block mb-2 text-gray-400">
               {t('tr_sessions_week')}
             </label>
 
             <select
+              id="tr-week"
               value={effectivePerWeek}
               onChange={(e) =>
                 setSessionsPerWeek(
@@ -205,7 +207,7 @@ function TrainingRequest() {
               className="mt-6 rounded-xl border border-white/10 p-4" value={entries} availability={availability.data}
               text={t} dayLabel={day => t(`wd_${day}`)} locale={language}
             />
-            {entries.length > 0 && <p className="mt-2 text-sm text-gray-500">{t('ps_note')}</p>}
+            {entries.length > 0 && <p className="mt-2 text-sm text-hint">{t('ps_note')}</p>}
 
           </div>
 
@@ -241,7 +243,7 @@ function TrainingRequest() {
 
         </div>
 
-      </div>
+      </main>
 
     </div>
 

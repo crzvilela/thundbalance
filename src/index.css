@@ -1,5 +1,30 @@
 @import "tailwindcss";
 
+/* Secondary text ("hint"): the minimum grey that reaches 4.5:1 on the dark pages (the old gray-500 / gray-600 gave 2.7 to 4.3).
+   The admin's light theme gets its own value (see admin-light.css), so the same class reads well on white. */
+@theme {
+  --color-hint: #7b8494;
+}
+
+/* Focus (WCAG 2.4.7): a control that hid its outline WITHOUT drawing a ring or a border of its own still shows where the keyboard is. */
+:root { --focus-ring: #34d399; }
+.admin-light { --focus-ring: #047857; }
+:is(.outline-none, [class*="focus:outline-none"], [class*="focus-visible:outline-none"]):focus-visible:not([class*="focus:ring"]):not([class*="focus-visible:ring"]):not([class*="focus:border"]):not([class*="focus-visible:border"]) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Motion (WCAG 2.3.3): whoever asks for less motion gets none: no animations, no transitions, no smooth scrolling. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 body {
   font-family: 'Inter', sans-serif;
   background-color: black;
@@ -90,6 +115,12 @@ html {
 
   position: relative;
 
+}
+
+/* days of the neighbouring months: dimmer, but still readable (4.5:1) */
+.react-calendar .react-calendar__month-view__days__day--neighboringMonth,
+.react-calendar .react-calendar__month-view__days__day--neighboringMonth .tabular-nums {
+  color: var(--color-hint);
 }
 
 .react-calendar__tile:hover {

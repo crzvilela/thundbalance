@@ -11,7 +11,7 @@ function BarChart({ title, bars, label, valueText, color, emptyText }) {
     <section className={`${CARD} min-w-0 p-5`}>
       <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">{title}</h3>
       {total === 0 ? (
-        <p className="py-10 text-center text-sm text-gray-500">{emptyText}</p>
+        <p className="py-10 text-center text-sm text-hint">{emptyText}</p>
       ) : (
         <ul className="flex h-44 items-end gap-1 sm:gap-1.5" aria-label={title}>
           {bars.map(bar => (
@@ -20,7 +20,7 @@ function BarChart({ title, bars, label, valueText, color, emptyText }) {
               <span className="sr-only">{label(bar)}: {valueText(bar.value)}</span>
               <span aria-hidden="true" className="block w-full rounded-t-md transition-[height]"
                 style={{ height: `${Math.round((bar.value / max) * 100)}%`, minHeight: bar.value ? 4 : 2, background: bar.value ? color : 'rgba(255,255,255,0.08)' }} />
-              <span aria-hidden="true" className="mt-1 truncate text-[10px] text-gray-500 sm:text-xs">{label(bar)}</span>
+              <span aria-hidden="true" className="mt-1 truncate text-[10px] text-hint sm:text-xs">{label(bar)}</span>
             </li>
           ))}
         </ul>

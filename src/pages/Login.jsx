@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { API_URL } from '../config'
 import { authFetch } from '../api/authFetch'
@@ -23,6 +23,8 @@ function Login() {
   const legal = uiText(language)
   const [problem, setProblem] = useState('')            // a text key: the error is a line in the form, never a pop-up
 
+  const emailField = useRef(null)
+  const passwordField = useRef(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
 
@@ -43,7 +45,9 @@ function Login() {
 
     } catch (error) {
 
-      setProblem(loginErrorKey(error) || '')
+      const key = loginErrorKey(error) || ''
+      setProblem(key)
+      if (key) (key === 'lgn_err_email' ? emailField : passwordField).current?.focus()      // the focus goes to the field to fix
 
     }
 
@@ -95,7 +99,7 @@ function Login() {
 
   return (
 
-    <div className="min-h-screen bg-black text-white flex items-center justify-center px-6">
+    <main id="main" className="min-h-screen bg-black text-white flex items-center justify-center px-6">
 
       <div className="w-full max-w-md border border-white/10 p-10">
 
@@ -103,7 +107,7 @@ function Login() {
           style={{ fontFamily: 'Bebas Neue' }}
           className="text-5xl mb-10 text-center"
         >
-          Login
+          {t('lgn_title')}
         </h1>
 
         <form
@@ -111,31 +115,46 @@ function Login() {
           className="flex flex-col gap-6"
         >
 
+          {/* the labels are read by screen readers; the look keeps the placeholders */}
+          <label htmlFor="login-email" className="sr-only">{t('lgn_email_label')}</label>
           <input
+            id="login-email"
+            ref={emailField}
+            name="email"
             type="email"
-            placeholder="Email"
+            autoComplete="username"
+            placeholder={t('lgn_email')}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            aria-invalid={problem ? true : undefined}
+            aria-describedby={problem ? 'login-error' : undefined}
             className="bg-transparent border border-white/20 px-6 py-4 outline-none"
             required
           />
 
+          <label htmlFor="login-password" className="sr-only">{t('lgn_password_label')}</label>
           <input
+            id="login-password"
+            ref={passwordField}
+            name="password"
             type="password"
-            placeholder="Password"
+            autoComplete="current-password"
+            placeholder={t('lgn_password')}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            aria-invalid={problem ? true : undefined}
+            aria-describedby={problem ? 'login-error' : undefined}
             className="bg-transparent border border-white/20 px-6 py-4 outline-none"
             required
           />
 
-          {problem && <p role="alert" className="text-sm text-red-300">{t(problem)}</p>}
+          {problem && <p id="login-error" role="alert" className="text-sm text-red-300">{t(problem)}</p>}
 
           <button
             type="submit"
             className="bg-white text-black py-4 uppercase tracking-[3px] hover:bg-gray-300 transition duration-300"
           >
-            Sign In
+            {t('lgn_submit')}
           </button>
 
           <button
@@ -143,7 +162,7 @@ function Login() {
             onClick={handleGoogleLogin}
             className="border border-white/20 py-4 uppercase tracking-[3px] hover:bg-white hover:text-black transition duration-300"
           >
-            Continue With Google
+            {t('lgn_google')}
           </button>
 
           <p className="text-center text-xs leading-relaxed text-gray-500">
@@ -154,13 +173,13 @@ function Login() {
 
           <p className="text-center text-gray-400 text-sm mt-4">
 
-            Don’t have an account?{" "}
+            {t('lgn_no_account')}{" "}
 
             <Link
               to="/register"
               className="inline-block py-2 text-white hover:text-gray-300"
             >
-              Register
+              {t('lgn_register')}
             </Link>
 
           </p>
@@ -169,7 +188,7 @@ function Login() {
 
       </div>
 
-    </div>
+    </main>
 
   )
 

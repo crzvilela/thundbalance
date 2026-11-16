@@ -7,20 +7,20 @@ export async function uploadProfilePhoto({ apiUrl, userId, token, file, fetchImp
       method: 'POST', headers: { Authorization: `Bearer ${token}` }, body,
     })
   } catch {
-    throw new Error('Não foi possível ligar ao servidor. Verifique a ligação e tente novamente.')
+    throw new Error('pf_up_connection')
   }
   if (response.status === 404 || response.status === 405) {
-    throw new Error('O servidor ainda não tem o carregamento de fotos disponível. É necessário publicar a atualização da API.')
+    throw new Error('pf_up_unavailable')
   }
-  if (response.status === 401) throw new Error('A sessão expirou. Inicie sessão novamente para carregar a foto.')
-  if (response.status === 413) throw new Error('A foto é demasiado grande. Escolha uma imagem até 5 MB.')
+  if (response.status === 401) throw new Error('pf_err_signin')
+  if (response.status === 413) throw new Error('pf_err_image')
   let result
   try { result = await response.json() } catch {
-    throw new Error('O servidor não conseguiu processar a foto. Tente novamente mais tarde.')
+    throw new Error('pf_up_server')
   }
-  if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Não foi possível carregar a foto. Tente novamente.')
+  if (!response.ok) throw new Error(response.status === 400 ? 'pf_err_image' : 'pf_up_failed')       // the server's own sentence is in English: not shown
   if (typeof result.url !== 'string' || !result.url.startsWith('/uploads/')) {
-    throw new Error('O servidor não confirmou a gravação da foto. Tente novamente.')
+    throw new Error('pf_up_unconfirmed')
   }
   return result.url
 }

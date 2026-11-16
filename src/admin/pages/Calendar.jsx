@@ -22,6 +22,12 @@ import '../calendar/calendar.css'
 const VIEWS = ['dayGridMonth', 'timeGridWeek', 'timeGridDay']
 const TIME_FORMAT = { hour: '2-digit', minute: '2-digit', hour12: false }
 
+// FullCalendar draws the arrows as <span role="img"> with no name (the buttons carry the text): the icons are hidden from screen readers.
+function tidyCalendarAccessibility(root) {
+  if (!root) return
+  root.querySelectorAll('.fc-icon').forEach(icon => { icon.removeAttribute('role'); icon.setAttribute('aria-hidden', 'true') })
+}
+
 function useMobile() {
   const [mobile, setMobile] = useState(() => (typeof window !== 'undefined' && window.matchMedia(MOBILE_QUERY).matches))
   useEffect(() => {
@@ -108,6 +114,17 @@ export default function Calendar() {
   // 30-minute rows while they stay readable, hourly rows on a short screen (a session is one hour, on the hour)
   const slotDuration = mobile ? '00:30:00' : slotDurationFor(fitHeight ?? 10000, studio)
   useEffect(() => { calendar.current?.getApi().updateSize() }, [fitHeight, slotDuration])
+
+  // FullCalendar redraws its toolbar and grid whenever the view changes: the accessibility fixes are applied again each time
+  useEffect(() => {
+    const root = frame.current
+    if (!root) return undefined
+    const run = () => tidyCalendarAccessibility(root)
+    run()
+    const observer = new MutationObserver(run)
+    observer.observe(root, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [language])
 
   const headerToolbar = mobile
     ? { left: 'prev,next', center: 'title', right: 'today' }
@@ -202,6 +219,7 @@ export default function Calendar() {
                 {...(date ? { initialDate: date } : {})}
                 locale={language === 'es' ? esLocale : enGbLocale}
                 buttonText={{ today: t('ac_today'), month: t('ac_month'), week: t('ac_week'), day: t('ac_day') }}
+                buttonHints={{ prev: t('ac_prev'), next: t('ac_next') }}
                 moreLinkText={(number) => `+${number} ${t('ac_more')}`}
                 headerToolbar={headerToolbar}
                 footerToolbar={footerToolbar}

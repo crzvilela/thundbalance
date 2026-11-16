@@ -35,6 +35,10 @@ const fields = [
 ]
 const button = 'rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-50 disabled:cursor-wait'
 
+// An error shown to the person is always a text KEY of the site (pageText.js): anything else (a network error of the browser, in English)
+// becomes the generic one.
+const textKey = (error, fallback) => (String(error?.message || '').startsWith('pf_') ? error.message : fallback)
+
 function Profile() {
   const navigate = useNavigate()
   const { t, language } = useI18n()
@@ -67,7 +71,7 @@ function Profile() {
         const data = await result.json()
         if (!data.id) throw new Error('pf_err_unavailable')
         if (active) { setProfile(data); setDraft(data) }
-      } catch (err) { if (active) setError(err.message) }
+      } catch (err) { if (active) setError(textKey(err, 'pf_err_account')) }
       finally { if (active) setLoading(false) }
     })
     return () => { active = false; unsubscribe() }
@@ -124,7 +128,7 @@ function Profile() {
       const saved = { ...draft, tax_id: normalizeTaxId(draft.tax_id) || null, tax_id_type: normalizeTaxId(draft.tax_id) ? (draft.tax_id_type || DEFAULT_TAX_ID_TYPE) : null }
       if (String(saved.telefone || '').startsWith('+')) saved.codigo_pais = callingCodeOf(saved.telefone)
       setProfile(saved); setDraft(saved); setEditing(false); setFieldErrors({}); setNotice('pf_updated')
-    } catch (err) { setError(err.message) }
+    } catch (err) { setError(textKey(err, 'pf_err_save')) }
     finally { setSaving(false) }
   }
 
@@ -153,7 +157,7 @@ function Profile() {
       } catch {
         setNotice('pf_photo_saved')
       }
-    } catch (err) { setError(err.message) }
+    } catch (err) { setError(textKey(err, 'pf_up_failed')) }
     finally { setUploading(false); setPreview('') }
   }
 
@@ -165,7 +169,7 @@ function Profile() {
   return <LandingContentProvider mode="view" version="published">
     <div className="min-h-screen bg-[#080a09] text-white">
       <Navbar />
-      <main className="relative mx-auto max-w-6xl px-5 pb-20 pt-36 md:pt-44">
+      <main id="main" className="relative mx-auto max-w-6xl px-5 pb-20 pt-36 md:pt-44">
         <div className="pointer-events-none absolute left-0 top-20 h-64 w-64 rounded-full bg-emerald-500/5 blur-3xl" />
         <TempPasswordNotice showLink={false} />
         <header className="relative mb-9">
@@ -188,11 +192,11 @@ function Profile() {
               <span className="mt-4 inline-block rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">{isAdmin ? t('pf_admin') : t('pf_member')}</span>
               <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadPhoto} aria-label={t('pf_upload_aria')} className="hidden" />
               <button type="button" onClick={() => fileInput.current?.click()} disabled={uploading || saving} className={`${button} mt-6 w-full border border-white/15 hover:bg-white/10`}>{uploading ? t('pf_uploading') : t('pf_change_photo')}</button>
-              <p className="mt-3 text-xs text-gray-500">{t('pf_photo_hint')}</p>
+              <p className="mt-3 text-xs text-hint">{t('pf_photo_hint')}</p>
               <div className="mt-7 border-t border-white/10 pt-6 text-left">
-                <p className="text-xs uppercase tracking-wider text-gray-500">{t('pf_current_plan')}</p>
+                <p className="text-xs uppercase tracking-wider text-hint">{t('pf_current_plan')}</p>
                 <p className="mt-2 text-sm font-medium">{profile.plano || t('pf_no_plan')}</p>
-                <p className="mt-4 text-xs text-gray-500">{t('pf_member_no', { id: profile.id })}</p>
+                <p className="mt-4 text-xs text-hint">{t('pf_member_no', { id: profile.id })}</p>
               </div>
               {isAdmin && <Link to="/admin" className={`${button} mt-6 block bg-emerald-400 text-black hover:bg-emerald-300`}>{t('pf_admin_link')}</Link>}
             </div>
@@ -200,7 +204,7 @@ function Profile() {
           <div className="min-w-0 space-y-6 self-start">
           <form ref={formRef} onSubmit={save} noValidate className="rounded-3xl border border-white/10 bg-white/[0.025] p-6 md:p-9">
             <div className="mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-6">
-              <div><h2 className="text-xl font-semibold">{t('pf_details')}</h2><p className="mt-2 text-sm text-gray-500">{t('pf_details_text')}</p></div>
+              <div><h2 className="text-xl font-semibold">{t('pf_details')}</h2><p className="mt-2 text-sm text-hint">{t('pf_details_text')}</p></div>
               {!editing && <button type="button" onClick={() => { setDraft(profile); setEditing(true); setNotice('') }} className={`${button} border border-white/15 hover:bg-white/10`}>{t('pf_edit')}</button>}
             </div>
             {editing ? <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
@@ -231,7 +235,7 @@ function Profile() {
             </div> : <div className="grid gap-6 sm:grid-cols-2">
               {fields.map(([key, label]) => <div key={key} className={key === 'morada' ? 'sm:col-span-2' : ''}>
                 <p className="mb-2 block text-xs font-medium uppercase tracking-wider text-gray-400">{t(label)}</p>
-                <p className={`min-h-12 rounded-xl bg-white/[0.025] px-4 py-3 text-sm ${profile[key] ? 'text-gray-200' : 'text-gray-500'}`}>
+                <p className={`min-h-12 rounded-xl bg-white/[0.025] px-4 py-3 text-sm ${profile[key] ? 'text-gray-200' : 'text-hint'}`}>
                   {key === 'tax_id_type' ? (profile.tax_id_type ? t(`pf_doc_${profile.tax_id_type}`) : t('pf_not_provided'))
                     : key === 'telefone' ? (profile.telefone ? formatPhone(profile.telefone, profile.codigo_pais) : t('pf_not_provided'))
                       : (profile[key] || t('pf_not_provided'))}

@@ -21,7 +21,7 @@ const STYLES = {
     chipOff: 'border-white/20',
     chip: 'min-h-[44px] px-4 py-2 rounded-lg border disabled:opacity-40',
     row: 'rounded-xl border border-white/10 p-4',
-    hint: 'mt-2 text-sm text-gray-500',
+    hint: 'mt-2 text-sm text-hint',
     warn: 'mt-2 text-sm text-amber-300',
     day: 'mb-3 font-medium text-white'
   },
@@ -32,7 +32,7 @@ const STYLES = {
     chipOff: 'border-white/10 text-gray-400 hover:border-white/25 hover:text-white',
     chip: 'min-h-[44px] rounded-full border px-4 py-2 text-sm transition disabled:opacity-40',
     row: 'rounded-xl border border-white/10 bg-white/[0.02] p-4',
-    hint: 'mt-1.5 text-sm text-gray-500',
+    hint: 'mt-1.5 text-sm text-hint',
     warn: 'mt-1.5 text-sm text-amber-300',
     day: 'mb-3 font-medium text-white'
   }

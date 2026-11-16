@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import ConsentGate from './ConsentGate'
+import { useI18n } from '../i18n/I18nContext'
 import { resolveImageUrl } from '../api/landingPage'
 import { getEmbedUrl, getInstagramEmbedUrl } from '../utils/videoEmbed'
 
@@ -7,6 +8,7 @@ import { getEmbedUrl, getInstagramEmbedUrl } from '../utils/videoEmbed'
 // "Dicas de Treino" grid and the admin manager's inline previews, so the
 // embed logic only lives in one place.
 function TrainingVideoPlayer({ source, url, className = '', compact = false }) {
+  const { t } = useI18n()
   if (!url) return null
 
   if (source === 'instagram') {
@@ -15,7 +17,7 @@ function TrainingVideoPlayer({ source, url, className = '', compact = false }) {
         <ConsentGate className="h-full" kind="video"><iframe
           src={getInstagramEmbedUrl(url)}
           className="w-full h-full rounded-lg border-0"
-          title="Instagram Reel"
+          title={t('a11y_reel')}
           scrolling="no"
           allow="autoplay; encrypted-media"
         /></ConsentGate>
@@ -29,7 +31,7 @@ function TrainingVideoPlayer({ source, url, className = '', compact = false }) {
         <ConsentGate className="h-full" kind="video"><iframe
           src={getEmbedUrl(url)}
           className="w-full h-full rounded-lg border-0"
-          title="Video"
+          title={t('a11y_video')}
           allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
         /></ConsentGate>

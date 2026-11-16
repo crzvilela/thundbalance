@@ -57,7 +57,7 @@ function CalendarSubscribe({ className = '' }) {
         <button type="button" onClick={copy} className="border border-white/20 px-4 py-2 rounded-lg">{copied ? t('cal_copied') : t('cal_copy')}</button>
       </div>
       <p className="text-sm text-gray-400 mb-4">{t('cal_delay')}</p>
-      <button type="button" onClick={regenerate} className="text-sm text-gray-500 underline">{t('cal_regenerate')}</button>
+      <button type="button" onClick={regenerate} className="text-sm text-hint underline">{t('cal_regenerate')}</button>
     </>}
   </section>
 }

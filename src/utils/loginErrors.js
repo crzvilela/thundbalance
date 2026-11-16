@@ -11,6 +11,19 @@ const CODES = {
 }
 const SILENT = new Set(['auth/popup-closed-by-user', 'auth/cancelled-popup-request'])
 
+const REGISTER_CODES = {
+  'auth/email-already-in-use': 'rg_err_exists',
+  'auth/weak-password': 'rg_err_weak',
+  'auth/invalid-email': 'rg_err_email',
+  'auth/network-request-failed': 'rg_err_network',
+  'auth/too-many-requests': 'rg_err_many',
+}
+
+// Registration problems: the same idea, with their own texts (the Firebase message is never shown: it is in English).
+export function registerErrorKey(error) {
+  return REGISTER_CODES[error?.code] || 'rg_err_generic'
+}
+
 export function loginErrorKey(error) {
   const code = error?.code
   if (SILENT.has(code)) return null

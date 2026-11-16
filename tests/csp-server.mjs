@@ -1,6 +1,7 @@
 // Serves a build of the site (dist/) WITH the real headers of vercel.json, to check the Content-Security-Policy in a browser.
 //
-//   node tests/csp-server.mjs [--dist dist] [--port 5173] [--api http://127.0.0.1:8000[,http://localhost:8000]]
+//   node tests/csp-server.mjs [--dist dist] [--port 5173] [--api http://127.0.0.1:8000[,http://localhost:8000]] [--axe axe.min.js]
+// --axe: also serves axe-core at /__axe.js and loads it in every page (the accessibility audit, docs/ACCESSIBILITY.md).
 //
 // - the headers are the ones of vercel.json (the policy that Vercel sends in production);
 // - --api: a build made with VITE_API_URL pointing at a local backend calls that address instead of Render; the policy then
@@ -35,12 +36,16 @@ export function productionHeaders(api) {
   return headers
 }
 
-export function start({ dist = 'dist', port = 5173, api = '' } = {}) {
+export function start({ dist = 'dist', port = 5173, api = '', axe = '' } = {}) {
   const base = resolve(root, dist)
   const headers = productionHeaders(api)
   const server = createServer(async (request, response) => {
     try {
       const path = decodeURIComponent(new URL(request.url, 'http://x').pathname)
+      if (path === '/__axe.js' && axe) {
+        response.writeHead(200, { 'Content-Type': 'text/javascript', ...headers })
+        return response.end(await readFile(axe))
+      }
       if (path === '/__csp_probe.js') {
         response.writeHead(200, { 'Content-Type': 'text/javascript', ...headers })
         return response.end(PROBE)
@@ -51,7 +56,7 @@ export function start({ dist = 'dist', port = 5173, api = '' } = {}) {
       if (!isFile) file = join(base, 'index.html')                                   // the site's rewrite: every path is the app
       let body = await readFile(file)
       const type = TYPES[extname(file).toLowerCase()] || 'application/octet-stream'
-      if (file.endsWith('index.html')) body = Buffer.from(body.toString('utf8').replace('<head>', '<head><script src="/__csp_probe.js"></script>'))
+      if (file.endsWith('index.html')) body = Buffer.from(body.toString('utf8').replace('<head>', `<head><script src="/__csp_probe.js"></script>${axe ? '<script src="/__axe.js"></script>' : ''}`))
       response.writeHead(200, { 'Content-Type': type, ...headers })
       response.end(body)
     } catch {
@@ -66,6 +71,6 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2)
   const option = (name, fallback) => (args.includes(name) ? args[args.indexOf(name) + 1] : fallback)
   const port = Number(option('--port', '5173'))
-  await start({ dist: option('--dist', 'dist'), port, api: option('--api', '') })
+  await start({ dist: option('--dist', 'dist'), port, api: option('--api', ''), axe: option('--axe', '') })
   console.log(`CSP check server: http://127.0.0.1:${port}/  (dist=${option('--dist', 'dist')})`)
 }

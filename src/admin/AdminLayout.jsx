@@ -15,6 +15,7 @@ import { useEditMode } from './editModeContext'
 import { useMenuItems } from './uiSettingsContext'
 import { ToastContext } from './toastContext'
 import { useAdminText } from './useAdminText'
+import { useDocumentLanguage } from '../utils/documentLanguage'
 import { useAdminResource } from './useAdminResource'
 import { normalizeRequests } from './requests'
 import './admin.css'
@@ -63,6 +64,7 @@ export default function AdminLayout() {
 
 function AdminShell() {
   const { t, language, setLanguage } = useAdminText()
+  useDocumentLanguage(language)                   // <html lang> follows the admin's language while the panel is open
   const { items: menuItems, customizeLabel } = useMenuItems()
   const edit = useEditMode()                       // edit mode of the panel (only for the main admin)
   const [editLeaving, setEditLeaving] = useState(null)       // leaving the admin with unsaved panel changes: where to go ('/' or 'logout')
@@ -203,7 +205,7 @@ function AdminShell() {
           </div>
         )}
 
-        <main className={`px-4 py-8 sm:px-8 lg:ml-64 lg:px-10 lg:py-10 ${edit?.isEditing ? 'pb-32' : ''}`}>
+        <main id="main" className={`px-4 py-8 sm:px-8 lg:ml-64 lg:px-10 lg:py-10 ${edit?.isEditing ? 'pb-32' : ''}`}>
           <div className="mx-auto max-w-6xl">
             <AdminErrorBoundary><Outlet context={{ requests, requestsResource, trials, trialsResource, messagesResource, scheduleResource }} /></AdminErrorBoundary>
           </div>

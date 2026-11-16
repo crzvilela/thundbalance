@@ -23,7 +23,7 @@ function Home() {
 
         <Navbar />
 
-        <LandingSections />
+        <main id="main"><LandingSections /></main>
 
         <Footer />
 

@@ -27,11 +27,11 @@ export default function FormField({ label, required = false, hint, error, suffix
             {label}
             {required && <span className="ml-1 text-red-300" aria-hidden="true">*</span>}
           </span>
-          {suffix && <span className="normal-case tracking-normal text-gray-500">{suffix}</span>}
+          {suffix && <span className="normal-case tracking-normal text-hint">{suffix}</span>}
         </label>
       )}
       {children({ id: fieldId, describedBy, invalid: Boolean(error), required })}
-      {hint && <p id={hintId} className="mt-1.5 text-xs text-gray-500">{hint}</p>}
+      {hint && <p id={hintId} className="mt-1.5 text-xs text-hint">{hint}</p>}
       <p id={errorId} role={error ? 'alert' : undefined} className="mt-1.5 flex min-h-[1.25rem] items-start gap-1.5 text-sm text-red-300">
         {error && (<><ErrorIcon /><span>{error}</span></>)}
       </p>

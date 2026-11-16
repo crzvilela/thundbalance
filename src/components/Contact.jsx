@@ -123,7 +123,7 @@ function Contact({ sectionId }) {
         {!isEditMode && <p className="-mt-4 flex flex-wrap justify-between gap-x-4 text-left text-xs text-gray-500"><span>{uiText(language).freeTextWarning}</span><span aria-live="polite">{formText(language, 'characters', { n: messageLength, max: MESSAGE_MAX })}</span></p>}
         {!isEditMode && <FieldError id={`${sectionId}-message-error`} text={fieldErrors.message} />}
         {!isEditMode && <ConsentCheckbox light checked={accepted} error={consentError} onChange={(value) => { setAccepted(value); if (value) setConsentError('') }} />}
-        <EditableText as="button" path={`sections.${sectionId}.buttonText`} label="Contact Send Button" disabled={!isEditMode && (status === 'sending' || !accepted)} style={{ fontFamily: theme.typography.accentFont }} className="mt-10 border border-black px-10 py-4 uppercase text-sm tracking-[3px] hover:bg-black hover:text-white transition-all duration-300 disabled:opacity-50" />
+        <EditableText as="button" path={`sections.${sectionId}.buttonText`} label="Contact Send Button" fallback={t('contact_send')} disabled={!isEditMode && (status === 'sending' || !accepted)} style={{ fontFamily: theme.typography.accentFont }} className="mt-10 min-h-[44px] border border-black px-10 py-4 uppercase text-sm tracking-[3px] hover:bg-black hover:text-white transition-all duration-300 disabled:opacity-50" />
         <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" className="absolute left-[-9999px] h-0 w-0 opacity-0" />
         {status === 'sending' && <p role="status" className="text-sm text-gray-500">{t('contact_sending')}</p>}
         {status === 'sent' && <p role="status" className="text-sm text-emerald-700">{t('contact_sent')}</p>}

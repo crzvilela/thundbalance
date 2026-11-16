@@ -58,12 +58,12 @@ export default function TrainerChoice({
     <div>
       {showSelect && (
         <>
-          <label htmlFor={id} className={labelClass}>{t('tc_label')}<span className="ml-1 normal-case tracking-normal text-gray-500">{t('tc_optional')}</span></label>
+          <label htmlFor={id} className={labelClass}>{t('tc_label')}<span className="ml-1 normal-case tracking-normal text-hint">{t('tc_optional')}</span></label>
           <select id={id} value={value || ''} disabled={disabled} onChange={event => onChange(event.target.value ? Number(event.target.value) : '')} className={selectClass}>
             <option value="">{t('tc_no_preference')}</option>
             {trainers.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
-          {!value && <p className="mt-2 text-sm text-gray-500">{t('tc_hint')}</p>}
+          {!value && <p className="mt-2 text-sm text-hint">{t('tc_hint')}</p>}
         </>
       )}
 

@@ -34,11 +34,10 @@ export function PackLabel({ name, className = '' }) {
 }
 
 export function SessionRow({ session, status, onOpen }) {
-  const { t, locale } = useI18n()
+  const { locale } = useI18n()
   return (
     <button
       type="button" onClick={() => onOpen(session)}
-      aria-label={t('ms_open_session', { date: `${formatDay(session.date, locale)}, ${formatTime(session.time)}` })}
       className={`group flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-black/30 p-3.5 text-left transition hover:border-emerald-400/40 hover:bg-emerald-400/[0.04] sm:gap-4 sm:p-4 ${FOCUS} ${status === 'completed' || status === 'cancelled' ? 'opacity-70' : ''}`}
     >
       <span className="min-w-0 flex-1">
@@ -51,7 +50,7 @@ export function SessionRow({ session, status, onOpen }) {
         <PackLabel name={session.packName} className="mt-1" />
       </span>
       <StatusBadge status={status} className="shrink-0" />
-      <span aria-hidden="true" className="text-gray-500 transition group-hover:translate-x-0.5 group-hover:text-emerald-300">→</span>
+      <span aria-hidden="true" className="text-hint transition group-hover:translate-x-0.5 group-hover:text-emerald-300">→</span>
     </button>
   )
 }

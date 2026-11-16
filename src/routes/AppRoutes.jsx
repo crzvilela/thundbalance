@@ -5,6 +5,7 @@ import Home from '../pages/Home'
 import Login from '../pages/Login'
 import RequireAdmin from '../components/admin/RequireAdmin'
 import ConsentBanner from '../components/ConsentBanner'
+import SkipLink from '../components/SkipLink'
 import { NotForTrainers, TrainerRoute } from '../roles/RoleGuards'
 const Register = lazy(() => import('../pages/Register'))
 const Dashboard = lazy(() => import('../pages/Dashboard'))
@@ -42,6 +43,7 @@ function AppRoutes() {
   return (
     <BrowserRouter>
 
+      <SkipLink />
       <Suspense fallback={<div className="min-h-screen bg-black" aria-busy="true" />}>
       <Routes>
 

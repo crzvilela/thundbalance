@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import ConsentGate from './ConsentGate'
+import { useI18n } from '../i18n/I18nContext'
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 const PLACE_QUERY = 'ThundBalance, Carrer de Pallars 286, Barcelona, Spain'
@@ -64,6 +65,7 @@ export default function GoogleReviews() {
 }
 
 function GoogleReviewsContent() {
+  const { t } = useI18n()
   const [placeId, setPlaceId] = useState('')
   const [useElfsight, setUseElfsight] = useState(!GOOGLE_MAPS_API_KEY)
 
@@ -105,7 +107,7 @@ function GoogleReviewsContent() {
   if (useElfsight) return <ElfsightReviews />
 
   if (!placeId) {
-    return <div className="h-56 rounded-xl border border-white/10 bg-white/5 animate-pulse" aria-label="Loading Google reviews" />
+    return <div className="h-56 rounded-xl border border-white/10 bg-white/5 animate-pulse" aria-label={t('a11y_loading_reviews')} />
   }
 
   return (

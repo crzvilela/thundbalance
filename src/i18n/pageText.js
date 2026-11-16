@@ -6,6 +6,27 @@
 
 export const pageText = {
   en: {
+    a11y_skip: 'Skip to main content',
+    lgn_email_label: 'Email address', lgn_password_label: 'Password',
+    // names read by screen readers (they used to be fixed in English)
+    a11y_social: 'Social and contact links', a11y_legal: 'Legal', a11y_loading_reviews: 'Loading Google reviews',
+    a11y_prev_photo: 'Previous photo', a11y_next_photo: 'Next photo', a11y_profile_photo: 'Profile',
+    a11y_video: 'Video', a11y_reel: 'Instagram Reel',
+    pf_up_connection: 'Could not reach the server. Check your connection and try again.',
+    pf_up_unavailable: 'Photo upload is not available yet. Please try again later.',
+    pf_up_server: 'The server could not process the photo. Please try again later.',
+    pf_up_failed: 'Could not upload the photo. Please try again.',
+    pf_up_unconfirmed: 'The server did not confirm that the photo was saved. Please try again.',
+    // Login and registration (texts that used to be fixed in English)
+    lgn_title: 'Login', lgn_email: 'Email', lgn_password: 'Password', lgn_submit: 'Sign In',
+    lgn_google: 'Continue With Google', lgn_no_account: "Don't have an account?", lgn_register: 'Register',
+    rg_title: 'Register', rg_submit: 'Create Account', rg_have_account: 'Already have an account?', rg_login: 'Login',
+    rg_err_exists: 'This email already has an account. Try logging in instead.',
+    rg_err_weak: 'The password must have at least 6 characters.',
+    rg_err_email: 'Enter a valid email address.',
+    rg_err_network: 'Connection problem. Check your internet and try again.',
+    rg_err_many: 'Too many attempts. Please wait a few minutes and try again.',
+    rg_err_generic: 'We could not create your account. Please try again.',
     // Verify your email (shown only when the server says the address is not verified and has data under it)
     ve_title: 'Verify your email',
     ve_text: 'To access your data, verify your email {email}. Press "Resend email" to receive the link, open it, then come back and press "I have verified".',
@@ -374,6 +395,27 @@ export const pageText = {
   },
 
   es: {
+    a11y_skip: 'Saltar al contenido principal',
+    lgn_email_label: 'Correo electrónico', lgn_password_label: 'Contraseña',
+    // nombres que leen los lectores de pantalla (antes estaban fijos en inglés)
+    a11y_social: 'Redes sociales y contacto', a11y_legal: 'Legal', a11y_loading_reviews: 'Cargando reseñas de Google',
+    a11y_prev_photo: 'Foto anterior', a11y_next_photo: 'Foto siguiente', a11y_profile_photo: 'Perfil',
+    a11y_video: 'Vídeo', a11y_reel: 'Reel de Instagram',
+    pf_up_connection: 'No se pudo conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.',
+    pf_up_unavailable: 'La subida de fotos todavía no está disponible. Inténtalo más tarde.',
+    pf_up_server: 'El servidor no pudo procesar la foto. Inténtalo más tarde.',
+    pf_up_failed: 'No se pudo subir la foto. Inténtalo de nuevo.',
+    pf_up_unconfirmed: 'El servidor no confirmó que la foto se guardara. Inténtalo de nuevo.',
+    // Inicio de sesión y registro (textos que estaban fijos en inglés)
+    lgn_title: 'Iniciar sesión', lgn_email: 'Correo electrónico', lgn_password: 'Contraseña', lgn_submit: 'Entrar',
+    lgn_google: 'Continuar con Google', lgn_no_account: '¿No tienes cuenta?', lgn_register: 'Regístrate',
+    rg_title: 'Registro', rg_submit: 'Crear cuenta', rg_have_account: '¿Ya tienes cuenta?', rg_login: 'Inicia sesión',
+    rg_err_exists: 'Este correo ya tiene una cuenta. Prueba a iniciar sesión.',
+    rg_err_weak: 'La contraseña debe tener al menos 6 caracteres.',
+    rg_err_email: 'Introduce un correo electrónico válido.',
+    rg_err_network: 'Problema de conexión. Revisa tu internet e inténtalo de nuevo.',
+    rg_err_many: 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.',
+    rg_err_generic: 'No hemos podido crear tu cuenta. Inténtalo de nuevo.',
     // Verifica tu email (solo si el servidor dice que el correo no está verificado y tiene datos)
     ve_title: 'Verifica tu email',
     ve_text: 'Para acceder a tus datos, verifica tu email {email}. Pulsa «Reenviar email» para recibir el enlace, ábrelo y vuelve aquí para pulsar «Ya lo verifiqué».',
@@ -736,6 +778,27 @@ export const pageText = {
   },
 
   ca: {
+    a11y_skip: 'Salta al contingut principal',
+    lgn_email_label: 'Correu electrònic', lgn_password_label: 'Contrasenya',
+    // noms que llegeixen els lectors de pantalla (abans eren fixos en anglès)
+    a11y_social: 'Xarxes socials i contacte', a11y_legal: 'Legal', a11y_loading_reviews: 'Carregant ressenyes de Google',
+    a11y_prev_photo: 'Foto anterior', a11y_next_photo: 'Foto següent', a11y_profile_photo: 'Perfil',
+    a11y_video: 'Vídeo', a11y_reel: "Reel d'Instagram",
+    pf_up_connection: 'No s\'ha pogut connectar amb el servidor. Revisa la teva connexió i torna-ho a provar.',
+    pf_up_unavailable: 'La pujada de fotos encara no està disponible. Torna-ho a provar més tard.',
+    pf_up_server: 'El servidor no ha pogut processar la foto. Torna-ho a provar més tard.',
+    pf_up_failed: 'No s\'ha pogut pujar la foto. Torna-ho a provar.',
+    pf_up_unconfirmed: 'El servidor no ha confirmat que la foto s\'hagi desat. Torna-ho a provar.',
+    // Inici de sessió i registre (textos que eren fixos en anglès)
+    lgn_title: 'Inicia la sessió', lgn_email: 'Correu electrònic', lgn_password: 'Contrasenya', lgn_submit: 'Entrar',
+    lgn_google: 'Continua amb Google', lgn_no_account: "No tens compte?", lgn_register: "Registra't",
+    rg_title: 'Registre', rg_submit: 'Crear compte', rg_have_account: 'Ja tens compte?', rg_login: 'Inicia la sessió',
+    rg_err_exists: 'Aquest correu ja té un compte. Prova d\'iniciar la sessió.',
+    rg_err_weak: 'La contrasenya ha de tenir almenys 6 caràcters.',
+    rg_err_email: 'Introdueix un correu electrònic vàlid.',
+    rg_err_network: 'Problema de connexió. Revisa la teva connexió i torna-ho a provar.',
+    rg_err_many: 'Massa intents. Espera uns minuts i torna-ho a provar.',
+    rg_err_generic: 'No hem pogut crear el teu compte. Torna-ho a provar.',
     // Verifica el teu correu (només si el servidor diu que l'adreça no està verificada i té dades)
     ve_title: 'Verifica el teu correu',
     ve_text: "Per accedir a les teves dades, verifica el teu correu {email}. Prem «Reenviar correu» per rebre l'enllaç, obre'l i torna aquí per prémer «Ja ho he verificat».",

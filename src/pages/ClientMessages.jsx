@@ -242,7 +242,7 @@ function ClientMessages() {
     <div className="min-h-screen bg-[#080a09] text-white">
       <Navbar />
 
-      <main className="relative mx-auto max-w-3xl px-4 pb-24 pt-32 sm:px-5 md:pt-44">
+      <main id="main" className="relative mx-auto max-w-3xl px-4 pb-24 pt-32 sm:px-5 md:pt-44">
         <div className="pointer-events-none absolute left-0 top-24 h-72 w-72 rounded-full bg-emerald-500/5 blur-3xl" />
 
         <header className="relative mb-8">

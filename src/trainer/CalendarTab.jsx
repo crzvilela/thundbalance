@@ -150,7 +150,7 @@ export default function CalendarTab({ source, text, color }) {
             }}
           />
         </div>
-        {count === 0 && !loading && !error && <p className="mt-3 text-center text-sm text-gray-500">{t('tr_cal_empty')}</p>}
+        {count === 0 && !loading && !error && <p className="mt-3 text-center text-sm text-hint">{t('tr_cal_empty')}</p>}
       </div>
 
       {selected && <SessionModal session={selected} text={text} onClose={() => setSelected(null)} />}

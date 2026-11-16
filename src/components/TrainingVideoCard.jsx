@@ -24,9 +24,9 @@ function TrainingVideoCard({ video }) {
     <div className="border border-white/10 p-6 flex flex-col gap-4 items-start w-full min-w-0 overflow-hidden hover:border-white transition duration-500">
       <TrainingVideoPlayer source={video.video_source} url={video.video_url} className="w-full" />
 
-      <h3 className="text-2xl uppercase tracking-wide w-full [overflow-wrap:anywhere]">
+      <h2 className="text-2xl uppercase tracking-wide w-full [overflow-wrap:anywhere]">
         {title}
-      </h3>
+      </h2>
 
       {description && (
         <p className="text-gray-400 leading-7 w-full whitespace-pre-line [overflow-wrap:anywhere]">

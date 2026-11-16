@@ -59,7 +59,7 @@ function Dashboard() {
   const state = workflow?.state
 
   return <div className="min-h-screen bg-black text-white"><Navbar />
-    <main className="max-w-7xl mx-auto px-5 sm:px-6 pt-28 sm:pt-36 pb-20">
+    <main id="main" className="max-w-7xl mx-auto px-5 sm:px-6 pt-28 sm:pt-36 pb-20">
       <TempPasswordNotice />
       <header className="flex flex-wrap justify-between items-center gap-4 mb-8 sm:mb-10">
         <div><p className="text-green-400 uppercase tracking-[3px] text-sm">{t('dash_client_space')}</p><h1 style={{ fontFamily: 'Bebas Neue' }} className="text-5xl sm:text-6xl">{t('dash_title')}</h1></div>
@@ -112,7 +112,7 @@ function Dashboard() {
                   <div role="progressbar" aria-valuemin={0} aria-valuemax={pack.total} aria-valuenow={pack.done} aria-label={t('dash_pack_done', { done: pack.done, total: pack.total })} className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
                     <div className="h-full rounded-full bg-emerald-400" style={{ width: `${percent}%` }} />
                   </div>
-                  {pack.end_date && <p className="mt-2 text-xs text-gray-500">{new Date(`${pack.start_date || pack.end_date}T00:00:00`).toLocaleDateString(locale)} → {new Date(`${pack.end_date}T00:00:00`).toLocaleDateString(locale)}</p>}
+                  {pack.end_date && <p className="mt-2 text-xs text-hint">{new Date(`${pack.start_date || pack.end_date}T00:00:00`).toLocaleDateString(locale)} → {new Date(`${pack.end_date}T00:00:00`).toLocaleDateString(locale)}</p>}
                 </li>
               )
             })}

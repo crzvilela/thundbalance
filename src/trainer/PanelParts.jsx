@@ -56,16 +56,16 @@ export function SessionModal({ session, text, onClose }) {
         <dl className="space-y-4">
           {rows.map(([label, value]) => (
             <div key={label}>
-              <dt className="text-xs uppercase tracking-wider text-gray-500">{label}</dt>
+              <dt className="text-xs uppercase tracking-wider text-hint">{label}</dt>
               <dd className="mt-0.5 break-words text-base text-white">{value}</dd>
             </div>
           ))}
           <div>
-            <dt className="text-xs uppercase tracking-wider text-gray-500">{t('tr_modal_status')}</dt>
+            <dt className="text-xs uppercase tracking-wider text-hint">{t('tr_modal_status')}</dt>
             <dd className="mt-1"><StatusBadge status={session.status} label={t(`tr_status_${session.status}`)} /></dd>
           </div>
         </dl>
-        <p className="mt-6 text-sm text-gray-500">{t('tr_modal_note')}</p>
+        <p className="mt-6 text-sm text-hint">{t('tr_modal_note')}</p>
         <button type="button" onClick={onClose}
           className={`mt-5 min-h-[44px] w-full rounded-xl border border-white/25 px-5 text-sm font-semibold uppercase tracking-wider text-white transition hover:bg-white hover:text-black ${FOCUS}`}>
           {t('tr_close')}
