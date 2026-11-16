@@ -29,6 +29,8 @@ counts for the client's limit.
 """
 from emails.recipients import extra_scope, parse_extra
 import logging
+import response_models
+import web_safety
 import re
 import secrets
 import threading
@@ -257,8 +259,6 @@ def _public(req, with_counter=True):
         # until when the client can answer a proposal (the studio's, only while it is open)
         "counter_deadline": _deadline(req["session_date"], req["session_time"], req["counter_late"]) if req["status"] == "counter_proposed" else None,
         "created_at": req["created_at"].isoformat() if req["created_at"] else None,
-        "decided_at": req["decided_at"].isoformat() if req["decided_at"] else None,
-        "requested_trainer_id": req.get("requested_trainer_id"),
     }
 
 
@@ -409,7 +409,7 @@ def list_for_user(user_id):
     try:
         expire_stale(cursor)
         conn.commit()
-        cursor.execute("SELECT id FROM reschedule_requests WHERE user_id = %s ORDER BY created_at DESC, id DESC", (user_id,))
+        cursor.execute("SELECT id FROM reschedule_requests WHERE user_id = %s ORDER BY created_at DESC, id DESC LIMIT %s", (user_id, web_safety.CLIENT_LIST_LIMIT))
         ids = [row[0] for row in cursor.fetchall()]
         return [_public(_load(cursor, request_id=item)) for item in ids]
     finally:
@@ -895,7 +895,7 @@ def register_reschedule_routes(app, require_admin, require_client, own_user_id):
     def client_create_request(session_id: int, data: RequestPayload, claims=Depends(require_client)):
         return create_request(me(claims), session_id, data.requested_date, data.requested_time, data.note, data.lang, data.trainer_id)
 
-    @app.get("/me/reschedule-requests")
+    @app.get("/me/reschedule-requests", response_model=response_models.RescheduleListOut)
     def client_list_requests(claims=Depends(require_client)):
         """The client's requests (newest first) and the rules the page has to show, read from the
         constants above, so changing them changes the page without touching it."""
@@ -906,7 +906,7 @@ def register_reschedule_routes(app, require_admin, require_client, own_user_id):
             "note_max": NOTE_MAX,
         }
 
-    @app.get("/me/reschedule-requests/{request_id}")
+    @app.get("/me/reschedule-requests/{request_id}", response_model=response_models.RescheduleRequestOut)
     def client_get_request(request_id: int, claims=Depends(require_client)):
         user_id = me(claims)
         ensure_tables_once()
@@ -932,7 +932,7 @@ def register_reschedule_routes(app, require_admin, require_client, own_user_id):
         return respond(request_id=request_id, user_id=me(claims), accept=False)
 
     # ---- public, by token: only the answer to a proposal, and only the minimum of data
-    @app.get("/reschedule-response/{token}")
+    @app.get("/reschedule-response/{token}", response_model=response_models.RescheduleResponseOut)
     def public_proposal(token: str):
         """Read-only. Opening the link (a mail previewer, an antivirus) decides nothing."""
         return public_view(token)

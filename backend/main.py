@@ -3,6 +3,8 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, R
 import os
 import hashlib
 import web_safety
+import challenge
+import response_models as out
 import re
 import threading
 import time as _time
@@ -101,6 +103,7 @@ web_safety.start_error_reporting()
 _DOCS = os.getenv("ENABLE_API_DOCS", "").strip() == "1"
 app = FastAPI(docs_url="/docs" if _DOCS else None, redoc_url=None, openapi_url="/openapi.json" if _DOCS else None)
 web_safety.register_safety(app)
+challenge.register_challenge_routes(app)
 
 # Sites allowed to call this API from a browser. Extra ones (the final domain)
 # come from CORS_ORIGINS in the environment, comma separated, so changing
@@ -717,6 +720,7 @@ class LandingContentPayload(BaseModel):
 
 
 class UserCreate(BaseModel):
+    challenge: str | None = None          # solved anti-robot challenge (challenge.py): needed only when the profile is new
     # proof of the privacy consent given when registering (only the version of the text; the date is the server's)
     privacy_consent: StrictBool | None = None
     consent_version: str | None = None
@@ -749,6 +753,7 @@ class UpdateProfile(BaseModel):
 
 
 class TrialSessionCreate(BaseModel):
+    challenge: str | None = None          # solved anti-robot challenge (challenge.py)
     # the box "I have read and accept the Privacy policy" and the version of the text; health_consent is the extra box for the
     # rehabilitation / injury goal (data about health: explicit consent)
     privacy_consent: StrictBool | None = None
@@ -1029,6 +1034,9 @@ def create_user(user: UserCreate, claims=Depends(require_account)):
                 "message": "User already exists"
             }
 
+        # A profile that does not exist yet needs the anti-robot proof of work; whoever already has one signs in without it.
+        challenge.check_and_use(user.challenge)
+
         cursor.execute(
             """
             INSERT INTO users
@@ -1123,7 +1131,7 @@ def get_users():
         conn.close()
 
 
-@app.get("/users/email/{email}")
+@app.get("/users/email/{email}", response_model=out.UserLookupOut)
 def get_user_by_email(email: str, claims=Depends(require_account)):
 
     if not _is_admin(claims) and email.strip().casefold() != str(claims.get("email", "")).strip().casefold():
@@ -1190,25 +1198,29 @@ def get_user_sessions(user_id: int, claims=Depends(require_client)):
 
         cursor.execute(
             """
-            SELECT
-                s.id,
-                s.session_date,
-                s.session_time,
-                t.nome,
-                s.status,
-                s.rescheduled,
-                s.session_number
+            SELECT * FROM (
+                SELECT
+                    s.id,
+                    s.session_date,
+                    s.session_time,
+                    t.nome,
+                    s.status,
+                    s.rescheduled,
+                    s.session_number
 
-            FROM sessions s
+                FROM sessions s
 
-            JOIN trainers t
-                ON s.trainer_id = t.id
+                JOIN trainers t
+                    ON s.trainer_id = t.id
 
-            WHERE s.user_id = %s
+                WHERE s.user_id = %s
 
-            ORDER BY s.session_date ASC, s.session_time ASC, s.id ASC
+                ORDER BY s.session_date DESC, s.session_time DESC, s.id DESC
+                LIMIT %s
+            ) newest
+            ORDER BY session_date ASC, session_time ASC, id ASC
             """,
-            (user_id,)
+            (user_id, web_safety.CLIENT_LIST_LIMIT)
         )
         rows = cursor.fetchall()
         # Every session says which pack it belongs to (a client can have several at once): [..., number, pack id, pack name]
@@ -1292,7 +1304,7 @@ def cancel_session(session_id: int, claims=Depends(require_client)):
         conn.close()
 
 
-@app.get("/profile/{user_id}")
+@app.get("/profile/{user_id}", response_model=out.ProfileOut)
 def get_profile(user_id: int, claims=Depends(require_account)):
 
     assert_owner(claims, user_id)
@@ -1845,7 +1857,7 @@ def _active_trial_for_email(cursor, email):
     }
 
 
-@app.get("/client/trial")
+@app.get("/client/trial", response_model=out.TrialEnvelopeOut)
 def client_trial(authorization: str | None = Header(default=None)):
     """The logged-in client's open trial session (matched by login email), or null."""
     claims = require_client(authorization)
@@ -1923,6 +1935,9 @@ def create_trial_session(
     today = datetime.now().date()
     if session_date < today or session_date > today + timedelta(days=180):
         raise HTTPException(status_code=422, detail="Please choose a date within the next 6 months.")
+
+    # Anti-robot proof of work: checked once the form itself is valid (a typo does not use up the solution) and before anything is stored.
+    challenge.check_and_use(trial.challenge)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -2050,7 +2065,7 @@ def create_trial_session(
         conn.close()
 
 
-@app.get("/client/workflow", dependencies=[Depends(require_client)])
+@app.get("/client/workflow", dependencies=[Depends(require_client)], response_model=out.WorkflowOut)
 def client_workflow(authorization: str | None = Header(default=None)):
     claims = require_client(authorization)
     conn = get_connection()
@@ -2082,10 +2097,12 @@ def client_workflow(authorization: str | None = Header(default=None)):
             last_end = max((p["end_date"] for p in active_packs if p["end_date"]), default=None)
             plan = (newest["name"], newest["trainer"], newest["plan_id"], last_end)
         cursor.execute("""
-            SELECT s.id, s.session_date, s.session_time, t.nome, s.status, s.session_number
-            FROM sessions s LEFT JOIN trainers t ON t.id = s.trainer_id
-            WHERE s.user_id = %s ORDER BY s.session_date ASC, s.session_time ASC
-        """, (user_id,))
+            SELECT * FROM (
+                SELECT s.id, s.session_date, s.session_time, t.nome, s.status, s.session_number
+                FROM sessions s LEFT JOIN trainers t ON t.id = s.trainer_id
+                WHERE s.user_id = %s ORDER BY s.session_date DESC, s.session_time DESC, s.id DESC LIMIT %s
+            ) newest ORDER BY session_date ASC, session_time ASC, id ASC
+        """, (user_id, web_safety.CLIENT_LIST_LIMIT))
         sessions = cursor.fetchall()
         status = "active" if plan else (
             str(request[1]).strip().lower() if request else "new"
@@ -2747,7 +2764,7 @@ def get_available_times(
         conn.close()
 
 
-@app.get("/features")
+@app.get("/features", response_model=out.FeaturesOut)
 def public_features():
     """What the site is allowed to show; the frontend asks once. client_calendar is the
     CLIENT_CALENDAR_ENABLED switch (calendar buttons, feed and .ics for clients)."""
@@ -3062,7 +3079,7 @@ async def upload_landing_page_video(file: UploadFile = File(...)):
 # just stores a file under backend/uploads/ and returns its path).
 
 
-@app.get("/training-videos")
+@app.get("/training-videos", response_model=list[out.VideoOut])
 def get_training_videos():
 
     conn = get_connection()

@@ -37,6 +37,7 @@ and archive, stays in the studio's history under "Archived" and can be restored.
 tables but nothing reads or writes them any more; rows that had a deleted_at became archived (see ensure_tables).
 """
 import logging
+import response_models
 import re
 import threading
 import time
@@ -1086,14 +1087,14 @@ def register_inbox_routes(app, require_admin, require_client, own_user_id, admin
         return not own_user_id(claims) and trainer_area.is_active_trainer_email(claims.get("email"))
 
     # ---- the client
-    @app.get("/inbox")
+    @app.get("/inbox", response_model=response_models.InboxOut)
     def client_inbox(lang: str = "en", page: int = 1, filter: str = "all", size: int = PAGE_SIZE, claims=Depends(require_client)):
         _throttle("list", claims)
         if trainer_without_profile(claims):
             return {"items": [], "total": 0, "page": 1, "pages": 1, "unread": 0, "counts": {"inbox": 0, "unread": 0, "archived": 0}}
         return list_inbox(me(claims), claims, lang, page, filter, size)
 
-    @app.get("/inbox/unread-count")
+    @app.get("/inbox/unread-count", response_model=response_models.UnreadOut)
     def client_unread(claims=Depends(require_client)):
         _throttle("count", claims)
         if trainer_without_profile(claims):

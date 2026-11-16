@@ -14,7 +14,7 @@ test('a successful login shows no message and goes to the dashboard', () => {
 
 test('a failed login is a line of text next to the form, never a pop-up', () => {
   assert.match(login, /role="alert"/)
-  assert.match(login, /setProblem\(loginErrorKey\(error\)/)
+  assert.match(login, /setProblem\(.*loginErrorKey\(error\)/)
   assert.equal(loginErrorKey({ code: 'auth/invalid-credential' }), 'lgn_err_credentials')
   assert.equal(loginErrorKey({ code: 'auth/too-many-requests' }), 'lgn_err_many')
   assert.equal(loginErrorKey({ code: 'auth/network-request-failed' }), 'lgn_err_network')

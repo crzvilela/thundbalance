@@ -6,6 +6,9 @@
 
 export const pageText = {
   en: {
+    ch_checking: 'Checking that you are a person…', ch_ready: 'Verification ready', ch_retry: 'Retry',
+    ch_error: 'The automatic check could not be completed.', ch_failed: 'The check failed. Please reload the page and try again.',
+    ch_unsupported: 'This browser cannot run the automatic check. Please use an up-to-date browser with JavaScript turned on.',
     a11y_skip: 'Skip to main content',
     lgn_email_label: 'Email address', lgn_password_label: 'Password',
     // names read by screen readers (they used to be fixed in English)
@@ -395,6 +398,9 @@ export const pageText = {
   },
 
   es: {
+    ch_checking: 'Comprobando que eres una persona…', ch_ready: 'Verificación lista', ch_retry: 'Reintentar',
+    ch_error: 'No se pudo completar la verificación automática.', ch_failed: 'La verificación ha fallado. Recarga la página e inténtalo de nuevo.',
+    ch_unsupported: 'Este navegador no puede hacer la verificación automática. Usa un navegador actualizado con JavaScript activado.',
     a11y_skip: 'Saltar al contenido principal',
     lgn_email_label: 'Correo electrónico', lgn_password_label: 'Contraseña',
     // nombres que leen los lectores de pantalla (antes estaban fijos en inglés)
@@ -778,6 +784,9 @@ export const pageText = {
   },
 
   ca: {
+    ch_checking: 'Comprovant que ets una persona…', ch_ready: 'Verificació llesta', ch_retry: 'Torna-ho a provar',
+    ch_error: 'No s\'ha pogut completar la verificació automàtica.', ch_failed: 'La verificació ha fallat. Recarrega la pàgina i torna-ho a provar.',
+    ch_unsupported: 'Aquest navegador no pot fer la verificació automàtica. Fes servir un navegador actualitzat amb JavaScript activat.',
     a11y_skip: 'Salta al contingut principal',
     lgn_email_label: 'Correu electrònic', lgn_password_label: 'Contrasenya',
     // noms que llegeixen els lectors de pantalla (abans eren fixos en anglès)

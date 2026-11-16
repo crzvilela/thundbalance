@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { API_URL } from '../config'
+import { useChallenge } from '../challenge/useChallenge'
+import { sendWithChallenge } from '../challenge/challenge'
 import { authFetch } from '../api/authFetch'
 import { useI18n } from '../i18n/I18nContext'
 import { loginErrorKey } from '../utils/loginErrors'
@@ -23,6 +25,7 @@ function Login() {
   const legal = uiText(language)
   const [problem, setProblem] = useState('')            // a text key: the error is a line in the form, never a pop-up
 
+  const guard = useChallenge()          // only the Google button can create a profile: the check starts when it is pressed
   const emailField = useRef(null)
   const passwordField = useRef(null)
   const [email, setEmail] = useState('')
@@ -56,6 +59,7 @@ function Login() {
   const handleGoogleLogin = async () => {
 
     setProblem('')
+    guard.start()                       // solved while the Google window is open
 
     try {
 
@@ -66,7 +70,7 @@ function Login() {
 
       const user = result.user
 
-      await authFetch(
+      await sendWithChallenge(guard, (challenge) => authFetch(
         `${API_URL}/users`,
         {
           method: 'POST',
@@ -74,6 +78,7 @@ function Login() {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
+            challenge,
             firebase_uid: user.uid,
             nome: user.displayName,
             email: user.email,
@@ -85,13 +90,13 @@ function Login() {
             cep: null
           })
         }
-      )
+      ))
 
       navigate('/dashboard')
 
     } catch (error) {
 
-      setProblem(loginErrorKey(error) || '')
+      setProblem(error.message === 'ch_failed' ? 'ch_failed' : (loginErrorKey(error) || ''))
 
     }
 

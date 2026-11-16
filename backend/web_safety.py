@@ -43,6 +43,10 @@ def env_int(name, default, minimum=1):
     return max(minimum, value)
 
 
+# The longest list a client's page ever receives (their sessions, their requests): a stable order and a ceiling, whatever the history.
+CLIENT_LIST_LIMIT = env_int("CLIENT_LIST_LIMIT", 1000)
+
+
 # ----------------------------------------------------------------------------------------------- the client's IP
 # How many proxies sit between the internet and this server AND append to X-Forwarded-For (Render's: 1 by default). Every proxy adds
 # the address it received the request from at the END of the header, so the entries on the left can be written by the client (anyone can
@@ -134,6 +138,19 @@ class RateLimit:
             return False
 
 
+    def hit(self, key):
+        """Records one hit and returns how many the key has in the window (this one included)."""
+        now = time.monotonic()
+        with self.lock:
+            recent = [moment for moment in self.hits.get(key, []) if now - moment < self.window]
+            recent.append(now)
+            self.hits[key] = recent
+            if len(self.hits) > 5000:
+                for stale in [name for name, moments in self.hits.items() if not moments or now - moments[-1] > self.window]:
+                    self.hits.pop(stale, None)
+            return len(recent)
+
+
 class SharedRateLimit:
     """Sliding window per key kept in the database (table rate_limit_hits), so the count survives a restart of the server and is
     the same for every instance. If the database does not answer it falls back to a window in memory: a limit that does not work
@@ -171,6 +188,32 @@ class SharedRateLimit:
         except Exception as error:  # noqa: BLE001
             logger.warning("rate limit '%s' used the memory window: %s", self.bucket, type(error).__name__)
             return self._memory.too_many(key)
+
+    def hit(self, key):
+        """Records one hit and returns how many the key has in the window (this one included); the memory window if the database fails."""
+        key = str(key)[:200]
+        try:
+            if not SharedRateLimit._table_ready:
+                ensure_rate_limit_table()
+                SharedRateLimit._table_ready = True
+            conn = get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"{self.bucket}:{key}",))
+                cursor.execute(
+                    "DELETE FROM rate_limit_hits WHERE bucket = %s AND key = %s AND hit_at < NOW() - make_interval(secs => %s)",
+                    (self.bucket, key, self.window),
+                )
+                cursor.execute("INSERT INTO rate_limit_hits (bucket, key) VALUES (%s, %s)", (self.bucket, key))
+                cursor.execute("SELECT COUNT(*) FROM rate_limit_hits WHERE bucket = %s AND key = %s", (self.bucket, key))
+                count = cursor.fetchone()[0]
+                conn.commit()
+                return count
+            finally:
+                conn.close()
+        except Exception as error:  # noqa: BLE001
+            logger.warning("rate limit '%s' used the memory window: %s", self.bucket, type(error).__name__)
+            return self._memory.hit(key)
 
     def clear(self):
         """Forgets every hit of this limit (tests)."""

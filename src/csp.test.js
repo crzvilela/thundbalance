@@ -44,6 +44,10 @@ test('videos come from our own site only', () => {
   assert.ok(media.includes("'self'") && media.includes('https://thundbalance.onrender.com'))
 })
 
+test('workers: only files of our own site (the anti-robot proof of work runs in one; no blob:, no other host)', () => {
+  assert.deepEqual(directives['worker-src'], ["'self'"])
+})
+
 test('the rest of the policy keeps its limits', () => {
   assert.deepEqual(directives['default-src'], ["'self'"])
   assert.deepEqual(directives['object-src'], ["'none'"])

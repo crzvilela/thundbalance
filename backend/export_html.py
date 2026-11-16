@@ -178,7 +178,8 @@ def _table(headers, rows):
 
 def _section(title, content, rows=0, note=""):
     css = "big" if rows > BIG_SECTION_ROWS else ""
-    return f'<section class="{css}"><h2>{esc(title)}</h2>{content}{f'<p class="note">{esc(note)}</p>' if note else ""}</section>'
+    note_html = f'<p class="note">{esc(note)}</p>' if note else ""        # (a nested f-string with the same quote needs Python 3.12)
+    return f'<section class="{css}"><h2>{esc(title)}</h2>{content}{note_html}</section>'
 
 
 STYLE = """

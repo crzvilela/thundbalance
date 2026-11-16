@@ -24,6 +24,7 @@ event).
 The public endpoints accept only the token and return the least possible data.
 """
 import logging
+import response_models
 import secrets
 from safe_log import log_error, safe_error
 from datetime import date, datetime
@@ -227,7 +228,7 @@ def answer_trial(token, wanted):
 
 def register_trial_confirmation_routes(app):
 
-    @app.get("/trial-sessions/confirmation/{token}")
+    @app.get("/trial-sessions/confirmation/{token}", response_model=response_models.TrialConfirmationOut)
     def trial_confirmation_info(token: str):
         """Read-only: opening the link never changes anything."""
         conn = get_connection()

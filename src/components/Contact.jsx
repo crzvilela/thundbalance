@@ -3,6 +3,9 @@ import { EditableText, EditableFormField, EditableImage, useSectionSelection, Se
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
 import { BLANK_IMAGE_PLACEHOLDER } from '../utils/placeholderImage'
 import { API_URL } from '../config'
+import { useChallenge } from '../challenge/useChallenge'
+import { sendWithChallenge } from '../challenge/challenge'
+import ChallengeStatus from '../challenge/ChallengeStatus'
 import { useI18n } from '../i18n/I18nContext'
 import { formText, serverFieldError } from '../i18n/formText'
 import { emailProblem, emailSuggestion, nameProblem, normalizeEmail } from '../utils/validators'
@@ -30,6 +33,7 @@ function Contact({ sectionId }) {
   const { t, language } = useI18n()
   // idle | sending | sent | error
   const [status, setStatus] = useState('idle')
+  const guard = useChallenge()          // starts when the visitor first touches the form
   const [errorText, setErrorText] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
   const [messageLength, setMessageLength] = useState(0)
@@ -74,10 +78,11 @@ function Contact({ sectionId }) {
     setStatus('sending')
     setErrorText('')
     try {
-      const response = await fetch(`${API_URL}/contact-messages`, {
+      const response = await sendWithChallenge(guard, (challenge) => fetch(`${API_URL}/contact-messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          challenge,
           name: values.get('name'),
           email: normalizeEmail(values.get('email')),
           message: values.get('message'),
@@ -86,7 +91,7 @@ function Contact({ sectionId }) {
           privacy_consent: true,
           consent_version: consentVersion
         })
-      })
+      }))
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
         const fieldError = response.status === 422 ? serverFieldError(data.detail, language) : null
@@ -103,7 +108,7 @@ function Contact({ sectionId }) {
       setSuggestion('')
       setStatus('sent')
     } catch (error) {
-      setErrorText(error instanceof TypeError || !error.message ? t('contact_error') : error.message)
+      setErrorText(error.message === 'ch_failed' ? t('ch_failed') : error instanceof TypeError || !error.message ? t('contact_error') : error.message)
       setStatus('error')
     }
   }
@@ -113,7 +118,7 @@ function Contact({ sectionId }) {
       <EditableText as="p" path={`sections.${sectionId}.eyebrow`} styleObj={`sections.${sectionId}.eyebrowStyle`} label="Contact Eyebrow" style={{ fontFamily: theme.typography.accentFont }} className="uppercase tracking-[5px] text-sm text-gray-500 mb-6" />
       <EditableText as="h2" path={`sections.${sectionId}.title`} styleObj={`sections.${sectionId}.titleStyle`} label="Contact Title" style={{ fontFamily: theme.typography.headingFont }} className="text-4xl sm:text-5xl md:text-7xl mb-8" />
       <EditableText as="p" path={`sections.${sectionId}.body`} styleObj={`sections.${sectionId}.bodyStyle`} label="Contact Body" style={{ fontFamily: theme.typography.bodyFont }} className="text-gray-600 text-lg mb-16 block" />
-      <form noValidate className="flex flex-col gap-6" onSubmit={handleSubmit} onClick={event => isEditMode && event.stopPropagation()}>
+      <form noValidate className="flex flex-col gap-6" onSubmit={handleSubmit} onFocus={() => { if (!isEditMode) guard.start() }} onClick={event => isEditMode && event.stopPropagation()}>
         <EditableFormField onBlur={check} aria-invalid={fieldErrors.name ? true : undefined} aria-describedby={`${sectionId}-name-error`} name="name" type="text" path={`sections.${sectionId}.formLabels.name`} label="Contact Name Placeholder" autoComplete="name" required maxLength={120} className="border border-black/20 px-6 py-4 outline-none focus:border-black" />
         {!isEditMode && <FieldError id={`${sectionId}-name-error`} text={fieldErrors.name} />}
         <EditableFormField onBlur={check} aria-invalid={fieldErrors.email ? true : undefined} aria-describedby={`${sectionId}-email-error`} name="email" type="email" path={`sections.${sectionId}.formLabels.email`} label="Contact Email Placeholder" autoComplete="email" required maxLength={254} className="border border-black/20 px-6 py-4 outline-none focus:border-black" />
@@ -123,6 +128,7 @@ function Contact({ sectionId }) {
         {!isEditMode && <p className="-mt-4 flex flex-wrap justify-between gap-x-4 text-left text-xs text-gray-500"><span>{uiText(language).freeTextWarning}</span><span aria-live="polite">{formText(language, 'characters', { n: messageLength, max: MESSAGE_MAX })}</span></p>}
         {!isEditMode && <FieldError id={`${sectionId}-message-error`} text={fieldErrors.message} />}
         {!isEditMode && <ConsentCheckbox light checked={accepted} error={consentError} onChange={(value) => { setAccepted(value); if (value) setConsentError('') }} />}
+        {!isEditMode && <ChallengeStatus guard={guard} light />}
         <EditableText as="button" path={`sections.${sectionId}.buttonText`} label="Contact Send Button" fallback={t('contact_send')} disabled={!isEditMode && (status === 'sending' || !accepted)} style={{ fontFamily: theme.typography.accentFont }} className="mt-10 min-h-[44px] border border-black px-10 py-4 uppercase text-sm tracking-[3px] hover:bg-black hover:text-white transition-all duration-300 disabled:opacity-50" />
         <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" className="absolute left-[-9999px] h-0 w-0 opacity-0" />
         {status === 'sending' && <p role="status" className="text-sm text-gray-500">{t('contact_sending')}</p>}

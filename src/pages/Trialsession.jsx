@@ -4,6 +4,9 @@ import Navbar from '../components/Navbar'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 import { API_URL } from '../config'
+import { useChallenge } from '../challenge/useChallenge'
+import { sendWithChallenge } from '../challenge/challenge'
+import ChallengeStatus from '../challenge/ChallengeStatus'
 import { cachedDay, loadDay, loadWeek, pingServer, prefetchSchedule } from '../api/schedule'
 import { useI18n } from '../i18n/I18nContext'
 import FormField from '../components/forms/FormField'
@@ -99,6 +102,7 @@ function TrialSession() {
   const [form, setForm] = useState(EMPTY)
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
+  const guard = useChallenge({ auto: true })           // the anti-robot check is solved in the background while the form is filled in
   const [accepted, setAccepted] = useState(false)          // "I have read and accept the Privacy policy": unchecked, required
   const [healthAccepted, setHealthAccepted] = useState(false)
   const [consentError, setConsentError] = useState('')
@@ -207,10 +211,11 @@ function TrialSession() {
 
     setSubmitting(true)
     try {
-      const response = await fetch(`${API_URL}/trial-sessions`, {
+      const response = await sendWithChallenge(guard, (challenge) => fetch(`${API_URL}/trial-sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          challenge,
           tb_hp: form.hp || '',
           // the site's language now: the emails to the visitor are written in it
           lang: language,
@@ -228,7 +233,7 @@ function TrialSession() {
           // only the kind of session: the server works the price out itself
           ...sessionTypeBody({ type: form.type, name: form.secondName, email: form.secondEmail })
         })
-      })
+      }))
       const data = await response.json().catch(() => ({}))
       if (response.status === 409 && data.detail?.code === 'trial_exists') {
         // This email already has an open request: show where it stands instead of an error.
@@ -453,6 +458,8 @@ function TrialSession() {
             {serverError && (
               <p role="alert" className="mt-6 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{errorText(serverError)}</p>
             )}
+
+            <ChallengeStatus guard={guard} className="mt-6" />
 
             <button
               type="submit"

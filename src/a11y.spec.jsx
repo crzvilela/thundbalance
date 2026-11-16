@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, afterEach } from 'vitest'
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import axe from 'axe-core'
@@ -23,7 +23,9 @@ import LanguageSwitcher from './components/LanguageSwitcher'
 // jsdom has no layout: every element would count as hidden for the focus trap (it skips controls without an offsetParent)
 Object.defineProperty(HTMLElement.prototype, 'offsetParent', { get() { return this.parentNode } })
 
-afterEach(() => { cleanup(); localStorage.clear() })
+// the pages never reach the network in these tests (the anti-robot check asks the API for a challenge: here it is offline)
+beforeEach(() => { vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('offline')))) })
+afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals() })
 
 const page = (ui) => render(<MemoryRouter><I18nProvider>{ui}</I18nProvider></MemoryRouter>)
 

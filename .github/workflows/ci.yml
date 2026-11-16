@@ -29,6 +29,8 @@ jobs:
       - run: npm run lint
       - name: Tests (node --test)
         run: node --test "src/**/*.test.js"
+      - name: Accessibility and form tests (vitest + jsdom + axe)
+        run: npm run test:a11y
       - run: npm run build
       - name: Audit of the dependencies that reach the site (does not stop the build)
         run: npm audit --omit=dev --audit-level=high
@@ -56,6 +58,8 @@ jobs:
       DATABASE_URL: postgresql://postgres:ci-only-password@localhost:5432/thundbalance
       ADMIN_EMAIL: admin@example.test
       PYTHONPATH: backend
+      # the anti-robot challenge (backend/challenge.py) is switched off for the suite; it only works against a database on this very machine
+      CHALLENGE_ENFORCE: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

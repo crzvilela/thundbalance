@@ -1,6 +1,9 @@
 import { useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { API_URL } from '../config'
+import { useChallenge } from '../challenge/useChallenge'
+import { sendWithChallenge } from '../challenge/challenge'
+import ChallengeStatus from '../challenge/ChallengeStatus'
 import { authFetch } from '../api/authFetch'
 
 import {
@@ -44,6 +47,7 @@ function Register() {
   const [errors, setErrors] = useState({})
   const [formError, setFormError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const guard = useChallenge({ auto: true })
   const [accepted, setAccepted] = useState(false)          // "I have read and accept the Privacy policy and the Terms": unchecked, required
   const [consentError, setConsentError] = useState('')
   const consentVersion = useLegalVersion({ terms: true })
@@ -81,6 +85,9 @@ function Register() {
 
     try {
 
+      // the anti-robot check is ready BEFORE the account is created: a failure here leaves nothing half done
+      await guard.solution().catch((problem) => { throw problem instanceof TypeError ? problem : new Error('ch_failed') })
+
       const result =
         await createUserWithEmailAndPassword(
           auth,
@@ -97,7 +104,7 @@ function Register() {
         }
       )
 
-      const response = await authFetch(
+      const response = await sendWithChallenge(guard, (challenge) => authFetch(
         `${API_URL}/users`,
         {
           method: 'POST',
@@ -105,6 +112,7 @@ function Register() {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
+            challenge,
             firebase_uid: user.uid,
             nome: name.trim(),
             email: normalizeEmail(email),
@@ -118,7 +126,7 @@ function Register() {
             consent_version: consentVersion
           })
         }
-      )
+      ))
 
       // The address already has data under it and is not verified: the verification screen is open (authFetch opened it); the
       // account is not used until the person verifies. Nothing else to do here.
@@ -140,7 +148,7 @@ function Register() {
 
     } catch (error) {
 
-      setFormError(t(registerErrorKey(error)))          // a text in the visitor's language, never the English message of Firebase
+      setFormError(error.message === 'ch_failed' ? t('ch_failed') : t(registerErrorKey(error)))          // a text in the visitor's language, never the English message of Firebase
 
     } finally {
 
@@ -222,6 +230,8 @@ function Register() {
           {formError && (
             <p role="alert" className="mb-2 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{formError}</p>
           )}
+
+          <ChallengeStatus guard={guard} />
 
           <button
             type="submit"

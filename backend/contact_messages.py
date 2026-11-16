@@ -23,6 +23,7 @@ import re
 from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel, StrictBool
 
+import challenge
 import legal
 import web_safety
 from database import get_connection
@@ -43,6 +44,7 @@ _limit = web_safety.SharedRateLimit("contact", PER_IP_LIMIT, WINDOW_SECONDS)    
 
 
 class ContactCreate(BaseModel):
+    challenge: str | None = None   # solved anti-robot challenge (challenge.py)
     name: str
     email: str
     message: str
@@ -288,6 +290,7 @@ def register_contact_routes(app, require_admin):
             raise HTTPException(status_code=422, detail="Please write a message.")
         if not _allow_ip(web_safety.get_client_ip(request)):
             raise HTTPException(status_code=429, detail="Too many messages. Please try again later.")
+        challenge.check_and_use(data.challenge)
 
         language = _clean(data.language, 5) or None
         phone = _clean(data.phone, 30) or None

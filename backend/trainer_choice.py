@@ -13,6 +13,7 @@ The three flows that let the client choose a trainer (trial, pack request, chang
 (someone else booked it a moment ago); the page shows the alternatives again.
 """
 import re
+import response_models
 import threading
 import time as _time
 from collections import defaultdict, deque
@@ -80,7 +81,7 @@ def clean_time(value):
 
 
 def register_trainer_choice_routes(app):
-    @app.get("/available-trainers")
+    @app.get("/available-trainers", response_model=list[response_models.TrainerChoiceOut])
     def available_trainers(request: Request, time: str, date: str | None = None, weekday: str | None = None,
                            exclude_session_id: int | None = None):
         if _too_many(web_safety.get_client_ip(request)):

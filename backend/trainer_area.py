@@ -20,6 +20,7 @@ Dates and the limits of a day, week (Monday first) and month are Europe/Madrid.
 No personal data is ever logged here.
 """
 import logging
+import response_models
 
 import pack_view
 import threading
@@ -559,7 +560,7 @@ def register_trainer_area_routes(app, require_admin, verify_token, admin_email):
             raise HTTPException(status_code=404, detail="Trainer not found")
 
     # ------------------------------------------------------------------ who am I
-    @app.get("/me/roles")
+    @app.get("/me/roles", response_model=response_models.RolesOut)
     def my_roles(authorization: str | None = Header(default=None)):
         claims = claims_of(authorization)
         email = _email(claims.get("email"))
@@ -576,16 +577,16 @@ def register_trainer_area_routes(app, require_admin, verify_token, admin_email):
         }
 
     # ------------------------------------------------------------------ trainer
-    @app.get("/trainer-area/me/summary")
+    @app.get("/trainer-area/me/summary", response_model=response_models.TrainerSummaryOut)
     def trainer_summary(period: str = "week", from_: Optional[str] = Query(None, alias="from"), to: Optional[str] = Query(None),
                         trainer=Depends(require_trainer)):
         return summary_for(trainer["trainer_id"], period, from_, to)
 
-    @app.get("/trainer-area/me/sessions")
+    @app.get("/trainer-area/me/sessions", response_model=list[response_models.TrainerSessionOut])
     def trainer_sessions(from_: Optional[str] = Query(None, alias="from"), to: Optional[str] = Query(None), trainer=Depends(require_trainer)):
         return sessions_for(trainer["trainer_id"], from_, to)
 
-    @app.get("/trainer-area/me/free-slots")
+    @app.get("/trainer-area/me/free-slots", response_model=list[response_models.FreeSlotOut])
     def trainer_free_slots(from_: Optional[str] = Query(None, alias="from"), to: Optional[str] = Query(None), trainer=Depends(require_trainer)):
         return slots_for(trainer["trainer_id"], from_, to)
 
