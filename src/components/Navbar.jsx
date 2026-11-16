@@ -1,9 +1,9 @@
-import { auth } from '../firebase/auth'
+import { currentUser, onUserChange, signOutUser } from '../firebase/session'
+import { prefetchHandlers } from '../utils/prefetch'
 import { initialsAvatar } from '../utils/avatar'
-import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { m, AnimatePresence } from 'framer-motion'
 import { BsEnvelope } from 'react-icons/bs'
 import { EditableText, EditableImage, useSectionSelection, SectionEditOverlay } from './editor/Editable'
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
@@ -53,15 +53,15 @@ function NavbarInner() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
 
-  const [user, setUser] = useState(auth.currentUser)
-  const [profilePhoto, setProfilePhoto] = useState(auth.currentUser?.photoURL)
+  const [user, setUser] = useState(currentUser)
+  const [profilePhoto, setProfilePhoto] = useState(() => currentUser()?.photoURL)
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, currentUser => {
-      setUser(currentUser)
-      setProfilePhoto(currentUser?.photoURL)
+    const unsubscribe = onUserChange(signedIn => {
+      setUser(signedIn)
+      setProfilePhoto(signedIn?.photoURL)
     })
-    const refreshPhoto = () => setProfilePhoto(auth.currentUser?.photoURL)
+    const refreshPhoto = () => setProfilePhoto(currentUser()?.photoURL)
     window.addEventListener('profile-photo-updated', refreshPhoto)
     return () => {
       unsubscribe()
@@ -109,7 +109,7 @@ function NavbarInner() {
 
     try {
 
-      await signOut(auth)
+      await signOutUser()
 
       navigate('/')
 
@@ -274,17 +274,17 @@ function NavbarInner() {
             >
               {user && unread > 0 && <span aria-hidden="true" className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-emerald-400" />}
               <div className="w-6 h-5 relative flex flex-col justify-between">
-                <motion.span
+                <m.span
                   animate={mobileMenuOpen ? { rotate: 45, y: 8.5 } : { rotate: 0, y: 0 }}
                   transition={{ duration: 0.2 }}
                   className="block h-0.5 w-full bg-white rounded-full origin-center"
                 />
-                <motion.span
+                <m.span
                   animate={mobileMenuOpen ? { opacity: 0 } : { opacity: 1 }}
                   transition={{ duration: 0.15 }}
                   className="block h-0.5 w-full bg-white rounded-full"
                 />
-                <motion.span
+                <m.span
                   animate={mobileMenuOpen ? { rotate: -45, y: -8.5 } : { rotate: 0, y: 0 }}
                   transition={{ duration: 0.2 }}
                   className="block h-0.5 w-full bg-white rounded-full origin-center"
@@ -307,6 +307,7 @@ function NavbarInner() {
 
               <Link
                 to="/login"
+                {...prefetchHandlers('login')}
                 className="inline-flex items-center min-h-[44px] hover:text-gray-400 transition duration-300 uppercase text-xs md:text-sm px-2"
               >
                 <EditableText as="span" path="sections.navbar.labels.login" label="Navbar Login" />
@@ -314,6 +315,7 @@ function NavbarInner() {
 
               <Link
                 to="/register"
+                {...prefetchHandlers('register')}
                 className="inline-flex items-center min-h-[44px] border border-white/20 px-2.5 sm:px-3 md:px-4 py-2.5 rounded-lg hover:bg-white hover:text-black transition duration-300 uppercase text-xs md:text-sm whitespace-nowrap"
               >
                 <EditableText as="span" path="sections.navbar.labels.register" label="Navbar Register" />
@@ -429,7 +431,7 @@ function NavbarInner() {
       {!isEditMode && (
         <AnimatePresence>
           {mobileMenuOpen && (
-            <motion.div
+            <m.div
               initial={{ opacity: 0, y: -12 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -12 }}
@@ -464,7 +466,7 @@ function NavbarInner() {
                 </span>
                 <LanguageSwitcher />
               </div>
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
       )}

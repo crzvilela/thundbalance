@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import Navbar, { WaitingNavbar } from '../components/Navbar'
+import WakeNotice from '../components/WakeNotice'
 import Footer from '../components/Footer'
 import TrainingVideoCard from '../components/TrainingVideoCard'
 import { LandingContentProvider } from '../content/LandingContentContext'
@@ -34,7 +35,7 @@ function TrainingTips() {
     // Navbar/Footer read brand/logo/background from here — same provider
     // Home.jsx uses, so this page stays visually in sync with whatever the
     // admin has configured in the Landing Page Editor.
-    <LandingContentProvider mode="view" version="published" placeholder={<div className="bg-black min-h-screen"><WaitingNavbar /></div>}>
+    <LandingContentProvider mode="view" version="published" placeholder={<div className="bg-black min-h-screen"><WaitingNavbar /><WakeNotice /></div>}>
       <div className="bg-black min-h-screen text-white overflow-x-hidden">
 
         <Navbar />

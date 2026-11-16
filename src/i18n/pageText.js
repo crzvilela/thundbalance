@@ -6,6 +6,7 @@
 
 export const pageText = {
   en: {
+    wake_notice: 'We are waking the server up, one moment…',
     ch_checking: 'Checking that you are a person…', ch_ready: 'Verification ready', ch_retry: 'Retry',
     ch_error: 'The automatic check could not be completed.', ch_failed: 'The check failed. Please reload the page and try again.',
     ch_unsupported: 'This browser cannot run the automatic check. Please use an up-to-date browser with JavaScript turned on.',
@@ -398,6 +399,7 @@ export const pageText = {
   },
 
   es: {
+    wake_notice: 'Estamos despertando el servidor, un momento…',
     ch_checking: 'Comprobando que eres una persona…', ch_ready: 'Verificación lista', ch_retry: 'Reintentar',
     ch_error: 'No se pudo completar la verificación automática.', ch_failed: 'La verificación ha fallado. Recarga la página e inténtalo de nuevo.',
     ch_unsupported: 'Este navegador no puede hacer la verificación automática. Usa un navegador actualizado con JavaScript activado.',
@@ -784,6 +786,7 @@ export const pageText = {
   },
 
   ca: {
+    wake_notice: 'Estem despertant el servidor, un moment…',
     ch_checking: 'Comprovant que ets una persona…', ch_ready: 'Verificació llesta', ch_retry: 'Torna-ho a provar',
     ch_error: 'No s\'ha pogut completar la verificació automàtica.', ch_failed: 'La verificació ha fallat. Recarrega la pàgina i torna-ho a provar.',
     ch_unsupported: 'Aquest navegador no pot fer la verificació automàtica. Fes servir un navegador actualitzat amb JavaScript activat.',

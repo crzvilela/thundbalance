@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { resolveImageUrl } from '../../api/landingPage'
 import { VideoMedia } from './EditableVideo'
+import OptimizedPicture from '../OptimizedPicture'
 
 // Inline style for a section's solid background color. Sections keep their
 // existing Tailwind bg-* class as the default look — we only override it
@@ -46,7 +47,7 @@ function OverlayLayer({ background }) {
 // admin actually sets one — matching today's look exactly. (Name kept as
 // SectionBackgroundImage, not renamed to "...Media", so every existing call
 // site from Phases 1-2 keeps working unchanged.)
-export function SectionBackgroundImage({ background, fallbackSrc, wrapperClassName = '', imageClassName = '' }) {
+export function SectionBackgroundImage({ background, fallbackSrc, wrapperClassName = '', imageClassName = '', priority = false }) {
   const bg = background || {}
   const [loadedImage, setLoadedImage] = useState(null)
 
@@ -71,10 +72,11 @@ export function SectionBackgroundImage({ background, fallbackSrc, wrapperClassNa
           style={{ objectPosition: bg.position || 'center' }}
           className={`absolute inset-0 w-full h-full object-cover ${imageClassName}`} />
       )}
-      <img
+      <OptimizedPicture
         key={imageUrl}
         src={imageUrl}
         alt=""
+        priority={priority}
         onLoad={() => setLoadedImage(imageUrl)}
         onError={event => {
           if (!fallbackSrc || event.currentTarget.dataset.fallbackApplied) return

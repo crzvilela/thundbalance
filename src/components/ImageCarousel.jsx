@@ -1,8 +1,11 @@
 import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { LazyMotion, m, AnimatePresence } from 'framer-motion'
 import { resolveImageUrl } from '../api/landingPage'
 import { useI18n } from '../i18n/I18nContext'
 import { resolveText } from '../utils/multilingual'
+
+// swiping needs the drag feature: loaded only when a carousel is on the page
+const loadDragFeatures = () => import('./motionDrag').then(module => module.default)
 
 // Lightweight, dependency-free photo carousel built on framer-motion (no
 // react-slick/swiper/etc — the project already has framer-motion).
@@ -38,8 +41,9 @@ function ImageCarousel({ items = [] }) {
   return (
     <div className="w-full">
       <div className="relative w-full aspect-[16/10] sm:aspect-[16/9] overflow-hidden rounded-xl bg-[#111]">
+        <LazyMotion features={loadDragFeatures} strict>
         <AnimatePresence initial={false} custom={direction} mode="wait">
-          <motion.img
+          <m.img
             key={index}
             src={resolveImageUrl(current.image)}
             alt={currentCaption || ''}
@@ -54,6 +58,7 @@ function ImageCarousel({ items = [] }) {
             className="absolute inset-0 w-full h-full object-cover cursor-grab active:cursor-grabbing"
           />
         </AnimatePresence>
+        </LazyMotion>
 
         {items.length > 1 && (
           <>

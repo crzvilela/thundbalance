@@ -1,9 +1,10 @@
-import { auth } from '../firebase/auth'
+import { loadAuthModule } from '../firebase/session'
 import { reportIfNotVerified } from '../auth/emailVerification'
 
 // fetch() for the client area: sends the signed-in user's Firebase ID token so
 // the server knows whose data is being asked for.
 export async function authFetch(url, options = {}) {
+  const { auth } = await loadAuthModule()          // the SDK arrives as a separate file (firebase/session.js)
   const user = auth.currentUser
   if (!user) throw new Error('Please sign in again.')
 

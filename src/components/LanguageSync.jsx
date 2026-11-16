@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { onAuthStateChanged } from 'firebase/auth'
-import { auth } from '../firebase/auth'
+import { currentUser, onUserChange } from '../firebase/session'
 import { useI18n } from '../i18n/I18nContext'
 import { saveMyLanguage } from '../api/language'
 
@@ -13,7 +12,7 @@ export default function LanguageSync() {
 
   useEffect(() => {
     latest.current = language
-    const user = auth.currentUser
+    const user = currentUser()
     if (!user) return
     const key = `${user.uid}:${language}`
     if (sent.current === key) return
@@ -21,7 +20,7 @@ export default function LanguageSync() {
     saveMyLanguage(language)
   }, [language])
 
-  useEffect(() => onAuthStateChanged(auth, user => {
+  useEffect(() => onUserChange(user => {
     if (!user) { sent.current = ''; return }
     const key = `${user.uid}:${latest.current}`
     if (sent.current === key) return

@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { EditableText, EditableImage, useSectionSelection, SectionEditOverlay } from './editor/Editable'
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
 import { BLANK_IMAGE_PLACEHOLDER } from '../utils/placeholderImage'
@@ -15,7 +15,7 @@ function About({ sectionId }) {
   const carousel = section.carousel || []
 
   return (
-    <motion.section
+    <m.section
       id={sectionId}
       onClick={onSectionClick}
       initial={{ opacity: 0, y: 100 }}
@@ -121,7 +121,7 @@ function About({ sectionId }) {
 
       {section.embed360Url && <Resizable360Viewer sectionId={sectionId} src={section.embed360Url} />}
 
-    </motion.section>
+    </m.section>
   )
 }
 

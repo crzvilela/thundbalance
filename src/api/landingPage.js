@@ -14,9 +14,26 @@ export async function saveFooterContent(footer, previousFooter) {
   return response.json()
 }
 
+const WAKING = new Set([502, 503, 504])
+const RETRY_WAIT_MS = [2000, 4000, 8000]
+
+// The public content is asked again (up to three more times, 2 / 4 / 8 s apart) while the free host is still waking up and answers
+// 502 / 503 / 504 or drops the connection: the page shows its "waking the server" notice meanwhile instead of giving up.
+export async function fetchAwake(url, wait = (ms) => new Promise(resolve => setTimeout(resolve, ms))) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const response = await fetch(url)
+      if (!WAKING.has(response.status) || attempt >= RETRY_WAIT_MS.length) return response
+    } catch (error) {
+      if (attempt >= RETRY_WAIT_MS.length) throw error
+    }
+    await wait(RETRY_WAIT_MS[attempt])
+  }
+}
+
 export async function fetchLandingContent(version = 'published') {
   const url = `${API_URL}/landing-page/content?version=${version}`
-  const response = version === 'draft' ? await adminFetch(url) : await fetch(url)
+  const response = version === 'draft' ? await adminFetch(url) : await fetchAwake(url)
 
   if (!response.ok) {
     throw new Error(`Failed to load landing page content (${response.status})`)

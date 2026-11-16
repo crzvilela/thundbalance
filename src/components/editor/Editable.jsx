@@ -10,6 +10,8 @@ import { actualFontFamily, loadFont } from '../../utils/fonts'
 import { cssFontSizeVariables, getEffectiveTypography } from '../../utils/typography'
 import './Typography.css'
 import { useLayoutItem } from './useLayoutItem'
+import OptimizedPicture from '../OptimizedPicture'
+import { bundledImage } from '../../utils/bundledImage'
 
 function buildInlineStyle(styleObj) {
   if (!styleObj) return undefined
@@ -250,7 +252,10 @@ export function EditableImage({
   const layout = movable ? item : { attrs: {}, className: '', style: undefined }
 
   if (!isEditMode) {
-    return <img src={src} onError={handleImageError} alt={alt} style={{ ...inlineStyle, ...layout.style }} className={`${containerClassName} ${imageClassName} ${layout.className}`} />
+    const classes = `${containerClassName} ${imageClassName} ${layout.className}`
+    // the images the site ships come as AVIF / WebP with their size and load lazily; anything else is drawn exactly as before
+    if (bundledImage(src)) return <OptimizedPicture src={src} onError={handleImageError} alt={alt} sizes="(min-width: 768px) 33vw, 100vw" style={{ ...inlineStyle, ...layout.style }} className={classes} />
+    return <img src={src} onError={handleImageError} alt={alt} style={{ ...inlineStyle, ...layout.style }} className={classes} />
   }
 
   return (

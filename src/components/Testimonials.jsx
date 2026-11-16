@@ -1,6 +1,7 @@
 import { EditableText, useSectionSelection, SectionEditOverlay } from './editor/Editable'
 import { VideoMedia } from './editor/EditableVideo'
 import { SectionBackgroundImage, sectionBackgroundStyle } from './editor/SectionBackground'
+import OptimizedPicture from './OptimizedPicture'
 import { useLandingContent } from '../content/LandingContentContext'
 import GoogleReviews from './GoogleReviews'
 import MovableBox from './editor/MovableBox'
@@ -56,7 +57,7 @@ function TestimonialMediaItem({ sectionId, index, item }) {
             className="w-full h-full object-cover"
           />
         ) : (
-          <img src={resolveImageUrl(item.url)} alt={caption || ''} className="w-full h-full object-cover" />
+          <OptimizedPicture src={resolveImageUrl(item.url)} alt={caption || ''} sizes="(min-width: 768px) 33vw, 100vw" className="w-full h-full object-cover" />
         )}
       </div>
 

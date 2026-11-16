@@ -13,6 +13,7 @@ import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { extname, join, normalize, resolve } from 'node:path'
+import { gzipSync } from 'node:zlib'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
@@ -57,7 +58,10 @@ export function start({ dist = 'dist', port = 5173, api = '', axe = '' } = {}) {
       let body = await readFile(file)
       const type = TYPES[extname(file).toLowerCase()] || 'application/octet-stream'
       if (file.endsWith('index.html')) body = Buffer.from(body.toString('utf8').replace('<head>', `<head><script src="/__csp_probe.js"></script>${axe ? '<script src="/__axe.js"></script>' : ''}`))
-      response.writeHead(200, { 'Content-Type': type, ...headers })
+      // like the host: text files are sent compressed (so the sizes measured here are the ones a visitor downloads)
+      const compress = /gzip/.test(request.headers['accept-encoding'] || '') && /^(text\/|application\/(json|xml)|image\/svg)/.test(type) || type.startsWith('text/javascript')
+      if (compress && /gzip/.test(request.headers['accept-encoding'] || '')) { body = gzipSync(body); response.writeHead(200, { 'Content-Type': type, 'Content-Encoding': 'gzip', ...headers }) }
+      else response.writeHead(200, { 'Content-Type': type, ...headers })
       response.end(body)
     } catch {
       response.writeHead(500)

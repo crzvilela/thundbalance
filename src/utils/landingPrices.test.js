@@ -72,7 +72,8 @@ test('the landing does not depend on the catalogue, on a token or on a role', ()
   assert.match(page, /tierOf\(section/)
   assert.doesNotMatch(code(read('../components/editor/PricingTiersFields.jsx')), /usePricing|planItems|plan_id|auth|token/i)
   const api = read('../api/landingPage.js')
-  assert.match(api, /version === 'draft' \? await adminFetch\(url\) : await fetch\(url\)/)      // the published landing is fetched without a token
+  assert.match(api, /version === 'draft' \? await adminFetch\(url\) : await fetchAwake\(url\)/)      // the published landing is fetched without a token...
+  assert.match(api, /const response = await fetch\(url\)/)                                              // ...by fetchAwake: a plain fetch that only retries while the host wakes up
 })
 
 test('the three labels exist in Spanish, English and Catalan for the two boxes', () => {

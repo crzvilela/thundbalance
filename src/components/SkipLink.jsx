@@ -1,14 +1,20 @@
 import { useLocation } from 'react-router-dom'
 import { useI18n } from '../i18n/I18nContext'
-import { useAdminText } from '../admin/useAdminText'
+
+// The admin panel has its own language (English or Spanish, kept in localStorage). Only this one text is needed here, so it is read
+// directly instead of importing the whole admin dictionary (130 kB) into the page that every visitor downloads.
+function adminSkipLabel() {
+  let language = 'en'
+  try { language = window.localStorage.getItem('tb_admin_language') === 'es' ? 'es' : 'en' } catch { /* storage unavailable: English */ }
+  return language === 'es' ? 'Saltar al contenido principal' : 'Skip to main content'
+}
 
 // "Skip to main content": the first thing a keyboard reaches on every page. Invisible until it has the focus. It moves the focus to the
 // page's <main id="main"> (the admin panel uses its own language).
 export default function SkipLink() {
   const { t } = useI18n()
-  const admin = useAdminText()
   const { pathname } = useLocation()
-  const label = pathname.startsWith('/admin') ? admin.t('a11y_skip') : t('a11y_skip')
+  const label = pathname.startsWith('/admin') ? adminSkipLabel() : t('a11y_skip')
 
   const go = (event) => {
     event.preventDefault()

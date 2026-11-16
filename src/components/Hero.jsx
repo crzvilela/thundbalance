@@ -26,6 +26,7 @@ function Hero() {
       <SectionBackgroundImage
         background={section.background}
         fallbackSrc={`${import.meta.env.BASE_URL}site-images/hero.jpg`}
+        priority
         imageClassName="scale-105"
       />
 

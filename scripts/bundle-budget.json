@@ -1,0 +1,5 @@
+{
+  "comment": "Limits in gzip kB: the value measured after the optimisation (2026-11) plus about 15 %. Raise a limit only on purpose, with the reason in the commit.",
+  "limitsKb": { "entry": 65, "firstLoad": 216, "firstLoadJs": 193, "largestChunk": 85 },
+  "notInFirstLoad": ["fullcalendar", "phone-numbers", "firebase", "Trialsession", "useAdminText", "LandingPageEditor", "datepicker", "calendar"]
+}

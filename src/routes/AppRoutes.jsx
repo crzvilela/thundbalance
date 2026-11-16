@@ -1,9 +1,10 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { LazyMotion } from 'framer-motion'
 
 import Home from '../pages/Home'
-import Login from '../pages/Login'
-import RequireAdmin from '../components/admin/RequireAdmin'
+const Login = lazy(() => import('../pages/Login'))
+const RequireAdmin = lazy(() => import('../components/admin/RequireAdmin'))
 import ConsentBanner from '../components/ConsentBanner'
 import SkipLink from '../components/SkipLink'
 import { NotForTrainers, TrainerRoute } from '../roles/RoleGuards'
@@ -39,9 +40,13 @@ const AdminLogin = lazy(() => import('../pages/admin/AdminLogin'))
 const LegalPage = lazy(() => import('../pages/LegalPage'))
 const NotFound = lazy(() => import('../pages/NotFound'))
 
+// the animation code is a separate file that arrives after the first paint; until then the elements are drawn in their start state
+const loadMotion = () => import('../components/motionFeatures').then(module => module.default)
+
 function AppRoutes() {
   return (
     <BrowserRouter>
+      <LazyMotion features={loadMotion} strict>
 
       <SkipLink />
       <Suspense fallback={<div className="min-h-screen bg-black" aria-busy="true" />}>
@@ -112,6 +117,7 @@ function AppRoutes() {
       </Routes>
       </Suspense>
       <ConsentBanner />
+      </LazyMotion>
 
     </BrowserRouter>
   )

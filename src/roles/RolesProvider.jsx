@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { onAuthStateChanged } from 'firebase/auth'
-import { auth } from '../firebase/auth'
+import { currentUser, onUserChange } from '../firebase/session'
 import { API_URL } from '../config'
 import { authFetch } from '../api/authFetch'
 import { RolesContext } from './rolesContext'
@@ -8,13 +7,13 @@ import { RolesContext } from './rolesContext'
 // After the login it asks GET /me/roles once, keeps the answer for the whole site and forgets it at logout.
 // The answer only decides what the menu and the pages SHOW: the server checks the role again on every request.
 export default function RolesProvider({ children }) {
-  const [signedIn, setSignedIn] = useState(Boolean(auth.currentUser))
+  const [signedIn, setSignedIn] = useState(() => Boolean(currentUser()))
   const [state, setState] = useState({ uid: null, status: 'signed-out', roles: null })
   const [version, setVersion] = useState(0)
-  const [uid, setUid] = useState(auth.currentUser?.uid || null)
+  const [uid, setUid] = useState(() => currentUser()?.uid || null)
   const [authReady, setAuthReady] = useState(false)       // Firebase has said, at least once, who is signed in
 
-  useEffect(() => onAuthStateChanged(auth, user => {
+  useEffect(() => onUserChange(user => {
     setSignedIn(Boolean(user))
     setUid(user?.uid || null)
     setAuthReady(true)

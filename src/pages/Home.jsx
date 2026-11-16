@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { pingServer } from '../api/schedule'
 import Navbar, { WaitingNavbar } from '../components/Navbar'
+import WakeNotice from '../components/WakeNotice'
 import Footer from '../components/Footer'
 import LandingSections from '../components/LandingSections'
 import { LandingContentProvider } from '../content/LandingContentContext'
@@ -17,7 +18,7 @@ function Home() {
     <LandingContentProvider
       mode="view"
       version={isPreview ? 'draft' : 'published'}
-      placeholder={<div className="bg-black min-h-screen"><WaitingNavbar /></div>}
+      placeholder={<div className="bg-black min-h-screen"><WaitingNavbar /><WakeNotice /></div>}
     >
       <div className="bg-black min-h-screen text-white overflow-x-hidden">
 

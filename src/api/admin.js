@@ -1,6 +1,7 @@
-import { auth } from '../firebase/auth'
+import { loadAuthModule } from '../firebase/session'
 
 export async function adminFetch(url, options = {}) {
+  const { auth } = await loadAuthModule()          // the SDK is a separate file (firebase/session.js)
   const user = auth.currentUser
   if (!user) throw new Error('Admin login required')
 
