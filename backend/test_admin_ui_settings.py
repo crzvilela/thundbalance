@@ -137,6 +137,58 @@ class Settings(unittest.TestCase):
         self.assertEqual((answer.status_code, self.code(answer)), (422, "too_few_visible"))
         self.assertEqual(answer.json()["detail"]["minimum"], 3)
 
+    # ----- the groups of the menu and the Hoy blocks of the Overview
+    def test_an_old_menu_order_that_crosses_groups_is_accepted_and_stored_in_its_groups(self):
+        old = ["videos", "schedule", "legal", "clients", "overview", "landing", "calendar", "requests", "system", "trainers", "plans", "messages", "trials", "sent-messages", "customize"]
+        saved = self.put(valid(menu=[{"key": key} for key in old])).json()
+        stored = [item["key"] for item in saved["menu"]]
+        self.assertEqual(stored, ["overview", "requests", "messages", "trials", "sent-messages", "clients", "trainers", "schedule", "calendar", "videos", "landing", "plans",
+                                  "legal", "system", "customize"])                      # each in its group, the order inside the group kept, the editor last
+        self.assertEqual(self.client.get(URL).json()["menu"], saved["menu"])
+
+    def test_the_groups_cover_the_menu_exactly_once(self):
+        keys = [key for group in ui.MENU_GROUPS.values() for key in group]
+        self.assertEqual(sorted(keys), sorted(key for key in ui.MENU_KEYS if key != "customize"))
+        self.assertEqual(len(keys), len(set(keys)))
+        self.assertEqual(list(ui.MENU_GROUPS), ["today", "people", "agenda", "offer", "system"])
+
+    def test_the_names_and_the_hidden_items_survive_the_grouping(self):
+        saved = self.put(valid(menu=[{"key": "videos", "hidden": True}, {"key": "calendar", "label": "Agenda del día"}, {"key": "requests"}])).json()
+        by_key = {item["key"]: item for item in saved["menu"]}
+        self.assertEqual(by_key["videos"], {"key": "videos", "hidden": True})
+        self.assertEqual(by_key["calendar"], {"key": "calendar", "label": "Agenda del día"})
+
+    def test_the_overview_blocks_keep_their_old_keys_and_the_new_ones_are_accepted(self):
+        for key in ("stat_clients", "stat_sessions", "stat_pending", "week", "pending", "business", "upcoming", "quick"):
+            self.assertIn(key, ui.OVERVIEW_KEYS)                                          # a configuration saved before keeps working
+        old = [{"key": key} for key in ("stat_clients", "week", "pending", "business", "upcoming", "quick")]
+        self.assertEqual(self.put(valid(overview=old)).status_code, 200)
+        self.wipe()
+        new = [{"key": key, "title": "Mi bloque"} for key in ("today_strip", "today_sessions", "alerts", "deletions")]
+        self.assertEqual(self.put(valid(overview=new + old)).status_code, 200)
+
+    def test_what_to_do_today_the_warnings_and_the_deletion_requests_cannot_be_hidden(self):
+        for key in ("today_strip", "alerts", "deletions"):
+            answer = self.put(valid(overview=[{"key": key, "hidden": True}]))
+            self.assertEqual((answer.status_code, self.code(answer)), (422, "protected_card"), key)
+        self.assertEqual(self.put(valid(overview=[{"key": "today_sessions", "hidden": True}])).status_code, 200)     # "Sesiones de hoy" may be hidden
+        self.wipe()
+        self.assertEqual(self.put(valid(overview=[{"key": "today_strip", "title": "Prioridades"}])).status_code, 200)   # renaming a protected one is allowed
+
+    def test_the_frontend_and_the_server_lists_are_the_same(self):
+        import json
+        import pathlib
+        import re
+        source = (pathlib.Path(__file__).resolve().parent.parent / "src" / "admin" / "uiRegistry.js").read_text(encoding="utf-8")
+        card_keys = re.findall(r"\{ key: '([a-z_]+)', titleKey: '[a-z_]+', group: '(?:wide|stat|card|business)'", source)
+        self.assertEqual(card_keys, list(ui.OVERVIEW_KEYS))
+        menu = re.findall(r"\{ key: '([a-z-]+)', group: '([a-z]+)', to:", source)
+        expected = [(key, group) for group, keys in ui.MENU_GROUPS.items() for key in keys]
+        self.assertEqual(menu, expected)
+        protected = re.findall(r"key: '([a-z_]+)', titleKey: '[a-z_]+', group: '[a-z]+'(?:, span: \d)?, protected: true", source)
+        self.assertEqual(protected, list(ui.PROTECTED_OVERVIEW_KEYS))
+        self.assertTrue(json.dumps(card_keys))
+
     # ----- versions
     def test_a_stale_version_is_refused_with_409(self):
         first = self.put(valid()).json()

@@ -6,18 +6,37 @@ The studio's admin can rename, reorder and hide what it does not use from "Perso
 
 | Group | Keys |
 |---|---|
-| Menu (`menu`) | `overview` (protected), `requests`, `trials`, `messages`, `sent-messages`, `clients`, `calendar`, `schedule`, `trainers`, `plans`, `videos`, `landing`, `customize` (the editor button: protected, always last, can be renamed) |
-| Overview cards (`overview`) | `stat_clients`, `stat_sessions`, `stat_pending`, `week`, `pending`, `business`, `upcoming`, `quick` |
+| Menu (`menu`) | `overview` (protected), `requests`, `trials`, `messages`, `sent-messages`, `clients`, `trainers`, `calendar`, `schedule`, `plans`, `videos`, `landing`, `system`, `legal`, `customize` (the editor button: protected, always last, can be renamed). Listed in the order of their groups, see "Menu groups" |
+| Overview cards (`overview`) | `today_strip` ("Qué hacer hoy", protected), `today_sessions` ("Sesiones de hoy"), `alerts` ("Avisos", protected), `deletions` (deletion requests, protected), `stat_clients`, `stat_sessions`, `stat_pending`, `week`, `pending`, `business`, `upcoming`, `quick`. See "Overview Hoy" |
 | Pages (`pages`, title + subtitle) | `overview`, `requests`, `trials`, `messages`, `sent-messages`, `clients`, `calendar`, `schedule`, `trainers`, `plans`, `videos` |
 
 ## Adding a new area (or card, or page)
 
 1. **Frontend registry** `src/admin/uiRegistry.js`: add the item to `MENU_ITEMS` (key, route, icon, `labelKey`, optional `badge`) / `OVERVIEW_CARDS` (key, `titleKey`, group and span) / `PAGES` (key, `titleKey`, `subtitleKey`); the texts go in `adminText.js` (ES and EN). The menu and the editor read the registry, so nothing else is needed for the menu.
 2. **Backend registry** `backend/admin_ui_settings.py`: add the same key to `MENU_KEYS` / `OVERVIEW_KEYS` / `PAGE_KEYS` (the server refuses any key it does not know).
-3. **The place that shows it**: a page uses `<PageHeader pageKey="the-key" ... />`; an Overview card draws its title with `<Editable keyPath="overview:the-key" ... />` and is placed by `overviewBlocks` (`src/admin/uiSettings.js`).
+3. **The place that shows it**: a page uses `<PageHeader pageKey="the-key" ... />`; an Overview card draws its title with `<Editable keyPath="overview:the-key" ... />` and is placed by `overviewLayout` (`src/admin/uiSettings.js`).
 4. Tests: `src/admin/uiSettings.test.js` (the original menu must stay equal) and `backend/test_admin_ui_settings.py`.
 
 An area added later appears at the end of the menu for studios that already saved a configuration, with its original name.
+
+## Menu groups
+The side menu (and the phone drawer) is split into groups with a small fixed title (ES / EN, `nav_group_*` in `adminText.js`, **not editable**): **Hoy** (`overview`, `requests`, `trials`, `messages`, `sent-messages`), **Personas** (`clients`, `trainers`), **Agenda** (`calendar`, `schedule`), **Oferta** (`plans`, `videos`, `landing`), **Sistema** (`system`, `legal`). Each entry of `MENU_ITEMS` (`src/admin/uiRegistry.js`) has a `group`, and `MENU_GROUPS` lists the groups in their fixed order. The server mirrors them (`MENU_GROUPS` in `backend/admin_ui_settings.py`; a test compares both files).
+- The stored menu is still ONE flat list. It is **normalised** when it is read (`groupMenuKeys`) and when it is saved (`group_menu`): every item goes to its group, the order the studio gave is kept inside each group, `customize` stays last. An old configuration whose order crossed groups keeps working (names and hidden items included) and is stored in the new shape from the next save. An entry the configuration does not mention comes at the end of its group.
+- Reordering works only **inside** a group (up / down buttons and drag, on the panel and in the advanced editor): `moveInGroup` / `moveToInGroup`; the first of a group cannot go up and the last cannot go down. Renaming and hiding stay per item. A group with no visible item shows no title.
+- `overview` and `customize` can never be hidden (so the first group and the editor are always there) and at least 3 areas stay visible.
+- **A new entry in a group**: add it to `MENU_ITEMS` with its `group` (in the position it should have by default inside the group), to `MENU_GROUPS` in the backend, and the label to `adminText.js`. A configuration saved before shows it at the end of its group. A new group: add it to both `MENU_GROUPS` (frontend and backend) and the title `nav_group_<key>` in ES and EN.
+
+## Overview "Hoy"
+The Overview opens with the title **Hoy / Today** (page `overview`; the subtitle is the date of today written in full in Europe/Madrid, e.g. "martes, 17 de noviembre", and the studio can replace it) and, in this order:
+1. **`today_strip` — "Qué hacer hoy"**: 4 clickable cards (pending requests → Requests, trial sessions to approve → Trial sessions, sessions today → Calendar on the day view of today, unread messages → Messages) and a 5th only when a deletion request is waiting. A card with 0 is neutral ("Sin pendientes"); with something waiting it is highlighted. Everything at 0: "Todo al día".
+2. **`today_sessions` — "Sesiones de hoy"**: hour, client, trainer and state (sessions and trial sessions that are alive), at most 8 with "Ver todas" and "+N más hoy"; "Hoy no hay sesiones" when empty.
+3. **`alerts` — "Avisos (n)"**: one collapsible line (the count and the most serious warning; open: every warning with its link; none: "Todo en orden"). It gathers what used to be loose banners: email not working (also still shown on the trial sessions page), deletion requests, new errors (System status), legal texts, packs ending within 7 days. Order of seriousness: email > deletions > errors > legal > packs.
+4. **`deletions`** — the card that answers the deletion requests (it draws nothing when there is none; the warning and the card of the strip link to it, `#deletion-requests`).
+5. then, as before: KPIs (`stat_*`), `week`, `pending`, `business`, `upcoming`, `quick`.
+
+All of them are Overview cards of the registry (reorderable, renameable, hideable), **except that `today_strip`, `alerts` and `deletions` are protected** (`PROTECTED_OVERVIEW_KEYS`; they can be moved and renamed, never hidden: they are what the admin must always see). The server refuses to hide them (422 `protected_card`) and the panel shows a lock instead of the eye. Old keys never change. A key that a saved configuration does not mention takes its **default position** (`orderKeysAt`: right after the nearest key that precedes it in the registry, or first): so the new "Hoy" blocks appear at the top of an old configuration. The small KPI cards are one grid placed where the first of them is.
+
+Data: `GET /admin/overview/today` (`backend/admin_overview.py`, admin only): the date and the sessions of today (max 30; `sessions_today.total` is the real count), pending requests and trials, unread messages, pending deletion requests, clients with a pack ending in the next 7 days (a number only), the email state (`ready`, `reason`), new errors in 24 h and whether the legal texts need attention. It reuses the existing queries (`contact_messages.counts`, `legal.get_admin`, `emails.health.check_ready`, `pack_view.ACTIVE_PACK_CONDITION`), caches the answer 12 s in memory (the email check, which calls Google, 60 s) and a part that fails comes back as `null` ("unknown", never 0) without taking the rest down. While it loads the blocks show a skeleton; if it fails each block says so with a "Reintentar" and the rest of the page stays.
 
 ## Editing on the panel itself (inline)
 

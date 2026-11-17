@@ -21,6 +21,18 @@ const toSession = (row) => ({
   packId: row[7] ?? null, packName: row[8] || ''
 })
 
+// The sessions that count, in the two lists the client area shows: `active` (not cancelled), `upcoming` (not completed, soonest first) and `past`
+// (completed, latest first). One rule for My Sessions and the dashboard.
+export function groupSessions(sessions, statusOf) {
+  const byTime = (a, b) => (a.date + a.time).localeCompare(b.date + b.time)
+  const live = sessions.filter(session => statusOf(session) !== 'cancelled')
+  return {
+    active: live,
+    upcoming: live.filter(session => statusOf(session) !== 'completed').sort(byTime),
+    past: live.filter(session => statusOf(session) === 'completed').sort((a, b) => byTime(b, a))
+  }
+}
+
 const EMPTY_REQUESTS = { items: [], max_per_session: 1, notice_hours: null, note_max: 300 }
 
 export function useClientSessions() {
@@ -32,6 +44,7 @@ export function useClientSessions() {
   const [sessions, setSessions] = useState([])
   const [trial, setTrial] = useState(null)             // { status, session_date, session_time, trainer, goal, experience, created_at }
   const [packRequest, setPackRequest] = useState(null) // the pack request waiting for the studio, if any
+  const [workflow, setWorkflow] = useState(null)       // the client's whole workflow (state, packs with their progress): what the dashboard shows
   const [trainerIds, setTrainerIds] = useState({})
   const [requestInfo, setRequestInfo] = useState(EMPTY_REQUESTS)
   const [loading, setLoading] = useState(true)
@@ -80,8 +93,10 @@ export function useClientSessions() {
         const workflowResponse = await authFetch(`${API_URL}/client/workflow`)
         const workflow = workflowResponse.ok ? await workflowResponse.json() : null
         setPackRequest(workflow?.state === 'pending' ? workflow.request : null)
+        setWorkflow(workflow)
       } catch {
         setPackRequest(null)
+        setWorkflow(null)
       }
 
       // Trainer rows are [id, name, specialty]; the sessions only carry names.
@@ -134,7 +149,7 @@ export function useClientSessions() {
   }, [sessions])
 
   return {
-    sessions, trial, packRequest, trainerIds, requestInfo, loading, error, reload,
+    sessions, trial, packRequest, workflow, trainerIds, requestInfo, loading, error, reload,
     now, today, rules, changeOf, statusOf, byDay
   }
 }

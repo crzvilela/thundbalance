@@ -68,4 +68,4 @@ if __name__ == "__main__":
     firebase_accounts.init_firebase_admin = lambda: (False, "audit")          # no revocation check against the real Firebase
     seed()
     import uvicorn
-    uvicorn.run(main.app, host="127.0.0.1", port=8000, log_level="warning")
+    uvicorn.run(main.app, host="127.0.0.1", port=int(os.getenv("A11Y_PORT", "8000")), log_level="warning")

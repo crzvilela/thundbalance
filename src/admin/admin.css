@@ -21,13 +21,13 @@
 /* "backwards" (not "both"): keeping the final keyframe would leave a
    transform on the page wrapper, which traps position:fixed windows inside
    it. After the animation the wrapper must have no transform at all. */
-.admin-fade { animation: admin-fade 0.3s ease backwards; }
+.admin-fade { animation: admin-fade 0.1s ease-out backwards; }   /* 100 ms, no delay: the page is usable at once */
 
 @keyframes admin-pop { from { transform: translateY(14px) scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes admin-slide-in { from { transform: translateX(32px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes admin-toast-in { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
 /* Opacity only: any transform on the page wrapper would trap fixed windows. */
-@keyframes admin-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes admin-fade { from { opacity: 0.4; } to { opacity: 1; } }   /* starts at 40 %: never an empty flash */
 
 /* the checkboxes of the selection mode appear softly */
 @keyframes bulk-in { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: none; } }

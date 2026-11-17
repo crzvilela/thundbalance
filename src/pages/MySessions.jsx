@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import TempPasswordNotice from '../components/TempPasswordNotice'
@@ -6,15 +6,14 @@ import AddAllMenu from '../components/sessions/AddAllMenu'
 import PendingRequests from '../components/sessions/PendingRequests'
 import SessionCalendarPanel from '../components/sessions/SessionCalendarPanel'
 import SessionModal from '../components/sessions/SessionModal'
-import { NextSessionCard, SessionRow, Spinner } from '../components/sessions/SessionParts'
-import { API_URL } from '../config'
-import { authFetch } from '../api/authFetch'
+import NextSessionCard from '../components/sessions/NextSessionCard'
+import { ProgressMeter } from '../components/sessions/PackProgress'
+import { SessionRow, Spinner } from '../components/sessions/SessionParts'
 import { useFeatures } from '../api/features'
-import { loadDay } from '../api/schedule'
-import { answerMyProposal, createRescheduleRequest } from '../api/reschedule'
-import { useClientSessions } from '../hooks/useClientSessions'
+import { groupSessions, useClientSessions } from '../hooks/useClientSessions'
+import { useSessionActions } from '../hooks/useSessionActions'
 import { useI18n } from '../i18n/I18nContext'
-import { formatDay, formatTime, madridNow } from '../utils/sessionDates'
+import { formatDay, formatTime } from '../utils/sessionDates'
 
 // Trial goals/levels are stored in English; the index is the translation key (ts_goal_N / ts_level_N).
 const TRIAL_GOALS = ['Body recomposition', 'Lose weight', 'Build muscle', 'Increase strength', 'Rehabilitation/injury recovery', 'Conditioning', 'Endurance', 'Tone/define', 'Improve mobility & flexibility', 'Increase energy']
@@ -23,96 +22,22 @@ const TRIAL_LEVELS = ['Beginner', 'Intermediate', 'Advanced']
 const card = 'rounded-3xl border border-white/10 bg-white/[0.025]'
 const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400'
 
-// The server speaks in technical sentences: the visitor only ever sees our own translated ones.
-function friendlyCancel(problem) {
-  if (problem instanceof TypeError) return 'ms_err_network'                       // fetch could not reach the server
-  if (/past|started|ended/i.test(String(problem?.message || ''))) return 'ms_err_past'
-  return 'ms_err_cancel'
-}
-
 function MySessions() {
-  const { t, locale, language } = useI18n()
+  const { t, locale } = useI18n()
   const { clientCalendar } = useFeatures()      // CLIENT_CALENDAR_ENABLED: no calendar buttons or menus when off
   const data = useClientSessions()
-  const { sessions, trial, trainerIds, requestInfo, loading, error, reload, today, rules, changeOf, statusOf } = data
-  const [toast, setToast] = useState(null)   // { tone: 'success' | 'error', text }
-  const [open, setOpen] = useState(null)     // { id, mode }
-  const [answering, setAnswering] = useState(null)      // id of the proposal being answered (no double clicks)
+  const { sessions, trial, workflow, trainerIds, requestInfo, loading, error, reload, today, rules, changeOf, statusOf } = data
+  const { toast, setToast, showToast, open, setOpen, answering, loadTimes, cancel, requestChange, respondTo } = useSessionActions(data)
 
-  useEffect(() => {
-    if (!toast) return undefined
-    const timer = window.setTimeout(() => setToast(null), toast.tone === 'error' ? 9000 : 5000)
-    return () => window.clearTimeout(timer)
-  }, [toast])
-
-  const groups = useMemo(() => {
-    const byTime = (a, b) => (a.date + a.time).localeCompare(b.date + b.time)
-    const live = sessions.filter(session => statusOf(session) !== 'cancelled')
-    return {
-      active: live,
-      upcoming: live.filter(session => statusOf(session) !== 'completed').sort(byTime),
-      past: live.filter(session => statusOf(session) === 'completed').sort((a, b) => byTime(b, a))
-    }
-  }, [sessions, statusOf])
+  const groups = useMemo(() => groupSessions(sessions, statusOf), [sessions, statusOf])
 
   const next = groups.upcoming[0]
   const others = groups.upcoming.slice(1)
   const total = groups.active.length
   const done = groups.past.length
+  // the end date of the pack, when the client has one pack (with several the sessions below belong to different packs)
+  const packEnd = workflow?.plans?.length === 1 ? String(workflow.plans[0].end_date || '').slice(0, 10) : ''
   const opened = open ? sessions.find(session => session.id === open.id) : null
-
-  const showToast = (tone, text) => setToast({ tone, text })
-
-  // The hours offered are the ones when ANY trainer is free (the modal then checks the session's own trainer and, if he or she
-  // is busy, offers the trainers who are free then).
-  const loadTimes = async (session, value) => {
-    let list
-    try {
-      list = await loadDay(value, { force: true })
-    } catch {
-      throw new Error('ms_err_times')
-    }
-    const current = madridNow(new Date())
-    return list.map(item => String(item).slice(0, 5)).filter(time => value !== current.date || time > current.time)
-  }
-
-  // Cancelling stays immediate. The server answers 200 with {error} for business rules, so check both.
-  const cancel = async (session) => {
-    try {
-      const response = await authFetch(`${API_URL}/sessions/${session.id}`, { method: 'DELETE' })
-      const result = await response.json().catch(() => ({}))
-      if (!response.ok || result.error) throw new Error(result.error || 'failed')
-    } catch (problem) {
-      throw new Error(friendlyCancel(problem), { cause: problem })
-    }
-    setOpen(null)
-    showToast('success', t('ms_cancelled_ok'))
-    await reload()
-  }
-
-  // The client no longer moves a session by themselves: they send ONE request and the studio decides.
-  const requestChange = async (session, date, time, note, trainerId) => {
-    await createRescheduleRequest(session.id, { date, time, note, lang: language, trainerId })
-    setOpen(null)
-    showToast('success', t('ms_request_sent'))
-    await reload()
-  }
-
-  const respondTo = async (request, accept) => {
-    if (answering) return
-    setAnswering(request.id)
-    try {
-      await answerMyProposal(request.id, accept)
-      setOpen(null)
-      showToast('success', t(accept ? 'ms_proposal_accepted' : 'ms_proposal_declined'))
-      await reload()
-    } catch (problem) {
-      showToast('error', t(problem.message))
-      await reload()
-    } finally {
-      setAnswering(null)
-    }
-  }
 
   const trialCard = trial && (
     <section aria-label={t('tt_title')} className="mb-6 rounded-3xl border border-violet-400/30 bg-violet-400/[0.06] p-5 sm:p-7">
@@ -222,13 +147,8 @@ function MySessions() {
 
                   {total > 0 && (
                     <div className={`${card} p-5`}>
-                      <div className="mb-3 flex items-end justify-between gap-3">
-                        <p className="text-xs font-medium uppercase tracking-wider text-gray-400">{t('ms_progress')}</p>
-                        <p className="text-sm text-gray-300">{t('ms_progress_text', { done, total })}</p>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-white/10" role="progressbar" aria-label={t('ms_progress')} aria-valuenow={Math.round((done / total) * 100)} aria-valuemin={0} aria-valuemax={100}>
-                        <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-300 transition-all duration-700" style={{ width: `${(done / total) * 100}%` }} />
-                      </div>
+                      <p className="mb-3 text-xs font-medium uppercase tracking-wider text-gray-400">{t('ms_progress')}</p>
+                      <ProgressMeter done={done} total={total} remaining={total - done} endDate={packEnd} label={t('ms_progress')} />
                     </div>
                   )}
 

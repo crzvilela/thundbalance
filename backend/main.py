@@ -56,6 +56,7 @@ from bulk_actions import BulkPayload, run_each, unknown_action
 import inbox
 import reschedule_requests
 from features import client_calendar_enabled, reschedule_min_hours_before
+import admin_overview
 from contact_messages import register_contact_routes
 from trial_notifications import notify_trial_requested
 import mailer
@@ -375,6 +376,7 @@ register_trial_confirmation_routes(app)
 register_client_account_routes(app, require_admin, require_client)
 legal.register_legal_routes(app, require_admin)                     # /legal (public), /admin/legal/* (company data and legal texts)
 monitoring_routes.register_monitoring_routes(app, require_admin)      # /client-errors/report, /health/ready, /admin/system-errors
+admin_overview.register_overview_routes(app, require_admin)                 # /admin/overview/today (the "Hoy" screen in one request)
 
 # defined further down: looked up when a request arrives
 privacy.register_privacy_routes(

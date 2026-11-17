@@ -7,13 +7,15 @@ import assert from 'node:assert/strict'
 import {
   pageIsCustomised, blockRows, moveBlock, moveBlockTo, resetPage, resolveBlocks, toggleBlock,
   canEditPanel, draftTextOf, editableView, inlineReduce, limitOfPath, parseKeyPath, performReset, performSave, problemPaths, setDraftText, textOfPath,
-  buildDraft, draftProblems, draftToSettings, isDefaultDraft, moveItem, moveToItem, resetItem, resolveCustomizeLabel, resolveMenu,
-  overviewBlocks, resolveOverview, resolvePageText, sameDraft, sanitizeSettings, setItemText, setPageText, textProblem, toPayload, toggleHidden, visibleAreas
+  buildDraft, draftProblems, draftToSettings, groupMenuKeys, groupOfItem, isDefaultDraft, menuByGroup, moveInGroup, moveItem, moveToInGroup, moveToItem, orderKeysAt, resetItem, resolveCustomizeLabel, resolveMenu,
+  overviewLayout, resolveOverview, resolvePageText, sameDraft, sanitizeSettings, setItemText, setPageText, textProblem, toPayload, toggleHidden, visibleAreas
 } from './uiSettings.js'
 import { adminText } from './adminText.js'
-import { TEXT_ENTRIES, TEXT_KEYS, BLOCKS, EDITABLE_TEXTS, MENU_ITEMS, OVERVIEW_CARDS, PAGES, editableText } from './uiRegistry.js'
+import { TEXT_ENTRIES, TEXT_KEYS, BLOCKS, EDITABLE_TEXTS, MENU_GROUPS, MENU_ITEMS, PROTECTED_OVERVIEW_KEYS, OVERVIEW_CARDS, PAGES, editableText } from './uiRegistry.js'
 
-// The menu exactly as the panel had it before this existed (AdminLayout.jsx): what nobody who never customised may see changed.
+// The menu with no configuration: the same entries as before the groups existed (same links, icons, texts and badges), now in the order of its groups:
+// Hoy (overview, requests, trials, messages, sent-messages), Personas (clients, trainers), Agenda (calendar, schedule), Oferta (plans, videos, landing),
+// Sistema (system, legal).
 const ORIGINAL_MENU = [
   ['/admin', true, 'overview', 'nav_overview', undefined],
   ['/admin/requests', undefined, 'requests', 'nav_requests', 'requests'],
@@ -21,14 +23,14 @@ const ORIGINAL_MENU = [
   ['/admin/messages', undefined, 'inbox', 'nav_messages', 'messages'],
   ['/admin/sent-messages', undefined, 'send', 'nav_broadcast', undefined],
   ['/admin/clients', undefined, 'clients', 'nav_clients', undefined],
+  ['/admin/trainers', undefined, 'clock', 'nav_trainers', undefined],
   ['/admin/calendar', undefined, 'calendar', 'nav_sessions', undefined],
   ['/admin/schedule', undefined, 'refresh', 'nav_schedule', 'schedule'],
-  ['/admin/trainers', undefined, 'clock', 'nav_trainers', undefined],
   ['/admin/plans', undefined, 'bolt', 'nav_plans', undefined],
   ['/admin/videos', undefined, 'video', 'nav_videos', undefined],
+  ['/admin/landing-editor', undefined, 'landing', 'nav_landing', undefined],
   ['/admin/system', undefined, 'alert', 'nav_system', undefined],
-  ['/admin/legal', undefined, 'doc', 'nav_legal', undefined],
-  ['/admin/landing-editor', undefined, 'landing', 'nav_landing', undefined]
+  ['/admin/legal', undefined, 'doc', 'nav_legal', undefined]
 ]
 const shape = (items) => items.map(item => [item.to, item.end, item.icon, item.labelKey, item.badge])
 const keys = (list) => list.map(item => item.key)
@@ -43,30 +45,33 @@ test('without a configuration the menu is the original one', () => {
 })
 
 test('without a configuration the overview, the pages and the button are the original ones', () => {
-  assert.deepEqual(keys(resolveOverview({})), ['stat_clients', 'stat_sessions', 'stat_pending', 'week', 'pending', 'business', 'upcoming', 'quick'])
+  assert.deepEqual(keys(resolveOverview({})), ['today_strip', 'today_sessions', 'alerts', 'deletions', 'stat_clients', 'stat_sessions', 'stat_pending', 'week', 'pending', 'business', 'upcoming', 'quick'])
   assert.ok(resolveOverview({}).every(card => !card.hidden && !card.custom))
   assert.deepEqual(resolvePageText({}, 'requests', 'Requests', 'sub'), { title: 'Requests', subtitle: 'sub' })
   assert.deepEqual(resolvePageText({}, 'not-in-the-registry', 'T', 'S'), { title: 'T', subtitle: 'S' })
   assert.equal(resolveCustomizeLabel({}), '')
   assert.equal(PAGES.length, 13)
-  assert.equal(OVERVIEW_CARDS.length, 8)
+  assert.equal(OVERVIEW_CARDS.length, 12)
 })
 
 test('a configuration orders, renames and hides; the original shows through where it says nothing', () => {
   const menu = resolveMenu({ menu: [{ key: 'clients' }, { key: 'requests', label: 'Pedidos' }, { key: 'videos', hidden: true }] })
-  assert.deepEqual(keys(menu).slice(0, 3), ['clients', 'requests', 'videos'])      // the keys it mentions come first, in its order
   assert.equal(menu.find(item => item.key === 'requests').custom, 'Pedidos')
   assert.equal(menu.find(item => item.key === 'videos').hidden, true)
   assert.equal(menu.length, 14)                                                    // nothing is lost: the rest follow in their own order
-  assert.deepEqual(keys(menu).slice(3, 6), ['overview', 'trials', 'messages'])
+  assert.ok(keys(menu).indexOf('requests') < keys(menu).indexOf('overview'))       // inside its group (Hoy) the order it gives is kept ...
+  assert.ok(keys(menu).indexOf('requests') < keys(menu).indexOf('trials'))
+  assert.deepEqual(keys(menu).filter(key => groupOfItem(key) === 'people'), ['clients', 'trainers'])      // ... and each item is in its own group
+  assert.deepEqual(keys(menu).slice(0, 3), ['requests', 'overview', 'trials'])
   assert.equal(menu.find(item => item.key === 'messages').custom, '')
 })
 
 test('a key the configuration does not know (a new area) goes to the end; keys that no longer exist are ignored', () => {
   const partial = resolveMenu({ menu: [{ key: 'overview' }, { key: 'clients' }, { key: 'gone-area' }] })
-  assert.deepEqual(keys(partial).slice(0, 2), ['overview', 'clients'])
+  assert.deepEqual(keys(partial).slice(0, 2), ['overview', 'requests'])                  // the rest of its group follows it; clients is in Personas
+  assert.equal(keys(partial)[5], 'clients')
   assert.equal(keys(partial).length, 14)
-  assert.equal(keys(partial).at(-1), 'landing')
+  assert.equal(keys(partial).at(-1), 'legal')                                      // the last of the last group
   assert.ok(!keys(partial).includes('gone-area'))
 })
 
@@ -103,7 +108,7 @@ test('repeated keys count once and a damaged value never throws', () => {
 
 test('overview cards and page texts', () => {
   const cards = resolveOverview({ overview: [{ key: 'quick', title: 'Atajos' }, { key: 'week', hidden: true }] })
-  assert.deepEqual(keys(cards).slice(0, 3), ['quick', 'week', 'stat_clients'])
+  assert.deepEqual(keys(cards).slice(0, 3), ['today_strip', 'today_sessions', 'alerts'])      // the Hoy blocks are not in this configuration: they go first
   assert.equal(cards.find(card => card.key === 'quick').custom, 'Atajos')
   assert.equal(cards.find(card => card.key === 'week').hidden, true)
   const page = { pages: { trials: { title: 'Pruebas', subtitle: '' }, ghost: { title: 'x' } } }
@@ -113,17 +118,22 @@ test('overview cards and page texts', () => {
 test('the draft: reorder with buttons and with drag, "Personalizar panel" stays last', () => {
   const draft = buildDraft({})
   assert.deepEqual(keys(draft.menu), [...MENU_ITEMS.map(item => item.key), 'customize'])
-  let menu = moveItem(draft.menu, 'clients', -1)
-  assert.equal(keys(menu).indexOf('clients'), keys(draft.menu).indexOf('clients') - 1)
+  let menu = moveInGroup(draft.menu, 'trainers', -1)
+  assert.deepEqual(keys(menu).slice(5, 7), ['trainers', 'clients'])
   assert.equal(keys(menu).at(-1), 'customize')
-  assert.equal(moveItem(draft.menu, 'overview', -1), draft.menu)                              // the first cannot go up
-  assert.equal(moveItem(draft.menu, 'landing', 1), draft.menu)                                // nor the last area go down past the fixed button
-  assert.equal(moveItem(draft.menu, 'customize', -1), draft.menu)                             // the button is never moved
-  menu = moveToItem(draft.menu, 'videos', 'requests')
-  assert.equal(keys(menu).indexOf('videos'), keys(draft.menu).indexOf('requests'))
-  assert.equal(keys(menu).length, 15)
-  assert.equal(keys(moveToItem(draft.menu, 'requests', 'customize')).length, 15)             // dropping on the button does nothing odd
-  assert.equal(moveToItem(draft.menu, 'requests', 'requests'), draft.menu)
+  assert.equal(moveInGroup(draft.menu, 'overview', -1), draft.menu)                           // the first of its group cannot go up
+  assert.equal(moveInGroup(draft.menu, 'clients', -1), draft.menu)                            // not into the group above (Hoy)
+  assert.equal(moveInGroup(draft.menu, 'sent-messages', 1), draft.menu)                       // nor down into Personas
+  assert.equal(moveInGroup(draft.menu, 'legal', 1), draft.menu)                               // nor the last area go down past the fixed button
+  assert.equal(moveInGroup(draft.menu, 'customize', -1), draft.menu)                          // the button is never moved
+  menu = moveToInGroup(draft.menu, 'landing', 'plans')                                        // a drop inside the group
+  assert.deepEqual(keys(menu).slice(9, 12), ['landing', 'plans', 'videos'])
+  assert.equal(moveToInGroup(draft.menu, 'videos', 'requests'), draft.menu)                   // a drop on another group does nothing
+  assert.equal(moveToInGroup(draft.menu, 'requests', 'customize'), draft.menu)                // dropping on the button does nothing odd
+  assert.equal(moveToInGroup(draft.menu, 'requests', 'requests'), draft.menu)
+  // the generic moves (the Overview cards) just reorder the list
+  assert.equal(keys(moveToItem(draft.overview, 'quick', 'today_strip'))[0], 'quick')
+  assert.equal(keys(moveItem(draft.overview, 'quick', -1)).indexOf('quick'), keys(draft.overview).indexOf('quick') - 1)
 })
 
 test('the draft: rename, hide, reset', () => {
@@ -165,7 +175,7 @@ test('the draft becomes the payload and the preview; nothing changed means "the 
   assert.equal(isDefaultDraft(original), true)
   assert.equal(sameDraft(original, buildDraft({})), true)
   let draft = { ...original, menu: setItemText(original.menu, 'requests', 'label', ' Pedidos ') }
-  draft = { ...draft, menu: moveItem(draft.menu, 'clients', -1) }
+  draft = { ...draft, menu: moveInGroup(draft.menu, 'trainers', -1) }
   draft = { ...draft, menu: toggleHidden(draft.menu, 'videos', { isMenu: true }).list }
   draft = { ...draft, pages: setPageText(draft.pages, 'trials', 'title', 'Pruebas') }
   assert.equal(isDefaultDraft(draft), false)
@@ -181,7 +191,7 @@ test('the draft becomes the payload and the preview; nothing changed means "the 
   // what the server stores comes back to the same draft
   assert.equal(sameDraft(buildDraft(payload), draft), true)
   assert.equal(isDefaultDraft({ ...original, pages: setPageText(original.pages, 'clients', 'subtitle', '   ') }), true)
-  assert.equal(isDefaultDraft({ ...original, menu: moveItem(original.menu, 'clients', 1) }), false)           // only the order changed
+  assert.equal(isDefaultDraft({ ...original, menu: moveInGroup(original.menu, 'clients', 1) }), false)           // only the order changed
 })
 
 test('page texts are cut at their limits', () => {
@@ -191,15 +201,17 @@ test('page texts are cut at their limits', () => {
   assert.ok(draftProblems({ ...buildDraft({}), pages: { ...pages, trials: { title: '<b>', subtitle: '' } } }).some(problem => problem.code === 'html_not_allowed'))
 })
 
-test('the overview layout: the original order gives the original rows; a new order flows into rows of 5 columns', () => {
-  const original = overviewBlocks(resolveOverview({}))
-  assert.deepEqual(keys(original.stats), ['stat_clients', 'stat_sessions', 'stat_pending'])
-  assert.deepEqual(original.blocks.map(block => (block.type === 'business' ? 'business' : keys(block.cards))), [['week', 'pending'], 'business', ['upcoming', 'quick']])
-  const moved = overviewBlocks(resolveOverview({ overview: [{ key: 'quick' }, { key: 'week' }, { key: 'pending', hidden: true }, { key: 'stat_sessions', hidden: true }] }))
-  assert.deepEqual(keys(moved.stats), ['stat_clients', 'stat_pending'])
-  assert.deepEqual(moved.blocks.map(block => (block.type === 'business' ? 'business' : keys(block.cards))), [['quick', 'week'], 'business', ['upcoming']])
-  const none = overviewBlocks(resolveOverview({ overview: resolveOverview({}).map(card => ({ key: card.key, hidden: true })) }))
-  assert.deepEqual([none.stats.length, none.blocks.length], [0, 0])
+test('the overview layout: the original order gives the Hoy blocks, the KPIs and the original rows; a new order flows into rows of 5 columns', () => {
+  const describe = (layout) => layout.map(block => (block.type === 'row' || block.type === 'stats' ? `${block.type}:${keys(block.cards)}` : `${block.type}:${block.card.key}`))
+  assert.deepEqual(describe(overviewLayout(resolveOverview({}))), [
+    'wide:today_strip', 'wide:today_sessions', 'wide:alerts', 'wide:deletions', 'stats:stat_clients,stat_sessions,stat_pending',
+    'row:week,pending', 'business:business', 'row:upcoming,quick'
+  ])
+  const moved = overviewLayout(resolveOverview({ overview: [{ key: 'quick' }, { key: 'week' }, { key: 'pending', hidden: true }, { key: 'stat_sessions', hidden: true }] }))
+  assert.deepEqual(describe(moved).slice(-3), ['row:quick,week', 'business:business', 'row:upcoming'])
+  assert.ok(describe(moved).includes('stats:stat_clients,stat_pending'))
+  const none = overviewLayout(resolveOverview({ overview: resolveOverview({}).map(card => ({ key: card.key, hidden: true })) }))
+  assert.deepEqual(describe(none), ['wide:today_strip', 'wide:alerts', 'wide:deletions'])      // only the protected ones cannot be hidden
 })
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -287,10 +299,11 @@ test('the menu in edit mode: buttons reorder, hidden items stay (dimmed), protec
 
 test('the Overview in edit mode keeps the hidden cards (dimmed) so they can be shown again', () => {
   const cards = resolveOverview({ overview: [{ key: 'quick', hidden: true }, { key: 'week', hidden: true }] })
-  const normal = overviewBlocks(cards)
-  const editing = overviewBlocks(cards, { showHidden: true })
-  assert.ok(!normal.blocks.flatMap(block => (block.cards || [])).some(card => ['quick', 'week'].includes(card.key)))
-  assert.equal(editing.blocks.flatMap(block => (block.cards || [])).filter(card => card.hidden).map(card => card.key).sort().join(), 'quick,week')
+  const all = (layout) => layout.flatMap(block => block.cards || [block.card])
+  const normal = overviewLayout(cards)
+  const editing = overviewLayout(cards, { showHidden: true })
+  assert.ok(!all(normal).some(card => ['quick', 'week'].includes(card.key)))
+  assert.equal(all(editing).filter(card => card.hidden).map(card => card.key).sort().join(), 'quick,week')
 })
 
 const refused = (code, field) => Object.assign(new Error('refused'), { code, field })
@@ -592,4 +605,89 @@ test('a saved text appears where it is drawn: the original (ES / EN) otherwise, 
     assert.deepEqual(editableView({ canEdit: true, isEditing: false, custom: textOfPath(settings, entry.path), defaultText: original }), { mode: 'plain', text: 'Aceptar', custom: true })
     assert.equal(editableView({ canEdit: true, isEditing: false, custom: textOfPath({}, entry.path), defaultText: original }).text, original)
   }
+})
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// The groups of the menu and the Hoy blocks of the Overview (Prompt 81).
+
+test('every menu entry belongs to a group and the groups are Hoy, Personas, Agenda, Oferta, Sistema', () => {
+  assert.deepEqual(MENU_GROUPS.map(group => group.key), ['today', 'people', 'agenda', 'offer', 'system'])
+  assert.ok(MENU_ITEMS.every(item => MENU_GROUPS.some(group => group.key === item.group)))
+  assert.deepEqual(MENU_GROUPS.map(group => group.key), [...new Set(MENU_ITEMS.map(item => item.group))])     // the registry lists the groups in order
+  for (const language of ['en', 'es']) assert.ok(MENU_GROUPS.every(group => adminText[language][group.labelKey]), `group titles in ${language}`)
+  assert.equal(adminText.es['nav_group_today'], 'Hoy')
+  assert.equal(adminText.en['nav_group_people'], 'People')
+  assert.deepEqual(menuByGroup(resolveMenu({})).map(group => [group.key, keys(group.items)]), [
+    ['today', ['overview', 'requests', 'trials', 'messages', 'sent-messages']], ['people', ['clients', 'trainers']], ['agenda', ['calendar', 'schedule']],
+    ['offer', ['plans', 'videos', 'landing']], ['system', ['system', 'legal']]
+  ])
+})
+
+test('an old configuration with an order that crosses groups is put in its groups, keeping the order inside each group', () => {
+  const old = { menu: ['videos', 'schedule', 'legal', 'clients', 'overview', 'landing', 'calendar', 'requests', 'system', 'trainers', 'plans', 'messages', 'trials', 'sent-messages'].map(key => ({ key })) }
+  const menu = resolveMenu(old)
+  assert.deepEqual(keys(menu), ['overview', 'requests', 'messages', 'trials', 'sent-messages', 'clients', 'trainers', 'schedule', 'calendar', 'videos', 'landing', 'plans', 'legal', 'system'])
+  assert.deepEqual(keys(buildDraft(old).menu), [...keys(menu), 'customize'])                       // the editor starts from the same normalised order
+  assert.deepEqual(keys(buildDraft(toPayload(buildDraft(old), 0)).menu), keys(buildDraft(old).menu))
+  assert.deepEqual(groupMenuKeys(['legal', 'clients', 'overview']), ['overview', 'clients', 'legal'])
+  // the old configuration keeps its names and what it hid
+  const named = resolveMenu({ menu: [{ key: 'videos', hidden: true }, { key: 'calendar', label: 'Agenda del día' }] })
+  assert.equal(named.find(item => item.key === 'videos').hidden, true)
+  assert.equal(named.find(item => item.key === 'calendar').custom, 'Agenda del día')
+})
+
+test('an entry the saved configuration does not mention comes at the end of its group', () => {
+  const saved = { menu: ['overview', 'requests', 'trials', 'messages', 'clients', 'calendar', 'schedule', 'plans', 'videos', 'system', 'legal'].map(key => ({ key })) }
+  const menu = keys(resolveMenu(saved))
+  assert.deepEqual(menu.slice(0, 6), ['overview', 'requests', 'trials', 'messages', 'sent-messages', 'clients'])      // sent-messages: end of Hoy
+  assert.deepEqual(menu.slice(6, 8), ['trainers', 'calendar'])                                                          // trainers: end of Personas
+  assert.deepEqual(menu.slice(9, 12), ['plans', 'videos', 'landing'])                                                   // landing: end of Oferta
+})
+
+test('hiding a whole group leaves no group: its title goes too; Overview and the editor can never be hidden', () => {
+  const hide = (...hidden) => resolveMenu({ menu: MENU_ITEMS.map(item => ({ key: item.key, ...(hidden.includes(item.key) ? { hidden: true } : {}) })) })
+  const groups = (menu) => menuByGroup(menu).map(group => group.key)
+  assert.deepEqual(groups(hide('clients', 'trainers')), ['today', 'agenda', 'offer', 'system'])
+  assert.deepEqual(groups(hide('system', 'legal')), ['today', 'people', 'agenda', 'offer'])
+  assert.deepEqual(groups(hide('overview', 'requests')).slice(0, 1), ['today'])            // the protected Overview keeps the first group alive
+  assert.equal(hide('overview').find(item => item.key === 'overview').hidden, false)
+  assert.ok(menuByGroup(hide('overview'))[0].items.some(item => item.key === 'overview'))
+  // fewer than 3 visible areas: nothing is hidden at all
+  const everything = MENU_ITEMS.filter(item => item.key !== 'overview').map(item => item.key)
+  assert.ok(hide(...everything.slice(0, 12)).every(item => !item.hidden))
+  const three = buildDraft({}).menu.map(item => (['overview', 'requests', 'trials', 'customize'].includes(item.key) ? item : { ...item, hidden: true }))
+  assert.equal(toggleHidden(three, 'trials', { isMenu: true }).error, 'too_few_visible')
+})
+
+test('the Overview: the new blocks take their default position in an old configuration, and the protected ones cannot be hidden', () => {
+  const old = { overview: [{ key: 'stat_clients' }, { key: 'stat_sessions', hidden: true }, { key: 'stat_pending' }, { key: 'week' }, { key: 'pending' }, { key: 'business' }, { key: 'upcoming' }, { key: 'quick', title: 'Atajos' }] }
+  const cards = resolveOverview(old)
+  assert.deepEqual(keys(cards).slice(0, 5), ['today_strip', 'today_sessions', 'alerts', 'deletions', 'stat_clients'])      // new at their default place: before the KPIs
+  assert.equal(cards.find(card => card.key === 'quick').custom, 'Atajos')                                                // what it had keeps working
+  assert.equal(cards.find(card => card.key === 'stat_sessions').hidden, true)
+  assert.deepEqual(orderKeysAt(['a', 'b', 'c', 'd'], [{ key: 'c' }, { key: 'a' }]), ['c', 'd', 'a', 'b'])                 // after the nearest key that precedes it
+  assert.deepEqual(orderKeysAt(['a', 'b'], []), ['a', 'b'])
+  assert.deepEqual(orderKeysAt(['a', 'b', 'c'], [{ key: 'b' }]), ['a', 'b', 'c'])
+  // protected: never hidden, in the draft, in what the panel shows and in what could be saved
+  assert.deepEqual(PROTECTED_OVERVIEW_KEYS, ['today_strip', 'alerts', 'deletions'])
+  const hiddenOnDisk = resolveOverview({ overview: PROTECTED_OVERVIEW_KEYS.map(key => ({ key, hidden: true })) })
+  assert.ok(hiddenOnDisk.filter(card => card.protected).every(card => !card.hidden))
+  assert.ok(buildDraft({ overview: [{ key: 'alerts', hidden: true }] }).overview.every(card => !card.hidden))
+  const draft = buildDraft({})
+  assert.equal(toggleHidden(draft.overview, 'today_strip', { protectedKeys: PROTECTED_OVERVIEW_KEYS }).error, 'protected')
+  assert.equal(toggleHidden(draft.overview, 'today_sessions', { protectedKeys: PROTECTED_OVERVIEW_KEYS }).error, null)     // "Sesiones de hoy" can be hidden
+  const forced = { ...draft, overview: draft.overview.map(card => (card.key === 'alerts' ? { ...card, hidden: true } : card)) }
+  assert.ok(draftProblems(forced).some(problem => problem.code === 'card_protected' && problem.key === 'alerts'))
+  // they can be renamed and moved: "Qué hacer hoy" is editable on the panel
+  assert.ok(editableText('overview:today_strip') && editableText('overview:today_sessions') && editableText('overview:alerts'))
+  assert.equal(setDraftText(draft, 'overview:today_strip', 'Prioridades').overview.find(card => card.key === 'today_strip').title, 'Prioridades')
+  assert.equal(toPayload(draft, 0).overview.length, 12)
+})
+
+test('the title of the Overview is "Hoy" / "Today" and the date is the subtitle the studio can replace', () => {
+  const page = PAGES.find(candidate => candidate.key === 'overview')
+  assert.equal(adminText.es[page.titleKey], 'Hoy')
+  assert.equal(adminText.en[page.titleKey], 'Today')
+  assert.deepEqual(resolvePageText({}, 'overview', 'Hoy', 'martes, 17 de noviembre'), { title: 'Hoy', subtitle: 'martes, 17 de noviembre' })
+  assert.deepEqual(resolvePageText({ pages: { overview: { title: 'Panel' } } }, 'overview', 'Hoy', 'martes'), { title: 'Panel', subtitle: 'martes' })
 })

@@ -76,6 +76,7 @@ function ml(en, es, ca) {
 
 export const defaultContent = {
   heroImageVersion: 2,
+  pricingButtonVersion: 1,
   bundledImagesVersion: 2,
   typography: {},
   theme: {
@@ -275,7 +276,7 @@ export const defaultContent = {
             ml('3 Training Plan Reviews', '3 Revisiones del Plan de Entrenamiento', "3 Revisions del Pla d'Entrenament"),
             ml('3 Nutrition Plan Reviews', '3 Revisiones del Plan de Nutrición', '3 Revisions del Pla de Nutrició')
           ],
-          buttonText: ml('Most Popular', 'Más Popular', 'Més Popular'),
+          buttonText: ml('Get Started', 'Empezar', 'Començar'),
           buttonTextStyle: textStyle(),
           highlighted: true
         },

@@ -23,6 +23,48 @@ export const tierOf = (section, type, index) => {
 
 export const textOf = (value, language) => String(resolveText(value, language) ?? '')
 
+// ---- the total of a pack and the saving, worked out ONLY from what the plan's text really says --------------------------------------
+// A price "€65/session" (or "65 € / sesión") has an amount per session; a feature "8 sessions" has a number of sessions. With both there is
+// a total ("€520 · 8 sessions"). "1 to 5 sessions per week" is not a number of sessions: nothing is worked out and nothing is shown.
+const PER_SESSION = /\/\s*(session|sesi[oó]n|sessi[oó])|\b(per|por)\s+(session|sesi[oó]n)|(sessions?|sesi[oó]n(es)?|sessi[oó])\b/i
+const SESSIONS_COUNT = /^\s*(\d{1,3})\s+(sessions?|sesi[oó]n(es)?|sessi[oó](ns)?)\b(?!\s*(\/|per|por|a la|cada|each))/i
+
+export function pricePerSession(text) {
+  const value = String(text ?? '')
+  if (!PER_SESSION.test(value)) return null
+  const match = /(\d+(?:[.,]\d{1,2})?)/.exec(value)
+  if (!match) return null
+  const amount = Number(match[1].replace(',', '.'))
+  if (!(amount > 0)) return null
+  const currency = (/[€$£]/.exec(value) || [''])[0]
+  return { amount, currency }
+}
+
+export function sessionsInFeatures(features, language) {
+  for (const feature of Array.isArray(features) ? features : []) {
+    const match = SESSIONS_COUNT.exec(textOf(feature, language))
+    if (match) return Number(match[1])
+  }
+  return null
+}
+
+const money = (value) => String(Math.round(value * 100) / 100)
+
+// { total, sessions, saving } for one tier, or null when the text has no per-session price AND a number of sessions.
+// `saving` is the whole percent that its price per session is below the monthly tier's, only when that tier has one too.
+export function packFacts(tier, monthlyTier, language, isMonthly = false) {
+  const price = pricePerSession(textOf(tier?.price, language))
+  const sessions = sessionsInFeatures(tier?.features, language)
+  if (!price || !sessions) return null
+  const facts = { total: `${price.currency}${money(price.amount * sessions)}`, sessions, saving: null }
+  const base = !isMonthly && monthlyTier ? pricePerSession(textOf(monthlyTier.price, language)) : null
+  if (base && base.amount > price.amount) {
+    const percent = Math.round((1 - price.amount / base.amount) * 100)
+    if (percent >= 1) facts.saving = percent
+  }
+  return facts
+}
+
 // Writing a text in the form: a field that already holds an { en, es, ca } object changes only the current language.
 export const withText = (value, language, text) => (value && typeof value === 'object' ? setTextForLanguage(value, language, text) : text)
 

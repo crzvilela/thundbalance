@@ -3,6 +3,8 @@ import { defaultContent, SECTION_TYPE_DEFAULTS } from './defaultContent'
 import { deepMerge, deepClone, setPath } from '../utils/objectPath'
 import { migrateLegacyTypography } from '../utils/typography'
 import { actualFontFamily, loadFont } from '../utils/fonts'
+import { emptyContactLabels } from '../utils/contactLabels'
+import { migratePricingButton } from './pricingMigration'
 import { migrateSectionsToInstances, migrateBackgroundTypes, migrateBundledImages, migrateHeroImage, migrateFooterEmbeds } from './migrateContent'
 import {
   fetchLandingContent,
@@ -90,7 +92,7 @@ function pruneOrphanedSections(mergedContent) {
 // versus current defaults -> fix up known old-schema quirks -> backfill
 // list-item shapes -> drop now-unreferenced stub sections.
 function normalizeLoadedContent(rawContent) {
-  const migrated = migrateFooterEmbeds(migrateHeroImage(migrateBackgroundTypes(migrateSectionsToInstances(migrateBundledImages(rawContent)))))
+  const migrated = migrateFooterEmbeds(migratePricingButton(migrateHeroImage(migrateBackgroundTypes(migrateSectionsToInstances(migrateBundledImages(rawContent))))))
   const merged = deepMerge(defaultContent, migrated)
   Object.assign(merged, migrateLegacyTypography(merged))
   // The bundled logo is now a white vector (logo.svg) instead of the black
@@ -296,6 +298,9 @@ export function LandingContentProvider({ mode = 'view', version = 'published', p
   }, [content])
 
   const publish = useCallback(async () => {
+    // a contact form without its labels is not published (the editor says which): see utils/contactLabels.js
+    const unlabeled = emptyContactLabels(content)
+    if (unlabeled.length) throw Object.assign(new Error('contact_labels_empty'), { code: 'contact_labels_empty', problems: unlabeled })
     setPublishing(true)
     try {
       await saveDraftContent(content)

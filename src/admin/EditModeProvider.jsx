@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { auth } from '../firebase/auth'
 import { ADMIN_EMAIL } from '../config'
 import { EditModeContext } from './editModeContext'
+import { PROTECTED_OVERVIEW_KEYS } from './uiRegistry'
 import { useUiSettings } from './uiSettingsContext'
 import {
-  canEditPanel, draftTextOf, moveBlock as moveBlockIn, moveBlockTo as moveBlockToIn, moveItem, moveToItem, problemPaths, resetItem, resetPage as resetPageIn,
+  canEditPanel, draftTextOf, moveBlock as moveBlockIn, moveBlockTo as moveBlockToIn, moveInGroup, moveItem, moveToInGroup, moveToItem, problemPaths, resetItem, resetPage as resetPageIn,
   setDraftText, textOfPath, toggleBlock as toggleBlockIn, toggleHidden
 } from './uiSettings'
 
@@ -51,8 +52,8 @@ export default function EditModeProvider({ children, canEdit: allowed }) {
       setText: (path, text) => { if (draft) update(setDraftText(draft, path, text)) },
       resetText: (path) => { if (draft) update(setDraftText(draft, path, '')) },
       // menu items and Overview cards: reorder (buttons or drag), hide / show, reset one
-      moveMenu: (key, delta) => { if (draft) update({ ...draft, menu: moveItem(draft.menu, key, delta) }) },
-      moveMenuTo: (key, targetKey) => { if (draft) update({ ...draft, menu: moveToItem(draft.menu, key, targetKey) }) },
+      moveMenu: (key, delta) => { if (draft) update({ ...draft, menu: moveInGroup(draft.menu, key, delta) }) },
+      moveMenuTo: (key, targetKey) => { if (draft) update({ ...draft, menu: moveToInGroup(draft.menu, key, targetKey) }) },
       toggleMenu: (key) => {
         if (!draft) return
         const result = toggleHidden(draft.menu, key, { isMenu: true })
@@ -62,7 +63,12 @@ export default function EditModeProvider({ children, canEdit: allowed }) {
       resetMenu: (key) => { if (draft) update({ ...draft, menu: resetItem(draft.menu, key, 'label') }) },
       moveCard: (key, delta) => { if (draft) update({ ...draft, overview: moveItem(draft.overview, key, delta) }) },
       moveCardTo: (key, targetKey) => { if (draft) update({ ...draft, overview: moveToItem(draft.overview, key, targetKey) }) },
-      toggleCard: (key) => { if (draft) update({ ...draft, overview: toggleHidden(draft.overview, key).list }) },
+      toggleCard: (key) => {
+        if (!draft) return
+        const result = toggleHidden(draft.overview, key, { protectedKeys: PROTECTED_OVERVIEW_KEYS })
+        if (result.error) setWarning('ui_warn_card_protected')
+        else update({ ...draft, overview: result.list })
+      },
       // blocks (whole parts of a page): reorder inside their group, hide / show; "Repor página" puts the blocks of a page back as they were
       moveBlock: (page, group, key, delta) => { if (draft) update(moveBlockIn(draft, page, group, key, delta)) },
       moveBlockTo: (page, group, key, targetKey) => { if (draft) update(moveBlockToIn(draft, page, group, key, targetKey)) },

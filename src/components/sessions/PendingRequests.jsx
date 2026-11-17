@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useI18n } from '../../i18n/I18nContext'
 import { buildPendingRequests } from '../../utils/pendingRequests'
-import { formatDay, formatSentAt, formatShortDate, formatShortDay, formatTime } from '../../utils/sessionDates'
+import { formatDay, formatSentAt, formatShortDate, formatDayTime, formatTime } from '../../utils/sessionDates'
 import { Spinner } from './SessionParts'
 import { sessionLabel } from './sessionText'
 
@@ -38,7 +38,7 @@ export default function PendingRequests({ data, onRespond, answering = null }) {
       return `${sessionLabel(t, session)}: ${at(request.original_date, request.original_time)} → ${at(request.requested_date, request.requested_time)}`
     }
     if (item.kind === 'pack') return `${item.pack.package || t('dash_assigned_plan')} · ${t('dash_sessions_week', { n: item.pack.sessions_per_week })}`
-    return `${formatShortDay(item.trial.session_date, locale)} · ${formatTime(item.trial.session_time)}`
+    return formatDayTime(item.trial.session_date, item.trial.session_time, locale)
   }
 
   return (

@@ -8,7 +8,7 @@
 
 import {
   BLOCKS, BLOCK_PAGES, CUSTOMIZE_KEY, EDITABLE_TEXTS, LABEL_MAX, TEXT_ENTRIES, TEXT_KEYS, blocksOf, editableText, protectedBlocks, MENU_ITEMS, MENU_KEYS, MIN_VISIBLE_AREAS, OVERVIEW_CARDS, OVERVIEW_KEYS, PAGES, PAGE_KEYS,
-  PROTECTED_MENU_KEYS, SUBTITLE_MAX
+  MENU_GROUPS, PROTECTED_MENU_KEYS, PROTECTED_OVERVIEW_KEYS, SUBTITLE_MAX
 } from './uiRegistry.js'
 
 const AREA_KEYS = MENU_KEYS
@@ -98,13 +98,44 @@ export function orderKeys(registryKeys, configList) {
   return [...wanted, ...registryKeys.filter(key => !wanted.includes(key))]
 }
 
+// The same for lists whose new entries must take their DEFAULT position (the Overview): a key the configuration does not mention goes right after the
+// nearest key that precedes it in the registry and is already placed, or first when none does (so a new block at the top of the registry appears at
+// the top, and a new block in the middle stays next to its neighbour).
+export function orderKeysAt(registryKeys, configList) {
+  const result = configList.map(entry => entry.key).filter(key => registryKeys.includes(key))
+  registryKeys.forEach((key, index) => {
+    if (result.includes(key)) return
+    const before = registryKeys.slice(0, index).reverse().find(candidate => result.includes(candidate))
+    result.splice(before === undefined ? 0 : result.indexOf(before) + 1, 0, key)
+  })
+  return result
+}
+
+// ---------------------------------------------------------------------------------------------- the groups of the menu
+// A saved configuration may hold a menu order that crosses groups (it was written before the groups existed). Every item goes to ITS group
+// (the groups keep their fixed order) and keeps its relative position inside the group; an entry the configuration does not mention is at the
+// end of its group. Keys without a group (none today) go last.
+const GROUP_OF = Object.fromEntries(MENU_ITEMS.map(item => [item.key, item.group]))
+const GROUP_RANK = Object.fromEntries(MENU_GROUPS.map((group, index) => [group.key, index]))
+const groupRank = (key) => GROUP_RANK[GROUP_OF[key]] ?? MENU_GROUPS.length
+export const groupOfItem = (key) => GROUP_OF[key] || ''
+export const groupMenuKeys = (keys) => [...keys].sort((a, b) => groupRank(a) - groupRank(b))      // Array.prototype.sort is stable: the order inside a group is kept
+
+// The items of the menu split by group, in the fixed order of the groups: [{ key, labelKey, items }]. A group with no item to show (all hidden,
+// unless `showHidden`) is left out, and so is its title.
+export function menuByGroup(items, { showHidden = false } = {}) {
+  return MENU_GROUPS
+    .map(group => ({ ...group, items: items.filter(item => item.group === group.key && (showHidden || !item.hidden)) }))
+    .filter(group => group.items.length > 0)
+}
+
 // ---------------------------------------------------------------------------------------------- what the panel shows
 // The menu areas in order: [{ ...registry item, custom: 'Pedidos' | '', hidden }]. A protected area is never hidden and, if the
 // configuration would leave fewer than 3 areas, nothing is hidden at all (the menu can never be broken by what is stored).
 export function resolveMenu(settings) {
   const config = sanitizeSettings(settings)
   const byKey = new Map(config.menu.map(entry => [entry.key, entry]))
-  const items = orderKeys(AREA_KEYS, config.menu).map(key => {
+  const items = groupMenuKeys(orderKeys(AREA_KEYS, config.menu)).map(key => {
     const item = MENU_ITEMS.find(candidate => candidate.key === key)
     const entry = byKey.get(key)
     return { ...item, custom: entry?.label || '', hidden: !!entry?.hidden && !PROTECTED_MENU_KEYS.includes(key) }
@@ -121,29 +152,36 @@ export function resolveCustomizeLabel(settings) {
 export function resolveOverview(settings) {
   const config = sanitizeSettings(settings)
   const byKey = new Map(config.overview.map(entry => [entry.key, entry]))
-  return orderKeys(OVERVIEW_KEYS, config.overview).map(key => {
+  return orderKeysAt(OVERVIEW_KEYS, config.overview).map(key => {
     const card = OVERVIEW_CARDS.find(candidate => candidate.key === key)
-    return { ...card, custom: byKey.get(key)?.title || '', hidden: !!byKey.get(key)?.hidden }
+    return { ...card, custom: byKey.get(key)?.title || '', hidden: !!byKey.get(key)?.hidden && !PROTECTED_OVERVIEW_KEYS.includes(key) }
   })
 }
 
-// How the Overview is laid out: the visible small cards, and the rest as blocks in order - rows of big cards (at most 5 columns each, in
-// the order of the configuration) and the full-width business panel. With the original order this gives exactly the original layout:
-// stats = 3 cards; blocks = [row(week, pending), business, row(upcoming, quick)].
-export function overviewBlocks(cards, { showHidden = false } = {}) {
+// How the Overview is laid out, in the order of the configuration: [{ type: 'wide' | 'business', card }, { type: 'stats', cards }, { type: 'row', cards }].
+// `wide` and `business` are full-width blocks; the small number cards (`stat`) are ONE grid placed where the first of them is; the big cards
+// are rows of at most 5 columns (a card with `span` 3 and one with `span` 2 make one row). With the original order this gives: Hoy blocks,
+// KPIs, row(week, pending), business, row(upcoming, quick).
+export function overviewLayout(cards, { showHidden = false } = {}) {
   const visible = showHidden ? cards : cards.filter(card => !card.hidden)      // while editing, hidden cards stay (dimmed) so they can be shown again
-  const blocks = []
+  const layout = []
   let row = []
   let used = 0
-  const flush = () => { if (row.length) blocks.push({ type: 'row', cards: row }); row = []; used = 0 }
-  for (const card of visible.filter(candidate => candidate.group !== 'stat')) {
-    if (card.group === 'business') { flush(); blocks.push({ type: 'business', card }); continue }
+  let stats = null
+  const flush = () => { if (row.length) layout.push({ type: 'row', cards: row }); row = []; used = 0 }
+  for (const card of visible) {
+    if (card.group === 'stat') {
+      if (!stats) { flush(); stats = { type: 'stats', cards: [] }; layout.push(stats) }
+      stats.cards.push(card)
+      continue
+    }
+    if (card.group === 'business' || card.group === 'wide') { flush(); layout.push({ type: card.group, card }); continue }
     if (used + card.span > 5) flush()
     row.push(card)
     used += card.span
   }
   flush()
-  return { stats: visible.filter(card => card.group === 'stat'), blocks }
+  return layout
 }
 
 // The title and subtitle of a page: the custom ones, or the originals given (also when the key is not in the registry).
@@ -159,12 +197,12 @@ export function buildDraft(settings) {
   const overview = new Map(config.overview.map(entry => [entry.key, entry]))
   return {
     menu: [
-      ...orderKeys(AREA_KEYS, config.menu).map(key => ({
+      ...groupMenuKeys(orderKeys(AREA_KEYS, config.menu)).map(key => ({
         key, label: byKey.get(key)?.label || '', hidden: !!byKey.get(key)?.hidden && !PROTECTED_MENU_KEYS.includes(key)
       })),
       { key: CUSTOMIZE_KEY, label: byKey.get(CUSTOMIZE_KEY)?.label || '', hidden: false }
     ],
-    overview: orderKeys(OVERVIEW_KEYS, config.overview).map(key => ({ key, title: overview.get(key)?.title || '', hidden: !!overview.get(key)?.hidden })),
+    overview: orderKeysAt(OVERVIEW_KEYS, config.overview).map(key => ({ key, title: overview.get(key)?.title || '', hidden: !!overview.get(key)?.hidden && !PROTECTED_OVERVIEW_KEYS.includes(key) })),
     pages: Object.fromEntries(PAGE_KEYS.map(key => [key, { title: config.pages[key]?.title || '', subtitle: config.pages[key]?.subtitle || '' }])),
     blocks: draftBlocksOf(config),
     texts: Object.fromEntries(TEXT_KEYS.map(key => [key, config.texts[key] || ''])),
@@ -204,7 +242,7 @@ export const sameDraft = (a, b) => JSON.stringify(toPayload(a, 0)) === JSON.stri
 
 export const visibleAreas = (menu) => menu.filter(item => item.key !== CUSTOMIZE_KEY && !item.hidden).length
 
-// What stops the draft from being saved: [{ code: 'protected_hidden' | 'too_few_visible' | 'html_not_allowed' | 'control_characters' | 'text_too_long', key? }].
+// What stops the draft from being saved: [{ code: 'protected_hidden' | 'card_protected' | 'too_few_visible' | 'html_not_allowed' | 'control_characters' | 'text_too_long', key? }].
 export function draftProblems(draft) {
   const problems = []
   for (const item of draft.menu) {
@@ -214,6 +252,7 @@ export function draftProblems(draft) {
   }
   if (visibleAreas(draft.menu) < MIN_VISIBLE_AREAS) problems.push({ code: 'too_few_visible' })
   for (const item of draft.overview) {
+    if (item.hidden && PROTECTED_OVERVIEW_KEYS.includes(item.key)) problems.push({ code: 'card_protected', key: item.key })
     const problem = textProblem(item.title)
     if (problem) problems.push({ code: problem, key: item.key })
   }
@@ -262,19 +301,38 @@ export function moveToItem(list, key, targetKey) {
   return withFixedEnd(list, next)
 }
 
+// The menu moves only INSIDE its group: up / down swaps with the neighbour of the same group (at the edge of the group nothing happens), and a drop
+// on an item of another group does nothing.
+export function moveInGroup(list, key, delta) {
+  const group = groupOfItem(key)
+  const items = movable(list)
+  const inGroup = items.map((item, index) => ({ key: item.key, index })).filter(entry => groupOfItem(entry.key) === group)
+  const from = inGroup.findIndex(entry => entry.key === key)
+  const to = from + delta
+  if (!group || from < 0 || to < 0 || to >= inGroup.length) return list
+  const next = [...items]
+  ;[next[inGroup[from].index], next[inGroup[to].index]] = [next[inGroup[to].index], next[inGroup[from].index]]
+  return withFixedEnd(list, next)
+}
+
+export const moveToInGroup = (list, key, targetKey) => (groupOfItem(key) && groupOfItem(key) === groupOfItem(targetKey) ? moveToItem(list, key, targetKey) : list)
+
+// Can the item go up / down inside its group? (for the disabled state of the buttons)
+export function canMoveInGroup(list, key, delta) {
+  return moveInGroup(list, key, delta) !== list
+}
+
 // The name / title of an item (typing is cut at the limit; the problems are reported when saving).
 export const setItemText = (list, key, field, value) =>
   list.map(item => (item.key === key ? { ...item, [field]: String(value ?? '').slice(0, LABEL_MAX) } : item))
 
 // Hides or shows an item. A protected item cannot be hidden, and the menu cannot go under 3 visible areas: { list, error } with
 // error 'protected' | 'too_few_visible' | null (and the list unchanged when there is an error).
-export function toggleHidden(list, key, { isMenu = false } = {}) {
+export function toggleHidden(list, key, { isMenu = false, protectedKeys = isMenu ? PROTECTED_MENU_KEYS : [] } = {}) {
   const item = list.find(candidate => candidate.key === key)
   if (!item) return { list, error: null }
-  if (!item.hidden && isMenu) {
-    if (PROTECTED_MENU_KEYS.includes(key)) return { list, error: 'protected' }
-    if (visibleAreas(list) - 1 < MIN_VISIBLE_AREAS) return { list, error: 'too_few_visible' }
-  }
+  if (!item.hidden && protectedKeys.includes(key)) return { list, error: 'protected' }
+  if (!item.hidden && isMenu && visibleAreas(list) - 1 < MIN_VISIBLE_AREAS) return { list, error: 'too_few_visible' }
   return { list: list.map(candidate => (candidate.key === key ? { ...candidate, hidden: !candidate.hidden } : candidate)), error: null }
 }
 

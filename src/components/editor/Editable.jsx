@@ -198,7 +198,8 @@ export function EditableText({
 
 // Editable placeholder fields use the same content path, selection, typography
 // controls, and history as regular editable text while keeping the current form layout.
-export function EditableFormField({ path, as: Tag = 'input', className = '', label, ...props }) {
+// `visibleLabel`: the page draws a <label> for this field (htmlFor = id), so the field has no aria-label of its own and no placeholder.
+export function EditableFormField({ path, as: Tag = 'input', className = '', label, visibleLabel = false, ...props }) {
   const { content, isEditMode, select } = useLandingContent()
   const { language } = useI18n()
   const value = resolveText(getPath(content, path, ''), language)
@@ -206,8 +207,8 @@ export function EditableFormField({ path, as: Tag = 'input', className = '', lab
   useEffect(() => { loadFont(typography.fontFamily) }, [typography.fontFamily])
   return <Tag
     {...props}
-    aria-label={props['aria-label'] || value || label || path}
-    placeholder={value}
+    aria-label={visibleLabel ? undefined : (props['aria-label'] || value || label || path)}
+    placeholder={visibleLabel ? undefined : value}
     className={`${className} editable-typography${Object.values(typography.fontSize).some(Boolean) ? ' has-responsive-size' : ''} editable-form-field${isEditMode ? ' cursor-text' : ''}`}
     style={inlineStyle}
     onClick={event => {

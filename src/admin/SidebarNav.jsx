@@ -6,7 +6,10 @@ import Editable, { InlineTextField } from './Editable'
 import { Icon } from './ui'
 import { CUSTOMIZE_KEY, CUSTOMIZE_LABEL_KEY, LABEL_MAX, PROTECTED_MENU_KEYS } from './uiRegistry'
 import { scrollDelta } from './sidebarScroll'
+import { canMoveInGroup, menuByGroup } from './uiSettings'
 
+// the small title of a group of the menu: fixed text (ES / EN), never editable
+const GROUP_TITLE = 'px-3.5 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400'
 const TOOL = 'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/15 text-gray-300 transition hover:border-white/40 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30'
 
 // The menu of the side panel (and of the phone drawer). Normally it is exactly the original menu: the items in the studio's order, the hidden ones
@@ -50,33 +53,45 @@ export default function SidebarNav({ items, badges, linkClass, guarded, customiz
 
   if (!edit?.isEditing) {
     return (
-      <nav ref={navRef} className={`${NAV_SCROLL} space-y-0.5 pb-2`} aria-label="Admin">
-        {items.filter(item => !item.hidden).map(item => (
-          <NavLink key={item.key} to={item.to} end={item.end} className={linkClass} onClick={guarded(item.to)}>
-            <Icon name={item.icon} className="h-[18px] w-[18px]" />
-            <Editable as="span" className="flex-1" keyPath={`menu:${item.key}`} defaultText={t(item.labelKey)} />
-            {item.badge && badges[item.badge] > 0 && (
-              <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[11px] font-bold leading-none text-black">{badges[item.badge]}</span>
-            )}
-            {item.arrow && <Icon name="arrow" className="h-4 w-4 opacity-0 transition group-hover:opacity-60" />}
-          </NavLink>
+      <nav ref={navRef} className={`${NAV_SCROLL} pb-2`} aria-label="Admin">
+        {menuByGroup(items).map((group, position) => (
+          <div key={group.key} className={position ? 'mt-4' : ''}>
+            <p className={GROUP_TITLE} aria-hidden="true">{t(group.labelKey)}</p>
+            <ul className="space-y-0.5" aria-label={t(group.labelKey)}>
+              {group.items.map(item => (
+                <li key={item.key}>
+                  <NavLink to={item.to} end={item.end} className={linkClass} onClick={guarded(item.to)}>
+                    <Icon name={item.icon} className="h-[18px] w-[18px]" />
+                    <Editable as="span" className="flex-1" keyPath={`menu:${item.key}`} defaultText={t(item.labelKey)} />
+                    {item.badge && badges[item.badge] > 0 && (
+                      <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[11px] font-bold leading-none text-black">{badges[item.badge]}</span>
+                    )}
+                    {item.arrow && <Icon name="arrow" className="h-4 w-4 opacity-0 transition group-hover:opacity-60" />}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </div>
         ))}
       </nav>
     )
   }
 
   const rename = (key, text) => { setRenaming(''); edit.setText(`menu:${key}`, text) }
-  const areas = edit.draft.menu.filter(item => item.key !== CUSTOMIZE_KEY)
 
   return (
     <nav ref={navRef} className={`${NAV_SCROLL} space-y-2 pb-3`} aria-label="Admin">
-      {items.map((item, index) => {
+      {menuByGroup(items, { showHidden: true }).map(group => (
+        <div key={group.key} className="space-y-2">
+          <p className={`${GROUP_TITLE} pt-2`} aria-hidden="true">{t(group.labelKey)}</p>
+          <ul className="space-y-2" aria-label={t(group.labelKey)}>
+      {group.items.map((item) => {
         const original = t(item.labelKey)
         const name = item.custom || original
         const locked = PROTECTED_MENU_KEYS.includes(item.key)
         const path = `menu:${item.key}`
         return (
-          <div
+          <li
             key={item.key}
             className={`rounded-xl border border-dashed border-emerald-400/30 p-1.5 ${item.hidden ? 'opacity-50' : ''}`}
             onDragOver={(event) => event.preventDefault()}
@@ -101,17 +116,20 @@ export default function SidebarNav({ items, badges, linkClass, guarded, customiz
             <div className="mt-1 flex items-center gap-1 px-1">
               <span draggable className={`${TOOL} cursor-grab`} title={t('ui_drag')} aria-hidden="true"
                 onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; dragging.current = item.key }}><Icon name="grip" className="h-5 w-5" /></span>
-              <button type="button" className={TOOL} onClick={() => edit.moveMenu(item.key, -1)} disabled={index === 0} aria-label={`${t('ui_up')}: ${name}`} title={t('ui_up')}><Icon name="up" className="h-5 w-5" /></button>
-              <button type="button" className={TOOL} onClick={() => edit.moveMenu(item.key, 1)} disabled={index === areas.length - 1} aria-label={`${t('ui_down')}: ${name}`} title={t('ui_down')}><Icon name="down" className="h-5 w-5" /></button>
+              <button type="button" className={TOOL} onClick={() => edit.moveMenu(item.key, -1)} disabled={!canMoveInGroup(edit.draft.menu, item.key, -1)} aria-label={`${t('ui_up')}: ${name}`} title={t('ui_up')}><Icon name="up" className="h-5 w-5" /></button>
+              <button type="button" className={TOOL} onClick={() => edit.moveMenu(item.key, 1)} disabled={!canMoveInGroup(edit.draft.menu, item.key, 1)} aria-label={`${t('ui_down')}: ${name}`} title={t('ui_down')}><Icon name="down" className="h-5 w-5" /></button>
               <button type="button" className={TOOL} onClick={() => setRenaming(item.key)} aria-label={`${t('ui_rename')}: ${name}`} title={t('ui_rename')}><Icon name="pencil" className="h-5 w-5" /></button>
               {locked
                 ? <span className={`${TOOL} opacity-60`} title={t('ui_locked')} aria-label={t('ui_locked')} role="img"><Icon name="lock" className="h-5 w-5" /></span>
                 : <button type="button" className={TOOL} onClick={() => edit.toggleMenu(item.key)} aria-pressed={item.hidden} aria-label={`${item.hidden ? t('ui_show') : t('ui_hide')}: ${name}`} title={item.hidden ? t('ui_show') : t('ui_hide')}><Icon name={item.hidden ? 'eyeoff' : 'eye'} className="h-5 w-5" /></button>}
               {item.custom && <button type="button" className="ml-auto rounded-md border border-white/15 px-2 py-1 text-xs text-gray-300 hover:text-white" onClick={() => edit.resetMenu(item.key)}>{t('ui_reset_item')}</button>}
             </div>
-          </div>
+          </li>
         )
       })}
+          </ul>
+        </div>
+      ))}
 
       <div className="rounded-xl border border-dashed border-white/15 p-1.5">
         {renaming === CUSTOMIZE_KEY ? (

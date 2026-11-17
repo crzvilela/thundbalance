@@ -4,13 +4,13 @@ import { Link, useOutletContext } from 'react-router-dom'
 import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import DeletionRequests from '../DeletionRequests'
-import SystemErrorsNotice from '../SystemErrorsNotice'
-import LegalNotice from '../LegalNotice'
+import { AlertsLine, TodaySessions, TodayStrip } from '../TodayBlocks'
+import { fullDate, madridDateKey } from '../overviewToday'
 import { useOverviewCards } from '../uiSettingsContext'
 import { useEditMode } from '../editModeContext'
 import Editable from '../Editable'
 import CardFrame from '../EditFrame'
-import { overviewBlocks } from '../uiSettings'
+import { overviewLayout } from '../uiSettings'
 import { dateKey, normalizeSessions, parseDateKey } from '../requests'
 import BusinessPanel from '../BusinessPanel'
 import { Badge, Button, Card, EmptyState, ErrorState, Icon, PageHeader, Skeleton, StatCard } from '../ui'
@@ -48,6 +48,7 @@ export default function Overview() {
   const editing = !!edit?.isEditing         // while the panel is being edited the hidden cards stay (dimmed) and every card gets its controls
   const stats = useAdminResource('/admin/stats')
   const sessionsResource = useAdminResource('/admin/sessions')
+  const today = useAdminResource('/admin/overview/today')       // the "Hoy" blocks: one light request (cached for a few seconds on the server)
 
   const sessions = useMemo(() => normalizeSessions(sessionsResource.data), [sessionsResource.data])
   const pending = requests.filter(request => request.status === 'pending')
@@ -65,6 +66,7 @@ export default function Overview() {
     ? `${t('stat_requests_short')}: ${pending.length} · ${t('stat_trials_short')}: ${pendingTrials.length}`
     : awaitingTrials.length ? `${awaitingTrials.length} ${t('tr_awaiting_hint')}` : t('pending_hint_none')
   const locale = language === 'es' ? 'es-ES' : 'en-GB'
+  const dateText = fullDate(today.data?.date || madridDateKey(), locale)      // "martes, 17 de noviembre": the studio's day (Europe/Madrid)
 
   const { week, upcoming } = useMemo(() => {
     const today = new Date()
@@ -104,9 +106,8 @@ export default function Overview() {
 
   const formatDay = (key) => parseDateKey(key).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' })
 
-  // The small number cards, then the big cards in rows of 5 columns, then the business panel as a full row: with no configuration this is
-  // exactly the original layout (the same order, the same rows).
-  const { stats: statCards, blocks } = overviewBlocks(cards, { showHidden: editing })
+  // The blocks in the studio's order (with no configuration: the Hoy blocks, the KPIs, the big cards in rows of 5 columns, the business panel as a full row).
+  const layout = overviewLayout(cards, { showHidden: editing })
   const statNode = {
     stat_clients: <StatCard label={t('stat_clients')} editKey="overview:stat_clients" value={stats.data?.users ?? '—'} icon="clients" loading={stats.loading && !stats.data} to="/admin/clients" />,
     stat_sessions: <StatCard label={t('stat_sessions')} editKey="overview:stat_sessions" value={stats.data?.sessions ?? '—'} icon="calendar" loading={stats.loading && !stats.data} to="/admin/clients" />,
@@ -211,51 +212,59 @@ export default function Overview() {
     )
   }
 
+  const frame = (card, node, className = '') => (editing
+    ? <CardFrame key={card.key} card={card} label={labelOf(card)} index={orderOf(card)} count={cards.length} className={className}>{node}</CardFrame>
+    : node)
+  const wideNode = {
+    today_strip: <TodayStrip today={today} />,
+    today_sessions: <TodaySessions today={today} />,
+    alerts: <AlertsLine today={today} />,
+    deletions: (
+      <div id="deletion-requests" className="scroll-mt-6">
+        <DeletionRequests />
+        {editing && <p className="text-xs text-gray-400">{t('ov_deletions_hint')}</p>}
+      </div>
+    )
+  }
+
   return (
     <div className="admin-fade">
       <PageHeader
         pageKey="overview"
-        title="THUNDBALANCE ADMIN"
-        subtitle={t('overview_sub')}
-        actions={<Button variant="secondary" onClick={() => { stats.reload(); sessionsResource.reload(); requestsResource.reload(); trialsResource.reload() }}>
+        title={t('ov_page_title')}
+        subtitle={dateText}
+        actions={<Button variant="secondary" onClick={() => { today.reload(); stats.reload(); sessionsResource.reload(); requestsResource.reload(); trialsResource.reload() }}>
           <Icon name="refresh" className="h-4 w-4" /><Txt id="overview.refresh" />
         </Button>}
       />
 
-      <SystemErrorsNotice />
-      <LegalNotice />
-      <DeletionRequests />
-
-      {statCards.length > 0 && (
-        <section className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-          {statCards.map((card, position) => {
-            // with an odd number of cards the last one takes the whole row on a phone (the original third card did)
-            const last = statCards.length % 2 === 1 && position === statCards.length - 1
-            if (editing) {
-              return <CardFrame key={card.key} card={card} label={labelOf(card)} index={orderOf(card)} count={cards.length} className={last ? 'col-span-2 sm:col-span-1' : ''}>{statNode[card.key]}</CardFrame>
-            }
-            return last
-              ? <div key={card.key} className="col-span-2 sm:col-span-1">{statNode[card.key]}</div>
-              : <div key={card.key} className="contents">{statNode[card.key]}</div>
-          })}
-        </section>
-      )}
-
-      {blocks.map((block, index) => {
-        if (block.type === 'business') {
-          const panel = <BusinessPanel key="business" sessions={sessions} trials={trials} />
-          return editing
-            ? <CardFrame key="business" card={block.card} label={labelOf(block.card)} index={orderOf(block.card)} count={cards.length} className="mt-6">{panel}</CardFrame>
-            : panel
-        }
-        return (
-          <section key={`row-${index}`} className="mt-6 grid gap-6 lg:grid-cols-5">
-            {block.cards.map(card => (editing
-              ? <CardFrame key={card.key} card={card} label={labelOf(card)} index={orderOf(card)} count={cards.length} className={SPAN[card.span]}>{bigCard[card.key](card.span)}</CardFrame>
-              : bigCard[card.key](card.span)))}
-          </section>
-        )
-      })}
+      <div className="flex flex-col gap-6">
+        {layout.map((block, index) => {
+          if (block.type === 'wide') return <div key={block.card.key} className="contents">{frame(block.card, wideNode[block.card.key])}</div>
+          if (block.type === 'business') return <div key="business" className="contents">{frame(block.card, <BusinessPanel sessions={sessions} trials={trials} />)}</div>
+          if (block.type === 'stats') {
+            return (
+              <section key="stats" className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                {block.cards.map((card, position) => {
+                  // with an odd number of cards the last one takes the whole row on a phone (the original third card did)
+                  const last = block.cards.length % 2 === 1 && position === block.cards.length - 1
+                  if (editing) {
+                    return <CardFrame key={card.key} card={card} label={labelOf(card)} index={orderOf(card)} count={cards.length} className={last ? 'col-span-2 sm:col-span-1' : ''}>{statNode[card.key]}</CardFrame>
+                  }
+                  return last
+                    ? <div key={card.key} className="col-span-2 sm:col-span-1">{statNode[card.key]}</div>
+                    : <div key={card.key} className="contents">{statNode[card.key]}</div>
+                })}
+              </section>
+            )
+          }
+          return (
+            <section key={`row-${index}`} className="grid gap-6 lg:grid-cols-5">
+              {block.cards.map(card => frame(card, bigCard[card.key](card.span), SPAN[card.span]))}
+            </section>
+          )
+        })}
+      </div>
     </div>
   )
 }

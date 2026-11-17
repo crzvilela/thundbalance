@@ -31,6 +31,13 @@ export function formatShortDate(key, locale) {
   return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(utcDay(key))
 }
 
+// "15 dic" / "15 Dec" / "15 des": a day and a short month, written like formatDayTime writes them (no dots, no "de" in Catalan).
+export function formatMonthDay(key, locale) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', timeZone: 'UTC' }).formatToParts(utcDay(key)).map(part => [part.type, part.value]))
+  const month = String(parts.month || '').replace(/[.,]/g, '').trim().replace(/^(de\s+|d['’]\s*)/i, '')
+  return [parts.day, month].filter(Boolean).join(' ')
+}
+
 // When the client sent something: the server saves UTC, the page shows the day in Madrid ("4 nov 2026").
 export function formatSentAt(iso, locale) {
   if (!iso) return ''
@@ -51,6 +58,24 @@ export function weekdayNames(locale) {
 
 // 24-hour clock, always "HH:MM"
 export const formatTime = (time) => String(time || '').slice(0, 5)
+
+// "vie 20 nov · 10:00" (es) / "Fri 20 Nov · 10:00" (en-GB) / "dv 20 nov · 10:00" (ca): THE way the client area writes a session's moment.
+// The day is the studio's calendar day (a wall-clock 'YYYY-MM-DD', no time-zone maths) and the hour has no seconds.
+export function formatDayTime(key, time, locale) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).formatToParts(utcDay(key)).map(part => [part.type, part.value])
+  )
+  const clean = (text) => String(text || '').replace(/[.,]/g, '').trim()
+  const month = clean(parts.month).replace(/^(de\s+|d['’]\s*)/i, '')          // Catalan: "de nov." -> "nov"
+  const day = [clean(parts.weekday), parts.day, month].filter(Boolean).join(' ')
+  const hour = formatTime(time)
+  return hour ? `${day} · ${hour}` : day
+}
+
+// "20 nov 2026": a calendar day with the year (the dates a pack runs between)
+export function formatDate(key, locale) {
+  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(utcDay(key))
+}
 
 // What time is it in Madrid right now? { date: 'YYYY-MM-DD', time: 'HH:MM' }
 export function madridNow(now = new Date()) {

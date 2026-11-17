@@ -6,6 +6,7 @@ import Navbar from '../components/Navbar'
 import ChangePassword from '../components/ChangePassword'
 import MyData from '../components/MyData'
 import TempPasswordNotice from '../components/TempPasswordNotice'
+import { Button, Card, PageHeader } from '../components/ui'
 import { markPasswordChanged } from '../api/account'
 import { LandingContentProvider } from '../content/LandingContentContext'
 import { API_URL, ADMIN_EMAIL } from '../config'
@@ -33,7 +34,6 @@ const fields = [
   ['tax_id_type', 'pf_f_doctype', '', 'off'],
   ['tax_id', 'pf_f_taxid', 'pf_p_taxid', 'off'],
 ]
-const button = 'rounded-xl px-5 py-3 text-sm font-semibold transition disabled:opacity-50 disabled:cursor-wait'
 
 // An error shown to the person is always a text KEY of the site (pageText.js): anything else (a network error of the browser, in English)
 // becomes the generic one.
@@ -172,16 +172,12 @@ function Profile() {
       <main id="main" className="relative mx-auto max-w-6xl px-5 pb-20 pt-36 md:pt-44">
         <div className="pointer-events-none absolute left-0 top-20 h-64 w-64 rounded-full bg-emerald-500/5 blur-3xl" />
         <TempPasswordNotice showLink={false} />
-        <header className="relative mb-9">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-400">{t('pf_eyebrow')}</p>
-          <h1 className="text-5xl md:text-6xl" style={{ fontFamily: 'Bebas Neue' }}>{t('pf_title')}</h1>
-          <p className="mt-3 text-sm text-gray-400">{t('pf_intro')}</p>
-        </header>
-        {error && <div role="alert" className="mb-6 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200">{t(error)}{!profile && !loading && <button onClick={() => window.location.reload()} className="ml-4 underline">{t('pg_try_again')}</button>}</div>}
+        <PageHeader tone="muted" eyebrow={t('pf_eyebrow')} title={t('pf_title')} subtitle={t('pf_intro')} />
+        {error && <div role="alert" className="mb-6 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200">{t(error)}{!profile && !loading && <Button variant="plain" size="none" onClick={() => window.location.reload()} className="ml-4 underline">{t('pg_try_again')}</Button>}</div>}
         {notice && <div role="status" className="mb-6 rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-200">{t(notice)}</div>}
-        {loading && <div role="status" className="rounded-2xl border border-white/10 p-10 text-gray-400">{t('pf_loading')}</div>}
+        {loading && <Card plain radius="sm" role="status" className="p-10 text-gray-400">{t('pf_loading')}</Card>}
         {profile && <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-          <aside className="self-start overflow-hidden rounded-3xl border border-white/10 bg-white/[0.025]">
+          <Card as="aside" className="self-start overflow-hidden">
             <div className="h-24 bg-gradient-to-br from-emerald-500/25 via-emerald-800/15 to-transparent" />
             <div className="px-7 pb-8 text-center">
               <div className="relative mx-auto -mt-14 mb-5 flex h-28 w-28 items-center justify-center overflow-hidden rounded-full border-4 border-[#101512] bg-emerald-950 text-3xl font-semibold text-emerald-200">
@@ -189,23 +185,24 @@ function Profile() {
               </div>
               <h2 className="break-words text-2xl font-semibold">{name}</h2>
               <p className="mt-2 break-all text-sm text-gray-400">{profile.email || user?.email}</p>
-              <span className="mt-4 inline-block rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">{isAdmin ? t('pf_admin') : t('pf_member')}</span>
+              {isAdmin && <span className="mt-4 inline-block rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">{t('pf_admin')}</span>}
               <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadPhoto} aria-label={t('pf_upload_aria')} className="hidden" />
-              <button type="button" onClick={() => fileInput.current?.click()} disabled={uploading || saving} className={`${button} mt-6 w-full border border-white/15 hover:bg-white/10`}>{uploading ? t('pf_uploading') : t('pf_change_photo')}</button>
+              <Button onClick={() => fileInput.current?.click()} disabled={uploading || saving} className="mt-6 w-full">{uploading ? t('pf_uploading') : t('pf_change_photo')}</Button>
               <p className="mt-3 text-xs text-hint">{t('pf_photo_hint')}</p>
-              <div className="mt-7 border-t border-white/10 pt-6 text-left">
+              <div className="mt-7 border-t border-line pt-6 text-left">
                 <p className="text-xs uppercase tracking-wider text-hint">{t('pf_current_plan')}</p>
-                <p className="mt-2 text-sm font-medium">{profile.plano || t('pf_no_plan')}</p>
-                <p className="mt-4 text-xs text-hint">{t('pf_member_no', { id: profile.id })}</p>
+                <p className="mt-2 text-base font-semibold">{profile.plano || t('pf_no_plan')}</p>
+                {/* the number is only a reference for the studio: small and quiet, not a badge */}
+                <p className="mt-5 text-[11px] text-hint">{t('pf_member_no', { id: profile.id })}</p>
               </div>
-              {isAdmin && <Link to="/admin" className={`${button} mt-6 block bg-emerald-400 text-black hover:bg-emerald-300`}>{t('pf_admin_link')}</Link>}
+              {isAdmin && <Button as={Link} to="/admin" variant="primary" className="mt-6 w-full">{t('pf_admin_link')}</Button>}
             </div>
-          </aside>
+          </Card>
           <div className="min-w-0 space-y-6 self-start">
-          <form ref={formRef} onSubmit={save} noValidate className="rounded-3xl border border-white/10 bg-white/[0.025] p-6 md:p-9">
-            <div className="mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-6">
+          <Card as="form" ref={formRef} onSubmit={save} noValidate className="p-6 md:p-9">
+            <div className="mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-line pb-6">
               <div><h2 className="text-xl font-semibold">{t('pf_details')}</h2><p className="mt-2 text-sm text-hint">{t('pf_details_text')}</p></div>
-              {!editing && <button type="button" onClick={() => { setDraft(profile); setEditing(true); setNotice('') }} className={`${button} border border-white/15 hover:bg-white/10`}>{t('pf_edit')}</button>}
+              {!editing && <Button onClick={() => { setDraft(profile); setEditing(true); setNotice('') }}>{t('pf_edit')}</Button>}
             </div>
             {editing ? <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
               {fields.map(([key, label, placeholder, autoComplete]) => {
@@ -242,11 +239,11 @@ function Profile() {
                 </p>
               </div>)}
             </div>}
-            {editing && <div className="mt-8 flex justify-end gap-3 border-t border-white/10 pt-6">
-              <button type="button" disabled={saving} onClick={() => { setDraft(profile); setEditing(false); setFieldErrors({}) }} className={`${button} border border-white/15 hover:bg-white/10`}>{t('pf_cancel')}</button>
-              <button type="submit" disabled={saving || uploading} className={`${button} bg-emerald-400 text-black hover:bg-emerald-300`}>{saving ? t('pf_saving') : t('pf_save')}</button>
+            {editing && <div className="mt-8 flex justify-end gap-3 border-t border-line pt-6">
+              <Button disabled={saving} onClick={() => { setDraft(profile); setEditing(false); setFieldErrors({}) }}>{t('pf_cancel')}</Button>
+              <Button type="submit" variant="primary" disabled={saving || uploading}>{saving ? t('pf_saving') : t('pf_save')}</Button>
             </div>}
-          </form>
+          </Card>
           <ChangePassword user={user} onChanged={markPasswordChanged} />
           {!isAdmin && <MyData />}
           </div>

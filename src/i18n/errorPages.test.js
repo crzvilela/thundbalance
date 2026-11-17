@@ -45,8 +45,8 @@ test('the routes: a path that does not exist shows the 404, also inside the admi
 
 test('the 404 has the way home and, for a signed-in account, the way to their area; the error page only offers to reload', () => {
   const notFound = code(read('../pages/NotFound.jsx'))
-  assert.match(notFound, /<Link to="\/"[^>]*>\{text\.home\}<\/Link>/)
-  assert.match(notFound, /<Link to=\{area\.to\}/)
+  assert.match(notFound, /<Button as=\{Link\} to="\/"[^>]*>\{text\.home\}<\/Button>/)
+  assert.match(notFound, /<Button as=\{Link\} to=\{area\.to\}/)
   assert.match(notFound, /areaFor\(rolesState\)/)
   assert.match(notFound, /name = 'robots'/)                                                       // never indexed
   const boundary = code(read('../components/AppErrorBoundary.jsx'))

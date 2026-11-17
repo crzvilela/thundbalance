@@ -1,8 +1,7 @@
 import { useI18n } from '../../i18n/I18nContext'
-import { formatDay, formatShortDay, formatTime, googleCalendarUrl } from '../../utils/sessionDates'
-import { changeReason, eventDetails } from './sessionText'
+import { formatDayTime } from '../../utils/sessionDates'
 
-// Small pieces of the My Sessions page: status badge, list row, "next session" card.
+// Small pieces of the My Sessions page: status badge, list row (the "next session" card is NextSessionCard.jsx).
 
 const BADGE = {
   upcoming: 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300',
@@ -25,7 +24,7 @@ export function Spinner() {
   return <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-current/30 border-t-current" />
 }
 
-const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400'
+export const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400'
 
 // The name of the pack a session belongs to, as a small label (a client can have several packs at once).
 export function PackLabel({ name, className = '' }) {
@@ -42,7 +41,7 @@ export function SessionRow({ session, status, onOpen }) {
     >
       <span className="min-w-0 flex-1">
         <span className={`block truncate font-medium capitalize ${status === 'cancelled' ? 'line-through decoration-red-300/60' : ''}`}>
-          {formatShortDay(session.date, locale)} · {formatTime(session.time)}
+          {formatDayTime(session.date, session.time, locale)}
         </span>
         <span className="block truncate text-sm text-gray-400">
           {session.trainer || '—'}{session.number ? ` · ${session.number}` : ''}
@@ -55,35 +54,15 @@ export function SessionRow({ session, status, onOpen }) {
   )
 }
 
-const BUTTON = `inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition ${FOCUS}`
-
-export function NextSessionCard({ session, status, onOpen, onRequest, onCancel, showCalendar = false, change, hours }) {
-  const { t, locale } = useI18n()
-  const canRequest = change?.state === 'available'
+// The message after an action (cancelled, change requested...): the same one My Sessions shows.
+export function SessionToast({ toast, onClose }) {
+  const { t } = useI18n()
+  if (!toast) return null
   return (
-    <section aria-labelledby="next-session-title" className="rounded-3xl border border-emerald-400/25 bg-emerald-400/[0.06] p-5 sm:p-7">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 id="next-session-title" className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-300">{t('ms_next_session')}</h2>
-        <StatusBadge status={status} />
-      </div>
-      <p style={{ fontFamily: 'Bebas Neue' }} className="text-4xl capitalize leading-tight sm:text-5xl">{formatDay(session.date, locale, { year: false })}</p>
-      <p className="mt-2 text-lg text-gray-200">
-        <span className="tabular-nums">{formatTime(session.time)}</span> · {session.trainer || '—'}
-        {session.number && <span className="ml-2 rounded-full border border-white/20 px-2.5 py-0.5 text-sm text-gray-300">{session.number}</span>}
-      </p>
-      {session.packName && <p className="mt-2"><PackLabel name={session.packName} /></p>}
-      <div className="mt-6 grid gap-3 sm:flex sm:flex-wrap">
-        {showCalendar && (
-          <a href={googleCalendarUrl(session, eventDetails(t, session, locale))} target="_blank" rel="noopener noreferrer"
-            className={`${BUTTON} bg-emerald-400 text-black hover:bg-emerald-300`}>{t('ms_add_google')}</a>
-        )}
-        <button type="button" onClick={() => onRequest(session)} disabled={!canRequest}
-          className={`${BUTTON} border border-white/25 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50`}>{t('ms_request_change')}</button>
-        <button type="button" onClick={() => onCancel(session)}
-          className={`${BUTTON} border border-red-400/50 text-red-300 hover:bg-red-500 hover:text-white`}>{t('ms_cancel_session')}</button>
-      </div>
-      <p className="mt-3 text-sm text-gray-400">{changeReason(t, change, hours)}</p>
-      <button type="button" onClick={() => onOpen(session)} className={`mt-2 rounded text-sm text-gray-300 underline underline-offset-4 hover:text-white ${FOCUS}`}>{t('ms_details')}</button>
-    </section>
+    <div role={toast.tone === 'error' ? 'alert' : 'status'}
+      className={`relative mb-6 flex items-start justify-between gap-4 rounded-2xl border px-5 py-4 text-sm ${toast.tone === 'error' ? 'border-red-400/40 bg-red-400/10 text-red-100' : 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100'}`}>
+      <span>{toast.text}</span>
+      <button type="button" onClick={onClose} aria-label={t('ms_dismiss')} className={`min-h-[32px] min-w-[32px] rounded ${FOCUS}`}>✕</button>
+    </div>
   )
 }

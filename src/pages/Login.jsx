@@ -6,6 +6,7 @@ import { sendWithChallenge } from '../challenge/challenge'
 import { authFetch } from '../api/authFetch'
 import { useI18n } from '../i18n/I18nContext'
 import { loginErrorKey } from '../utils/loginErrors'
+import { Button, FormField, Input } from '../components/ui'
 import { uiText } from '../legal/legalText'
 
 import {
@@ -106,7 +107,7 @@ function Login() {
 
     <main id="main" className="min-h-screen bg-black text-white flex items-center justify-center px-6">
 
-      <div className="w-full max-w-md border border-white/10 p-10">
+      <div className="w-full max-w-md border border-line p-10">
 
         <h1
           style={{ fontFamily: 'Bebas Neue' }}
@@ -120,55 +121,54 @@ function Login() {
           className="flex flex-col gap-6"
         >
 
-          {/* the labels are read by screen readers; the look keeps the placeholders */}
-          <label htmlFor="login-email" className="sr-only">{t('lgn_email_label')}</label>
-          <input
-            id="login-email"
-            ref={emailField}
-            name="email"
-            type="email"
-            autoComplete="username"
-            placeholder={t('lgn_email')}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            aria-invalid={problem ? true : undefined}
-            aria-describedby={problem ? 'login-error' : undefined}
-            className="bg-transparent border border-white/20 px-6 py-4 outline-none"
-            required
-          />
+          {/* visible labels (the same FormField as the registration), with useful placeholders */}
+          <FormField label={t('lgn_email_label')} id="login-email" className="-mb-4">
+            {({ id }) => (
+              <Input
+                id={id}
+                ref={emailField}
+                name="email"
+                type="email"
+                autoComplete="username"
+                placeholder={t('lgn_email')}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                aria-invalid={problem ? true : undefined}
+                aria-describedby={problem ? 'login-error' : undefined}
+                invalid={Boolean(problem)}
+                required
+              />
+            )}
+          </FormField>
 
-          <label htmlFor="login-password" className="sr-only">{t('lgn_password_label')}</label>
-          <input
-            id="login-password"
-            ref={passwordField}
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            placeholder={t('lgn_password')}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            aria-invalid={problem ? true : undefined}
-            aria-describedby={problem ? 'login-error' : undefined}
-            className="bg-transparent border border-white/20 px-6 py-4 outline-none"
-            required
-          />
+          <FormField label={t('lgn_password_label')} id="login-password" className="-mb-4">
+            {({ id }) => (
+              <Input
+                id={id}
+                ref={passwordField}
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                placeholder={t('lgn_password')}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                aria-invalid={problem ? true : undefined}
+                aria-describedby={problem ? 'login-error' : undefined}
+                invalid={Boolean(problem)}
+                required
+              />
+            )}
+          </FormField>
 
           {problem && <p id="login-error" role="alert" className="text-sm text-red-300">{t(problem)}</p>}
 
-          <button
-            type="submit"
-            className="bg-white text-black py-4 uppercase tracking-[3px] hover:bg-gray-300 transition duration-300"
-          >
+          <Button type="submit" variant="light" size="form" radius="none">
             {t('lgn_submit')}
-          </button>
+          </Button>
 
-          <button
-            type="button"
-            onClick={handleGoogleLogin}
-            className="border border-white/20 py-4 uppercase tracking-[3px] hover:bg-white hover:text-black transition duration-300"
-          >
+          <Button type="button" variant="outline" size="form" radius="none" onClick={handleGoogleLogin}>
             {t('lgn_google')}
-          </button>
+          </Button>
 
           <p className="text-center text-xs leading-relaxed text-gray-500">
             {legal.registerNotice}{' '}

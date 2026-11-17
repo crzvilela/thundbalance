@@ -7,10 +7,10 @@ const read = (path) => readFileSync(new URL(path, root), 'utf8')
 
 test('the four forms carry the unchecked consent box, send the proof and keep the button off until it is ticked', () => {
   const forms = {
-    'src/pages/Register.jsx': /disabled=\{submitting \|\| !accepted\}/,
+    'src/pages/Register.jsx': /loading=\{submitting\} disabled=\{!accepted\}/,
     'src/pages/Trialsession.jsx': /!accepted \|\|/,
     'src/components/Contact.jsx': /!accepted\)/,
-    'src/pages/TrainingRequest.jsx': /disabled=\{submitting \|\| !chosenPack \|\| !accepted\}/
+    'src/pages/TrainingRequest.jsx': /disabled=\{!chosenPack \|\| !accepted\}/
   }
   for (const [file, disabled] of Object.entries(forms)) {
     const source = read(file)

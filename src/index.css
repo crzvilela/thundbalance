@@ -4,6 +4,50 @@
    The admin's light theme gets its own value (see admin-light.css), so the same class reads well on white. */
 @theme {
   --color-hint: #7b8494;
+
+  /* ---- Design tokens (docs/DESIGN_SYSTEM.md). Each one has the value of the class it replaces, so a page that moves to a token looks
+     exactly the same. Colours are written as the oklch value of the Tailwind colour (not var(--color-emerald-400)): a theme variable that
+     is only referenced by another one would not be emitted. ---- */
+
+  /* accent (the brand green) */
+  --color-accent: oklch(76.5% .177 163.223);                                            /* emerald-400: solid buttons, focus ring, active tab */
+  --color-accent-hover: oklch(84.5% .143 164.978);                                      /* emerald-300: hover of the solid button */
+  --color-accent-text: oklch(84.5% .143 164.978);                                       /* emerald-300: eyebrows and links on dark */
+  --color-accent-soft: color-mix(in oklab, oklch(76.5% .177 163.223) 10%, transparent); /* bg-emerald-400/10: soft background of a state */
+  --color-accent-line: color-mix(in oklab, oklch(76.5% .177 163.223) 40%, transparent); /* border-emerald-400/40: border of a highlighted card */
+  /* danger */
+  --color-danger: oklch(63.7% .237 25.331);                                             /* red-500: solid dangerous button */
+  --color-danger-hover: oklch(70.4% .191 22.216);                                       /* red-400: hover of that button */
+  --color-danger-text: oklch(80.8% .114 19.571);                                        /* red-300: error text on dark */
+  --color-danger-soft: color-mix(in oklab, oklch(70.4% .191 22.216) 10%, transparent);  /* bg-red-400/10 */
+  --color-danger-line: color-mix(in oklab, oklch(70.4% .191 22.216) 25%, transparent);  /* border-red-400/25 */
+  /* warning */
+  --color-warn: oklch(82.8% .189 84.429);                                               /* amber-400 */
+  --color-warn-text: oklch(87.9% .169 91.605);                                          /* amber-300 */
+  --color-warn-soft: color-mix(in oklab, oklch(82.8% .189 84.429) 10%, transparent);    /* bg-amber-400/10 */
+  --color-warn-line: color-mix(in oklab, oklch(82.8% .189 84.429) 25%, transparent);    /* border-amber-400/25 */
+  /* information */
+  --color-info: oklch(74.6% .16 232.661);                                               /* sky-400 */
+  --color-info-text: oklch(82.8% .111 230.318);                                         /* sky-300 */
+  --color-info-soft: color-mix(in oklab, oklch(74.6% .16 232.661) 10%, transparent);    /* bg-sky-400/10 */
+  --color-info-line: color-mix(in oklab, oklch(74.6% .16 232.661) 25%, transparent);    /* border-sky-400/25 */
+  /* lines (borders on dark backgrounds) */
+  --color-line: color-mix(in oklab, #fff 10%, transparent);                             /* border-white/10: cards, dividers */
+  --color-line-strong: color-mix(in oklab, #fff 20%, transparent);                      /* border-white/20: buttons and fields. /15 and /25 map here */
+
+  /* radii */
+  --radius-control: .75rem;                                                             /* rounded-xl: buttons and fields */
+  --radius-card: 1.5rem;                                                                /* rounded-3xl: cards */
+  --radius-card-sm: 1rem;                                                               /* rounded-2xl: small cards, panels */
+  --radius-pill: 9999px;                                                                /* rounded-full: badges, tabs */
+
+  /* the scale of titles (Bebas Neue for display / h1, Inter for the rest: the fonts do not change) */
+  --text-display: 3rem;                    --text-display--line-height: 1;              /* text-5xl: title of a page; --text-display-lg from md up */
+  --text-display-lg: 3.75rem;              --text-display-lg--line-height: 1;           /* text-6xl */
+  --text-h1: 2.25rem;                      --text-h1--line-height: 2.5rem;              /* text-4xl: title of a modal or a big card */
+  --text-h2: 1.5rem;                       --text-h2--line-height: 2rem;                /* text-2xl */
+  --text-h3: 1.25rem;                      --text-h3--line-height: 1.75rem;             /* text-xl */
+  --text-eyebrow: .75rem;                  --text-eyebrow--line-height: 1rem;           /* text-xs: the small caps line over a title */
 }
 
 /* Focus (WCAG 2.4.7): a control that hid its outline WITHOUT drawing a ring or a border of its own still shows where the keyboard is. */

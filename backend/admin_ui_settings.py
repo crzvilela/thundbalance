@@ -35,12 +35,19 @@ from database import get_connection
 
 PANEL_KEY = "panel"
 
-# The closed registry (keep in step with src/admin/uiRegistry.js).
-MENU_KEYS = (
-    "overview", "requests", "trials", "messages", "sent-messages", "clients", "calendar", "schedule", "trainers", "plans", "videos",
-    "system", "legal", "landing", "customize",
-)
-OVERVIEW_KEYS = ("stat_clients", "stat_sessions", "stat_pending", "week", "pending", "business", "upcoming", "quick")
+# The closed registry (keep in step with src/admin/uiRegistry.js). The menu is in groups (MENU_GROUPS); inside a group the order is the studio's.
+MENU_GROUPS = {
+    "today": ("overview", "requests", "trials", "messages", "sent-messages"),
+    "people": ("clients", "trainers"),
+    "agenda": ("calendar", "schedule"),
+    "offer": ("plans", "videos", "landing"),
+    "system": ("system", "legal"),
+}
+MENU_KEYS = tuple(key for keys in MENU_GROUPS.values() for key in keys) + ("customize",)
+# The cards of the Overview. The first four are the "Hoy" blocks added with the grouped menu; the others are the original ones (a saved
+# configuration without the new keys is still valid: they take their default position).
+OVERVIEW_KEYS = ("today_strip", "today_sessions", "alerts", "deletions", "stat_clients", "stat_sessions", "stat_pending", "week", "pending", "business", "upcoming", "quick")
+PROTECTED_OVERVIEW_KEYS = ("today_strip", "alerts", "deletions")    # what the admin must always see: what to do today, the warnings, the deletion requests
 PAGE_KEYS = ("overview", "requests", "trials", "messages", "sent-messages", "clients", "calendar", "schedule", "trainers", "plans", "videos", "system", "legal")
 
 # Reorderable blocks of a page, by group (keep in step with src/admin/uiRegistry.js: BLOCKS). A block moves only inside its own group.
@@ -208,6 +215,14 @@ def _blocks(raw):
     return result
 
 
+def group_menu(menu):
+    """The menu list with every item in its group (the groups keep their fixed order, the order inside a group is the one sent) and "customize"
+    last. An old configuration with an order that crossed groups is stored like this from the next save; it is accepted as it is."""
+    group_of = {key: index for index, keys in enumerate(MENU_GROUPS.values()) for key in keys}
+    rank = lambda item: group_of.get(item["key"], len(MENU_GROUPS))      # noqa: E731 - "customize" (no group) goes last
+    return sorted(menu, key=rank)                                        # sorted() is stable: the order inside a group is kept
+
+
 def validate(payload):
     """The configuration normalised (without `version`), or a 422. The protection rules are checked here too."""
     if not isinstance(payload, dict):
@@ -243,7 +258,11 @@ def validate(payload):
     if len(visible_areas) < MIN_VISIBLE_AREAS:
         raise _bad("too_few_visible", f"At least {MIN_VISIBLE_AREAS} menu areas must stay visible.", field="menu", minimum=MIN_VISIBLE_AREAS)
 
-    value = {"menu": menu, "overview": overview, "pages": pages, "blocks": _blocks(payload.get("blocks")), "texts": _texts(payload.get("texts"))}
+    hidden_cards = {item["key"] for item in overview if item.get("hidden")}
+    if hidden_cards & set(PROTECTED_OVERVIEW_KEYS):
+        raise _bad("protected_card", "The blocks \"What to do today\", the warnings and the deletion requests cannot be hidden.", field="overview")
+
+    value = {"menu": group_menu(menu), "overview": overview, "pages": pages, "blocks": _blocks(payload.get("blocks")), "texts": _texts(payload.get("texts"))}
     if len(json.dumps(value, ensure_ascii=False).encode("utf-8")) > MAX_BYTES:
         raise _bad("too_large", "The configuration is too large (8 KB at most).")
     return value

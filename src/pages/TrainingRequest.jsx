@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { auth } from '../firebase/auth'
 import Navbar from '../components/Navbar'
 import TempPasswordNotice from '../components/TempPasswordNotice'
+import { Button, Card, FormField, PageHeader, Select } from '../components/ui'
 import PackSchedulePicker from '../components/forms/PackSchedulePicker'
 import PackScheduleSummary from '../components/forms/PackScheduleSummary'
 import { isComplete, toBody } from '../utils/packSchedule'
@@ -138,14 +139,9 @@ function TrainingRequest() {
 
         <TempPasswordNotice />
 
-        <h1
-          style={{ fontFamily: 'Bebas Neue' }}
-          className="text-4xl sm:text-6xl mb-8 sm:mb-12"
-        >
-          {t('tr_title')}
-        </h1>
+        <PageHeader eyebrow={t('dash_client_space')} title={t('tr_title')} subtitle={t('tr_intro')} />
 
-        <div className="border border-white/10 p-5 sm:p-10 rounded-2xl">
+        <Card plain radius="sm" className="p-5 sm:p-10">
 
           <div className="mb-8">
             <SessionTypeSection
@@ -154,46 +150,24 @@ function TrainingRequest() {
             />
           </div>
 
-          <div className="mb-8">
-
-            <label htmlFor="tr-pack" className="block mb-2 text-gray-400">
-              {t('tr_package')}
-            </label>
-
-            <select
-              id="tr-pack"
-              value={chosenPack ? String(chosenPack.id) : ''}
-              onChange={(e) =>
-                setPackId(e.target.value)
-              }
-              className="w-full bg-black border border-white/20 p-4"
-            >
-              {typePacks.map(pack => <option key={pack.id} value={pack.id}>{pack.name}</option>)}
-
-            </select>
-
-
+          <div className="mb-4">
+            <FormField label={t('tr_package')} id="tr-pack">
+              {({ id }) => (
+                <Select id={id} value={chosenPack ? String(chosenPack.id) : ''} onChange={(e) => setPackId(e.target.value)}>
+                  {typePacks.map(pack => <option key={pack.id} value={pack.id}>{pack.name}</option>)}
+                </Select>
+              )}
+            </FormField>
           </div>
 
-          <div className="mb-8">
-
-            <label htmlFor="tr-week" className="block mb-2 text-gray-400">
-              {t('tr_sessions_week')}
-            </label>
-
-            <select
-              id="tr-week"
-              value={effectivePerWeek}
-              onChange={(e) =>
-                setSessionsPerWeek(
-                  e.target.value
-                )
-              }
-              className="w-full bg-black border border-white/20 p-4"
-            >
-              {(perWeekOptions.length ? perWeekOptions : [1]).map(value => <option key={value} value={value}>{value}</option>)}
-            </select>
-
+          <div className="mb-4">
+            <FormField label={t('tr_sessions_week')} id="tr-week">
+              {({ id }) => (
+                <Select id={id} value={effectivePerWeek} onChange={(e) => setSessionsPerWeek(e.target.value)}>
+                  {(perWeekOptions.length ? perWeekOptions : [1]).map(value => <option key={value} value={value}>{value}</option>)}
+                </Select>
+              )}
+            </FormField>
           </div>
 
           <div className="mb-8">
@@ -204,7 +178,7 @@ function TrainingRequest() {
             />
 
             <PackScheduleSummary
-              className="mt-6 rounded-xl border border-white/10 p-4" value={entries} availability={availability.data}
+              className="mt-6 rounded-control border border-line p-4" value={entries} availability={availability.data}
               text={t} dayLabel={day => t(`wd_${day}`)} locale={language}
             />
             {entries.length > 0 && <p className="mt-2 text-sm text-hint">{t('ps_note')}</p>}
@@ -233,15 +207,11 @@ function TrainingRequest() {
             <ConsentCheckbox terms checked={accepted} error={consentError} onChange={(value) => { setAccepted(value); setConsentError('') }} />
           </div>
 
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || !chosenPack || !accepted}
-            className="w-full sm:w-auto bg-white text-black px-8 py-4 uppercase tracking-[3px] hover:bg-gray-300 transition duration-300"
-          >
+          <Button variant="light" size="form" radius="none" onClick={handleSubmit} loading={submitting} disabled={!chosenPack || !accepted} className="w-full px-8 sm:w-auto">
             {submitting ? t('tr_submitting') : chosenPack ? t('tr_submit') : t('tr_unavailable')}
-          </button>
+          </Button>
 
-        </div>
+        </Card>
 
       </main>
 

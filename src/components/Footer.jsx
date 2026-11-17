@@ -7,6 +7,7 @@ import { useLayoutItem } from './editor/useLayoutItem'
 import './Footer.css'
 import { UI as LEGAL_LINKS } from '../legal/legalText'
 import { openPreferences } from '../utils/consent'
+import { useLegal } from '../legal/useLegal'
 
 const ICONS = {
   location: <><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>,
@@ -63,6 +64,7 @@ function Footer() {
   const { content, device, select, selection } = useLandingContent()
   const { language, t } = useI18n()
   const { section, isEditMode, isSelected, onSectionClick, visible } = useSectionSelection('footer')
+  const { settings: company } = useLegal()
   const sectionSettings = section.settings || {}
   const configuredIcons = Array.isArray(section.footerIcons) ? section.footerIcons : DEFAULT_ICONS.map(icon => {
     if (icon.id === 'location') return { ...icon, url: resolveText(section.address?.mapsLink, language) || icon.url }
@@ -78,6 +80,18 @@ function Footer() {
   const icons = savedIcons.map(icon => icon.icon === 'email' || icon.icon === 'gmail'
     ? { ...icon, url: `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(resolveText(section.contactEmail, language) || 'pt@thundbalance.com')}` }
     : icon).filter(icon => footerIcons.has(icon.icon) && icon.visible !== false)
+  // The address, the e-mail and the phone are WRITTEN next to their icon (an icon alone says nothing to many visitors). Only data that exists
+  // is shown: the address and the e-mail of the footer content, the phone of the company data (legal settings). Nothing is made up.
+  const addressText = String(resolveText(section.address?.text, language) || '').trim()
+  const emailText = String(resolveText(section.contactEmail, language) || '').trim()
+  const phoneText = String(company?.phone || '').trim()
+  const contactLines = [
+    addressText && { id: 'location', icon: 'location', text: addressText, href: footerHref(resolveText(section.address?.mapsLink, language)) || `https://www.google.com/maps?q=${encodeURIComponent(addressText)}`, newTab: true },
+    emailText && { id: 'email', icon: 'email', text: emailText, href: `mailto:${emailText}` },
+    phoneText && { id: 'phone', icon: 'phone', text: phoneText, href: `tel:${phoneText.replace(/[^+\d]/g, '')}` },
+  ].filter(Boolean)
+  const written = new Set(contactLines.map(line => line.icon))
+  const socialIcons = icons.filter(icon => !(written.has('location') && icon.icon === 'location') && !(written.has('email') && (icon.icon === 'email' || icon.icon === 'gmail')))
   const edit = key => ({
     'data-footer-element': key,
     className: isEditMode ? 'footer-editable' : undefined,
@@ -106,7 +120,7 @@ function Footer() {
         <EditableText as="span" path="sections.footer.brand" label="Footer Brand" />
       </div>
       <nav className="footer-icons" aria-label={t('a11y_social')}>
-        {icons.map(icon => {
+        {socialIcons.map(icon => {
           const href = linkFor(icon)
           const label = resolveText(icon.label, language)
           const key = icon.id || `${icon.icon}-${label}`
@@ -114,6 +128,16 @@ function Footer() {
           return href && <FooterIconLink key={key} path={`icon:${key}`} href={href} newTab={icon.newTab} label={label} selected={isEditMode && selection?.path === `icon:${key}`} editProps={props}><Icon name={icon.icon} /></FooterIconLink>
         })}
       </nav>
+      {contactLines.length > 0 && (
+        <address className="footer-contact">
+          {contactLines.map(line => (
+            <a key={line.id} href={line.href} target={line.newTab ? '_blank' : undefined} rel={line.newTab ? 'noopener noreferrer' : undefined} onClick={event => { if (isEditMode) event.preventDefault() }}>
+              <Icon name={line.icon} />
+              <span>{line.text}</span>
+            </a>
+          ))}
+        </address>
+      )}
     </div>
     <div className="footer-meta">
       <EditableText as="span" path="sections.footer.text" label="Footer Copyright" />

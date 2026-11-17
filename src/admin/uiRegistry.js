@@ -11,22 +11,33 @@ export const LABEL_MAX = 30          // names of menu items, card titles, page t
 export const SUBTITLE_MAX = 120      // page subtitles
 export const MIN_VISIBLE_AREAS = 3   // menu areas that must always stay visible
 
-// The menu, in its original order. `protected`: can never be hidden.
+// The menu is in GROUPS (small titles in the side panel, fixed in ES / EN: they are not editable). The order of this list is the original
+// order: the groups one after the other and, inside each group, the items. `group` is the key of MENU_GROUPS. Reordering only works inside a
+// group; an entry that a saved configuration does not mention comes at the end of ITS group (docs/ADMIN_UI_SETTINGS.md, "Menu groups").
+export const MENU_GROUPS = [
+  { key: 'today', labelKey: 'nav_group_today' },
+  { key: 'people', labelKey: 'nav_group_people' },
+  { key: 'agenda', labelKey: 'nav_group_agenda' },
+  { key: 'offer', labelKey: 'nav_group_offer' },
+  { key: 'system', labelKey: 'nav_group_system' }
+]
+
+// `protected`: can never be hidden.
 export const MENU_ITEMS = [
-  { key: 'overview', to: '/admin', end: true, icon: 'overview', labelKey: 'nav_overview', protected: true },
-  { key: 'requests', to: '/admin/requests', icon: 'requests', labelKey: 'nav_requests', badge: 'requests' },
-  { key: 'trials', to: '/admin/trials', icon: 'whistle', labelKey: 'nav_trials', badge: 'trials' },
-  { key: 'messages', to: '/admin/messages', icon: 'inbox', labelKey: 'nav_messages', badge: 'messages' },
-  { key: 'sent-messages', to: '/admin/sent-messages', icon: 'send', labelKey: 'nav_broadcast' },
-  { key: 'clients', to: '/admin/clients', icon: 'clients', labelKey: 'nav_clients' },
-  { key: 'calendar', to: '/admin/calendar', icon: 'calendar', labelKey: 'nav_sessions' },
-  { key: 'schedule', to: '/admin/schedule', icon: 'refresh', labelKey: 'nav_schedule', badge: 'schedule' },
-  { key: 'trainers', to: '/admin/trainers', icon: 'clock', labelKey: 'nav_trainers' },
-  { key: 'plans', to: '/admin/plans', icon: 'bolt', labelKey: 'nav_plans' },
-  { key: 'videos', to: '/admin/videos', icon: 'video', labelKey: 'nav_videos' },
-  { key: 'system', to: '/admin/system', icon: 'alert', labelKey: 'nav_system' },
-  { key: 'legal', to: '/admin/legal', icon: 'doc', labelKey: 'nav_legal' },
-  { key: 'landing', to: '/admin/landing-editor', icon: 'landing', labelKey: 'nav_landing', arrow: true }
+  { key: 'overview', group: 'today', to: '/admin', end: true, icon: 'overview', labelKey: 'nav_overview', protected: true },
+  { key: 'requests', group: 'today', to: '/admin/requests', icon: 'requests', labelKey: 'nav_requests', badge: 'requests' },
+  { key: 'trials', group: 'today', to: '/admin/trials', icon: 'whistle', labelKey: 'nav_trials', badge: 'trials' },
+  { key: 'messages', group: 'today', to: '/admin/messages', icon: 'inbox', labelKey: 'nav_messages', badge: 'messages' },
+  { key: 'sent-messages', group: 'today', to: '/admin/sent-messages', icon: 'send', labelKey: 'nav_broadcast' },
+  { key: 'clients', group: 'people', to: '/admin/clients', icon: 'clients', labelKey: 'nav_clients' },
+  { key: 'trainers', group: 'people', to: '/admin/trainers', icon: 'clock', labelKey: 'nav_trainers' },
+  { key: 'calendar', group: 'agenda', to: '/admin/calendar', icon: 'calendar', labelKey: 'nav_sessions' },
+  { key: 'schedule', group: 'agenda', to: '/admin/schedule', icon: 'refresh', labelKey: 'nav_schedule', badge: 'schedule' },
+  { key: 'plans', group: 'offer', to: '/admin/plans', icon: 'bolt', labelKey: 'nav_plans' },
+  { key: 'videos', group: 'offer', to: '/admin/videos', icon: 'video', labelKey: 'nav_videos' },
+  { key: 'landing', group: 'offer', to: '/admin/landing-editor', icon: 'landing', labelKey: 'nav_landing', arrow: true },
+  { key: 'system', group: 'system', to: '/admin/system', icon: 'alert', labelKey: 'nav_system' },
+  { key: 'legal', group: 'system', to: '/admin/legal', icon: 'doc', labelKey: 'nav_legal' }
 ]
 
 // The button that opens the editor. It is not an area: it always stays at the end of the menu and can never be hidden (it can be renamed).
@@ -34,9 +45,14 @@ export const CUSTOMIZE_KEY = 'customize'
 export const CUSTOMIZE_LABEL_KEY = 'ui_customize'
 export const PROTECTED_MENU_KEYS = ['overview', CUSTOMIZE_KEY]
 
-// The cards of the Overview, in their original order. `group`: stat (the small number cards), card (the big cards, `span` of 5 columns)
-// or business (the full-width business panel).
+// The cards of the Overview, in their original order. `group`: wide (a full-width block: the "Hoy" blocks), stat (the small number cards), card
+// (the big cards, `span` of 5 columns) or business (the full-width business panel). The keys never change (a saved configuration refers to
+// them); a key a configuration does not mention takes its default position (see resolveOverview).
 export const OVERVIEW_CARDS = [
+  { key: 'today_strip', titleKey: 'ov_strip_title', group: 'wide', protected: true },
+  { key: 'today_sessions', titleKey: 'ov_today_title', group: 'wide' },
+  { key: 'alerts', titleKey: 'ov_alerts_title', group: 'wide', protected: true },
+  { key: 'deletions', titleKey: 'dr_title', group: 'wide', protected: true },
   { key: 'stat_clients', titleKey: 'stat_clients', group: 'stat' },
   { key: 'stat_sessions', titleKey: 'stat_sessions', group: 'stat' },
   { key: 'stat_pending', titleKey: 'stat_pending_total', group: 'stat' },
@@ -46,10 +62,13 @@ export const OVERVIEW_CARDS = [
   { key: 'upcoming', titleKey: 'upcoming_title', group: 'card', span: 3 },
   { key: 'quick', titleKey: 'quick_title', group: 'card', span: 2 }
 ]
+// Never hidden (they can be moved and renamed): what to do today, the warnings (an email that does not work must not be switched off by mistake)
+// and the deletion requests (the studio owes the client an answer).
+export const PROTECTED_OVERVIEW_KEYS = OVERVIEW_CARDS.filter(card => card.protected).map(card => card.key)
 
 // Pages with a title and a subtitle (PageHeader). The Overview title is a fixed brand text in every language.
 export const PAGES = [
-  { key: 'overview', title: 'THUNDBALANCE ADMIN', subtitleKey: 'overview_sub' },
+  { key: 'overview', titleKey: 'ov_page_title', subtitleKey: 'ov_date_hint' },      // "Hoy" and the date of today (the date is written by the page)
   { key: 'requests', titleKey: 'req_title', subtitleKey: 'req_sub' },
   { key: 'trials', titleKey: 'tr_title', subtitleKey: 'tr_sub' },
   { key: 'messages', titleKey: 'msg_title', subtitleKey: 'msg_sub' },

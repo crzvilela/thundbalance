@@ -5,9 +5,9 @@ import { useEditMode } from './editModeContext'
 import { useUiSettings } from './uiSettingsContext'
 import { Button, ConfirmDialog, Drawer, Icon } from './ui'
 import {
-  BLOCKS, BLOCK_PAGES, CUSTOMIZE_KEY, TEXT_ENTRIES, CUSTOMIZE_LABEL_KEY, LABEL_MAX, MENU_ITEMS, OVERVIEW_CARDS, PAGES, PROTECTED_MENU_KEYS, SUBTITLE_MAX
+  BLOCKS, BLOCK_PAGES, CUSTOMIZE_KEY, TEXT_ENTRIES, CUSTOMIZE_LABEL_KEY, LABEL_MAX, MENU_GROUPS, MENU_ITEMS, OVERVIEW_CARDS, PAGES, PROTECTED_MENU_KEYS, PROTECTED_OVERVIEW_KEYS, SUBTITLE_MAX
 } from './uiRegistry'
-import { moveItem, moveToItem, pageIsCustomised, resetItem, setItemText, setPageText, toggleHidden } from './uiSettings'
+import { groupOfItem, moveInGroup, moveItem, moveToInGroup, moveToItem, pageIsCustomised, resetItem, setItemText, setPageText, toggleHidden } from './uiSettings'
 
 const TABS = ['menu', 'overview', 'pages', 'blocks', 'texts']
 const CONTROL = 'w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-base text-white outline-none transition focus:border-emerald-400/70 focus:ring-2 focus:ring-emerald-400/15'
@@ -196,38 +196,58 @@ function BlocksTab({ draft, edit, t }) {
   )
 }
 
+// The menu list is split in the groups of the side panel (a fixed title each: not editable) and every item moves only inside its group; the
+// Overview list is one list. `locked`: cannot be hidden (the menu's Overview, the Overview's protected blocks); the editor entry is also fixed last.
 function ItemList({ list, originalOf, field, isMenu, onChange, onWarn, t }) {
   const [editingKey, setEditingKey] = useState('')
   const dragKey = useRef('')
   const [dragging, setDragging] = useState('')
   const movable = list.filter(item => item.key !== CUSTOMIZE_KEY)
+  const protectedKeys = isMenu ? PROTECTED_MENU_KEYS : PROTECTED_OVERVIEW_KEYS
+
+  const row = (item, scope) => {
+    const locked = protectedKeys.includes(item.key)                          // cannot be hidden (lock)
+    const fixed = isMenu && item.key === CUSTOMIZE_KEY                       // and this one is also always last
+    const index = scope.findIndex(candidate => candidate.key === item.key)
+    return (
+      <Row
+        key={item.key} item={item} original={originalOf(item.key)} field={field} t={t}
+        fixed={fixed} locked={locked} isFirst={index === 0} isLast={index === scope.length - 1}
+        editing={editingKey === item.key} dragging={dragging === item.key}
+        onEdit={() => setEditingKey(editingKey === item.key ? '' : item.key)}
+        onMove={(delta) => onChange(isMenu ? moveInGroup(list, item.key, delta) : moveItem(list, item.key, delta))}
+        onText={(value) => onChange(setItemText(list, item.key, field, value))}
+        onToggle={() => {
+          if (locked) { onWarn(isMenu ? 'ui_warn_protected' : 'ui_warn_card_protected'); return }
+          const result = toggleHidden(list, item.key, { isMenu, protectedKeys })
+          if (result.error) onWarn(result.error === 'too_few_visible' ? 'ui_warn_min' : isMenu ? 'ui_warn_protected' : 'ui_warn_card_protected')
+          else { onWarn(''); onChange(result.list) }
+        }}
+        onReset={() => onChange(resetItem(list, item.key, field))}
+        onDragStart={() => { dragKey.current = item.key; setDragging(item.key) }}
+        onDrop={() => {
+          if (dragKey.current) onChange(isMenu ? moveToInGroup(list, dragKey.current, item.key) : moveToItem(list, dragKey.current, item.key))      // never to another group
+          dragKey.current = ''; setDragging('')
+        }}
+      />
+    )
+  }
+
+  if (!isMenu) return <ul className="space-y-2" aria-label={t('ui_tab_overview')}>{list.map(item => row(item, movable))}</ul>
   return (
-    <ul className="space-y-2">
-      {list.map(item => {
-        const locked = isMenu && PROTECTED_MENU_KEYS.includes(item.key)         // cannot be hidden (lock)
-        const fixed = isMenu && item.key === CUSTOMIZE_KEY                      // and this one is also always last
-        const index = movable.findIndex(candidate => candidate.key === item.key)
+    <div className="space-y-5">
+      {MENU_GROUPS.map(group => {
+        const items = list.filter(item => groupOfItem(item.key) === group.key)
+        if (!items.length) return null
         return (
-          <Row
-            key={item.key} item={item} original={originalOf(item.key)} field={field} t={t}
-            fixed={fixed} locked={locked} isFirst={index === 0} isLast={index === movable.length - 1}
-            editing={editingKey === item.key} dragging={dragging === item.key}
-            onEdit={() => setEditingKey(editingKey === item.key ? '' : item.key)}
-            onMove={(delta) => onChange(moveItem(list, item.key, delta))}
-            onText={(value) => onChange(setItemText(list, item.key, field, value))}
-            onToggle={() => {
-              if (locked) { onWarn('ui_warn_protected'); return }
-              const result = toggleHidden(list, item.key, { isMenu })
-              if (result.error) onWarn(result.error === 'too_few_visible' ? 'ui_warn_min' : 'ui_warn_protected')
-              else { onWarn(''); onChange(result.list) }
-            }}
-            onReset={() => onChange(resetItem(list, item.key, field))}
-            onDragStart={() => { dragKey.current = item.key; setDragging(item.key) }}
-            onDrop={() => { if (dragKey.current) onChange(moveToItem(list, dragKey.current, item.key)); dragKey.current = ''; setDragging('') }}
-          />
+          <section key={group.key} aria-labelledby={`ui-group-${group.key}`}>
+            <h3 id={`ui-group-${group.key}`} className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">{t(group.labelKey)}</h3>
+            <ul className="space-y-2" aria-label={t(group.labelKey)}>{items.map(item => row(item, items))}</ul>
+          </section>
         )
       })}
-    </ul>
+      <ul className="space-y-2" aria-label={t('ui_tab_menu')}>{list.filter(item => item.key === CUSTOMIZE_KEY).map(item => row(item, movable))}</ul>
+    </div>
   )
 }
 

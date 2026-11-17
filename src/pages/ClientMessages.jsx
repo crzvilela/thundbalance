@@ -6,6 +6,7 @@ import { auth } from '../firebase/auth'
 import Navbar from '../components/Navbar'
 import ConfirmModal from '../components/inbox/ConfirmModal'
 import MessageCard from '../components/inbox/MessageCard'
+import { Button, EmptyState, PageHeader, SkeletonList } from '../components/ui'
 import { archiveMessage, archiveRead, loadInbox, markAllRead, markRead, runAction, unarchiveMessage } from '../api/inbox'
 import { adjustUnread, refreshUnread, setUnread } from '../hooks/useUnreadCount'
 import { useI18n } from '../i18n/I18nContext'
@@ -236,6 +237,10 @@ function ClientMessages() {
   )
 
   const tabs = [['inbox', 'in_tab_inbox', counts?.inbox], ['archived', 'in_tab_archived', counts?.archived]]
+  // With no message at all there is nothing to filter, mark or archive: the bar of filters and buttons is not drawn (the empty state says it).
+  const inboxEmpty = !loading && !view?.error && Boolean(counts) && counts.inbox === 0
+  const canMarkAll = hasUnread || (counts?.unread ?? 0) > 0
+  const canArchiveRead = counts ? counts.inbox - (counts.unread ?? 0) > 0 : items.some(item => item.read)
   const noticeText = notice && (notice.startsWith('in_') ? t(notice) : notice)
 
   return (
@@ -245,65 +250,50 @@ function ClientMessages() {
       <main id="main" className="relative mx-auto max-w-3xl px-4 pb-24 pt-32 sm:px-5 md:pt-44">
         <div className="pointer-events-none absolute left-0 top-24 h-72 w-72 rounded-full bg-emerald-500/5 blur-3xl" />
 
-        <header className="relative mb-8">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-300">{t('dash_client_space')}</p>
-          <h1 className="text-5xl md:text-6xl" style={{ fontFamily: 'Bebas Neue' }}>{t('in_title')}</h1>
-          <p className="mt-3 max-w-xl text-sm text-gray-300">{t('in_intro')}</p>
-        </header>
+        <PageHeader eyebrow={t('dash_client_space')} title={t('in_title')} subtitle={t('in_intro')} />
 
         <div className="relative mb-5 flex flex-wrap gap-2" role="tablist" aria-label={t('in_title')}>
           {tabs.map(([value, label, count]) => (
-            <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => changeTab(value)}
-              className={`flex min-h-[44px] items-center gap-2 rounded-full border px-5 text-sm font-semibold transition ${FOCUS} ${tab === value ? 'border-emerald-400/50 bg-emerald-400/10 text-emerald-300' : 'border-white/15 text-gray-300 hover:text-white'}`}>
+            <Button key={value} variant="plain" size="none" role="tab" aria-selected={tab === value} onClick={() => changeTab(value)}
+              className={`flex min-h-[44px] items-center gap-2 rounded-pill border px-5 text-sm font-semibold transition ${tab === value ? 'border-accent/50 bg-accent-soft text-accent-text' : 'border-line-strong text-gray-300 hover:text-white'}`}>
               {t(label)}
-              <span className={`rounded-full px-2 text-xs tabular-nums ${tab === value ? 'bg-emerald-400/20' : 'bg-white/10'}`}>{count ?? '–'}</span>
-            </button>
+              <span className={`rounded-pill px-2 text-xs tabular-nums ${tab === value ? 'bg-accent/20' : 'bg-white/10'}`}>{count ?? '–'}</span>
+            </Button>
           ))}
         </div>
 
-        {tab === 'inbox' && (
+        {tab === 'inbox' && !inboxEmpty && (
           <div className="relative mb-6 flex flex-wrap items-center justify-between gap-3">
-            <div className="inline-flex rounded-xl border border-white/15 p-1" role="group" aria-label={t('in_title')}>
+            <div className="inline-flex rounded-control border border-line-strong p-1" role="group" aria-label={t('in_title')}>
               {[['all', 'in_filter_all'], ['unread', 'in_filter_unread']].map(([value, label]) => (
-                <button key={value} type="button" aria-pressed={filter === value} onClick={() => changeFilter(value)}
-                  className={`min-h-[44px] rounded-lg px-5 text-sm font-semibold transition ${FOCUS} ${filter === value ? 'bg-emerald-400 text-black' : 'text-gray-300 hover:text-white'}`}>
+                <Button key={value} variant="plain" size="none" aria-pressed={filter === value} onClick={() => changeFilter(value)}
+                  className={`min-h-[44px] rounded-lg px-5 text-sm font-semibold transition ${filter === value ? 'bg-accent text-black' : 'text-gray-300 hover:text-white'}`}>
                   {t(label)}
-                </button>
+                </Button>
               ))}
             </div>
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
-              <button type="button" onClick={readAll} disabled={markingAll || !hasUnread}
-                className={`inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-white/25 px-5 text-sm font-semibold transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40 ${FOCUS}`}>
-                {markingAll && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-current/30 border-t-current" />}
-                {t('in_mark_all')}
-              </button>
-              <button type="button" onClick={archiveAllRead} disabled={archivingRead}
-                className={`inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-white/25 px-5 text-sm font-semibold transition hover:bg-white/10 disabled:cursor-wait disabled:opacity-50 ${FOCUS}`}>
-                {archivingRead ? <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-current/30 border-t-current" /> : <BsArchive aria-hidden="true" className="h-4 w-4" />}
+              {canMarkAll && <Button onClick={readAll} loading={markingAll} disabled={!hasUnread}>{t('in_mark_all')}</Button>}
+              {canArchiveRead && <Button onClick={archiveAllRead} loading={archivingRead}>
+                {!archivingRead && <BsArchive aria-hidden="true" className="h-4 w-4" />}
                 {t('in_archive_read')}
-              </button>
+              </Button>}
             </div>
           </div>
         )}
 
         {noticeText && (
-          <p role="status" className="relative mb-6 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-5 py-3 text-sm text-emerald-100">{noticeText}</p>
+          <p role="status" className="relative mb-6 rounded-card-sm border border-emerald-400/30 bg-accent-soft px-5 py-3 text-sm text-emerald-100">{noticeText}</p>
         )}
 
         {view?.error && !loading ? (
-          <div role="alert" className="relative rounded-3xl border border-white/10 bg-white/[0.025] p-10 text-center">
-            <p className="mb-5 text-gray-200">{t('in_error')}</p>
-            <button type="button" onClick={reload} className={`min-h-[44px] rounded-xl bg-white px-6 py-3 text-sm font-semibold text-black hover:bg-gray-200 ${FOCUS}`}>{t('in_retry')}</button>
-          </div>
+          <EmptyState role="alert" text={t('in_error')} action={<Button variant="light" size="lg" onClick={reload}>{t('in_retry')}</Button>} />
         ) : loading ? (
-          <div role="status" aria-label={t('in_loading')} className="relative space-y-4">
-            {[0, 1, 2].map(row => <div key={row} className="h-40 animate-pulse rounded-3xl border border-white/10 bg-white/[0.04]" />)}
-          </div>
+          <SkeletonList label={t('in_loading')} />
         ) : items.length === 0 ? (
-          <div className="relative rounded-3xl border border-white/10 bg-white/[0.025] p-10 text-center text-gray-300">
-            <p>{t(tab === 'archived' ? 'in_empty_archived' : filter === 'unread' ? 'in_empty_unread' : 'in_empty')}</p>
-            {tab === 'inbox' && filter === 'unread' && <button type="button" onClick={() => changeFilter('all')} className={`mt-4 min-h-[44px] rounded-lg px-3 text-sm font-semibold text-emerald-300 underline underline-offset-4 ${FOCUS}`}>{t('in_filter_all')}</button>}
-          </div>
+          <EmptyState text={t(tab === 'archived' ? 'in_empty_archived' : filter === 'unread' ? 'in_empty_unread' : 'in_empty')}>
+            {tab === 'inbox' && filter === 'unread' && <Button variant="plain" size="none" onClick={() => changeFilter('all')} className="mt-4 min-h-[44px] rounded-lg px-3 text-sm font-semibold text-accent-text underline underline-offset-4">{t('in_filter_all')}</Button>}
+          </EmptyState>
         ) : (
           <>
             <ul className="relative space-y-4">
@@ -320,9 +310,9 @@ function ClientMessages() {
 
             {view.pages > 1 && (
               <nav className="relative mt-8 flex flex-wrap items-center justify-between gap-3" aria-label={t('in_title')}>
-                <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} className={`min-h-[44px] rounded-xl border border-white/25 px-5 text-sm font-semibold transition hover:bg-white/10 disabled:opacity-40 ${FOCUS}`}>{t('in_prev')}</button>
+                <Button disabled={page <= 1} onClick={() => setPage(page - 1)}>{t('in_prev')}</Button>
                 <span className="text-sm text-gray-400">{t('in_page', { page, pages: view.pages })}</span>
-                <button type="button" disabled={page >= view.pages} onClick={() => setPage(page + 1)} className={`min-h-[44px] rounded-xl border border-white/25 px-5 text-sm font-semibold transition hover:bg-white/10 disabled:opacity-40 ${FOCUS}`}>{t('in_next')}</button>
+                <Button disabled={page >= view.pages} onClick={() => setPage(page + 1)}>{t('in_next')}</Button>
               </nav>
             )}
           </>
@@ -336,7 +326,7 @@ function ClientMessages() {
       {undo && (
         <div role="status" className="fixed bottom-5 left-1/2 z-[60] flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center justify-between gap-4 rounded-xl border border-emerald-400/30 bg-emerald-950/95 px-4 py-3 text-sm text-emerald-100 shadow-xl backdrop-blur">
           <span>{t('in_archived')}</span>
-          <button type="button" onClick={undoArchive} className="min-h-[44px] rounded-lg px-3 font-semibold text-emerald-300 underline underline-offset-4 hover:bg-white/10">{t('in_undo')} ({undo.seconds})</button>
+          <Button variant="plain" size="none" onClick={undoArchive} className="min-h-[44px] rounded-lg px-3 font-semibold text-accent-text underline underline-offset-4 hover:bg-white/10">{t('in_undo')} ({undo.seconds})</Button>
         </div>
       )}
 

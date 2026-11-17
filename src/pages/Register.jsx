@@ -16,7 +16,7 @@ import { useI18n } from '../i18n/I18nContext'
 import { formText, serverFieldError } from '../i18n/formText'
 import { registerErrorKey } from '../utils/loginErrors'
 import FormField from '../components/forms/FormField'
-import { INPUT_CLASS, inputBorder } from '../components/forms/inputStyles'
+import { Button, Card, Input } from '../components/ui'
 import PhoneInput from '../components/forms/PhoneInput'
 import EmailInput from '../components/forms/EmailInput'
 import PostalCodeInput from '../components/forms/PostalCodeInput'
@@ -161,7 +161,7 @@ function Register() {
   const textField = (key, label, value, setValue, options = {}) => (
     <FormField label={label} required={options.required} error={errors[key]}>
       {({ id, describedBy, invalid }) => (
-        <input
+        <Input
           id={id}
           type={options.type || 'text'}
           autoComplete={options.autoComplete}
@@ -169,10 +169,9 @@ function Register() {
           value={value}
           onChange={(e) => { setValue(e.target.value); if (errors[key]) setErrors(current => ({ ...current, [key]: undefined })) }}
           onBlur={options.onBlur}
-          aria-invalid={invalid || undefined}
           aria-required={options.required || undefined}
           aria-describedby={describedBy}
-          className={`${INPUT_CLASS} ${inputBorder(invalid)}`}
+          invalid={invalid}
         />
       )}
     </FormField>
@@ -183,7 +182,7 @@ function Register() {
   return (
     <main id="main" className="min-h-screen bg-black text-white flex items-center justify-center px-6 py-10">
 
-      <div className="w-full max-w-lg border border-white/10 p-6 sm:p-10 rounded-2xl">
+      <Card plain radius="sm" className="w-full max-w-lg p-6 sm:p-10">
 
         <h1
           style={{ fontFamily: 'Bebas Neue' }}
@@ -233,14 +232,9 @@ function Register() {
 
           <ChallengeStatus guard={guard} />
 
-          <button
-            type="submit"
-            disabled={submitting || !accepted}
-            className="mt-3 inline-flex items-center justify-center gap-3 bg-white text-black py-4 uppercase tracking-[3px] rounded-lg hover:bg-gray-300 transition duration-300 disabled:cursor-wait disabled:opacity-60"
-          >
-            {submitting && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />}
+          <Button type="submit" variant="light" size="form" radius="lg" loading={submitting} disabled={!accepted} className="mt-3">
             {t('rg_submit')}
-          </button>
+          </Button>
 
           <p className="text-center text-gray-400 text-sm mt-2">
 
@@ -257,7 +251,7 @@ function Register() {
 
         </form>
 
-      </div>
+      </Card>
 
     </main>
   )

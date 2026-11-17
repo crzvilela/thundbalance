@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useI18n } from '../../i18n/I18nContext'
-import { useClientSessions } from '../../hooks/useClientSessions'
 import SessionCalendarPanel from './SessionCalendarPanel'
 import SessionModal from './SessionModal'
 
@@ -18,10 +17,9 @@ function Skeleton() {
 
 // The client's month calendar on the dashboard: read only. A day opens the details of its session (date, hour, trainer,
 // x/y and state); "View all" goes to My Sessions, where they can ask for a change. Own loading, empty and error states
-// (the server can take a moment to wake up).
-export default function DashboardCalendar({ className = '' }) {
+// (the server can take a moment to wake up). `data` is what useClientSessions returned: the dashboard loads it ONCE and shares it.
+export default function DashboardCalendar({ data, className = '' }) {
   const { t } = useI18n()
-  const data = useClientSessions()
   const { sessions, trial, loading, error, reload, statusOf, changeOf, rules, today } = data
   const [openId, setOpenId] = useState(null)
   const opened = openId ? sessions.find(session => session.id === openId) : null

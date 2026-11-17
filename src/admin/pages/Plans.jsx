@@ -10,6 +10,7 @@ import { Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Fie
 import { formatMoney, isPriceText, monthsEquivalent, priceFromText, totalPrice } from '../../utils/pricing'
 import { MAX_BENEFIT, MAX_BENEFITS, MAX_OBJECTIVE, benefitsProblem, cleanBenefits, cleanObjective, moveItem, objectiveProblem } from '../../utils/packFields'
 import { refreshPricing } from '../../utils/usePricing'
+import { MoreMenu } from '../../components/admin/DetailHeader'
 
 const PER_WEEK = [1, 2, 3, 4, 5]                 // Monday to Friday only: never more than 5 a week
 const EMPTY = { name: '', type: 'individual', weeks: '', options: [], perSession: '', objective: '', benefits: [] }
@@ -336,8 +337,8 @@ function PackCard({ pack, onEdit, onArchive, onRestore, onDelete, busy = false }
   const { t } = useAdminText()
   const single = pack.sessions_per_week_options.length === 1
   return (
-    <li>
-      <Card className={`group relative h-full overflow-hidden p-6 transition-all duration-200 ${pack.active ? 'hover:-translate-y-0.5 hover:border-emerald-400/30' : 'opacity-75'}`}>
+    <li className="relative hover:z-20 focus-within:z-20">
+      <Card className={`group relative h-full p-6 transition-all duration-200 ${pack.active ? 'hover:-translate-y-0.5 hover:border-emerald-400/30' : 'opacity-75'}`}>
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={pack.session_type === 'dual' ? 'sky' : 'emerald'}>{pack.session_type === 'dual' ? t('ty_dual') : t('ty_individual')}</Badge>
           <Badge tone={pack.active ? 'emerald' : 'neutral'}>{pack.active ? t('cat_active') : t('cat_archived')}</Badge>
@@ -346,37 +347,31 @@ function PackCard({ pack, onEdit, onArchive, onRestore, onDelete, busy = false }
         <h2 className="mt-4 break-words text-xl font-semibold">{pack.name}</h2>
         <p className="mt-1 text-sm text-gray-400"><WeeksText weeks={pack.weeks} /></p>
 
-        <dl className="mt-4 space-y-2">
-          <div className="flex items-baseline justify-between gap-3">
-            <dt className="text-sm text-gray-400">{t('cat_price_session')}</dt>
-            <dd className="text-2xl font-semibold tabular-nums">{formatMoney(pack.price_per_session)}</dd>
-          </div>
-          <div className="flex items-baseline justify-between gap-3">
-            <dt className="text-sm text-gray-400">{t('cat_calc_sessions')}</dt>
-            <dd className="text-right tabular-nums">{single ? pack.total_sessions : <span className="text-sm text-gray-400">{t('cat_pack_by_choice')}</span>}</dd>
-          </div>
-          <div className="flex items-baseline justify-between gap-3">
-            <dt className="text-sm text-gray-400">{t('cat_calc_total')}</dt>
-            <dd className="text-right tabular-nums">{single ? formatMoney(pack.price_total) : <span className="text-sm text-gray-400">{t('cat_pack_by_choice')}</span>}</dd>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <dt className="text-sm text-gray-400">{t('cat_options')}</dt>
-            <dd className="flex flex-wrap justify-end gap-1.5">
-              {pack.sessions_per_week_options.map(value => <span key={value} className="rounded-full border border-white/10 px-2.5 py-0.5 text-sm text-gray-200">{value}</span>)}
-            </dd>
-          </div>
+        {/* one row per value, label on the left and value on the right: no row ever breaks into two lines (the long "depends on..." text is a note) */}
+        <dl className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2">
+          <dt className="whitespace-nowrap text-sm text-gray-400">{t('cat_price_session')}</dt>
+          <dd className="whitespace-nowrap text-right text-2xl font-semibold tabular-nums">{formatMoney(pack.price_per_session)}</dd>
+          {single && <>
+            <dt className="whitespace-nowrap text-sm text-gray-400">{t('cat_calc_sessions')}</dt>
+            <dd className="whitespace-nowrap text-right tabular-nums">{pack.total_sessions}</dd>
+            <dt className="whitespace-nowrap text-sm text-gray-400">{t('cat_calc_total')}</dt>
+            <dd className="whitespace-nowrap text-right tabular-nums">{formatMoney(pack.price_total)}</dd>
+          </>}
+          <dt className="col-span-2 mt-1 whitespace-nowrap text-sm text-gray-400">{t('cat_options')}</dt>
+          <dd className="col-span-2 flex flex-nowrap justify-start gap-1.5">
+            {pack.sessions_per_week_options.map(value => <span key={value} className="rounded-full border border-white/10 px-2.5 py-0.5 text-sm text-gray-200">{value}</span>)}
+          </dd>
         </dl>
+        {!single && <p className="mt-2 text-xs text-gray-500">{t('cat_pack_by_choice')}</p>}
 
-        <div className="mt-6 flex gap-2">
+        <div className="mt-6 flex items-center gap-2">
           <Button variant="secondary" className="flex-1" onClick={onEdit}><Txt id="plans.edit" /></Button>
           {pack.active
             ? <Button variant="secondary" onClick={onArchive} aria-label={`${t('cat_archive')} ${pack.name}`}><Txt id="plans.archive" /></Button>
             : <Button variant="primary" onClick={onRestore} loading={busy} aria-label={`${t('cat_restore')} ${pack.name}`}><Txt id="plans.restore" /></Button>}
+          {/* "Delete pack" is in the secondary menu: it is the rare and dangerous action, not a third button; the confirmation is the same */}
+          <MoreMenu quiet label={`${t('cat_more')}: ${pack.name}`} items={[{ label: t('cat_delete'), danger: true, disabled: busy, onClick: onDelete }]} />
         </div>
-        <button type="button" onClick={onDelete} disabled={busy} aria-label={`${t('cat_delete')}: ${pack.name}`}
-          className="mt-3 w-full min-h-10 rounded-xl px-3 text-sm text-red-300 transition hover:bg-red-500/10 hover:text-red-200 disabled:opacity-40">
-          {t('cat_delete')}
-        </button>
       </Card>
     </li>
   )

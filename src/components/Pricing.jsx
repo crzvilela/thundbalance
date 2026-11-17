@@ -4,7 +4,7 @@ import MovableBox from './editor/MovableBox'
 import { useState } from 'react'
 import { useI18n } from '../i18n/I18nContext'
 import SegmentedType from './forms/SegmentedType'
-import { TIERS, hasContent, textOf, tierOf } from '../utils/landingPrices'
+import { TIERS, hasContent, packFacts, textOf, tierOf } from '../utils/landingPrices'
 
 function Pricing({ sectionId }) {
   const { section, isEditMode, isSelected, onSectionClick, visible, theme } = useSectionSelection(sectionId, 'Pricing')
@@ -71,23 +71,35 @@ function Pricing({ sectionId }) {
             const features = Array.isArray(tier.features) ? tier.features : []
             const pricePath = `sections.${sectionId}.prices.${sessionType}.${index}`
             const planPath = `sections.${sectionId}.plans.${index}`
+            const facts = packFacts(tier, tierOf(section, sessionType, 0), language, index === 0)
 
             return (
               <MovableBox key={`${sessionType}-${tierName}`} path={`${planPath}.card`} label={`Plan ${index + 1} Card`} className="h-full">
               <div
-                className={`h-full p-10 hover:-translate-y-2 transition duration-500 ${
+                className={`relative h-full p-10 hover:-translate-y-2 transition duration-500 ${
                   highlighted
                     ? 'border border-black bg-black text-white'
                     : 'border border-black/10'
                 }`}
               >
+                {highlighted && (
+                  <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap border border-black bg-white px-4 py-1 text-xs font-semibold uppercase tracking-[3px] text-black">
+                    {t('pr_popular')}
+                  </span>
+                )}
                 <h3 style={{ fontFamily: theme.typography.headingFont }} className="text-3xl mb-4 uppercase block">{t(`pr_${tierName}`)}</h3>
 
-                <div className="mb-6 text-5xl font-bold">
+                <div className={`${facts ? 'mb-2' : 'mb-6'} text-5xl font-bold`}>
                   {textOf(tier.price, language) !== ''
                     ? <EditableText as="span" path={`${pricePath}.price`} label={`${tierName} price`} />
                     : <span>—</span>}
                 </div>
+                {facts && (
+                  <p className={`mb-6 text-sm ${highlighted ? 'text-gray-300' : 'text-gray-600'}`}>
+                    {t('pr_total', { total: facts.total, n: facts.sessions })}
+                    {facts.saving ? <span className="block font-semibold">{t('pr_saving', { pct: facts.saving })}</span> : null}
+                  </p>
+                )}
 
                 <EditableText
                   as="p"

@@ -25,9 +25,13 @@ export default function CardFrame({ card, label, index, count, className = '', c
         ><Icon name="grip" className="h-5 w-5" /></span>
         <button type="button" className={TOOL} onClick={() => edit.moveCard(card.key, -1)} disabled={index === 0} aria-label={`${t('ui_up')}: ${label}`} title={t('ui_up')}><Icon name="up" className="h-5 w-5" /></button>
         <button type="button" className={TOOL} onClick={() => edit.moveCard(card.key, 1)} disabled={index === count - 1} aria-label={`${t('ui_down')}: ${label}`} title={t('ui_down')}><Icon name="down" className="h-5 w-5" /></button>
-        <button type="button" className={TOOL} onClick={() => edit.toggleCard(card.key)} aria-pressed={card.hidden} aria-label={`${card.hidden ? t('ui_show') : t('ui_hide')}: ${label}`} title={card.hidden ? t('ui_show') : t('ui_hide')}>
-          <Icon name={card.hidden ? 'eyeoff' : 'eye'} className="h-5 w-5" />
-        </button>
+        {card.protected
+          ? <span className={`${TOOL} opacity-60`} title={t('ui_locked')} aria-label={`${t('ui_locked')}: ${label}`} role="img"><Icon name="lock" className="h-5 w-5" /></span>
+          : (
+          <button type="button" className={TOOL} onClick={() => edit.toggleCard(card.key)} aria-pressed={card.hidden} aria-label={`${card.hidden ? t('ui_show') : t('ui_hide')}: ${label}`} title={card.hidden ? t('ui_show') : t('ui_hide')}>
+            <Icon name={card.hidden ? 'eyeoff' : 'eye'} className="h-5 w-5" />
+          </button>
+          )}
       </div>
       <div className="min-h-0 flex-1">{children}</div>
     </div>

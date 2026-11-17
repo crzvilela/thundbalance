@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import axe from 'axe-core'
 import { I18nProvider } from '../i18n/I18nContext'
@@ -17,7 +17,7 @@ function Form() {
 const page = () => render(<I18nProvider><Form /></I18nProvider>)
 
 describe('the automatic check under a form', () => {
-  it('says it is checking, then that it is ready, in a polite status region', async () => {
+  it('says nothing when the check is ready, in a polite status region that takes no room', async () => {
     const salt = 'abcdef0123456789abcdef01'
     const { createHash } = await import('node:crypto')
     const ch = { id: 'i', salt, challenge: createHash('sha256').update(`${salt}77`).digest('hex'), max: 500, iat: 1, exp: 2, sig: 's' }
@@ -26,9 +26,22 @@ describe('the automatic check under a form', () => {
     const { container } = page()
     const status = screen.getByRole('status')
     expect(status.getAttribute('aria-live')).toBe('polite')
-    await waitFor(() => expect(status.textContent).toBe('Verification ready'))
+    await waitFor(() => expect(status.className).toContain('sr-only'))
+    expect(status.textContent).toBe('')                         // nothing at all: no "ready" line
     const result = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } })
     expect(result.violations.filter(v => v.impact === 'serious' || v.impact === 'critical')).toEqual([])
+  })
+
+  it('only speaks when the check takes more than 3 seconds, and then it says it is checking', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))          // the server never answers
+    page()
+    const status = screen.getByRole('status')
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500) })
+    expect(status.textContent).toBe('')
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(status.textContent).toContain('Checking that you are a person')
+    vi.useRealTimers()
   })
 
   it('shows an error with a Retry button that works with the keyboard and tries again', async () => {

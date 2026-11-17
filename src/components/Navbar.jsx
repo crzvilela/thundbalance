@@ -270,7 +270,7 @@ function NavbarInner() {
               }}
               aria-label={mobileMenuOpen ? t('nav_aria_close_menu') : t('nav_aria_open_menu')}
               aria-expanded={mobileMenuOpen}
-              className="relative md:hidden w-11 h-11 flex items-center justify-center rounded-lg hover:bg-white/10 transition shrink-0"
+              className="relative order-last md:hidden w-11 h-11 flex items-center justify-center rounded-lg hover:bg-white/10 transition shrink-0"
             >
               {user && unread > 0 && <span aria-hidden="true" className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-emerald-400" />}
               <div className="w-6 h-5 relative flex flex-col justify-between">
@@ -316,7 +316,7 @@ function NavbarInner() {
               <Link
                 to="/register"
                 {...prefetchHandlers('register')}
-                className="inline-flex items-center min-h-[44px] border border-white/20 px-2.5 sm:px-3 md:px-4 py-2.5 rounded-lg hover:bg-white hover:text-black transition duration-300 uppercase text-xs md:text-sm whitespace-nowrap"
+                className="hidden md:inline-flex items-center min-h-[44px] border border-white/20 px-2.5 sm:px-3 md:px-4 py-2.5 rounded-lg hover:bg-white hover:text-black transition duration-300 uppercase text-xs md:text-sm whitespace-nowrap"
               >
                 <EditableText as="span" path="sections.navbar.labels.register" label="Navbar Register" />
               </Link>
@@ -444,6 +444,18 @@ function NavbarInner() {
                     {renderNavLink(link, () => setMobileMenuOpen(false), 'block px-6 py-4 hover:bg-white/10 transition duration-200')}
                   </li>
                 ))}
+                {!user && (
+                  <li>
+                    <Link
+                      to="/register"
+                      {...prefetchHandlers('register')}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex min-h-[44px] items-center px-6 py-4 hover:bg-white/10 transition duration-200"
+                    >
+                      <EditableText as="span" path="sections.navbar.labels.register" label="Navbar Register" />
+                    </Link>
+                  </li>
+                )}
                 {user && (
                   <li>
                     <Link
