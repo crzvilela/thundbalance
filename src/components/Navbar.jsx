@@ -14,6 +14,7 @@ import InboxBell, { UnreadBadge } from './InboxBell'
 import { useUnreadCount, useUnreadPolling } from '../hooks/useUnreadCount'
 import { useRoles } from '../roles/rolesContext'
 import { useBottomNavVisible } from '../utils/clientArea'
+import { ADMIN_EMAIL } from '../config'
 // Bundled white vector logo, inlined into the JS so it is there on the very
 // first render: no network request, no wait for the API.
 import logo from '../assets/images/thundbalance-logo.svg?inline'
@@ -75,7 +76,10 @@ function NavbarInner() {
   // in the client area a phone has a bottom navigation: the top bar keeps only the logo, the language and the account
   const bottomNav = useBottomNavVisible()
   // where the panel lives is known only to the signed-in administrator (GET /me/roles): nobody else gets a link, not even a hidden one
-  const adminHref = roles?.is_admin && roles?.admin_path ? `/${roles.admin_path}` : ''
+  // The "Admin" button is always there for the administrator's account. Where the panel lives is known once /me/roles has answered; until then (or if that
+  // request failed) the button goes to the old address, which takes the signed-in administrator to the panel as soon as the server confirms it (routes/UnknownOrAdmin.jsx).
+  const isAdminAccount = Boolean(user && user.email?.trim().toLowerCase() === ADMIN_EMAIL)
+  const adminHref = roles?.is_admin && roles?.admin_path ? `/${roles.admin_path}` : (isAdminAccount ? '/admin' : '')
 
   const [openMenu, setOpenMenu] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)

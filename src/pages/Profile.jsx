@@ -197,7 +197,7 @@ function Profile() {
                 {/* the number is only a reference for the studio: small and quiet, not a badge */}
                 <p className="mt-5 text-[11px] text-hint">{t('pf_member_no', { id: profile.id })}</p>
               </div>
-              {isAdmin && roles?.admin_path && <Button as={Link} to={`/${roles.admin_path}`} variant="primary" className="mt-6 w-full">{t('pf_admin_link')}</Button>}
+              {isAdmin && <Button as={Link} to={roles?.admin_path ? `/${roles.admin_path}` : '/admin'} variant="primary" className="mt-6 w-full">{t('pf_admin_link')}</Button>}
             </div>
           </Card>
           <div className="min-w-0 space-y-6 self-start">
