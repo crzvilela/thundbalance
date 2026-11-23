@@ -43,7 +43,7 @@
     "@fontsource/lato": "5.3.0",
     "@fontsource/poppins": "5.3.0",
     "@fontsource/roboto": "5.3.0",
-    "@fullcalendar/core": "6.1.22",
+    "@fullcalendar/core": "7.1.5",
     "@fullcalendar/daygrid": "6.1.22",
     "@fullcalendar/interaction": "6.1.22",
     "@fullcalendar/react": "6.1.22",
