@@ -34,7 +34,7 @@ class ErrorShape(unittest.TestCase):
         self.assertIn("GET", response.headers.get("allow", ""))
 
     def test_the_errors_of_a_route_keep_their_own_shape(self):
-        response = self.http.get("/admin/stats")                                           # no token
+        response = self.http.get("/client/workflow")                                       # no token (the admin routes answer "not found" instead: admin_access.py)
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json(), {"detail": "Authentication required"})
         self.assertEqual(self.http.get("/schedule/not-a-date").status_code, 422)

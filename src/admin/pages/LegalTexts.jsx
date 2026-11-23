@@ -155,7 +155,7 @@ function LegalEditor({ data, reload }) {
           <Badge tone={override ? 'sky' : 'neutral'}>{override ? t('lt_edited') : t('lt_model')}</Badge>
           <span>{t('lt_updated')}: {updatedDate(override, { last_review: data.settings.last_review })}</span>
           {pending > 0 && <Badge tone="amber">{pending} {t('lt_pending')}</Badge>}
-          <a href={ROUTES[doc]} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-white">{t('lt_view')}</a>
+          <a href={ROUTES[doc]} target="_blank" rel="noopener noreferrer" className="tap-target underline underline-offset-2 hover:text-white">{t('lt_view')}</a>
         </div>
         <Field label={t('lt_edit')} hint={t('lt_edit_hint')}>
           <TextArea value={body} onChange={(event) => setBody(event.target.value)} rows={18} maxLength={40000} className="font-mono text-sm" spellCheck="false" />

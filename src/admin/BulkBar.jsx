@@ -67,9 +67,9 @@ function ConfirmBulk({ action, count, busy, onCancel, onConfirm }) {
   const danger = action.tone === 'danger'
   const ready = !action.word || word.trim().toUpperCase() === action.word
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center p-0 sm:items-center sm:p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => { if (!busy) onCancel() }} />
-      <div ref={panel} role="alertdialog" aria-modal="true" aria-label={t(`bk_title_${action.verb}`)} className="admin-toast relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-white/10 bg-[#0d1110] p-6 shadow-2xl sm:p-8">
+      <div ref={panel} role="alertdialog" aria-modal="true" aria-label={t(`bk_title_${action.verb}`)} className="admin-toast relative max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl rounded-b-none border border-white/10 bg-[#0d1110] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-3xl sm:p-8"><span aria-hidden="true" className="mx-auto -mt-2 mb-4 block h-1 w-10 rounded-full bg-white/25 sm:hidden" />
         <span className={`mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border ${danger ? 'border-red-400/25 bg-red-400/10 text-red-300' : 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300'}`}><Icon name="alert" /></span>
         <h2 className="text-xl font-semibold text-white sm:text-2xl">{fill(t(`bk_title_${action.verb}`), { n: count })}</h2>
         {(action.effects || []).filter(Boolean).map(effect => <p key={effect} className="mt-2 text-base text-gray-400">{effect}</p>)}
@@ -100,9 +100,9 @@ function ResultDialog({ summary, labelOf, onClose }) {
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center p-0 sm:items-center sm:p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div ref={panel} role="alertdialog" aria-modal="true" aria-label={t('bk_result_title')} className="admin-toast relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-white/10 bg-[#0d1110] p-6 shadow-2xl sm:p-8">
+      <div ref={panel} role="alertdialog" aria-modal="true" aria-label={t('bk_result_title')} className="admin-toast relative max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl rounded-b-none border border-white/10 bg-[#0d1110] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-3xl sm:p-8"><span aria-hidden="true" className="mx-auto -mt-2 mb-4 block h-1 w-10 rounded-full bg-white/25 sm:hidden" />
         <h2 className="text-xl font-semibold text-white sm:text-2xl">{t('bk_result_title')}</h2>
         <p className="mt-2 text-base text-gray-300">{fill(t('bk_result'), { done: summary.done, failed: summary.failed })}</p>
         <ul className="mt-4 divide-y divide-white/[0.06] rounded-xl border border-white/10">

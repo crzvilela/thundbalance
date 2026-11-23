@@ -14,6 +14,7 @@ import { overviewLayout } from '../uiSettings'
 import { dateKey, normalizeSessions, parseDateKey } from '../requests'
 import BusinessPanel from '../BusinessPanel'
 import { Badge, Button, Card, EmptyState, ErrorState, Icon, PageHeader, Skeleton, StatCard } from '../ui'
+import { adminUrl } from '../adminUrl.js'
 
 const INACTIVE = new Set(['cancelled', 'canceled', 'completed', 'rejected'])
 
@@ -60,7 +61,7 @@ export default function Overview() {
   // instead of one being dropped. The square opens the queue with more items
   // waiting (ties go to requests); both queues keep their sidebar badges.
   const totalPending = pending.length + pendingTrials.length
-  const pendingTarget = pendingTrials.length > pending.length ? '/admin/trials' : '/admin/requests'
+  const pendingTarget = pendingTrials.length > pending.length ? adminUrl('/trials') : adminUrl('/requests')
   const pendingLoading = (requestsResource.loading && !requestsResource.data) || (trialsResource.loading && !trialsResource.data)
   const pendingHint = totalPending
     ? `${t('stat_requests_short')}: ${pending.length} · ${t('stat_trials_short')}: ${pendingTrials.length}`
@@ -109,8 +110,8 @@ export default function Overview() {
   // The blocks in the studio's order (with no configuration: the Hoy blocks, the KPIs, the big cards in rows of 5 columns, the business panel as a full row).
   const layout = overviewLayout(cards, { showHidden: editing })
   const statNode = {
-    stat_clients: <StatCard label={t('stat_clients')} editKey="overview:stat_clients" value={stats.data?.users ?? '—'} icon="clients" loading={stats.loading && !stats.data} to="/admin/clients" />,
-    stat_sessions: <StatCard label={t('stat_sessions')} editKey="overview:stat_sessions" value={stats.data?.sessions ?? '—'} icon="calendar" loading={stats.loading && !stats.data} to="/admin/clients" />,
+    stat_clients: <StatCard label={t('stat_clients')} editKey="overview:stat_clients" value={stats.data?.users ?? '—'} icon="clients" loading={stats.loading && !stats.data} to={adminUrl('/clients')} />,
+    stat_sessions: <StatCard label={t('stat_sessions')} editKey="overview:stat_sessions" value={stats.data?.sessions ?? '—'} icon="calendar" loading={stats.loading && !stats.data} to={adminUrl('/clients')} />,
     stat_pending: (
       <StatCard
         label={t('stat_pending_total')} editKey="overview:stat_pending" value={totalPending} icon="requests" tone="amber" to={pendingTarget}
@@ -137,7 +138,7 @@ export default function Overview() {
       <Card key="pending" className={`p-6 ${SPAN[span]}`}>
         <div className="mb-4 flex items-center justify-between">
           <Editable as="h2" keyPath="overview:pending" defaultText={t('pending_title')} className="text-lg font-semibold" />
-          <Link to="/admin/requests" className="inline-flex min-h-[44px] items-center text-sm text-emerald-300 hover:text-emerald-200"><Txt id="overview.view_all" /> →</Link>
+          <Link to={adminUrl('/requests')} className="inline-flex min-h-[44px] items-center text-sm text-emerald-300 hover:text-emerald-200"><Txt id="overview.view_all" /> →</Link>
         </div>
         {requestsResource.error
           ? <ErrorState message={t('load_error')} retryLabel={t('retry')} onRetry={requestsResource.reload} />
@@ -148,7 +149,7 @@ export default function Overview() {
               : <ul className="space-y-2">
                 {pending.slice(0, 4).map(request => (
                   <li key={request.id}>
-                    <Link to="/admin/requests" className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 transition hover:border-amber-400/30 hover:bg-amber-400/5">
+                    <Link to={adminUrl('/requests')} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 transition hover:border-amber-400/30 hover:bg-amber-400/5">
                       <span className="min-w-0">
                         <span className="block truncate font-medium">{request.client}</span>
                         <span className="block truncate text-xs text-gray-500">{request.plan} · {request.perWeek} {t('req_per_week')}</span>
@@ -194,9 +195,9 @@ export default function Overview() {
         <Editable as="h2" keyPath="overview:quick" defaultText={t('quick_title')} className="mb-4 text-lg font-semibold" />
         <div className="space-y-2">
           {[
-            { to: '/admin/landing-editor', icon: 'landing', title: <Txt id="overview.qa_landing" />, text: t('qa_landing_desc') },
-            { to: '/admin/videos', icon: 'video', title: <Txt id="overview.qa_videos" />, text: <Txt id="overview.qa_videos_desc" /> },
-            { to: '/admin/clients', icon: 'clients', title: <Txt id="overview.qa_clients" />, text: <Txt id="overview.qa_clients_desc" /> }
+            { to: adminUrl('/landing-editor'), icon: 'landing', title: <Txt id="overview.qa_landing" />, text: t('qa_landing_desc') },
+            { to: adminUrl('/videos'), icon: 'video', title: <Txt id="overview.qa_videos" />, text: <Txt id="overview.qa_videos_desc" /> },
+            { to: adminUrl('/clients'), icon: 'clients', title: <Txt id="overview.qa_clients" />, text: <Txt id="overview.qa_clients_desc" /> }
           ].map(action => (
             <Link key={action.to} to={action.to} className="group flex items-center gap-4 rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 transition hover:border-emerald-400/30 hover:bg-emerald-400/5">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-400/10 text-emerald-300"><Icon name={action.icon} /></span>

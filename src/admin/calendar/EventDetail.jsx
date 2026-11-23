@@ -12,6 +12,7 @@ import RestoreSessionDialog from '../RestoreSessionDialog'
 import RecipientsBox, { SendsTo } from '../RecipientsBox'
 import { extraBody } from '../recipients'
 import { NEUTRAL_COLOR, dayKey, describeWhen, madridWallClock } from './calendarConfig'
+import { adminUrl } from '../adminUrl.js'
 
 const STATUS_TONE = { booked: 'emerald', completed: 'neutral', cancelled: 'red', rescheduled: 'amber', pending: 'amber', approved: 'sky', confirmed: 'emerald', declined: 'red', rejected: 'red' }
 
@@ -150,10 +151,10 @@ export default function EventDetail({ event, onClose, onChanged }) {
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-8">
+      <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-8">
         <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" onClick={() => { if (!saving) onClose() }} />
         <aside ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={event.title}
-          className="admin-modal relative flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0b0e0d] shadow-2xl shadow-black/60 outline-none">
+          className="admin-modal relative flex max-h-[90dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-3xl rounded-b-none border border-white/10 bg-[#0b0e0d] pb-[env(safe-area-inset-bottom)] shadow-2xl shadow-black/60 outline-none sm:rounded-3xl sm:pb-0"><span aria-hidden="true" className="mx-auto mt-2 block h-1 w-10 shrink-0 rounded-full bg-white/25 sm:hidden" />
           <div className="flex items-start justify-between gap-4 border-b border-white/10 bg-white/[0.02] px-6 py-5">
             <div className="min-w-0">
               <p className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-gray-400">
@@ -225,7 +226,7 @@ export default function EventDetail({ event, onClose, onChanged }) {
             {props.changeRequestId && (
               <p role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
                 <span className="font-semibold">{props.changeRequestStatus === 'counter_proposed' ? t('sch_open_counter') : t('sch_open_change')}</span>
-                <Link to={`/admin/schedule?request=${props.changeRequestId}`} className="font-semibold underline underline-offset-4">{t('sch_view_request')}</Link>
+                <Link to={adminUrl(`/schedule?request=${props.changeRequestId}`)} className="font-semibold underline underline-offset-4">{t('sch_view_request')}</Link>
               </p>
             )}
 
@@ -238,9 +239,9 @@ export default function EventDetail({ event, onClose, onChanged }) {
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-white/[0.02] px-6 py-4">
             <div className="flex flex-wrap gap-3">
-              {props.clientId && <Link to={`/admin/clients?client=${props.clientId}`} className="inline-flex min-h-[44px] items-center rounded-xl border border-white/15 px-4 text-sm font-semibold text-gray-100 transition hover:bg-white/10"><Txt id="calendar.client_file" /></Link>}
+              {props.clientId && <Link to={adminUrl(`/clients?client=${props.clientId}`)} className="inline-flex min-h-[44px] items-center rounded-xl border border-white/15 px-4 text-sm font-semibold text-gray-100 transition hover:bg-white/10"><Txt id="calendar.client_file" /></Link>}
               {canSync && <Button variant="secondary" onClick={syncGoogle} loading={syncing} disabled={saving}><Icon name="refresh" className="h-4 w-4" />{syncing ? t('ac_syncing') : <Txt id="calendar.sync" />}</Button>}
-              {isTrial && <Link to="/admin/trials" className="inline-flex min-h-[44px] items-center rounded-xl border border-white/15 px-4 text-sm font-semibold text-gray-100 transition hover:bg-white/10">{t('ac_trials_page')}</Link>}
+              {isTrial && <Link to={adminUrl('/trials')} className="inline-flex min-h-[44px] items-center rounded-xl border border-white/15 px-4 text-sm font-semibold text-gray-100 transition hover:bg-white/10">{t('ac_trials_page')}</Link>}
             </div>
             <div className="flex flex-wrap gap-3">
               {restorable && <Button variant="primary" onClick={isTrial ? restoreTrial : () => setRestoring(true)} loading={isTrial && syncing}><Icon name="refresh" className="h-4 w-4" /><Txt id="calendar.restore" /></Button>}

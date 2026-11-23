@@ -23,7 +23,8 @@ test('"go to my area" leads to the right place, and a visitor has no such button
   assert.equal(areaFor({ status: 'signed-out' }), null)
   assert.equal(areaFor({ status: 'loading' }), null)
   assert.equal(areaFor(undefined), null)
-  assert.deepEqual(areaFor({ status: 'ready', roles: { is_admin: true }, isTrainerOnly: false }), { to: '/admin', labelKey: 'adminArea' })
+  assert.deepEqual(areaFor({ status: 'ready', roles: { is_admin: true, admin_path: 'fakepath0123ab' }, isTrainerOnly: false }), { to: '/fakepath0123ab', labelKey: 'adminArea' })
+  assert.deepEqual(areaFor({ status: 'ready', roles: { is_admin: true }, isTrainerOnly: false }), { to: '/dashboard', labelKey: 'myArea' })       // no panel address (never given to a client)
   assert.deepEqual(areaFor({ status: 'ready', roles: { is_admin: false, is_trainer: true }, isTrainerOnly: true }), { to: '/trainer', labelKey: 'trainerArea' })
   assert.deepEqual(areaFor({ status: 'ready', roles: { is_admin: false }, isTrainerOnly: false }), { to: '/dashboard', labelKey: 'myArea' })
   assert.deepEqual(areaFor({ status: 'error', roles: null }), { to: '/dashboard', labelKey: 'myArea' })       // signed in, roles not known: the client area
@@ -38,8 +39,9 @@ test('an error caused by a new version is recognised (the page then reloads once
 
 test('the routes: a path that does not exist shows the 404, also inside the admin; the whole app has an error boundary', () => {
   const routes = read('../routes/AppRoutes.jsx')
-  assert.match(routes, /<Route path="\*" element=\{<NotFound \/>\} \/>/)
-  assert.match(routes, /<Route path="\*" element=\{<AdminNotFound \/>\} \/>\s*<\/Route>/)             // the last child of the /admin route
+  assert.match(routes, /<Route path="\*" element=\{<UnknownOrAdmin \/>\} \/>/)                     // the 404 (or, for the signed-in administrator only, the panel)
+  assert.match(read('../routes/UnknownOrAdmin.jsx'), /const NotFound = lazy\(\(\) => import\('\.\.\/pages\/NotFound'\)\)/)
+  assert.match(read('../admin/AdminApp.jsx'), /<Route path="\*" element=\{<AdminNotFound \/>\} \/>\s*<\/Route>/)      // the last child of the panel's route
   assert.match(read('../App.jsx'), /<AppErrorBoundary>[\s\S]*<AppRoutes \/>[\s\S]*<\/AppErrorBoundary>/)
 })
 
@@ -58,7 +60,7 @@ test('the 404 has the way home and, for a signed-in account, the way to their ar
 test('the admin 404 has Spanish and English texts', () => {
   const texts = read('../admin/adminText.js')
   for (const key of ['nf_title', 'nf_text', 'nf_back']) assert.equal((texts.match(new RegExp(`\\b${key}: '`, 'g')) || []).length, 2, key)
-  assert.match(code(read('../admin/AdminNotFound.jsx')), /<Link to="\/admin"/)
+  assert.match(code(read('../admin/AdminNotFound.jsx')), /<Link to=\{adminUrl\(\)\}/)
 })
 
 test('Vercel answers the routes of the app with the app (a reload works) but a missing file or asset is a real 404', () => {

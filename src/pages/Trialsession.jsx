@@ -266,10 +266,10 @@ function TrialSession() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-dvh bg-black text-white">
       <Navbar />
 
-      <main id="main" className="mx-auto max-w-3xl px-5 pb-24 pt-36">
+      <main id="main" className="mx-auto max-w-3xl px-4 sm:px-5 pb-24 pt-36">
         {/* The intro header is hidden once the request was sent, so only the confirmation card remains. */}
         {!done && !existing && (
           <>

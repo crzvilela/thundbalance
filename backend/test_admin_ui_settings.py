@@ -60,9 +60,9 @@ class Settings(unittest.TestCase):
         main.app.dependency_overrides.pop(main.require_admin, None)
         for method in ("get", "put", "delete"):
             kwargs = {"json": valid()} if method == "put" else {}
-            self.assertEqual(getattr(self.client, method)(URL, **kwargs).status_code, 401, method)                         # no login
-            self.assertEqual(getattr(self.client, method)(URL, headers={"Authorization": "Bearer not-a-token"}, **kwargs).status_code, 401, method)
-        self.assertEqual(self.client.get(URL).status_code, 401)
+            self.assertEqual(getattr(self.client, method)(URL, **kwargs).status_code, 404, method)                         # no login
+            self.assertEqual(getattr(self.client, method)(URL, headers={"Authorization": "Bearer not-a-token"}, **kwargs).status_code, 404, method)
+        self.assertEqual(self.client.get(URL).status_code, 404)
 
     def test_every_route_depends_on_require_admin(self):
         for route in main.app.routes:
@@ -182,7 +182,7 @@ class Settings(unittest.TestCase):
         source = (pathlib.Path(__file__).resolve().parent.parent / "src" / "admin" / "uiRegistry.js").read_text(encoding="utf-8")
         card_keys = re.findall(r"\{ key: '([a-z_]+)', titleKey: '[a-z_]+', group: '(?:wide|stat|card|business)'", source)
         self.assertEqual(card_keys, list(ui.OVERVIEW_KEYS))
-        menu = re.findall(r"\{ key: '([a-z-]+)', group: '([a-z]+)', to:", source)
+        menu = re.findall(r"\{ key: '([a-z-]+)', group: '([a-z]+)', (?:get to\(\)|to:)", source)
         expected = [(key, group) for group, keys in ui.MENU_GROUPS.items() for key in keys]
         self.assertEqual(menu, expected)
         protected = re.findall(r"key: '([a-z_]+)', titleKey: '[a-z_]+', group: '[a-z]+'(?:, span: \d)?, protected: true", source)

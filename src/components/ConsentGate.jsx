@@ -17,7 +17,7 @@ export default function ConsentGate({ children, className = '', kind = 'content'
       <p className="max-w-md text-sm text-gray-400">{text.consentText}</p>
       <button type="button" onClick={() => saveConsent({ ...consent, external: true })}
         className="min-h-[44px] rounded-xl bg-emerald-400 px-5 text-sm font-semibold text-black transition hover:bg-emerald-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">{text.load[kind] || text.load.content}</button>
-      <a href="/cookies" className="text-sm text-emerald-300 underline underline-offset-2">{text.more}</a>
+      <a href="/cookies" className="tap-target text-sm text-emerald-300 underline underline-offset-2">{text.more}</a>
     </div>
   )
 }

@@ -4,6 +4,7 @@ import { useAdminText } from '../useAdminText'
 import { useAdminResource } from '../useAdminResource'
 import { useToast } from '../toastContext'
 import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, Skeleton } from '../ui'
+import AccessPath from '../AccessPath'
 
 // "Estado del sistema": the errors of the site that were recorded (monitoring.py). Only types, places and counts: never personal data.
 const FILTERS = ['', 'new', 'seen', 'resolved']
@@ -31,6 +32,8 @@ export default function SystemStatus() {
     <div className="admin-fade">
       <PageHeader pageKey="system" title={t('sys_title')} subtitle={t('sys_sub')}
         actions={<Button variant="secondary" onClick={resource.reload}>{t('sys_refresh')}</Button>} />
+
+      <AccessPath />
 
       <section className="mb-6 grid gap-4 sm:grid-cols-2" aria-label={t('sys_summary')}>
         <Card className="p-5">

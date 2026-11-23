@@ -10,6 +10,7 @@ No calendar files and no calendar buttons: nothing about the client's calendar.
 from .dates import format_date_bilingual, parse_madrid
 from .template import STUDIO_PLACE, button, heading, key_value, paragraph, site_url
 from .texts import localized_email, normalize_language, spanish_email, tr
+from admin_access import admin_url
 
 DEFAULT_LANGUAGE = "en"
 
@@ -70,7 +71,7 @@ def staff_reschedule_requested(ctx):
 def _panel_link(ctx):
     """The Schedule page of the panel, with this request highlighted."""
     request = ctx.get("id")
-    return f"{site_url()}/admin/schedule" + (f"?request={request}" if isinstance(request, int) else "")
+    return admin_url("/schedule") + (f"?request={request}" if isinstance(request, int) else "")
 
 
 def staff_counter_answer(ctx, accepted):

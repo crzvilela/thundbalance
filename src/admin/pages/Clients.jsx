@@ -29,6 +29,7 @@ import {
   Badge, Button, Card, ConfirmDialog, Drawer, EmptyState, ErrorState, Icon,
   PageHeader, Skeleton, TextInput
 } from '../ui'
+import { adminUrl } from '../adminUrl.js'
 
 // The admin account and the account of whoever is signed in can not be archived
 // or deleted (the server refuses them too; here the actions are just hidden).
@@ -159,7 +160,7 @@ function ClientDrawer({ clientId, packs, onClose, onChanged }) {
 
   // ------------------------------------------------------------- actions
   // "Enviar mensaje": the composer of Mensajes enviados with this client already chosen
-  const openMessage = () => navigate(`/admin/sent-messages?to=${encodeURIComponent(client.email)}&name=${encodeURIComponent(client.name || '')}`)
+  const openMessage = () => navigate(adminUrl(`/sent-messages?to=${encodeURIComponent(client.email)}&name=${encodeURIComponent(client.name || '')}`))
   const sendMessage = () => { if (billingDirty) setPendingLeave('__message'); else openMessage() }
 
   const copyCalendarLink = async () => {
@@ -641,7 +642,7 @@ export default function Clients() {
     { label: t('fx_tab_packs'), icon: 'doc', onClick: () => openClient(client.id, { tab: 'packs' }) },
     { label: t('fx_tab_sessions'), icon: 'calendar', onClick: () => openClient(client.id, { tab: 'sesiones' }) },
     { label: t('fx_tab_billing'), icon: 'doc', onClick: () => openClient(client.id, { tab: 'facturacion' }) },
-    { label: t('fx_send_message'), icon: 'send', onClick: () => navigate(`/admin/sent-messages?to=${encodeURIComponent(client.email)}&name=${encodeURIComponent(client.name || '')}`) },
+    { label: t('fx_send_message'), icon: 'send', onClick: () => navigate(adminUrl(`/sent-messages?to=${encodeURIComponent(client.email)}&name=${encodeURIComponent(client.name || '')}`)) },
     { label: t('lc_archive_menu'), icon: 'archive', onClick: () => openClient(client.id, { action: 'archive' }), hidden: !!client.archived_at || !canSelectClient(client) },
     { label: t('lc_unarchive'), icon: 'refresh', onClick: () => restoreClient(client), hidden: !client.archived_at || !canSelectClient(client) },
     { label: t('lc_delete_menu'), icon: 'alert', onClick: () => openClient(client.id, { action: 'delete' }), danger: true, hidden: !canSelectClient(client) },

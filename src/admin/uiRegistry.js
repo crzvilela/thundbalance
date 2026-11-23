@@ -6,11 +6,13 @@
 // customised. A customised name is one single text for both languages.
 
 import { TEXTS } from './uiTexts.js'
+import { adminUrl } from './adminUrl.js'
 
 export const LABEL_MAX = 30          // names of menu items, card titles, page titles
 export const SUBTITLE_MAX = 120      // page subtitles
 export const MIN_VISIBLE_AREAS = 3   // menu areas that must always stay visible
 
+// `to` is a getter: the address of the panel is only known when the panel is drawn (adminUrl.js), never written here.
 // The menu is in GROUPS (small titles in the side panel, fixed in ES / EN: they are not editable). The order of this list is the original
 // order: the groups one after the other and, inside each group, the items. `group` is the key of MENU_GROUPS. Reordering only works inside a
 // group; an entry that a saved configuration does not mention comes at the end of ITS group (docs/ADMIN_UI_SETTINGS.md, "Menu groups").
@@ -24,20 +26,20 @@ export const MENU_GROUPS = [
 
 // `protected`: can never be hidden.
 export const MENU_ITEMS = [
-  { key: 'overview', group: 'today', to: '/admin', end: true, icon: 'overview', labelKey: 'nav_overview', protected: true },
-  { key: 'requests', group: 'today', to: '/admin/requests', icon: 'requests', labelKey: 'nav_requests', badge: 'requests' },
-  { key: 'trials', group: 'today', to: '/admin/trials', icon: 'whistle', labelKey: 'nav_trials', badge: 'trials' },
-  { key: 'messages', group: 'today', to: '/admin/messages', icon: 'inbox', labelKey: 'nav_messages', badge: 'messages' },
-  { key: 'sent-messages', group: 'today', to: '/admin/sent-messages', icon: 'send', labelKey: 'nav_broadcast' },
-  { key: 'clients', group: 'people', to: '/admin/clients', icon: 'clients', labelKey: 'nav_clients' },
-  { key: 'trainers', group: 'people', to: '/admin/trainers', icon: 'clock', labelKey: 'nav_trainers' },
-  { key: 'calendar', group: 'agenda', to: '/admin/calendar', icon: 'calendar', labelKey: 'nav_sessions' },
-  { key: 'schedule', group: 'agenda', to: '/admin/schedule', icon: 'refresh', labelKey: 'nav_schedule', badge: 'schedule' },
-  { key: 'plans', group: 'offer', to: '/admin/plans', icon: 'bolt', labelKey: 'nav_plans' },
-  { key: 'videos', group: 'offer', to: '/admin/videos', icon: 'video', labelKey: 'nav_videos' },
-  { key: 'landing', group: 'offer', to: '/admin/landing-editor', icon: 'landing', labelKey: 'nav_landing', arrow: true },
-  { key: 'system', group: 'system', to: '/admin/system', icon: 'alert', labelKey: 'nav_system' },
-  { key: 'legal', group: 'system', to: '/admin/legal', icon: 'doc', labelKey: 'nav_legal' }
+  { key: 'overview', group: 'today', get to() { return adminUrl() }, end: true, icon: 'overview', labelKey: 'nav_overview', protected: true },
+  { key: 'requests', group: 'today', get to() { return adminUrl('/requests') }, icon: 'requests', labelKey: 'nav_requests', badge: 'requests' },
+  { key: 'trials', group: 'today', get to() { return adminUrl('/trials') }, icon: 'whistle', labelKey: 'nav_trials', badge: 'trials' },
+  { key: 'messages', group: 'today', get to() { return adminUrl('/messages') }, icon: 'inbox', labelKey: 'nav_messages', badge: 'messages' },
+  { key: 'sent-messages', group: 'today', get to() { return adminUrl('/sent-messages') }, icon: 'send', labelKey: 'nav_broadcast' },
+  { key: 'clients', group: 'people', get to() { return adminUrl('/clients') }, icon: 'clients', labelKey: 'nav_clients' },
+  { key: 'trainers', group: 'people', get to() { return adminUrl('/trainers') }, icon: 'clock', labelKey: 'nav_trainers' },
+  { key: 'calendar', group: 'agenda', get to() { return adminUrl('/calendar') }, icon: 'calendar', labelKey: 'nav_sessions' },
+  { key: 'schedule', group: 'agenda', get to() { return adminUrl('/schedule') }, icon: 'refresh', labelKey: 'nav_schedule', badge: 'schedule' },
+  { key: 'plans', group: 'offer', get to() { return adminUrl('/plans') }, icon: 'bolt', labelKey: 'nav_plans' },
+  { key: 'videos', group: 'offer', get to() { return adminUrl('/videos') }, icon: 'video', labelKey: 'nav_videos' },
+  { key: 'landing', group: 'offer', get to() { return adminUrl('/landing-editor') }, icon: 'landing', labelKey: 'nav_landing', arrow: true },
+  { key: 'system', group: 'system', get to() { return adminUrl('/system') }, icon: 'alert', labelKey: 'nav_system' },
+  { key: 'legal', group: 'system', get to() { return adminUrl('/legal') }, icon: 'doc', labelKey: 'nav_legal' }
 ]
 
 // The button that opens the editor. It is not an area: it always stays at the end of the menu and can never be hidden (it can be renamed).

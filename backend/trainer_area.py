@@ -32,6 +32,7 @@ import psycopg2.errors
 from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel, StrictBool
 
+import admin_access
 import availability
 import firebase_accounts as accounts
 import validators
@@ -560,7 +561,7 @@ def register_trainer_area_routes(app, require_admin, verify_token, admin_email):
             raise HTTPException(status_code=404, detail="Trainer not found")
 
     # ------------------------------------------------------------------ who am I
-    @app.get("/me/roles", response_model=response_models.RolesOut)
+    @app.get("/me/roles", response_model=response_models.RolesOut, response_model_exclude_unset=True)
     def my_roles(authorization: str | None = Header(default=None)):
         claims = claims_of(authorization)
         email = _email(claims.get("email"))
@@ -568,13 +569,16 @@ def register_trainer_area_routes(app, require_admin, verify_token, admin_email):
         trainer = None
         if _trusted_email(claims):
             trainer = with_cursor(lambda cursor: find_active_access(cursor, email, claims.get("sub") or claims.get("user_id")))
-        return {
+        answer = {
             "is_admin": is_admin,
             "is_trainer": trainer is not None,
             "trainer_id": trainer[0] if trainer else None,
             "trainer_name": trainer[1] if trainer else None,
             "trainer_color": trainer[2] if trainer else None,         # the colour of the trainer in the calendars
         }
+        if is_admin:
+            answer["admin_path"] = admin_access.current_path()      # ONLY the administrator is told where the panel lives
+        return answer
 
     # ------------------------------------------------------------------ trainer
     @app.get("/trainer-area/me/summary", response_model=response_models.TrainerSummaryOut)

@@ -177,8 +177,8 @@ describe('mobile menu', () => {
     const header = container.querySelector('nav, header') || container
     const registerLinks = () => [...container.querySelectorAll('a[href="/register"]')]
     expect(registerLinks()).toHaveLength(1)
-    expect(registerLinks()[0].className).toContain('hidden')                      // only from md up
-    expect(registerLinks()[0].className).toContain('md:inline-flex')
+    expect(registerLinks()[0].className).toContain('hidden')                      // only from lg up (a tablet still gets the hamburger)
+    expect(registerLinks()[0].className).toContain('lg:inline-flex')
     const login = [...container.querySelectorAll('a[href="/login"]')][0]
     expect(login.className).toContain('min-h-[44px]')
     const hamburger = screen.getByRole('button', { name: /open menu/i })

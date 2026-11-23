@@ -5,12 +5,15 @@ import userEvent from '@testing-library/user-event'
 import axe from 'axe-core'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { useAdminText } from './useAdminText.js'
+import { setAdminPath } from './adminUrl.js'
 
 // The "Hoy" Overview and the grouped menu (Prompt 81), through the real AdminLayout and Overview with a fake server.
 const store = vi.hoisted(() => ({ today: null, todayStatus: 200, settings: {}, calls: [] }))
 vi.mock('../firebase/session', () => ({ loadAuthModule: async () => ({ auth: { currentUser: { email: 'david@admin.es', getIdToken: async () => 'token' } } }) }))
 vi.mock('../firebase/auth', () => ({ auth: { currentUser: { email: 'david@admin.es' } } }))
 vi.mock('firebase/auth', () => ({ signOut: vi.fn() }))
+
+const FAKE = 'fakepath0123ab'                       // a made-up panel path: the real one is a secret and is never written in the code
 
 const TODAY = {
   date: '2026-11-17', sessions_today: { total: 2, items: [
@@ -46,12 +49,13 @@ function Language({ code }) {
 }
 
 async function open(language = 'es') {
+  setAdminPath(FAKE)
   const { default: AdminLayout } = await import('./AdminLayout.jsx')
   const { default: Overview } = await import('./pages/Overview.jsx')
   const view = render(
-    <MemoryRouter initialEntries={['/admin']}>
+    <MemoryRouter initialEntries={[`/${FAKE}`]}>
       <Language code={language} />
-      <Routes><Route path="/admin" element={<AdminLayout />}><Route index element={<Overview />} /></Route></Routes>
+      <Routes><Route path={`/${FAKE}`} element={<AdminLayout />}><Route index element={<Overview />} /></Route></Routes>
     </MemoryRouter>
   )
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
@@ -84,7 +88,7 @@ describe('Overview "Hoy"', () => {
     expect(cards.map(card => card.textContent)).toEqual([
       expect.stringContaining('3Pedidos pendientes'), expect.stringContaining('1Pruebas por aprobar'), expect.stringContaining('2Sesiones de hoy'), expect.stringContaining('2Mensajes sin leer')
     ])
-    expect(cards.map(card => card.getAttribute('href'))).toEqual(['/admin/requests', '/admin/trials', '/admin/calendar?view=timeGridDay&date=2026-11-17', '/admin/messages'])
+    expect(cards.map(card => card.getAttribute('href'))).toEqual([`/${FAKE}/requests`, `/${FAKE}/trials`, `/${FAKE}/calendar?view=timeGridDay&date=2026-11-17`, `/${FAKE}/messages`])
     // the order of the page: header, strip, today's sessions, warnings, KPIs, ...
     const headings = [...container.querySelectorAll('main h2')].map(heading => heading.textContent.replace(/\s+/g, ' ').trim())
     expect(headings.slice(0, 3)).toEqual(['Qué hacer hoy', expect.stringMatching(/^Sesiones de hoy/), expect.stringMatching(/^Avisos \(\d\)/)])
@@ -110,7 +114,7 @@ describe('Overview "Hoy"', () => {
     expect(rows[1].textContent).toContain('Bruno Prueba')
     expect(rows[1].textContent).toMatch(/Prueba · Pendiente/)
     const card = list.closest('div.p-6')
-    expect(within(card).getByRole('link', { name: /Ver todas/ }).getAttribute('href')).toBe('/admin/calendar?view=timeGridDay&date=2026-11-17')
+    expect(within(card).getByRole('link', { name: /Ver todas/ }).getAttribute('href')).toBe(`/${FAKE}/calendar?view=timeGridDay&date=2026-11-17`)
     cleanup()
     store.today = structuredClone(CLEAR)
     await open('es')
@@ -150,7 +154,7 @@ describe('Overview "Hoy"', () => {
     await open('es')
     const again = await screen.findByRole('list', { name: 'Qué hacer hoy' })
     const card = within(again).getByText('Eliminaciones pendientes').closest('a')
-    expect(card.getAttribute('href')).toBe('/admin#deletion-requests')
+    expect(card.getAttribute('href')).toBe(`/${FAKE}#deletion-requests`)
   })
 
   it('the warnings are ONE collapsed line: the count and the most serious one; open they list every warning with its link', async () => {
@@ -166,7 +170,7 @@ describe('Overview "Hoy"', () => {
     const list = screen.getByRole('list', { name: 'Avisos' })
     const items = within(list).getAllByRole('listitem')
     expect(items).toHaveLength(4)
-    expect(items.map(item => within(item).getByRole('link').getAttribute('href'))).toEqual(['/admin/trials', '/admin/system', '/admin/legal', '/admin/clients'])
+    expect(items.map(item => within(item).getByRole('link').getAttribute('href'))).toEqual([`/${FAKE}/trials`, `/${FAKE}/system`, `/${FAKE}/legal`, `/${FAKE}/clients`])
     expect(items[0].textContent).toContain('El envío de emails no funciona')
     expect(items[1].textContent).toContain('2 error(es) nuevo(s)')
     expect(items[3].textContent).toContain('4 cliente(s)')
@@ -232,11 +236,11 @@ describe('grouped menu', () => {
     await open('es')
     const nav = (await screen.findAllByRole('navigation', { name: 'Admin' }))[0]
     expect(groupsOf(nav)).toEqual([
-      ['Hoy', ['/admin', '/admin/requests', '/admin/trials', '/admin/messages', '/admin/sent-messages']],
-      ['Personas', ['/admin/clients', '/admin/trainers']],
-      ['Agenda', ['/admin/calendar', '/admin/schedule']],
-      ['Oferta', ['/admin/plans', '/admin/videos', '/admin/landing-editor']],
-      ['Sistema', ['/admin/system', '/admin/legal']]
+      ['Hoy', [`/${FAKE}`, `/${FAKE}/requests`, `/${FAKE}/trials`, `/${FAKE}/messages`, `/${FAKE}/sent-messages`]],
+      ['Personas', [`/${FAKE}/clients`, `/${FAKE}/trainers`]],
+      ['Agenda', [`/${FAKE}/calendar`, `/${FAKE}/schedule`]],
+      ['Oferta', [`/${FAKE}/plans`, `/${FAKE}/videos`, `/${FAKE}/landing-editor`]],
+      ['Sistema', [`/${FAKE}/system`, `/${FAKE}/legal`]]
     ])
     // the small titles are in capitals (CSS) and are not read twice
     const titles = [...nav.querySelectorAll('p[aria-hidden="true"]')].map(title => title.textContent)
@@ -254,7 +258,7 @@ describe('grouped menu', () => {
     await open('es')
     const nav = (await screen.findAllByRole('navigation', { name: 'Admin' }))[0]
     await waitFor(() => expect(groupsOf(nav).map(([name]) => name)).toEqual(['Hoy', 'Agenda', 'Oferta', 'Sistema']))
-    expect(groupsOf(nav)[0][1]).toEqual(['/admin', '/admin/requests', '/admin/messages', '/admin/trials', '/admin/sent-messages'])
+    expect(groupsOf(nav)[0][1]).toEqual([`/${FAKE}`, `/${FAKE}/requests`, `/${FAKE}/messages`, `/${FAKE}/trials`, `/${FAKE}/sent-messages`])
     expect(nav.textContent).not.toContain('Personas')
   })
 
@@ -309,7 +313,7 @@ describe('customising: groups and protected blocks', () => {
     expect(button('Bajar: Mensajes enviados').disabled).toBe(true)           // last of Hoy: not into Personas
     expect(button('Bajar: Textos legales').disabled).toBe(true)              // last of the last group: not past the fixed button
     await user.click(button('Bajar: Clientes'))
-    expect(groupLinks(nav, 'Personas')).toEqual(['/admin/trainers', '/admin/clients'])
+    expect(groupLinks(nav, 'Personas')).toEqual([`/${FAKE}/trainers`, `/${FAKE}/clients`])
     expect(groupLinks(nav, 'Hoy')).toHaveLength(5)                           // nothing moved between groups
     expect(button('Subir: Clientes').disabled).toBe(false)
     expect(nav.textContent).toContain('Personas')

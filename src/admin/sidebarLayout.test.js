@@ -27,7 +27,7 @@ test('the list scrolls inside the menu, in normal and in edit mode, and the foot
 })
 
 test('touch targets stay at 40 px or more and the scrollbar is quiet with its space reserved', () => {
-  assert.match(layout, /group flex min-h-10 items-center/)                                              // menu items
+  assert.match(layout, /group flex min-h-12 items-center[^`]*lg:min-h-10/)                                // menu items: 48 px in the phone drawer, 40 px in the side panel
   assert.match(nav, /const TOOL = 'flex h-10 w-10/)                                                     // edit-mode handles, eye, pencil
   assert.match(css, /\.admin-nav-scroll \{[^}]*scrollbar-gutter: stable/)
   assert.match(css, /\.admin-nav-scroll \{[^}]*scrollbar-width: thin/)

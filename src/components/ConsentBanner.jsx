@@ -43,7 +43,7 @@ export default function ConsentBanner() {
   if (!visible) return null
   const text = uiText(language)
   return (
-    <div role="dialog" aria-label={text.cookieTitle} className="fixed inset-x-0 bottom-0 z-[80] max-h-[90vh] overflow-y-auto border-t border-white/10 bg-[#0d1110]/95 p-4 text-white backdrop-blur sm:p-5">
+    <div role="dialog" aria-label={text.cookieTitle} className="fixed inset-x-0 bottom-0 z-[80] max-h-[90dvh] overflow-y-auto border-t border-white/10 bg-[#0d1110]/95 p-4 text-white backdrop-blur sm:p-5">
       <div className="mx-auto max-w-5xl">
         <p className="text-sm leading-relaxed text-gray-300">
           <strong className="text-white">{text.cookieTitle}. </strong>{text.cookieText}{' '}

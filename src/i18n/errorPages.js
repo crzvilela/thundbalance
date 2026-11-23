@@ -35,7 +35,7 @@ export const textsFor = (language) => ERROR_TEXT[language] || ERROR_TEXT.en
 export function areaFor(rolesState) {
   const status = rolesState?.status
   if (status === 'signed-out' || status === 'loading' || !status) return null
-  if (rolesState?.roles?.is_admin) return { to: '/admin', labelKey: 'adminArea' }
+  if (rolesState?.roles?.is_admin && rolesState.roles.admin_path) return { to: `/${rolesState.roles.admin_path}`, labelKey: 'adminArea' }
   if (rolesState?.isTrainerOnly) return { to: '/trainer', labelKey: 'trainerArea' }
   return { to: '/dashboard', labelKey: 'myArea' }
 }

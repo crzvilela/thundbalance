@@ -192,7 +192,7 @@ class Contact(unittest.TestCase):
                              ("post", f"/admin/contact-messages/{message_id}/archive"), ("post", "/admin/contact-messages/bulk"),
                              ("delete", f"/admin/contact-messages/{message_id}")):
             kwargs = {"json": {"action": "delete", "ids": [1]}} if path.endswith("bulk") else {}
-            self.assertEqual(getattr(self.client, method)(path, **kwargs).status_code, 401, path)
+            self.assertEqual(getattr(self.client, method)(path, **kwargs).status_code, 404, path)       # for anybody else the route does not exist
 
     def test_every_admin_route_is_guarded(self):
         guarded = 0

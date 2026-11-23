@@ -1,7 +1,8 @@
 """E-mail to the studio when someone writes through the website's contact form."""
 from .dates import format_date_bilingual, parse_madrid
-from .template import button, heading, highlight_box, key_value, paragraph, site_url
+from .template import button, heading, highlight_box, key_value, paragraph
 from .texts import spanish_email
+from admin_access import admin_url
 
 
 def _one_line(value, limit=120):
@@ -25,7 +26,7 @@ def staff_contact_message(message):
             key_value([("Nombre", name), ("Email", message.get("email")), ("Recibido", sent)]),
             highlight_box(message.get("message") or "", label="Mensaje", mono=False),
             paragraph("Puedes responder directamente a este correo: la respuesta llega a quien escribió.", muted=True),
-            button("Ver en el panel", "", f"{site_url()}/admin/messages", only="es"),
+            button("Ver en el panel", "", admin_url("/messages"), only="es"),
         ]
 
     return spanish_email(subject, build, preheader=f"{name}: {' '.join(str(message.get('message') or '').split())[:90]}")

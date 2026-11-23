@@ -42,7 +42,7 @@
   --radius-pill: 9999px;                                                                /* rounded-full: badges, tabs */
 
   /* the scale of titles (Bebas Neue for display / h1, Inter for the rest: the fonts do not change) */
-  --text-display: 3rem;                    --text-display--line-height: 1;              /* text-5xl: title of a page; --text-display-lg from md up */
+  --text-display: clamp(2.25rem, 9vw, 3rem);                    --text-display--line-height: 1;              /* text-5xl: title of a page; --text-display-lg from md up */
   --text-display-lg: 3.75rem;              --text-display-lg--line-height: 1;           /* text-6xl */
   --text-h1: 2.25rem;                      --text-h1--line-height: 2.5rem;              /* text-4xl: title of a modal or a big card */
   --text-h2: 1.5rem;                       --text-h2--line-height: 2rem;                /* text-2xl */
@@ -224,4 +224,42 @@ html {
 .react-datepicker.tb-workdays .react-datepicker__week > .react-datepicker__day:nth-child(n + 6),
 .react-datepicker.tb-workdays .react-datepicker__week > .react-datepicker__week-number ~ .react-datepicker__day:nth-child(n + 7) {
   display: none;
+}
+
+/* ======================================================================================================================================
+   Responsive foundations (docs/DESIGN_SYSTEM.md, "Responsive rules"). Everything here only acts on a phone (up to 767 px) or a touch screen:
+   from a tablet in landscape up the site looks as it always did. These rules are not inside a layer on purpose: they must win over the
+   utility classes of the components (which are).
+   ====================================================================================================================================== */
+
+/* Safe areas (notch, rounded corners, home bar): the page never sits under them, in landscape either. */
+body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+
+/* A field of 16 px or more: iOS does not zoom the page when it gets the focus. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select, textarea { font-size: 16px; }
+}
+
+/* Headings do not break words in the middle and balance their lines; paragraphs avoid a single word on the last line. */
+h1, h2, h3 { text-wrap: balance; overflow-wrap: break-word; }
+p, li { text-wrap: pretty; }
+
+/* Touch targets: 44 x 44 px for buttons, tabs, selects and the icon links of the footer; a label that holds a checkbox or a radio is the target. */
+@media (pointer: coarse), (max-width: 767px) {
+  :where(button, [role="button"], [role="tab"], summary, select, .footer-icon-link, .tap-target):not(.fc *) { min-height: 44px; min-width: 44px; }
+  :where(.tap-target) { display: inline-flex; align-items: center; }
+  label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) { min-height: 44px; }
+}
+
+/* Nothing that appears only when the pointer hovers: on a touch screen it is simply there. */
+@media (hover: none) {
+  [class*="group-hover:opacity-"], [class*="hover:opacity-100"] { opacity: 1; }
+}
+
+/* The keyboard of a phone: a field that gets the focus is scrolled into view by utils/keyboardScroll.js; this leaves room under it. */
+html { scroll-padding-block: 6rem; }
+
+/* The client area has a bottom navigation on a phone (components/BottomNav.jsx): the page leaves room for it. */
+@media (max-width: 767px) {
+  body.has-bottom-nav { padding-bottom: calc(4.5rem + env(safe-area-inset-bottom)); }
 }

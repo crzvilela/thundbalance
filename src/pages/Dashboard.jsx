@@ -98,13 +98,13 @@ function Dashboard() {
     return (
       <EmptyState
         icon={<span className="text-4xl">◷</span>} title={t('dash_none_title')} text={t('dash_none_text')}
-        action={<Button as={Link} to="/training-request" variant="primary" size="lg" className="mt-6">{t('ms_book_cta')}</Button>}
+        action={<Button as={Link} to="/training-request" variant="primary" size="lg" fullOnMobile className="mt-6">{t('ms_book_cta')}</Button>}
       />
     )
   })()
 
-  return <div className="min-h-screen bg-black text-white"><Navbar />
-    <main id="main" className="max-w-7xl mx-auto px-5 sm:px-6 pt-28 sm:pt-36 pb-20">
+  return <div className="min-h-dvh bg-black text-white"><Navbar />
+    <main id="main" className="max-w-7xl mx-auto px-4 sm:px-6 pt-28 sm:pt-36 pb-20">
       <TempPasswordNotice />
       <PageHeader
         eyebrow={t('dash_client_space')} title={t('dash_hello', { name })} subtitle={t('dash_sub')}
@@ -130,8 +130,8 @@ function Dashboard() {
             icon={<span className="text-4xl">◷</span>} title={t('dash_nopack_title')} text={t('dash_nopack_text')}
             action={
               <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                <Button as={Link} to="/training-request" variant="primary" size="lg">{t('dash_request_pack')}</Button>
-                {!trial && <Button as={Link} to="/trial-session" variant="secondary" size="lg">{t('dash_try_trial')}</Button>}
+                <Button as={Link} to="/training-request" variant="primary" size="lg" fullOnMobile>{t('dash_request_pack')}</Button>
+                {!trial && <Button as={Link} to="/trial-session" variant="secondary" size="lg" fullOnMobile>{t('dash_try_trial')}</Button>}
               </div>
             }
           />
@@ -150,7 +150,7 @@ function Dashboard() {
         <p className="text-gray-300 max-w-2xl">{workflow.request?.reason || t('dash_declined_default')}</p>
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
           <Button as={Link} to="/training-request" variant="light" size="lg">{t('dash_submit_new')}</Button>
-          {!trial && <Button as={Link} to="/trial-session" variant="secondary" size="lg">{t('dash_try_trial')}</Button>}
+          {!trial && <Button as={Link} to="/trial-session" variant="secondary" size="lg" fullOnMobile>{t('dash_try_trial')}</Button>}
         </div>
       </Card>}
 

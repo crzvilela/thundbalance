@@ -248,8 +248,8 @@ export default function TrialSessions() {
                       {trial.status === 'cancelled' && trial.cancel_source === 'google' && <Badge tone="amber">{t('gs_from_google')}</Badge>}
                     </div>
                     <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-400">
-                      <a href={`mailto:${trial.email}`} className="inline-block py-1.5 hover:text-emerald-300">{trial.email}</a>
-                      <a href={`tel:${trial.phone}`} className="inline-block py-1.5 hover:text-emerald-300">{trial.phone}</a>
+                      <a href={`mailto:${trial.email}`} className="inline-flex min-h-[44px] items-center hover:text-emerald-300 lg:min-h-0 lg:py-1.5">{trial.email}</a>
+                      <a href={`tel:${trial.phone}`} className="inline-flex min-h-[44px] items-center hover:text-emerald-300 lg:min-h-0 lg:py-1.5">{trial.phone}</a>
                     </p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <span className="flex items-center gap-1.5 rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-xs text-emerald-200">

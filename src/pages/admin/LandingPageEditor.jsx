@@ -23,7 +23,7 @@ function LandingPageEditor() {
 
   return (
     <LandingContentProvider mode="edit">
-      <div className="flex h-screen w-full flex-col overflow-hidden bg-black text-white">
+      <div className="flex h-dvh w-full flex-col overflow-hidden bg-black text-white">
         <EditorTopbar sidebarHidden={sidebarHidden} onToggleSidebar={() => setSidebarHidden((hidden) => !hidden)} />
         <EditorWorkspace sidebarHidden={sidebarHidden} />
       </div>

@@ -5,6 +5,7 @@
 Google is a fake (google_fakes.FakeGoogle) and no e-mail is really sent. Uses the local database;
 the rows it creates are removed.
 """
+import admin_access
 import os
 import unittest
 from datetime import date, datetime, timedelta
@@ -676,7 +677,7 @@ class Requests(unittest.TestCase):
         # the studio's e-mail: Spanish only, with the client's e-mail, the note and the panel link
         subject, staff_html, _ = staff_reschedule_requested(ctx)
         self.assertIn("Solicitud de cambio de fecha", subject)
-        for text_in in (f"ana{DOMAIN}", "Tengo un viaje", "/admin/schedule?request=7", "3/8"):
+        for text_in in (f"ana{DOMAIN}", "Tengo un viaje", admin_access.admin_url("/schedule?request=7"), "3/8"):
             self.assertIn(text_in, staff_html)
 
     def test_an_email_failure_never_breaks_the_request(self):

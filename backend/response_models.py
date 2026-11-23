@@ -186,6 +186,7 @@ class RolesOut(Out):
     trainer_id: int | None = None
     trainer_name: str | None = None
     trainer_color: str | None = None
+    admin_path: str | None = None          # only in the answer to the administrator (admin_access.py)
 
 
 class TrainerSummaryOut(Out):

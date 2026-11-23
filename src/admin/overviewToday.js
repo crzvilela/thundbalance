@@ -1,3 +1,4 @@
+import { adminUrl } from './adminUrl.js'
 // The logic of the "Hoy" blocks of the Overview, without React (tested in overviewToday.test.js). The data is the answer of
 // GET /admin/overview/today (backend/admin_overview.py): a part the server could not read is null ("unknown"), never 0.
 
@@ -18,7 +19,7 @@ export function fullDate(key, locale) {
 }
 
 // Where "Sessions today" leads: the calendar on the day view of that day.
-export const calendarDayLink = (key) => `/admin/calendar?view=timeGridDay&date=${key}`
+export const calendarDayLink = (key) => adminUrl(`/calendar?view=timeGridDay&date=${key}`)
 
 const known = (value) => typeof value === 'number'
 
@@ -27,13 +28,13 @@ const known = (value) => typeof value === 'number'
 export function stripCards(data) {
   if (!data) return []
   const cards = [
-    { key: 'requests', count: data.pending_requests ?? null, to: '/admin/requests', labelKey: 'ov_k_requests', tone: 'amber', emptyKey: 'ov_none' },
-    { key: 'trials', count: data.pending_trials ?? null, to: '/admin/trials', labelKey: 'ov_k_trials', tone: 'amber', emptyKey: 'ov_none' },
+    { key: 'requests', count: data.pending_requests ?? null, to: adminUrl('/requests'), labelKey: 'ov_k_requests', tone: 'amber', emptyKey: 'ov_none' },
+    { key: 'trials', count: data.pending_trials ?? null, to: adminUrl('/trials'), labelKey: 'ov_k_trials', tone: 'amber', emptyKey: 'ov_none' },
     { key: 'sessions', count: data.sessions_today ? data.sessions_today.total : null, to: calendarDayLink(data.date), labelKey: 'ov_k_sessions', tone: 'emerald', emptyKey: 'ov_sessions_none' },
-    { key: 'messages', count: data.unread_messages ?? null, to: '/admin/messages', labelKey: 'ov_k_messages', tone: 'amber', emptyKey: 'ov_none' }
+    { key: 'messages', count: data.unread_messages ?? null, to: adminUrl('/messages'), labelKey: 'ov_k_messages', tone: 'amber', emptyKey: 'ov_none' }
   ]
   if (known(data.pending_deletions) && data.pending_deletions > 0) {
-    cards.push({ key: 'deletions', count: data.pending_deletions, to: '/admin#deletion-requests', labelKey: 'ov_k_deletions', tone: 'amber', emptyKey: 'ov_none' })
+    cards.push({ key: 'deletions', count: data.pending_deletions, to: adminUrl('#deletion-requests'), labelKey: 'ov_k_deletions', tone: 'amber', emptyKey: 'ov_none' })
   }
   return cards
 }
@@ -46,11 +47,11 @@ export const allClear = (cards) => cards.length > 0 && cards.every(card => card.
 export function alertsOf(data) {
   if (!data) return []
   const list = []
-  if (data.email && data.email.ready === false) list.push({ key: 'email', tone: 'red', textKey: 'ov_a_email', linkKey: 'ov_a_email_open', to: '/admin/trials', reason: data.email.reason || '' })
-  if (known(data.pending_deletions) && data.pending_deletions > 0) list.push({ key: 'deletions', tone: 'amber', count: data.pending_deletions, textKey: 'ov_a_deletions', linkKey: 'ov_a_deletions_open', to: '/admin#deletion-requests' })
-  if (known(data.new_errors) && data.new_errors > 0) list.push({ key: 'errors', tone: 'amber', count: data.new_errors, textKey: 'ov_a_errors', linkKey: 'ov_a_errors_open', to: '/admin/system' })
-  if (data.legal_needs_attention === true) list.push({ key: 'legal', tone: 'sky', textKey: 'ov_a_legal', linkKey: 'ov_a_legal_open', to: '/admin/legal' })
-  if (known(data.expiring_packs) && data.expiring_packs > 0) list.push({ key: 'packs', tone: 'sky', count: data.expiring_packs, textKey: 'ov_a_packs', linkKey: 'ov_a_packs_open', to: '/admin/clients' })
+  if (data.email && data.email.ready === false) list.push({ key: 'email', tone: 'red', textKey: 'ov_a_email', linkKey: 'ov_a_email_open', to: adminUrl('/trials'), reason: data.email.reason || '' })
+  if (known(data.pending_deletions) && data.pending_deletions > 0) list.push({ key: 'deletions', tone: 'amber', count: data.pending_deletions, textKey: 'ov_a_deletions', linkKey: 'ov_a_deletions_open', to: adminUrl('#deletion-requests') })
+  if (known(data.new_errors) && data.new_errors > 0) list.push({ key: 'errors', tone: 'amber', count: data.new_errors, textKey: 'ov_a_errors', linkKey: 'ov_a_errors_open', to: adminUrl('/system') })
+  if (data.legal_needs_attention === true) list.push({ key: 'legal', tone: 'sky', textKey: 'ov_a_legal', linkKey: 'ov_a_legal_open', to: adminUrl('/legal') })
+  if (known(data.expiring_packs) && data.expiring_packs > 0) list.push({ key: 'packs', tone: 'sky', count: data.expiring_packs, textKey: 'ov_a_packs', linkKey: 'ov_a_packs_open', to: adminUrl('/clients') })
   return list
 }
 

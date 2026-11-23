@@ -73,7 +73,7 @@ function MySessions() {
   const hasAnything = sessions.length > 0 || !!trial
 
   return (
-    <div className="min-h-screen bg-[#080a09] text-white">
+    <div className="min-h-dvh bg-[#080a09] text-white">
       <Navbar />
 
       <main id="main" className="relative mx-auto max-w-6xl px-4 pb-24 pt-32 sm:px-5 md:pt-44">

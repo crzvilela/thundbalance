@@ -16,8 +16,9 @@ export default function Modal({ title, description, actions, children, onClose, 
       <div
         ref={ref} role={role} aria-modal="true" aria-labelledby={`${id}-title`} aria-describedby={description ? `${id}-text` : undefined} tabIndex={-1}
         onClick={event => event.stopPropagation()}
-        className={`w-full ${SIZES[size]} rounded-t-card border border-line bg-[#0b0e0d] p-6 shadow-2xl outline-none sm:rounded-card sm:p-8`}
+        className={`max-h-[90dvh] w-full ${SIZES[size]} overflow-y-auto rounded-t-card border border-line bg-[#0b0e0d] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl outline-none sm:rounded-card sm:p-8`}
       >
+        <span aria-hidden="true" className="mx-auto -mt-2 mb-4 block h-1 w-10 rounded-full bg-white/25 sm:hidden" />
         <h2 id={`${id}-title`} style={{ fontFamily: 'Bebas Neue' }} className="text-h1">{title}</h2>
         {description && <p id={`${id}-text`} className="mt-3 text-sm text-gray-300">{description}</p>}
         {children}

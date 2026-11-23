@@ -72,3 +72,26 @@ Use them as utilities: `border-line`, `bg-accent-soft`, `rounded-card`, `text-di
 - On the 404 the second button had a 16 px text and the first 14 px: both 14 px.
 - The registration button when the policy is not accepted: `not-allowed` at 50 % (it was `wait` at 60 %, which is for "sending").
 - Training request (the one page harmonised on purpose): eyebrow, title and subtitle like the other pages, labels like the other forms, selects with the corners of the other fields.
+
+## Responsive rules (phones and tablets)
+The site is used mostly on a phone. These rules apply up to 767 px (and to touch screens); from a tablet in landscape up everything looks as it did. They live in `src/index.css` ("Responsive foundations", outside any layer so they win over the utilities) and in the components.
+
+| Rule | How |
+|---|---|
+| **Viewport** | `width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content` (zoom is never blocked). |
+| **Safe areas** | `env(safe-area-inset-*)`: the body in landscape, the top bar (`pt-[max(1rem,env(safe-area-inset-top))]`), every fixed bar and every bottom sheet. |
+| **Heights** | `dvh` / `svh`, never `vh` or `h-screen` (`min-h-dvh`, `h-dvh`; the hero is `h-svh`). Modals: at most `90dvh`, scrolling inside. |
+| **Fields** | 16 px on a phone (iOS does not zoom); `utils/keyboardScroll.js` scrolls the field that gets the focus to the middle of the visible area. |
+| **Touch targets** | 44 x 44 px for buttons, tabs, selects and icon links (a global rule); a `label` that holds a checkbox or a radio is the target; a link that stands alone (not inside a sentence) takes the class `tap-target`. At least 8 px between neighbours. |
+| **No hover-only** | whatever appears with `group-hover:opacity-*` is simply visible on a touch screen (`@media (hover: none)`). |
+| **Type** | titles balance their lines and never break a word (`text-wrap: balance`); paragraphs `text-wrap: pretty`; the page title is fluid (`--text-display: clamp(2.25rem, 9vw, 3rem)`: the old 3 rem from about 530 px up). |
+| **Side padding** | 16 px on a phone on every page (nothing against the edge), more from `sm`. |
+| **Scroll** | nothing scrolls sideways at any width from 320 px (checked by `npm run test:responsive`). |
+
+Components:
+- **Button**: `fullOnMobile` (the whole width on a phone, its own size from 640 px) for the main action of a screen; `block` always the whole width. Every size keeps its 44 px height.
+- **Modal** (client) and the dialogs of the panel (`ConfirmDialog`, the bulk-action and restore dialogs, the calendar event, the session sheet): on a phone they are **bottom sheets** (anchored to the bottom, rounded on top, a small handle, at most 90 dvh, safe area under the buttons); from 640 px they are centred as before.
+- **EmptyState**: less padding on a phone.
+- **Client area**: a bottom navigation on a phone (`components/BottomNav.jsx`: Home, Sessions, Messages with its unread count, Profile). The top bar keeps the logo, the language and the account. The body gets `has-bottom-nav`, which leaves room for it.
+
+Checking it: `npm run test:responsive` (Playwright with the installed Chrome) loads the main pages at 320, 390 and 768 px (Spanish and Catalan at 320 and 390) and fails on horizontal scroll, text cut by its box, touch targets under 44 px or content under a fixed bar. `npm run test:admin-chunks` checks that nobody but the administrator downloads the code of the panel.

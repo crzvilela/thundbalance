@@ -22,6 +22,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from psycopg2.extras import Json as PgJson
 from google_calendar import (
     create_calendar_event,
@@ -56,6 +57,7 @@ from bulk_actions import BulkPayload, run_each, unknown_action
 import inbox
 import reschedule_requests
 from features import client_calendar_enabled, reschedule_min_hours_before
+import admin_access
 import admin_overview
 from contact_messages import register_contact_routes
 from trial_notifications import notify_trial_requested
@@ -145,6 +147,8 @@ async def http_error_in_the_common_shape(request, exc):
     monitoring.record_http_error(request, exc.status_code)            # a 5xx answered on purpose; never raises, never blocks
     known = _ROUTE_ERRORS.get(exc.status_code)
     if known and exc.detail == known[1]:
+        if exc.status_code == 404:
+            request.state.generic_404 = True               # a path that does not exist: the scan guard counts it (admin_access.py)
         return JSONResponse(status_code=exc.status_code, content={"detail": {"code": known[0], "message": known[2]}},
                             headers=getattr(exc, "headers", None))
     return await http_exception_handler(request, exc)
@@ -240,6 +244,44 @@ def verified_claims(authorization, check_revoked=False):
     return claims
 
 
+def _authorization_is_admin(authorization):
+    """Is this Bearer token a valid login of the administrator? A yes/no for the shield below: it never raises and says nothing else (the
+    routes still check everything with require_admin). In the tests an overridden require_admin counts as "the administrator is here"."""
+    if require_admin in app.dependency_overrides:
+        return True
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.casefold() != "bearer" or not token:
+        return False
+    try:
+        claims = id_token.verify_firebase_token(token, firebase_token_request, audience=FIREBASE_PROJECT_ID)
+    except Exception:  # noqa: BLE001
+        return False
+    if claims.get("iss") != f"https://securetoken.google.com/{FIREBASE_PROJECT_ID}":
+        return False
+    return bool(ADMIN_EMAIL) and str(claims.get("email", "")).strip().casefold() == ADMIN_EMAIL
+
+
+_NOT_FOUND_PATH = "/__not_found__"
+
+
+@app.middleware("http")
+async def admin_shield_and_scan_guard(request: Request, call_next):
+    """1. An address that was answered "not found" too many times gets 429 (admin_access.py). 2. /admin and /admin/* do not exist for anybody who is not
+    the signed-in administrator: the request is answered as if the path were not a route at all (the same 404, byte for byte), whatever the method, the
+    token or the body: no 401, no 403, no 405, no 422 that would say "there is something here"."""
+    ip = web_safety.get_client_ip(request)
+    if await run_in_threadpool(admin_access.is_blocked, ip):
+        return JSONResponse({"detail": "Too many requests. Please try again later."}, status_code=429, headers={"Retry-After": str(admin_access.BLOCK_SECONDS), **web_safety.SECURITY_HEADERS})
+    path = request.scope.get("path", "")
+    if (path == "/admin" or path.startswith("/admin/")) and not await run_in_threadpool(_authorization_is_admin, request.headers.get("authorization")):
+        request.scope["path"] = _NOT_FOUND_PATH
+        request.scope["raw_path"] = _NOT_FOUND_PATH.encode()
+    response = await call_next(request)
+    if response.status_code == 404 and getattr(request.state, "generic_404", False):
+        await run_in_threadpool(admin_access.record_not_found, ip, path)
+    return response
+
+
 def require_client(authorization: str | None = Header(default=None), request: Request = None):
     """Verify a Firebase token for client-owned workflow endpoints. A trainer account
     (trainer_area.py) has no client rights and is turned away with 403. Routes that change data also check the login was not revoked."""
@@ -260,6 +302,7 @@ require_account = require_inbox_user
 
 
 register_admin_routes(app, require_admin)
+admin_access.register_admin_access_routes(app, require_admin)          # /route-check, /admin/access-path, rotation of the secret path of the panel
 trainer_area.register_trainer_area_routes(app, require_admin, verified_claims, ADMIN_EMAIL)
 admin_calendar.register_admin_calendar_routes(app, require_admin)
 register_client_lifecycle_routes(
@@ -306,6 +349,15 @@ def ensure_admin_calendar_columns():
         admin_calendar.ensure_columns()
     except Exception as error:  # noqa: BLE001
         print(f"admin calendar columns could not be created: {type(error).__name__}")
+
+
+@app.on_event("startup")
+def ensure_secret_admin_path():
+    # site_settings + the secret path of the admin panel (created once, kept in the database only: admin_access.py)
+    try:
+        admin_access.ensure_admin_path()
+    except Exception as error:  # noqa: BLE001
+        print(f"admin access path could not be prepared: {type(error).__name__}")
 
 
 @app.on_event("startup")

@@ -16,6 +16,7 @@ from .template import (
     STUDIO_PLACE, button, heading, key_value, link_line, notice, paragraph, sessions_table, site_url,
 )
 from .texts import localized_email, normalize_language, spanish_email, tr
+from admin_access import admin_url
 
 
 def _one_line(value, limit=120):
@@ -85,7 +86,7 @@ def staff_trial_requested(trial):
             heading(tr("es", "staff_trial_title")),
             key_value(rows),
             paragraph(tr("es", "staff_trial_manage"), muted=True),
-            button(tr("es", "staff_trial_request_button"), "", f"{site_url()}/admin/trials", only="es"),
+            button(tr("es", "staff_trial_request_button"), "", admin_url("/trials"), only="es"),
         ]
 
     return spanish_email(subject, build, preheader=tr("es", "staff_trial_pre", name=name, date=day.date_es, time=day.time))
@@ -102,7 +103,7 @@ def staff_trial_confirmed(trial, calendar_ok=True):
         blocks = [heading(tr("es", "staff_confirmed_title")), key_value(_staff_rows(trial, day))]
         if not calendar_ok:
             blocks.append(notice(tr("es", "staff_calendar_failed"), tone="warning"))
-        blocks.append(button(tr("es", "staff_trial_button"), "", f"{site_url()}/admin/trials", only="es"))
+        blocks.append(button(tr("es", "staff_trial_button"), "", admin_url("/trials"), only="es"))
         return blocks
 
     return spanish_email(subject, build, preheader=tr("es", "staff_confirmed_pre", name=name, date=day.date_es, time=day.time))
@@ -118,7 +119,7 @@ def staff_trial_declined(trial):
             heading(tr("es", "staff_declined_title")),
             key_value(_staff_rows(trial, day)),
             paragraph(tr("es", "staff_declined_note"), muted=True),
-            button(tr("es", "staff_trial_button"), "", f"{site_url()}/admin/trials", only="es"),
+            button(tr("es", "staff_trial_button"), "", admin_url("/trials"), only="es"),
         ]
 
     return spanish_email(subject, build, preheader=tr("es", "staff_declined_pre", name=name, date=day.date_es, time=day.time))

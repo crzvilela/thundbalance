@@ -23,9 +23,9 @@ export default function LegalPage({ page }) {
   useEffect(() => { document.title = `${title} · ThundBalance` }, [title])
   const pending = admin ? pendingMarks(body, settings) : 0
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-dvh bg-black text-white">
       <header className="mx-auto flex max-w-3xl items-center justify-between px-4 py-5">
-        <Link to="/" className="text-sm text-emerald-300 underline underline-offset-2">← {ui.back}</Link>
+        <Link to="/" className="tap-target text-sm text-emerald-300 underline underline-offset-2">← {ui.back}</Link>
         <LanguageSwitcher />
       </header>
       <main id="main" className="mx-auto max-w-3xl px-4 pb-16">
@@ -38,7 +38,7 @@ export default function LegalPage({ page }) {
             className="mt-8 min-h-[44px] rounded-xl border border-white/30 px-5 text-sm font-semibold text-white transition hover:border-white/70">{ui.cookieSettings}</button>
         )}
         <nav className="mt-12 flex flex-wrap gap-x-6 gap-y-2 border-t border-white/10 pt-6 text-sm text-gray-400" aria-label={ui.navLabel}>
-          {DOCS.map(key => <Link key={key} to={ROUTES[key]} className="underline underline-offset-2 hover:text-white">{ui[key]}</Link>)}
+          {DOCS.map(key => <Link key={key} to={ROUTES[key]} className="tap-target underline underline-offset-2 hover:text-white">{ui[key]}</Link>)}
         </nav>
       </main>
     </div>

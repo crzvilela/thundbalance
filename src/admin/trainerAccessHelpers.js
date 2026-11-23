@@ -1,11 +1,13 @@
 // Pure helpers of "Acceso al área de entrenadores" (Admin > Entrenadores).
+import { adminUrl } from './adminUrl.js'
+
 // Tested with: node --test src/admin/trainerAccessHelpers.test.js
 
-// The trainer's own panel as the admin sees it (/admin/trainers/{id}/panel). The page is built in the
+// The trainer panel as the admin sees it (under the secret path of the panel). The page is built in the
 // trainer-area prompt: while it does not exist the "Ver panel" button stays disabled ("Próximamente").
 // Switch this to true when the route is added to AppRoutes.
 export const TRAINER_PANEL_ROUTE_READY = true
-export const trainerPanelPath = (trainerId) => `/admin/trainers/${trainerId}/panel`
+export const trainerPanelPath = (trainerId) => adminUrl(`/trainers/${trainerId}/panel`)
 
 // What /admin/trainer-access/check answers when the email can NOT be used: reason -> admin text key.
 export const REASON_KEY = {

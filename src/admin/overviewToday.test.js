@@ -2,6 +2,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { MAX_VISIBLE_SESSIONS, allClear, alertsOf, calendarDayLink, fullDate, madridDateKey, sessionBadge, stripCards } from './overviewToday.js'
 import { adminText } from './adminText.js'
+import { setAdminPath } from './adminUrl.js'
+
+const FAKE = 'fakepath0123ab'                       // a made-up path: the real one is a secret and is never written in the code
+setAdminPath(FAKE)
 
 // The logic of the "Hoy" blocks of the Overview (docs/ADMIN_UI_SETTINGS.md, "Overview").
 const data = (changes = {}) => ({
@@ -25,12 +29,12 @@ test('the date is written in full, in each language', () => {
 test('"What to do today" has the four cards, each leading where it is solved; the deletion card only exists when there is one', () => {
   const cards = stripCards(data({ pending_requests: 3, pending_trials: 1, unread_messages: 2, sessions_today: { total: 4, items: [] } }))
   assert.deepEqual(cards.map(card => [card.key, card.count, card.to]), [
-    ['requests', 3, '/admin/requests'], ['trials', 1, '/admin/trials'], ['sessions', 4, '/admin/calendar?view=timeGridDay&date=2026-11-17'], ['messages', 2, '/admin/messages']
+    ['requests', 3, `/${FAKE}/requests`], ['trials', 1, `/${FAKE}/trials`], ['sessions', 4, `/${FAKE}/calendar?view=timeGridDay&date=2026-11-17`], ['messages', 2, `/${FAKE}/messages`]
   ])
-  assert.equal(calendarDayLink('2026-11-17'), '/admin/calendar?view=timeGridDay&date=2026-11-17')
+  assert.equal(calendarDayLink('2026-11-17'), `/${FAKE}/calendar?view=timeGridDay&date=2026-11-17`)
   const withDeletion = stripCards(data({ pending_deletions: 1 }))
   assert.deepEqual(withDeletion.map(card => card.key), ['requests', 'trials', 'sessions', 'messages', 'deletions'])
-  assert.equal(withDeletion.at(-1).to, '/admin#deletion-requests')
+  assert.equal(withDeletion.at(-1).to, `/${FAKE}#deletion-requests`)
   assert.deepEqual(stripCards(null), [])
 })
 
@@ -51,7 +55,7 @@ test('the warnings: none when all is well, only what is really wrong, the most s
   assert.deepEqual(all.map(alert => alert.key), ['email', 'deletions', 'errors', 'legal', 'packs'])
   assert.equal(all[0].tone, 'red')
   assert.equal(all[0].reason, 'unauthorized')
-  assert.deepEqual(all.map(alert => alert.to), ['/admin/trials', '/admin#deletion-requests', '/admin/system', '/admin/legal', '/admin/clients'])
+  assert.deepEqual(all.map(alert => alert.to), [`/${FAKE}/trials`, `/${FAKE}#deletion-requests`, `/${FAKE}/system`, `/${FAKE}/legal`, `/${FAKE}/clients`])
   assert.deepEqual(all.filter(alert => alert.count).map(alert => [alert.key, alert.count]), [['deletions', 2], ['errors', 3], ['packs', 4]])
 })
 

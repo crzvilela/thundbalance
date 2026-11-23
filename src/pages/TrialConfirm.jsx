@@ -162,9 +162,9 @@ function TrialConfirm() {
   const heading = view?.state === 'pending_confirmation' && !done ? t(mode === 'decline' ? 'tc_decline_title' : 'tc_ready_title') : t('tc_eyebrow')
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-dvh bg-black text-white">
       <Navbar />
-      <main id="main" className="mx-auto max-w-2xl px-5 pb-24 pt-36">
+      <main id="main" className="mx-auto max-w-2xl px-4 sm:px-5 pb-24 pt-36">
         <p className="mb-3 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-400">{t('tc_eyebrow')}</p>
         <h1 style={{ fontFamily: 'Bebas Neue' }} className="mb-8 text-5xl md:text-6xl">{heading}</h1>
         {content}

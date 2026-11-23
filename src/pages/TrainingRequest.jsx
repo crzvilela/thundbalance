@@ -131,11 +131,11 @@ function TrainingRequest() {
 
   return (
 
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-dvh bg-black text-white">
 
       <Navbar />
 
-      <main id="main" className="max-w-4xl mx-auto pt-28 sm:pt-36 px-5 sm:px-6 pb-16">
+      <main id="main" className="max-w-4xl mx-auto pt-28 sm:pt-36 px-4 sm:px-6 pb-16">
 
         <TempPasswordNotice />
 

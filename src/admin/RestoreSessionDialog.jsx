@@ -96,10 +96,11 @@ export default function RestoreSessionDialog({ session, onClose, onRestored }) {
   const field = 'mt-2 min-h-[44px] w-full rounded-xl border border-white/15 bg-black/40 px-4 text-white outline-none focus:border-emerald-400/70'
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center p-0 sm:items-center sm:p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => { if (!busy) onClose() }} />
       <div ref={panel} role="alertdialog" aria-modal="true" aria-label={t('rs_title')}
-        className="admin-toast relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-white/10 bg-[#0d1110] p-6 shadow-2xl sm:p-8">
+        className="admin-toast relative max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl rounded-b-none border border-white/10 bg-[#0d1110] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-3xl sm:p-8">
+        <span aria-hidden="true" className="mx-auto -mt-2 mb-4 block h-1 w-10 rounded-full bg-white/25 sm:hidden" />
         <span className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border border-emerald-400/25 bg-emerald-400/10 text-emerald-300"><Icon name="refresh" /></span>
         <h2 className="text-xl font-semibold text-white sm:text-2xl">{t('rs_title')}</h2>
         <p className="mt-2 text-base text-gray-300">{fill(t('rs_text'), { number: session.number || '—', when: original })}</p>

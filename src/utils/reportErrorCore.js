@@ -7,7 +7,8 @@ export const shouldIgnore = (error) => NOISE.test(`${error?.name || ''} ${error?
 // "/admin/clients/123" -> "/admin/clients/:id"; a token or a long identifier becomes ":id" as well (at most 80 characters).
 export function routePattern(pathname) {
   const clean = String(pathname || '/').split(/[?#]/)[0]
-  return clean.split('/').map(part => (/^\d+$/.test(part) || /^[0-9a-f-]{16,}$/i.test(part) || (part.length >= 16 && /\d/.test(part)) ? ':id' : part)).join('/').slice(0, 80) || '/'
+  // the first segment of the admin panel is a secret (docs/ADMIN_ACCESS.md): it is never reported, not even to our own server
+  return clean.split('/').map((part, index) => (index === 1 && /^[a-z0-9]{14}$/.test(part) ? ':panel' : part)).map(part => (/^\d+$/.test(part) || /^[0-9a-f-]{16,}$/i.test(part) || (part.length >= 16 && /\d/.test(part)) ? ':id' : part)).join('/').slice(0, 80) || '/'
 }
 
 // The name and the first line of the message, without addresses, e-mails or long numbers (the server cleans it again).

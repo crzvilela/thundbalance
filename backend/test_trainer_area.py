@@ -215,7 +215,9 @@ class TrainerAreaTest(unittest.TestCase):
         self.assertEqual(self.call("GET", "/me/roles", "trainer1").json(),
                          {"is_admin": False, "is_trainer": True, "trainer_id": self.t1, "trainer_name": "TEST TA Uno", "trainer_color": "#123456"})
         self.assertEqual(self.call("GET", "/me/roles", "unverified").json()["is_trainer"], False)
-        self.assertEqual(self.call("GET", "/me/roles", "admin").json(), {"is_admin": True, "is_trainer": False, "trainer_id": None, "trainer_name": None, "trainer_color": None})
+        admin = self.call("GET", "/me/roles", "admin").json()
+        self.assertRegex(admin.pop("admin_path"), r"^[a-z0-9]{14}$")                           # only the admin is told where the panel is (the value is never compared or printed)
+        self.assertEqual(admin, {"is_admin": True, "is_trainer": False, "trainer_id": None, "trainer_name": None, "trainer_color": None})
         self.assertEqual(self.call("GET", "/me/roles", "client").json()["is_trainer"], False)
         self.assertEqual(self.call("GET", "/me/roles").status_code, 401)
 
@@ -288,8 +290,8 @@ class TrainerAreaTest(unittest.TestCase):
             path = f"/admin/trainers/{self.t1}/panel/{kind}"
             params = self.window() if kind != "summary" else {"period": "week"}
             self.assertEqual(self.call("GET", path, "admin", params=params).status_code, 200, kind)
-            self.assertEqual(self.call("GET", path, "client", params=params).status_code, 403, kind)
-            self.assertEqual(self.call("GET", path, None, params=params).status_code, 401, kind)
+            self.assertEqual(self.call("GET", path, "client", params=params).status_code, 404, kind)        # for them the route does not exist
+            self.assertEqual(self.call("GET", path, None, params=params).status_code, 404, kind)
         rows = self.call("GET", f"/admin/trainers/{self.t1}/panel/sessions", "admin", params=self.window()).json()
         self.assertEqual({r["client_display_name"] for r in rows}, {"Ana Lopez", "Beto Prueba", "Lead Perez"})
         self.assertEqual(self.call("GET", "/admin/trainers/999999/panel/summary", "admin").status_code, 404)
@@ -314,7 +316,7 @@ class TrainerAreaTest(unittest.TestCase):
         self.give_access(self.t2, f"uno{DOMAIN}", "uid-t1")
         taken = check(f"uno{DOMAIN}")
         self.assertEqual((taken["reason"], taken["already_assigned_to_other_trainer"], taken["can_grant"]), ("already_assigned_to_other_trainer", True, False))
-        self.assertEqual(self.call("POST", "/admin/trainer-access/check", "client", json={"trainer_id": self.t1, "email": "a@b.co"}).status_code, 403)
+        self.assertEqual(self.call("POST", "/admin/trainer-access/check", "client", json={"trainer_id": self.t1, "email": "a@b.co"}).status_code, 404)
         self.assertEqual(self.call("POST", "/admin/trainer-access/check", "admin", json={"trainer_id": self.t1, "email": "not-an-email"}).status_code, 422)
         self.assertEqual(self.call("POST", "/admin/trainer-access/check", "admin", json={"trainer_id": 999999, "email": f"uno{DOMAIN}"}).status_code, 404)
 
@@ -338,7 +340,7 @@ class TrainerAreaTest(unittest.TestCase):
         body = {"trainer_id": self.t1, "email": f"uno{DOMAIN}"}
         for payload in (body, {**body, "confirm": False}, {**body, "confirm": "true"}, {**body, "confirm": 1}):
             self.assertEqual(self.call("POST", "/admin/trainer-access", "admin", json=payload).status_code, 422, payload)
-        self.assertEqual(self.call("POST", "/admin/trainer-access", "client", json={**body, "confirm": True}).status_code, 403)
+        self.assertEqual(self.call("POST", "/admin/trainer-access", "client", json={**body, "confirm": True}).status_code, 404)
         # the server checks again: no account / admin / client with a pack are refused with 409
         for email, code in ((f"nadie{DOMAIN}", "no_account"), (f"pack{DOMAIN}", "is_client_with_activity")):
             response = self.call("POST", "/admin/trainer-access", "admin", json={"trainer_id": self.t1, "email": email, "confirm": True})
@@ -355,12 +357,12 @@ class TrainerAreaTest(unittest.TestCase):
         listing = {r["trainer_id"]: r for r in self.call("GET", "/admin/trainer-access", "admin").json()}
         self.assertEqual((listing[self.t1]["access_status"], listing[self.t1]["email"]), ("active", f"uno{DOMAIN}"))
         self.assertEqual(listing[self.t2]["access_status"], "none")
-        self.assertEqual(self.call("GET", "/admin/trainer-access", "client").status_code, 403)
+        self.assertEqual(self.call("GET", "/admin/trainer-access", "client").status_code, 404)
 
     def test_revoke_is_soft_immediate_and_logged(self):
         self.call("POST", "/admin/trainer-access", "admin", json={"trainer_id": self.t1, "email": f"uno{DOMAIN}", "confirm": True})
         self.assertEqual(self.call("GET", "/trainer-area/me/summary", "trainer1").status_code, 200)
-        self.assertEqual(self.call("DELETE", f"/admin/trainer-access/{self.t1}", "client").status_code, 403)
+        self.assertEqual(self.call("DELETE", f"/admin/trainer-access/{self.t1}", "client").status_code, 404)
         self.assertEqual(self.call("DELETE", f"/admin/trainer-access/{self.t1}", "admin").status_code, 200)
         self.assertEqual(self.call("GET", "/trainer-area/me/summary", "trainer1").status_code, 403)           # immediate
         self.assertEqual(self.call("DELETE", f"/admin/trainer-access/{self.t1}", "admin").status_code, 404)   # nothing active left

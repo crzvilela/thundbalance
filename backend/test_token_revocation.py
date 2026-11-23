@@ -96,7 +96,7 @@ class Revocation(unittest.TestCase):
         self.assertEqual(len(warnings), 1)
 
     def test_a_non_admin_never_reaches_the_revocation_check_of_the_admin_routes(self):
-        self.assertEqual(self.call("GET", "/admin/calendar-status", "rita").status_code, 403)
+        self.assertEqual(self.call("GET", "/admin/calendar-status", "rita").status_code, 404)
         self.assertEqual(self.calls, [])
 
     # ----- sensitive client routes

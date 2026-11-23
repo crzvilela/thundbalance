@@ -138,6 +138,12 @@ class RateLimit:
             return False
 
 
+    def peek(self, key):
+        """How many hits the key has in the window, without recording one."""
+        now = time.monotonic()
+        with self.lock:
+            return len([moment for moment in self.hits.get(key, []) if now - moment < self.window])
+
     def hit(self, key):
         """Records one hit and returns how many the key has in the window (this one included)."""
         now = time.monotonic()
@@ -214,6 +220,24 @@ class SharedRateLimit:
         except Exception as error:  # noqa: BLE001
             logger.warning("rate limit '%s' used the memory window: %s", self.bucket, type(error).__name__)
             return self._memory.hit(key)
+
+    def peek(self, key):
+        """How many hits the key has in the window, without recording one (the memory window if the database fails)."""
+        key = str(key)[:200]
+        try:
+            if not SharedRateLimit._table_ready:
+                ensure_rate_limit_table()
+                SharedRateLimit._table_ready = True
+            conn = get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM rate_limit_hits WHERE bucket = %s AND key = %s AND hit_at >= NOW() - make_interval(secs => %s)", (self.bucket, key, self.window))
+                return cursor.fetchone()[0]
+            finally:
+                conn.close()
+        except Exception as error:  # noqa: BLE001
+            logger.warning("rate limit '%s' used the memory window: %s", self.bucket, type(error).__name__)
+            return self._memory.peek(key)
 
     def clear(self):
         """Forgets every hit of this limit (tests)."""

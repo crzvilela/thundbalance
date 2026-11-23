@@ -1,5 +1,6 @@
 """The routes of the monitoring (see monitoring.py): the report of the frontend, the admin's "Estado del sistema" and /health/ready."""
 import json
+import re
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -61,7 +62,7 @@ def register_monitoring_routes(app, require_admin):
                                 content={"detail": {"code": "rate_limited", "message": "Demasiados informes. / Too many reports."}})
         if not _is_noise(report):
             monitoring.record({"source": "frontend", "error_type": report.error_type, "function": "", "file": "", "line": 0,
-                               "route_pattern": report.route, "status_code": None, "release": report.release, "message": report.message})
+                               "route_pattern": re.sub(r"^/[a-z0-9]{14}(?=/|$)", "/:panel", report.route), "status_code": None, "release": report.release, "message": report.message})
         return Response(status_code=204)
 
     @app.get("/health/ready")

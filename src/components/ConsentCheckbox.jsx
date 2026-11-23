@@ -23,9 +23,12 @@ export default function ConsentCheckbox({ checked, onChange, error, terms = fals
   return (
     <div className="mb-1 mt-2">
       <div className="flex items-start gap-3">
-        <input id={id} type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} required
-          aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-error` : undefined}
-          className="mt-1 h-5 w-5 shrink-0 cursor-pointer accent-emerald-400" />
+        {/* the box sits in a 44 x 44 px area that toggles it (the padding is cancelled by the negative margin: the layout does not move) */}
+        <label className="-m-3 shrink-0 cursor-pointer p-3">
+          <input id={id} type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} required
+            aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-error` : undefined}
+            className="mt-1 block h-5 w-5 cursor-pointer accent-emerald-400" />
+        </label>
         <label htmlFor={id} className={`cursor-pointer text-left text-sm leading-relaxed ${light ? 'text-gray-700' : 'text-gray-300'}`}>{label}</label>
       </div>
       {error && <p id={`${id}-error`} role="alert" className={`mt-1 pl-8 text-left text-sm ${light ? 'text-red-600' : 'text-red-300'}`}>{error}</p>}

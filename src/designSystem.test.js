@@ -46,7 +46,7 @@ test('the values of the tokens are the ones of the classes they replace (so a mi
   assert.match(css, /--color-line-strong: color-mix\(in oklab, #fff 20%, transparent\)/)
   assert.match(css, /--radius-control: \.75rem/)                                  // rounded-xl
   assert.match(css, /--radius-card: 1\.5rem/)                                     // rounded-3xl
-  assert.match(css, /--text-display: 3rem/)                                       // text-5xl
+  assert.match(css, /--text-display: clamp\(2\.25rem, 9vw, 3rem\)/)                 // text-5xl (3rem) from about 530 px up; a little smaller on a phone
 })
 
 test('the landing, the admin and the rest of the client area are not part of this phase: they do not import the base components yet', () => {

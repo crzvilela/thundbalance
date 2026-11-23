@@ -13,7 +13,7 @@ export default function WakeNotice() {
     return () => window.clearTimeout(timer)
   }, [])
   return (
-    <div role="status" aria-live="polite" className="flex min-h-[40vh] items-center justify-center px-6 text-center">
+    <div role="status" aria-live="polite" className="flex min-h-[40dvh] items-center justify-center px-6 text-center">
       {late && <p className="max-w-sm text-sm text-gray-300">{t('wake_notice')}</p>}
     </div>
   )

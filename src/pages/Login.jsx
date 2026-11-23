@@ -6,6 +6,7 @@ import { sendWithChallenge } from '../challenge/challenge'
 import { authFetch } from '../api/authFetch'
 import { useI18n } from '../i18n/I18nContext'
 import { loginErrorKey } from '../utils/loginErrors'
+import { destinationAfterLogin } from '../roles/afterLogin'
 import { Button, FormField, Input } from '../components/ui'
 import { uiText } from '../legal/legalText'
 
@@ -19,7 +20,8 @@ import {
   googleProvider
 } from '../firebase/auth'
 
-function Login() {
+// `returnTo`: the page of the admin panel somebody came from with a bookmark (see routes/UnknownOrAdmin.jsx); only the administrator is taken back to it.
+function Login({ returnTo = '' }) {
 
   const navigate = useNavigate()
   const { t, language } = useI18n()
@@ -45,7 +47,7 @@ function Login() {
         password
       )
 
-      navigate('/dashboard')
+      navigate(await destinationAfterLogin('/dashboard', returnTo), { replace: Boolean(returnTo) })
 
     } catch (error) {
 
@@ -93,7 +95,7 @@ function Login() {
         }
       ))
 
-      navigate('/dashboard')
+      navigate(await destinationAfterLogin('/dashboard', returnTo), { replace: Boolean(returnTo) })
 
     } catch (error) {
 
@@ -105,9 +107,9 @@ function Login() {
 
   return (
 
-    <main id="main" className="min-h-screen bg-black text-white flex items-center justify-center px-6">
+    <main id="main" className="min-h-dvh bg-black text-white flex items-center justify-center px-4 sm:px-6">
 
-      <div className="w-full max-w-md border border-line p-10">
+      <div className="w-full max-w-md border border-line p-6 sm:p-10">
 
         <h1
           style={{ fontFamily: 'Bebas Neue' }}
@@ -182,7 +184,7 @@ function Login() {
 
             <Link
               to="/register"
-              className="inline-block py-2 text-white hover:text-gray-300"
+              className="inline-flex min-h-[44px] items-center text-white hover:text-gray-300"
             >
               {t('lgn_register')}
             </Link>

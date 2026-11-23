@@ -11,26 +11,29 @@ import {
   overviewLayout, resolveOverview, resolvePageText, sameDraft, sanitizeSettings, setItemText, setPageText, textProblem, toPayload, toggleHidden, visibleAreas
 } from './uiSettings.js'
 import { adminText } from './adminText.js'
+import { setAdminPath } from './adminUrl.js'
 import { TEXT_ENTRIES, TEXT_KEYS, BLOCKS, EDITABLE_TEXTS, MENU_GROUPS, MENU_ITEMS, PROTECTED_OVERVIEW_KEYS, OVERVIEW_CARDS, PAGES, editableText } from './uiRegistry.js'
 
 // The menu with no configuration: the same entries as before the groups existed (same links, icons, texts and badges), now in the order of its groups:
 // Hoy (overview, requests, trials, messages, sent-messages), Personas (clients, trainers), Agenda (calendar, schedule), Oferta (plans, videos, landing),
 // Sistema (system, legal).
+const FAKE = 'fakepath0123ab'                         // a made-up path: the real one is a secret and is never written in the code
+setAdminPath(FAKE)
 const ORIGINAL_MENU = [
-  ['/admin', true, 'overview', 'nav_overview', undefined],
-  ['/admin/requests', undefined, 'requests', 'nav_requests', 'requests'],
-  ['/admin/trials', undefined, 'whistle', 'nav_trials', 'trials'],
-  ['/admin/messages', undefined, 'inbox', 'nav_messages', 'messages'],
-  ['/admin/sent-messages', undefined, 'send', 'nav_broadcast', undefined],
-  ['/admin/clients', undefined, 'clients', 'nav_clients', undefined],
-  ['/admin/trainers', undefined, 'clock', 'nav_trainers', undefined],
-  ['/admin/calendar', undefined, 'calendar', 'nav_sessions', undefined],
-  ['/admin/schedule', undefined, 'refresh', 'nav_schedule', 'schedule'],
-  ['/admin/plans', undefined, 'bolt', 'nav_plans', undefined],
-  ['/admin/videos', undefined, 'video', 'nav_videos', undefined],
-  ['/admin/landing-editor', undefined, 'landing', 'nav_landing', undefined],
-  ['/admin/system', undefined, 'alert', 'nav_system', undefined],
-  ['/admin/legal', undefined, 'doc', 'nav_legal', undefined]
+  [`/${FAKE}`, true, 'overview', 'nav_overview', undefined],
+  [`/${FAKE}/requests`, undefined, 'requests', 'nav_requests', 'requests'],
+  [`/${FAKE}/trials`, undefined, 'whistle', 'nav_trials', 'trials'],
+  [`/${FAKE}/messages`, undefined, 'inbox', 'nav_messages', 'messages'],
+  [`/${FAKE}/sent-messages`, undefined, 'send', 'nav_broadcast', undefined],
+  [`/${FAKE}/clients`, undefined, 'clients', 'nav_clients', undefined],
+  [`/${FAKE}/trainers`, undefined, 'clock', 'nav_trainers', undefined],
+  [`/${FAKE}/calendar`, undefined, 'calendar', 'nav_sessions', undefined],
+  [`/${FAKE}/schedule`, undefined, 'refresh', 'nav_schedule', 'schedule'],
+  [`/${FAKE}/plans`, undefined, 'bolt', 'nav_plans', undefined],
+  [`/${FAKE}/videos`, undefined, 'video', 'nav_videos', undefined],
+  [`/${FAKE}/landing-editor`, undefined, 'landing', 'nav_landing', undefined],
+  [`/${FAKE}/system`, undefined, 'alert', 'nav_system', undefined],
+  [`/${FAKE}/legal`, undefined, 'doc', 'nav_legal', undefined]
 ]
 const shape = (items) => items.map(item => [item.to, item.end, item.icon, item.labelKey, item.badge])
 const keys = (list) => list.map(item => item.key)

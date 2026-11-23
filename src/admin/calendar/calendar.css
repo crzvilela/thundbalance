@@ -42,7 +42,7 @@
 }
 
 /* the frame: its height comes from the window on a computer (Calendar.jsx), this is the fallback */
-.admin-fc .ac-frame { height: max(520px, calc(100vh - 21rem)); }
+.admin-fc .ac-frame { height: max(520px, calc(100dvh - 21rem)); }
 .admin-fc .fc { font-family: inherit; font-size: 0.875rem; color: inherit; }
 .admin-fc .fc-theme-standard td, .admin-fc .fc-theme-standard th, .admin-fc .fc-theme-standard .fc-scrollgrid { border-color: var(--fc-border-color); }
 .admin-fc .fc-theme-standard .fc-scrollgrid { border-left: 0; border-right: 0; }
@@ -172,7 +172,7 @@
 
 /* phones: the grid may scroll; a readable minimum height for the hours */
 @media (max-width: 767px) {
-  .admin-fc .ac-frame { height: max(480px, calc(100vh - 18rem)); }
+  .admin-fc .ac-frame { height: max(480px, calc(100dvh - 18rem)); }
   .admin-fc .fc-toolbar-title { font-size: 1.05rem; margin-left: 0.25rem; }
   .admin-fc .fc-toolbar.fc-header-toolbar { margin-bottom: 0.5rem !important; }
   .admin-fc .fc-toolbar.fc-footer-toolbar { margin-top: 0.75rem; justify-content: center; }

@@ -164,7 +164,7 @@ export default function PhoneInput({
           {open && (
             <>
               <div className="fixed inset-0 z-40 bg-black/50 sm:hidden" aria-hidden="true" />
-              <div className="fixed inset-x-3 top-[12vh] z-50 flex max-h-[76vh] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0d0f0e] shadow-2xl sm:absolute sm:inset-x-auto sm:left-0 sm:top-full sm:mt-2 sm:max-h-80 sm:w-80">
+              <div className="fixed inset-x-3 top-[12dvh] z-50 flex max-h-[76dvh] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0d0f0e] shadow-2xl sm:absolute sm:inset-x-auto sm:left-0 sm:top-full sm:mt-2 sm:max-h-80 sm:w-80">
                 <div className="flex items-center gap-2 border-b border-white/10 p-2">
                   <input
                     autoFocus type="search" value={query} onChange={(event) => { setQuery(event.target.value); setActive(0) }}

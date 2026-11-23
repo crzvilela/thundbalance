@@ -148,7 +148,7 @@ class DeletePack(unittest.TestCase):
         self.assertEqual(response.json()["detail"]["code"], "pack_not_found")
         self.assertIn(" / ", response.json()["detail"]["message"])                                         # Spanish / English
         main.app.dependency_overrides.clear()
-        self.assertIn(TestClient(main.app).delete("/admin/plans/1").status_code, (401, 403))              # only an admin
+        self.assertIn(TestClient(main.app).delete("/admin/plans/1").status_code, (404,))              # only an admin
 
     def test_the_pack_selection_of_the_client_reads_the_catalogue_not_the_landing_and_has_no_objective_on_the_page(self):
         pack = self.create(objective="Meta", benefits=["Uno"])

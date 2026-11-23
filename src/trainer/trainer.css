@@ -17,5 +17,5 @@
 .tr-fc .fc, .tr-fc .fc-view-harness { max-width: 100%; }
 .tr-fc .fc-toolbar-title { text-transform: capitalize; }
 @media (max-width: 767px) {
-  .tr-fc .ac-frame { height: max(480px, calc(100vh - 20rem)); }
+  .tr-fc .ac-frame { height: max(480px, calc(100dvh - 20rem)); }
 }

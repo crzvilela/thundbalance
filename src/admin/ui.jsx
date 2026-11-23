@@ -198,7 +198,7 @@ export function Drawer({ open, onClose, title, subtitle, children, footer, busy 
   return (
     <div className={`fixed inset-0 z-50 flex items-center justify-center sm:p-8 ${fullOnMobile ? 'p-0' : 'p-3'}`}>
       <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" onClick={() => { if (!busy) onClose() }} />
-      <aside ref={panel} role="dialog" aria-modal="true" aria-label={title} className={`admin-modal relative flex w-full ${fullOnMobile ? 'h-full max-h-full rounded-none sm:h-auto sm:max-h-[94vh] sm:rounded-3xl' : 'max-h-[94vh] rounded-3xl'} min-h-[min(34rem,90vh)] ${size === 'lg' ? 'max-w-7xl' : 'max-w-4xl'} flex-col overflow-hidden border border-white/10 bg-[#0b0e0d] shadow-2xl shadow-black/60`}>
+      <aside ref={panel} role="dialog" aria-modal="true" aria-label={title} className={`admin-modal relative flex w-full ${fullOnMobile ? 'h-full max-h-full rounded-none sm:h-auto sm:max-h-[94dvh] sm:rounded-3xl' : 'max-h-[94dvh] rounded-3xl'} min-h-[min(34rem,90dvh)] ${size === 'lg' ? 'max-w-7xl' : 'max-w-4xl'} flex-col overflow-hidden border border-white/10 bg-[#0b0e0d] shadow-2xl shadow-black/60`}>
         {!headerless && (
         <div className="flex items-start justify-between gap-4 border-b border-white/10 bg-white/[0.02] px-6 py-6 sm:px-10 sm:py-7">
           <div className="min-w-0">
@@ -229,9 +229,10 @@ export function ConfirmDialog({ open, title, text, confirmLabel, cancelLabel, on
 
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center p-0 sm:items-center sm:p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => { if (!busy) onCancel() }} />
-      <div ref={panel} role="alertdialog" aria-modal="true" aria-label={title} className="admin-toast relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-white/10 bg-[#0d1110] p-6 shadow-2xl sm:p-8">
+      <div ref={panel} role="alertdialog" aria-modal="true" aria-label={title} className="admin-toast relative max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl rounded-b-none border border-white/10 bg-[#0d1110] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-3xl sm:p-8">
+        <span aria-hidden="true" className="mx-auto -mt-2 mb-4 block h-1 w-10 rounded-full bg-white/25 sm:hidden" />
         <span className={`mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border ${tone === 'danger' ? 'border-red-400/25 bg-red-400/10 text-red-300' : 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300'}`}><Icon name={icon} /></span>
         <h2 className="text-2xl font-semibold text-white">{title}</h2>
         {text && <p className="mt-2 text-base text-gray-400">{text}</p>}

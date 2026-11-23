@@ -4,7 +4,7 @@ import { useRoles } from './rolesContext'
 
 function Waiting({ children }) {
   return (
-    <div className="flex min-h-screen items-center justify-center gap-3 bg-black text-gray-300" role="status">
+    <div className="flex min-h-dvh items-center justify-center gap-3 bg-black text-gray-300" role="status">
       <span aria-hidden="true" className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-emerald-400" />
       {children}
     </div>
@@ -19,7 +19,7 @@ export function TrainerRoute({ children }) {
   if (status === 'loading') return <Waiting>{t('tr_checking')}</Waiting>
   if (status === 'error') {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-black px-6 text-center text-gray-200">
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-black px-6 text-center text-gray-200">
         <p>{t('tr_error_network')}</p>
         <button type="button" onClick={reload} className="min-h-[44px] rounded-xl border border-white/25 px-6 text-sm font-semibold uppercase tracking-wider hover:bg-white hover:text-black">{t('tr_retry')}</button>
       </div>

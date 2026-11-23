@@ -14,6 +14,7 @@ import { authFetch } from '../api/authFetch'
 import { resolveImageUrl } from '../api/landingPage'
 import { uploadProfilePhoto } from '../api/profilePhoto'
 import { useI18n } from '../i18n/I18nContext'
+import { useRoles } from '../roles/rolesContext'
 import { DEFAULT_TAX_ID_TYPE, normalizeTaxId } from '../utils/taxId'
 import FormField from '../components/forms/FormField'
 import { INPUT_CLASS, inputBorder } from '../components/forms/inputStyles'
@@ -162,14 +163,15 @@ function Profile() {
   }
 
   const isAdmin = user?.email?.trim().toLowerCase() === ADMIN_EMAIL
+  const { roles } = useRoles()                       // only the signed-in administrator is told where the panel is
   const name = profile?.nome || user?.displayName || t('pf_your_profile')
   const photoSource = preview || resolveImageUrl(profile?.foto) || user?.photoURL
   const photo = photoSource && photoSource !== failedPhoto ? photoSource : ''
 
   return <LandingContentProvider mode="view" version="published">
-    <div className="min-h-screen bg-[#080a09] text-white">
+    <div className="min-h-dvh bg-[#080a09] text-white">
       <Navbar />
-      <main id="main" className="relative mx-auto max-w-6xl px-5 pb-20 pt-36 md:pt-44">
+      <main id="main" className="relative mx-auto max-w-6xl px-4 sm:px-5 pb-20 pt-36 md:pt-44">
         <div className="pointer-events-none absolute left-0 top-20 h-64 w-64 rounded-full bg-emerald-500/5 blur-3xl" />
         <TempPasswordNotice showLink={false} />
         <PageHeader tone="muted" eyebrow={t('pf_eyebrow')} title={t('pf_title')} subtitle={t('pf_intro')} />
@@ -195,7 +197,7 @@ function Profile() {
                 {/* the number is only a reference for the studio: small and quiet, not a badge */}
                 <p className="mt-5 text-[11px] text-hint">{t('pf_member_no', { id: profile.id })}</p>
               </div>
-              {isAdmin && <Button as={Link} to="/admin" variant="primary" className="mt-6 w-full">{t('pf_admin_link')}</Button>}
+              {isAdmin && roles?.admin_path && <Button as={Link} to={`/${roles.admin_path}`} variant="primary" className="mt-6 w-full">{t('pf_admin_link')}</Button>}
             </div>
           </Card>
           <div className="min-w-0 space-y-6 self-start">

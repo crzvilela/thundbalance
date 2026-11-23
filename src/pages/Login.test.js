@@ -8,8 +8,8 @@ const login = readFileSync(new URL('./Login.jsx', import.meta.url), 'utf8')
 
 test('a successful login shows no message and goes to the dashboard', () => {
   assert.doesNotMatch(login, /alert\(|toast|successful/i)
-  assert.equal((login.match(/navigate\('\/dashboard'\)/g) || []).length, 2)        // password and Google
-  assert.ok(login.indexOf("navigate('/dashboard')") < login.indexOf('catch'))
+  assert.equal((login.match(/destinationAfterLogin\('\/dashboard', returnTo\)/g) || []).length, 2)        // password and Google: the dashboard (the administrator goes to the panel)
+  assert.ok(login.indexOf("destinationAfterLogin('/dashboard'") < login.indexOf('catch'))
 })
 
 test('a failed login is a line of text next to the form, never a pop-up', () => {

@@ -293,7 +293,7 @@ class Catalog(unittest.TestCase):
             ("post", "/admin/pack-catalog/1/restore", None), ("put", "/admin/trial-prices", {"individual": 1, "dual": 1}),
         ):
             response = getattr(anonymous, method)(path, **({"json": body} if body is not None else {}))
-            self.assertEqual(response.status_code, 401, (path, response.status_code))
+            self.assertEqual(response.status_code, 404, (path, response.status_code))
         self.assertEqual(anonymous.get("/pricing").status_code, 200)             # the public prices stay public
 
 

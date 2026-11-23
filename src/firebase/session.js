@@ -32,6 +32,11 @@ function remember(user) {
   } catch { /* storage unavailable: the SDK just loads after the first paint */ }
 }
 
+/** Has this browser had a signed-in session before? (then a page that may be the panel waits for the answer instead of showing a 404) */
+export function hasAuthHint() {
+  try { return Boolean(window.localStorage.getItem(HINT)) } catch { return false }
+}
+
 function shouldWait() {
   try {
     return PUBLIC_PAGES.has(window.location.pathname) && !window.localStorage.getItem(HINT)

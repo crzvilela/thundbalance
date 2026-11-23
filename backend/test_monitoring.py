@@ -109,7 +109,7 @@ class Monitoring(unittest.TestCase):
     def test_the_noise_is_not_recorded(self):
         for path, expected in (("/zz-monitor/nothing", 404), ("/schedule/not-a-date", 422)):
             self.assertEqual(self.http.get(path).status_code, expected)
-        self.assertEqual(self.http.get("/admin/stats").status_code, 401)
+        self.assertEqual(self.http.get("/admin/stats").status_code, 404)
         self.assertEqual(self.http.delete("/health").status_code, 405)
         flush()
         self.assertEqual(self.mine(), [])
@@ -196,8 +196,8 @@ class Monitoring(unittest.TestCase):
 
     # ----- the admin page
     def test_the_page_of_the_admin_only_opens_for_the_admin(self):
-        self.assertEqual(self.http.get("/admin/system-errors").status_code, 401)
-        self.assertEqual(self.http.post("/admin/system-errors/1/status", json={"status": "seen"}).status_code, 401)
+        self.assertEqual(self.http.get("/admin/system-errors").status_code, 404)
+        self.assertEqual(self.http.post("/admin/system-errors/1/status", json={"status": "seen"}).status_code, 404)
         main.app.dependency_overrides[main.require_admin] = lambda: {"email": main.ADMIN_EMAIL, "sub": "uid-admin"}
         monitoring._store({"source": "backend", "error_type": "ZzPage", "function": "f", "file": "a.py", "line": 3, "route_pattern": "GET /zz-monitor/page", "status_code": 500})
         answer = self.http.get("/admin/system-errors").json()

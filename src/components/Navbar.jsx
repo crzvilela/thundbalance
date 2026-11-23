@@ -13,12 +13,12 @@ import LanguageSwitcher from './LanguageSwitcher'
 import InboxBell, { UnreadBadge } from './InboxBell'
 import { useUnreadCount, useUnreadPolling } from '../hooks/useUnreadCount'
 import { useRoles } from '../roles/rolesContext'
+import { useBottomNavVisible } from '../utils/clientArea'
 // Bundled white vector logo, inlined into the JS so it is there on the very
 // first render: no network request, no wait for the API.
 import logo from '../assets/images/thundbalance-logo.svg?inline'
 import { resolveImageUrl } from '../api/landingPage'
 import { navbarLogoStyle } from '../utils/navbarLogo'
-import { ADMIN_EMAIL } from '../config'
 import NavbarLogoFrame from './editor/NavbarLogoFrame'
 import './Navbar.css'
 
@@ -69,10 +69,13 @@ function NavbarInner() {
     }
   }, [])
 
-  const isAdmin = Boolean(user && user.email?.trim().toLowerCase() === ADMIN_EMAIL)
   // A trainer has their own, smaller menu: nothing of the client area (sessions, packs, trial).
   // (the administrator can be a trainer too: they keep the whole menu and get the trainer panel added to it)
-  const { isTrainer, isTrainerOnly } = useRoles()
+  const { isTrainer, isTrainerOnly, roles } = useRoles()
+  // in the client area a phone has a bottom navigation: the top bar keeps only the logo, the language and the account
+  const bottomNav = useBottomNavVisible()
+  // where the panel lives is known only to the signed-in administrator (GET /me/roles): nobody else gets a link, not even a hidden one
+  const adminHref = roles?.is_admin && roles?.admin_path ? `/${roles.admin_path}` : ''
 
   const [openMenu, setOpenMenu] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -201,7 +204,7 @@ function NavbarInner() {
     { to: '/my-sessions', labelPath: 'sessions', label: t('nav_sessions') },
     { to: '/training-tips', label: t('training_tips_title') },
     ...(isTrainer ? [{ to: '/trainer', label: t('trainer.menuLabel') }] : []),
-    ...(isAdmin ? [{ to: '/admin', label: 'Admin' }] : [])
+    ...(adminHref ? [{ to: adminHref, label: 'Admin' }] : [])
   ]
 
   const activeLinks = !user ? guestLinks : userLinks
@@ -228,7 +231,7 @@ function NavbarInner() {
     <nav
       ref={navRef}
       onClick={onSectionClick}
-      className={`${isEditMode ? 'absolute' : 'fixed'} top-0 left-0 w-full z-50 px-3 sm:px-6 pt-4 sm:pt-6 ${!visible ? 'opacity-40' : ''}`}
+      className={`${isEditMode ? 'absolute' : 'fixed'} top-0 left-0 w-full z-50 px-3 sm:px-6 pt-[max(1rem,env(safe-area-inset-top))] sm:pt-6 ${!visible ? 'opacity-40' : ''}`}
     >
 
       <div
@@ -250,9 +253,9 @@ function NavbarInner() {
           </Link>
         )}
 
-        <div className="flex items-center gap-3 sm:gap-4 md:gap-10">
+        <div className="flex items-center gap-3 sm:gap-4 lg:gap-10">
 
-          <ul className="hidden md:flex gap-8 text-sm uppercase tracking-wider" style={{ fontFamily: theme.typography.accentFont }}>
+          <ul className="hidden lg:flex gap-8 text-sm uppercase tracking-wider" style={{ fontFamily: theme.typography.accentFont }}>
             {activeLinks.map((link) => (
               <li key={link.href || link.to}>
                 {renderNavLink(link)}
@@ -270,7 +273,7 @@ function NavbarInner() {
               }}
               aria-label={mobileMenuOpen ? t('nav_aria_close_menu') : t('nav_aria_open_menu')}
               aria-expanded={mobileMenuOpen}
-              className="relative order-last md:hidden w-11 h-11 flex items-center justify-center rounded-lg hover:bg-white/10 transition shrink-0"
+              className={`relative order-last lg:hidden ${bottomNav ? 'max-md:hidden' : ''} w-11 h-11 flex items-center justify-center rounded-lg hover:bg-white/10 transition shrink-0`}
             >
               {user && unread > 0 && <span aria-hidden="true" className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-emerald-400" />}
               <div className="w-6 h-5 relative flex flex-col justify-between">
@@ -293,10 +296,10 @@ function NavbarInner() {
             </button>
           )}
 
-          {!isEditMode && <LanguageSwitcher className="hidden md:block" />}
+          {!isEditMode && <LanguageSwitcher className={bottomNav ? 'block lg:block' : 'hidden lg:block'} />}
 
           {user && !isEditMode && (
-            <div className="hidden md:block">
+            <div className="hidden lg:block">
               <InboxBell unread={unread} />
             </div>
           )}
@@ -316,7 +319,7 @@ function NavbarInner() {
               <Link
                 to="/register"
                 {...prefetchHandlers('register')}
-                className="hidden md:inline-flex items-center min-h-[44px] border border-white/20 px-2.5 sm:px-3 md:px-4 py-2.5 rounded-lg hover:bg-white hover:text-black transition duration-300 uppercase text-xs md:text-sm whitespace-nowrap"
+                className="hidden lg:inline-flex items-center min-h-[44px] border border-white/20 px-2.5 sm:px-3 md:px-4 py-2.5 rounded-lg hover:bg-white hover:text-black transition duration-300 uppercase text-xs md:text-sm whitespace-nowrap"
               >
                 <EditableText as="span" path="sections.navbar.labels.register" label="Navbar Register" />
               </Link>
@@ -398,9 +401,9 @@ function NavbarInner() {
                     {t('training_tips_title')}
                   </Link>
 
-                  {isAdmin && (
+                  {adminHref && (
                     <Link
-                      to="/admin"
+                      to={adminHref}
                       onClick={() => setOpenMenu(false)}
                       className="block px-4 py-3 text-emerald-400 hover:bg-white/10 transition duration-300"
                     >
@@ -436,7 +439,7 @@ function NavbarInner() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -12 }}
               transition={{ duration: 0.2 }}
-              className="md:hidden relative z-10 max-w-7xl mx-auto mt-3 backdrop-blur-md bg-black/80 border border-white/10 rounded-2xl overflow-hidden"
+              className="lg:hidden relative z-10 max-w-7xl mx-auto mt-3 backdrop-blur-md bg-black/80 border border-white/10 rounded-2xl overflow-y-auto overscroll-contain max-h-[calc(100dvh-6.5rem)]"
             >
               <ul className="flex flex-col divide-y divide-white/10 text-sm uppercase tracking-wider" style={{ fontFamily: theme.typography.accentFont }}>
                 {activeLinks.map((link) => (

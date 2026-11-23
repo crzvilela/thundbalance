@@ -147,8 +147,8 @@ class History(unittest.TestCase):
 
     def test_only_an_admin_can_read_it_and_the_client_has_no_such_endpoint(self):
         main.app.dependency_overrides.clear()
-        self.assertEqual(TestClient(main.app).get(f"/admin/clients/{self.user_id}/packs").status_code, 401)
-        self.assertEqual(self.http.get("/admin/clients/999999999/packs").status_code, 401)   # (no override any more)
+        self.assertEqual(TestClient(main.app).get(f"/admin/clients/{self.user_id}/packs").status_code, 404)
+        self.assertEqual(self.http.get("/admin/clients/999999999/packs").status_code, 404)   # (no override any more)
         paths = {getattr(route, "path", "") for route in main.app.routes}
         self.assertNotIn("/me/packs", paths)
 

@@ -260,8 +260,8 @@ class InboxTrainers(unittest.TestCase):
 
     def test_the_admin_endpoints_stay_closed_to_trainers(self):
         self.grant(self.t1, f"uno{DOMAIN}", "uid-t1")
-        self.assertEqual(self.call("GET", "/admin/messages", "trainer1").status_code, 403)
-        self.assertEqual(self.call("POST", "/admin/messages", "trainer1", json={"audiences": ["all"], "title": "x", "body": "y"}).status_code, 403)
+        self.assertEqual(self.call("GET", "/admin/messages", "trainer1").status_code, 404)
+        self.assertEqual(self.call("POST", "/admin/messages", "trainer1", json={"audiences": ["all"], "title": "x", "body": "y"}).status_code, 404)
 
 
 if __name__ == "__main__":

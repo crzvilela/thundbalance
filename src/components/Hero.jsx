@@ -19,7 +19,7 @@ function Hero() {
     <section
       onClick={onSectionClick}
       style={sectionBackgroundStyle(section.background)}
-      className={`relative isolate h-screen flex items-center justify-center text-white overflow-hidden ${!visible ? 'opacity-40' : ''}`}
+      className={`relative isolate h-svh flex items-center justify-center text-white overflow-hidden ${!visible ? 'opacity-40' : ''}`}
     >
       <SectionEditOverlay isEditMode={isEditMode} isSelected={isSelected} hidden={!visible} label="Hero" />
 

@@ -1,44 +1,26 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { LazyMotion } from 'framer-motion'
 
 import Home from '../pages/Home'
 const Login = lazy(() => import('../pages/Login'))
-const RequireAdmin = lazy(() => import('../components/admin/RequireAdmin'))
 import ConsentBanner from '../components/ConsentBanner'
 import SkipLink from '../components/SkipLink'
+import BottomNav from '../components/BottomNav'
 import { NotForTrainers, TrainerRoute } from '../roles/RoleGuards'
+import UnknownOrAdmin from './UnknownOrAdmin'
 const Register = lazy(() => import('../pages/Register'))
 const Dashboard = lazy(() => import('../pages/Dashboard'))
 const MySessions = lazy(() => import('../pages/MySessions'))
 const ClientMessages = lazy(() => import('../pages/ClientMessages'))
 const Profile = lazy(() => import('../pages/Profile'))
-const LandingPageEditor = lazy(() => import('../pages/admin/LandingPageEditor'))
-const AdminLayout = lazy(() => import('../admin/AdminLayout'))
-const Overview = lazy(() => import('../admin/pages/Overview'))
-const Requests = lazy(() => import('../admin/pages/Requests'))
-const Clients = lazy(() => import('../admin/pages/Clients'))
-const TrialSessions = lazy(() => import('../admin/pages/TrialSessions'))
-const Calendar = lazy(() => import('../admin/pages/Calendar'))
-const Schedule = lazy(() => import('../admin/pages/Schedule'))
-const SentMessages = lazy(() => import('../admin/pages/SentMessages'))
-const Trainers = lazy(() => import('../admin/pages/Trainers'))
-const Plans = lazy(() => import('../admin/pages/Plans'))
-const Videos = lazy(() => import('../admin/pages/Videos'))
-const Messages = lazy(() => import('../admin/pages/Messages'))
-const AdminNotFound = lazy(() => import('../admin/AdminNotFound'))
-const SystemStatus = lazy(() => import('../admin/pages/SystemStatus'))
-const LegalTexts = lazy(() => import('../admin/pages/LegalTexts'))
 const TrainingTips = lazy(() => import('../pages/TrainingTips'))
 const TrainerArea = lazy(() => import('../pages/TrainerArea'))
-const TrainerPanelView = lazy(() => import('../admin/pages/TrainerPanelView'))
 const TrialSession = lazy(() => import('../pages/Trialsession'))
 const TrialConfirm = lazy(() => import('../pages/TrialConfirm'))
 const RescheduleResponse = lazy(() => import('../pages/RescheduleResponse'))
 const TrainingRequest = lazy(() => import('../pages/TrainingRequest'))
-const AdminLogin = lazy(() => import('../pages/admin/AdminLogin'))
 const LegalPage = lazy(() => import('../pages/LegalPage'))
-const NotFound = lazy(() => import('../pages/NotFound'))
 
 // the animation code is a separate file that arrives after the first paint; until then the elements are drawn in their start state
 const loadMotion = () => import('../components/motionFeatures').then(module => module.default)
@@ -49,7 +31,7 @@ function AppRoutes() {
       <LazyMotion features={loadMotion} strict>
 
       <SkipLink />
-      <Suspense fallback={<div className="min-h-screen bg-black" aria-busy="true" />}>
+      <Suspense fallback={<div className="min-h-dvh bg-black" aria-busy="true" />}>
       <Routes>
 
         <Route path="/" element={<Home />} />
@@ -69,32 +51,6 @@ function AppRoutes() {
         
         <Route path="/profile" element={<Profile />} />
       
-        <Route path="/admin/login" element={<AdminLogin />} />
-
-        <Route path="/admin" element={<RequireAdmin><AdminLayout /></RequireAdmin>}>
-          <Route index element={<Overview />} />
-          <Route path="requests" element={<Requests />} />
-          <Route path="trials" element={<TrialSessions />} />
-          <Route path="clients" element={<Clients />} />
-          <Route path="calendar" element={<Calendar />} />
-          <Route path="schedule" element={<Schedule />} />
-          <Route path="sent-messages" element={<SentMessages />} />
-          <Route path="trainers" element={<Trainers />} />
-          <Route path="trainers/:trainerId/panel" element={<TrainerPanelView />} />
-          <Route path="sessions" element={<Navigate to="/admin/calendar" replace />} />
-          <Route path="plans" element={<Plans />} />
-          <Route path="videos" element={<Videos />} />
-          <Route path="messages" element={<Messages />} />
-          <Route path="system" element={<SystemStatus />} />
-          <Route path="legal" element={<LegalTexts />} />
-          <Route path="*" element={<AdminNotFound />} />
-        </Route>
-
-
-        <Route path="/admin/landing-editor" element={<RequireAdmin><LandingPageEditor /></RequireAdmin>} />
-
-        <Route path="/admin/training-videos" element={<Navigate to="/admin/videos" replace />} />
-
         <Route path="/training-tips" element={<TrainingTips />} />
       
 
@@ -112,10 +68,12 @@ function AppRoutes() {
         <Route path="/legal-notice" element={<LegalPage page="legal" />} />
         <Route path="/terms" element={<LegalPage page="terms" />} />
         <Route path="/cancellations" element={<LegalPage page="cancellations" />} />
-        <Route path="*" element={<NotFound />} />
+        {/* every other address: the ordinary 404, or (for the signed-in administrator only) the admin panel under its secret path */}
+        <Route path="*" element={<UnknownOrAdmin />} />
       
       </Routes>
       </Suspense>
+      <BottomNav />
       <ConsentBanner />
       </LazyMotion>
 

@@ -1,5 +1,6 @@
 import { useLocation } from 'react-router-dom'
 import { useI18n } from '../i18n/I18nContext'
+import { isAdminLocation } from '../admin/adminUrl.js'
 
 // The admin panel has its own language (English or Spanish, kept in localStorage). Only this one text is needed here, so it is read
 // directly instead of importing the whole admin dictionary (130 kB) into the page that every visitor downloads.
@@ -14,7 +15,7 @@ function adminSkipLabel() {
 export default function SkipLink() {
   const { t } = useI18n()
   const { pathname } = useLocation()
-  const label = pathname.startsWith('/admin') ? adminSkipLabel() : t('a11y_skip')
+  const label = isAdminLocation(pathname) ? adminSkipLabel() : t('a11y_skip')
 
   const go = (event) => {
     event.preventDefault()

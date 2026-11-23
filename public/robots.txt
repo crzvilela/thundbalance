@@ -1,6 +1,5 @@
 User-agent: *
 Allow: /
-Disallow: /admin
 Disallow: /trainer
 Disallow: /dashboard
 Disallow: /my-sessions

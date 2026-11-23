@@ -2,6 +2,7 @@
 // here does not change how it looks. Loading shows a spinner, sets aria-busy and ignores clicks; disabled looks disabled.
 //   <Button variant="primary" size="lg" loading={busy} onClick={...}>Save</Button>
 //   <Button as={Link} to="/profile" variant="secondary">Profile</Button>         (a link that looks like a button)
+//   <Button fullOnMobile>…</Button>   the main action of a screen: the whole width on a phone (the thumb), its own size from 640 px;  block: always the whole width
 // `plain` + size `none` draws nothing but the behaviour (focus ring, busy, disabled): for tabs and toggles that have their own look.
 const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
 
@@ -24,7 +25,7 @@ const SIZES = {
 }
 
 export default function Button({
-  as: Component = 'button', variant = 'secondary', size = 'md', radius, loading = false, disabled = false, className = '',
+  as: Component = 'button', variant = 'secondary', size = 'md', radius, loading = false, disabled = false, block = false, fullOnMobile = false, className = '',
   children, onClick, type, ...rest
 }) {
   const link = Component !== 'button'
@@ -32,6 +33,7 @@ export default function Button({
   const classes = [
     size === 'none' ? '' : 'inline-flex items-center justify-center',
     SIZES[size], radius === 'none' ? 'rounded-none' : radius === 'lg' ? 'rounded-lg' : '', VARIANTS[variant], FOCUS,
+    block ? 'w-full' : '', fullOnMobile ? 'w-full sm:w-auto' : '',
     loading ? 'cursor-wait opacity-60' : 'disabled:cursor-not-allowed disabled:opacity-50', blocked && link ? 'cursor-not-allowed opacity-50' : '', className,
   ].filter(Boolean).join(' ')
   const handle = (event) => {

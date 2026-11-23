@@ -100,8 +100,8 @@ test('"Delete pack" is in the secondary menu of the pack card, and still asks be
 
 test('the mobile menu has the Register link and the header only keeps Login and the hamburger', () => {
   const navbar = read('./components/Navbar.jsx')
-  assert.match(navbar, /className="hidden md:inline-flex items-center min-h-\[44px\][^"]*"[\s\S]{0,200}sections\.navbar\.labels\.register|to="\/register"\s*\n\s*\{\.\.\.prefetchHandlers\('register'\)\}\s*\n\s*className="hidden md:inline-flex/)
-  assert.match(navbar, /order-last md:hidden w-11 h-11/)                          // the hamburger is the last of the group on a phone
+  assert.match(navbar, /className="hidden lg:inline-flex items-center min-h-\[44px\][^"]*"[\s\S]{0,200}sections\.navbar\.labels\.register|to="\/register"\s*\n\s*\{\.\.\.prefetchHandlers\('register'\)\}\s*\n\s*className="hidden lg:inline-flex/)
+  assert.match(navbar, /order-last lg:hidden \$\{bottomNav \? 'max-md:hidden' : ''\} w-11 h-11/)         // the hamburger is the last of the group on a phone (the client area has a bottom navigation instead)
   assert.match(navbar, /aria-expanded=\{mobileMenuOpen\}/)
 })
 

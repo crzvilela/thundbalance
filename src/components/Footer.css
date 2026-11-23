@@ -40,4 +40,4 @@
 .footer-legal a { color: #a6a6a6; text-decoration: underline; text-underline-offset: 2px; padding: 6px 2px; }
 .footer-legal button { color: #a6a6a6; text-decoration: underline; text-underline-offset: 2px; padding: 6px 2px; background: none; border: 0; cursor: pointer; font: inherit; }
 .footer-legal a:hover, .footer-legal button:hover { color: #fff; }
-@media (pointer: coarse) { .footer-legal a, .footer-legal button { display: inline-flex; align-items: center; min-height: 44px; } }
+@media (pointer: coarse), (max-width: 767px) { .footer-legal a, .footer-legal button { display: inline-flex; align-items: center; min-height: 44px; } }

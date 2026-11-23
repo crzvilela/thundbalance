@@ -6,6 +6,7 @@ Who gets it (TEAM_NOTIFICATION_EMAILS, default pt@, one email), what it says (Sp
 wrong address or a failing send never breaks anything, and that nothing personal reaches a log. The e-mail
 service (Google Apps Script) is replaced by a small local server.
 """
+import admin_access
 import contextlib
 import io
 import json
@@ -105,7 +106,7 @@ class TeamNotification(unittest.TestCase):
         html, text = message["html"], message["text"]
         self.assertIn('<html lang="es"', html)
         for expected in (NAME, EMAIL, PHONE, "Perder peso, Ganar músculo", "Intermedio", "lunes 2 de noviembre de 2026, 09:00",
-                         "Ver en el panel de administración", "/admin/trials"):
+                         "Ver en el panel de administración", admin_access.admin_url("/trials")):
             self.assertIn(expected, html, expected)
         for expected in (EMAIL, PHONE, "lunes 2 de noviembre de 2026, 09:00"):
             self.assertIn(expected, text, expected)

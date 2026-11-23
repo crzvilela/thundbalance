@@ -7,6 +7,7 @@ import { Button, Card, EmptyState, ErrorState, Icon, Skeleton } from '../ui'
 import TrainerPanel from '../../trainer/TrainerPanel'
 import { trainerSource } from '../../trainer/trainerSource'
 import { useTrainerText } from '../../trainer/useTrainerText'
+import { adminUrl } from '../adminUrl.js'
 
 // /admin/trainers/:trainerId/panel: the SAME panel the trainer sees, fed by the admin endpoints, read only,
 // under a fixed band that says so. The language is the admin panel's.
@@ -26,7 +27,7 @@ export default function TrainerPanelView() {
           <Icon name="alert" className="h-4 w-4 shrink-0" />
           <span className="min-w-0">{trainer ? t('tr_admin_banner', { name: trainer.name }) : t('tr_readonly')}</span>
         </p>
-        <Button variant="secondary" onClick={() => navigate('/admin/trainers')}>{t('tr_back')}</Button>
+        <Button variant="secondary" onClick={() => navigate(adminUrl('/trainers'))}>{t('tr_back')}</Button>
       </div>
 
       {trainers.error ? (

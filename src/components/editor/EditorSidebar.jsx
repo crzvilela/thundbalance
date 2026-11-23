@@ -19,7 +19,7 @@ function AddSectionModal({ open, onClose, onPick, t }) {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div role="dialog" aria-modal="true" aria-label={t('ed_add_section')} className="relative max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-white/10 bg-[#111] p-7 shadow-2xl">
+      <div role="dialog" aria-modal="true" aria-label={t('ed_add_section')} className="relative max-h-[85dvh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-white/10 bg-[#111] p-7 shadow-2xl">
         <div className="mb-5 flex items-start justify-between">
           <div>
             <h3 className="text-xl font-semibold text-white">{t('ed_add_section')}</h3>

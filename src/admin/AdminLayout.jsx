@@ -29,7 +29,7 @@ function readTheme() {
 }
 
 const linkClass = ({ isActive }) =>
-  `group flex min-h-10 items-center gap-3 rounded-xl px-3.5 py-2 text-sm font-medium transition-all duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400 ${
+  `group flex min-h-12 items-center gap-3 rounded-xl px-3.5 py-2 text-sm lg:min-h-10 font-medium transition-all duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400 ${
     isActive
       ? 'bg-emerald-400/10 text-emerald-300 shadow-[inset_0_0_0_1px_rgba(52,211,153,0.2)]'
       : 'text-gray-400 hover:bg-white/5 hover:text-white'
@@ -122,7 +122,7 @@ function AdminShell() {
 
   const logout = async () => {
     await signOut(auth)
-    navigate('/admin/login')
+    navigate('/login')
   }
   const confirmLeave = () => {
     const target = leaving
@@ -170,7 +170,7 @@ function AdminShell() {
         </div>
         <EmailTest defaultTo={email} />
         <div className="flex gap-1">
-          <NavLink to="/" onClick={leaveAdmin('/')} className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm text-gray-400 transition hover:bg-white/5 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400">
+          <NavLink to="/" onClick={leaveAdmin('/')} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm text-gray-400 transition hover:bg-white/5 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400">
             <Icon name="globe" className="h-[18px] w-[18px] shrink-0" /><span className="truncate">{t('nav_site')}</span>
           </NavLink>
           <button type="button" onClick={() => { if (edit?.dirty) setEditLeaving('logout'); else if (guard.current?.()) setLeaving('logout'); else logout() }} className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm text-gray-400 transition hover:bg-red-500/10 hover:text-red-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400">
@@ -185,7 +185,7 @@ function AdminShell() {
   return (
     <ToastContext.Provider value={toastValue}>
       <LeaveGuardContext.Provider value={guardValue}>
-      <div className={`admin-shell min-h-screen text-white ${theme === 'light' ? 'admin-light' : ''}`}>
+      <div className={`admin-shell min-h-dvh text-white ${theme === 'light' ? 'admin-light' : ''}`}>
         <aside className="fixed left-0 top-0 z-30 hidden h-dvh w-64 border-r border-white/[0.07] bg-[#080b0a]/90 backdrop-blur lg:block">
           {sidebar}
         </aside>

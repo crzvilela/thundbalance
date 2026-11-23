@@ -18,9 +18,9 @@ function Home() {
     <LandingContentProvider
       mode="view"
       version={isPreview ? 'draft' : 'published'}
-      placeholder={<div className="bg-black min-h-screen"><WaitingNavbar /><WakeNotice /></div>}
+      placeholder={<div className="bg-black min-h-dvh"><WaitingNavbar /><WakeNotice /></div>}
     >
-      <div className="bg-black min-h-screen text-white overflow-x-hidden">
+      <div className="bg-black min-h-dvh text-white overflow-x-hidden">
 
         <Navbar />
 

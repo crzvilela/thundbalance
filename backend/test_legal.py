@@ -93,7 +93,7 @@ class CompanyData(LegalBase):
         for method, path, body in (("put", "/admin/legal/settings", FULL), ("put", "/admin/legal/documents/privacy/es", {"body": "x"}),
                                    ("delete", "/admin/legal/documents/privacy/es", None), ("get", "/admin/legal", None), ("get", "/admin/legal/status", None)):
             answer = getattr(self.http, method)(path, **({"json": body} if body is not None else {}))
-            self.assertIn(answer.status_code, (401, 403), path)
+            self.assertIn(answer.status_code, (404,), path)           # for a visitor or a client the admin routes do not exist
         self.assertEqual(self.http.get("/legal").json()["settings"]["holder"], "")
 
     def test_html_is_refused_and_the_size_and_fields_are_checked(self):

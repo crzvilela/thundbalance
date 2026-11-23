@@ -427,7 +427,7 @@ class Privacy(unittest.TestCase):
         self.assertNotIn("Ana", repr(rows))
         self.assertNotIn(ANA, repr(rows))
         main.app.dependency_overrides.pop(main.require_admin)
-        self.assertEqual(self.http.get(f"/admin/clients/{self.ana}/export").status_code, 401)   # only the admin
+        self.assertEqual(self.http.get(f"/admin/clients/{self.ana}/export").status_code, 404)   # only the admin (for anybody else the route does not exist)
 
     def test_the_admin_sees_the_requests_and_a_client_does_not_use_the_admin_routes(self):
         self.http.post("/me/deletion-request", json={"confirm": True})
@@ -435,8 +435,8 @@ class Privacy(unittest.TestCase):
         mine = [item for item in items if item["client_id"] == self.ana]
         self.assertEqual((len(mine), mine[0]["status"], mine[0]["client_name"]), (1, "pending", "Ana Privtest Zuniga"))
         main.app.dependency_overrides.pop(main.require_admin)
-        self.assertIn(self.http.get("/admin/deletion-requests").status_code, (401, 403))
-        self.assertIn(self.http.post(f"/admin/deletion-requests/{mine[0]['id']}/approve", json={"confirm": True}).status_code, (401, 403))
+        self.assertIn(self.http.get("/admin/deletion-requests").status_code, (404,))
+        self.assertIn(self.http.post(f"/admin/deletion-requests/{mine[0]['id']}/approve", json={"confirm": True}).status_code, (404,))
 
     def test_approving_runs_the_complete_deletion_and_closes_the_request(self):
         request_id = self.http.post("/me/deletion-request", json={"confirm": True}).json()["id"]

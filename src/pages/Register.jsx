@@ -180,7 +180,7 @@ function Register() {
   const clear = (key) => { if (errors[key]) setErrors(current => ({ ...current, [key]: undefined })) }
 
   return (
-    <main id="main" className="min-h-screen bg-black text-white flex items-center justify-center px-6 py-10">
+    <main id="main" className="min-h-dvh bg-black text-white flex items-center justify-center px-4 py-10 sm:px-6">
 
       <Card plain radius="sm" className="w-full max-w-lg p-6 sm:p-10">
 
@@ -242,7 +242,7 @@ function Register() {
 
             <Link
               to="/login"
-              className="inline-block py-2 text-white hover:text-gray-300"
+              className="inline-flex min-h-[44px] items-center text-white hover:text-gray-300"
             >
               {t('rg_login')}
             </Link>

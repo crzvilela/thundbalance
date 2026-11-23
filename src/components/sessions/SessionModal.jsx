@@ -97,8 +97,9 @@ export default function SessionModal({
     <div onClick={close} className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 p-0 backdrop-blur-sm sm:items-center sm:p-6">
       <div
         ref={ref} role="dialog" aria-modal="true" aria-labelledby="session-modal-title" tabIndex={-1} onClick={(event) => event.stopPropagation()}
-        className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl border border-white/10 bg-[#0b0e0d] p-5 shadow-2xl outline-none sm:rounded-3xl sm:p-8"
+        className="max-h-[90dvh] w-full max-w-2xl overflow-y-auto rounded-t-3xl border border-white/10 bg-[#0b0e0d] p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl outline-none sm:rounded-3xl sm:p-8"
       >
+        <span aria-hidden="true" className="mx-auto -mt-1 mb-4 block h-1 w-10 rounded-full bg-white/25 sm:hidden" />
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <p className="mb-1 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-300">{t('ms_details')}</p>

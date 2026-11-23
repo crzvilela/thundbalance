@@ -205,7 +205,7 @@ async function preloadFonts(content) {
 
 // mode: 'view' (public site, read-only) | 'edit' (admin page builder)
 // version: only used in 'view' mode -> 'published' (default) or 'draft' (preview)
-export function LandingContentProvider({ mode = 'view', version = 'published', placeholder = <div className="bg-black min-h-screen" />, children }) {
+export function LandingContentProvider({ mode = 'view', version = 'published', placeholder = <div className="bg-black min-h-dvh" />, children }) {
   const isEditMode = mode === 'edit'
 
   const [{ content, history, historyIndex }, dispatch] = useReducer(contentHistoryReducer, null, () => ({

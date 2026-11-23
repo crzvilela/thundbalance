@@ -741,7 +741,7 @@ class Inbox(unittest.TestCase):
                              ("post", "/admin/messages/1/restore"), ("post", "/admin/messages/preview"),
                              ("post", "/admin/messages")):
             kwargs = {"json": {"audience": "all", "title": "t", "body": "b"}} if method == "post" and path.startswith("/admin/messages") else {}
-            self.assertEqual(getattr(self.client, method)(path, **kwargs).status_code, 401, path)
+            self.assertEqual(getattr(self.client, method)(path, **kwargs).status_code, 404 if path.startswith("/admin") else 401, path)       # the admin routes do not exist for a visitor
         for item in main.app.routes:
             path = getattr(item, "path", "")
             calls = {dependency.call for dependency in getattr(getattr(item, "dependant", None), "dependencies", [])}

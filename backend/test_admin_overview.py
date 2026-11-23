@@ -59,9 +59,9 @@ class Today(unittest.TestCase):
     # ----- who can read it
     def test_only_the_admin_can_read_it(self):
         main.app.dependency_overrides.pop(main.require_admin, None)
-        self.assertEqual(self.client.get(URL).status_code, 401)                                              # no login
-        self.assertEqual(self.client.get(URL, headers={"Authorization": "Bearer not-a-token"}).status_code, 401)
-        self.assertEqual(self.client.post(URL).status_code, 405)                                              # it only reads
+        self.assertEqual(self.client.get(URL).status_code, 404)                                              # no login: the route does not exist for them
+        self.assertEqual(self.client.get(URL, headers={"Authorization": "Bearer not-a-token"}).status_code, 404)
+        self.assertEqual(self.client.post(URL).status_code, 404)                                              # it only reads (and says nothing)
 
     def test_a_client_is_not_an_admin(self):
         def client_only():

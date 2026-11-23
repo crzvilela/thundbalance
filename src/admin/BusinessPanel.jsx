@@ -8,6 +8,7 @@ import { PackStatusBadge } from './PackPanel'
 import { Badge, Card, EmptyState, ErrorState, Skeleton, StatCard } from './ui'
 import Editable from './Editable'
 import BlockGroup from './Block'
+import { adminUrl } from './adminUrl.js'
 
 const INACTIVE = new Set(['cancelled', 'canceled', 'completed', 'rejected'])
 
@@ -66,8 +67,8 @@ export default function BusinessPanel({ sessions, trials }) {
       <BlockGroup pageKey="overview" groupKey="business" gap="mt-6" blocks={{
         biz_stats: (cls) => (
           <div className={`grid grid-cols-2 gap-4 sm:grid-cols-3 ${cls}`.trim()}>
-            <StatCard label={<Txt id="overview.biz_active_packs" />} value={activePacks} icon="clients" loading={loading} to="/admin/clients" />
-            <StatCard label={<Txt id="overview.biz_to_end" />} value={ending.length} icon="calendar" tone="amber" loading={loading} to="/admin/clients?filter=ending" hint={<Txt id="overview.biz_to_end_hint" />} />
+            <StatCard label={<Txt id="overview.biz_active_packs" />} value={activePacks} icon="clients" loading={loading} to={adminUrl('/clients')} />
+            <StatCard label={<Txt id="overview.biz_to_end" />} value={ending.length} icon="calendar" tone="amber" loading={loading} to={adminUrl('/clients?filter=ending')} hint={<Txt id="overview.biz_to_end_hint" />} />
             <div className="col-span-2 sm:col-span-1">
               <StatCard label={<Txt id="overview.biz_no_pack" />} value={withoutPack.length} icon="requests" tone="sky" loading={loading} />
             </div>
@@ -80,7 +81,7 @@ export default function BusinessPanel({ sessions, trials }) {
                 <h3 className="text-lg font-semibold"><Txt id="overview.biz_end_title" /></h3>
                 <p className="text-sm text-gray-500"><Txt id="overview.biz_end_sub" /></p>
               </div>
-              <Link to="/admin/clients?filter=ending" className="inline-flex min-h-[44px] items-center text-sm text-emerald-300 hover:text-emerald-200"><Txt id="overview.view_all" /> →</Link>
+              <Link to={adminUrl('/clients?filter=ending')} className="inline-flex min-h-[44px] items-center text-sm text-emerald-300 hover:text-emerald-200"><Txt id="overview.view_all" /> →</Link>
             </div>
             {clientsResource.error
               ? <ErrorState message={t('load_error')} retryLabel={t('retry')} onRetry={clientsResource.reload} />
@@ -91,7 +92,7 @@ export default function BusinessPanel({ sessions, trials }) {
                   : <ul className="space-y-2">
                     {ending.slice(0, 6).map(client => (
                       <li key={client.id}>
-                        <Link to={`/admin/clients?client=${client.id}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 transition hover:border-amber-400/30 hover:bg-amber-400/5">
+                        <Link to={adminUrl(`/clients?client=${client.id}`)} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 transition hover:border-amber-400/30 hover:bg-amber-400/5">
                           <span className="min-w-0">
                             <span className="block truncate font-medium">{client.name}</span>
                             <span className="block truncate text-xs text-gray-500">{client.plan} · {t('biz_ends')} {fmt(client.pack_end)}</span>
@@ -143,7 +144,7 @@ export default function BusinessPanel({ sessions, trials }) {
                 : <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {withoutPack.slice(0, 6).map(client => (
                     <li key={client.id}>
-                      <Link to={`/admin/clients?client=${client.id}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 transition hover:border-sky-400/30 hover:bg-sky-400/5">
+                      <Link to={adminUrl(`/clients?client=${client.id}`)} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 transition hover:border-sky-400/30 hover:bg-sky-400/5">
                         <span className="min-w-0">
                           <span className="block truncate font-medium">{client.name}</span>
                           <span className="block truncate text-xs text-gray-500">{client.email}</span>
