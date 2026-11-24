@@ -54,8 +54,6 @@ EMAIL_WAIT_SECONDS = 25
 def _bilingual(es, en):
     return f"{es} / {en}"
 
-# Statuses whose slot is held for the trainer (availability.py uses the same list).
-HOLDING_STATUSES = ("approved", "confirmed")
 
 
 def ensure_confirmation_fields():
@@ -100,14 +98,6 @@ def panel_status(status, token):
     if value == "approved" and not token:
         return "confirmed"   # approved before the confirmation flow: already on the calendar
     return value
-
-
-def _details(trial):
-    """What the client's emails say about the kind of session: {type, second person, price per session}."""
-    return {
-        "session_type": trial.get("session_type"), "second_person_name": trial.get("second_person_name"),
-        "price_per_session": trial.get("price_per_session"),
-    }
 
 
 def _first_name(full_name):

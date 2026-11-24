@@ -27,6 +27,6 @@ test('accept all, reject all', () => {
 
 test('the storage is always read inside try/catch', () => {
   const source = readFileSync(new URL('./consent.js', import.meta.url), 'utf8')
-  assert.equal((source.match(/window\.localStorage\./g) || []).length, 3)
-  assert.equal((source.match(/try \{/g) || []).length, 3)
+  assert.equal((source.match(/window\.localStorage\./g) || []).length, 2)
+  assert.equal((source.match(/try \{/g) || []).length, 2)
 })

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { contactItems, socialLinks, mapFromLocation, safeLink, validateFooter } from '../src/utils/footerContent.js'
+import { contactItems, socialLinks, mapFromLocation, safeLink, validateFooter } from './footerContent.js'
 
 assert.equal(contactItems({ contactEmail: 'studio@example.com' })[0].value, 'studio@example.com')
 assert.deepEqual(contactItems({ contactEmail: 'studio@example.com', contactItems: [] }), [])

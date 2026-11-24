@@ -207,12 +207,6 @@ class Grid:
         return result
 
 
-def weeks_of(cursor, catalog_pack_id, sessions_per_week):
-    """How many weeks a catalogue pack lasts with that many sessions per week (the window of the free hours)."""
-    import pack_catalog
-    return pack_catalog.sale(cursor, catalog_pack_id, sessions_per_week)["weeks"]
-
-
 def problems(cursor, entries, start_date=None, weeks=None, grid=None):
     """The entries whose trainer is NOT free at their day and hour: [{"weekday", "time", "trainer_id", "alternatives": [{id, name}],
     "times": [free hours of that day]}]. [] when every entry is free. A trainer left open (None) is only checked to have SOMEONE free."""
@@ -237,14 +231,6 @@ def unavailable(found):
         "message": "Some of the chosen hours are not free any more. / Algunas de las horas elegidas ya no están libres.",
         "entries": found,
     })
-
-
-def ensure_free(cursor, entries, start_date=None, weeks=None):
-    """Raises the 409 above when any entry is not free; otherwise returns the entries."""
-    found = problems(cursor, entries, start_date, weeks)
-    if found:
-        raise unavailable(found)
-    return entries
 
 
 def ensure_columns(cursor):

@@ -89,8 +89,3 @@ export async function prefetchSchedule(isBookable, count = 3) {
     day.setDate(day.getDate() + 1)
   }
 }
-
-// For the "Retry" button: forget what is known and try again.
-export function forgetDay(key) {
-  days.delete(key)
-}

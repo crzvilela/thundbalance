@@ -3,7 +3,6 @@
   ['youtube', 'YouTube'], ['gmail', 'Gmail'], ['visit', 'Visit Us'],
   ['address', 'Morada'], ['map', 'Google Maps']
 ]
-export const FOOTER_ICONS = ['none', 'instagram', 'whatsapp', 'youtube', 'gmail', 'location', 'phone', 'arrow', 'globe']
 export function footerElement(section, key, contactUrl = '/#contact') {
   const defaults = {
     contact: { text: 'Contact Us', url: contactUrl, icon: 'none', fontSize: 12, iconSize: 20 },

@@ -101,7 +101,6 @@ EMAIL_KINDS = {
            "reschedule": "Canvi de data", "deletion_request": "Sol·licitud d'eliminació", "system": "Avís", "password": "Contrasenya"},
 }
 WEEKDAY_NAMES = {"es": WEEKDAYS_ES, "en": WEEKDAYS_EN, "ca": WEEKDAYS_CA}
-MONTH_NAMES = {"es": MONTHS_ES, "en": MONTHS_EN, "ca": MONTHS_CA}
 
 
 def esc(value):

@@ -37,7 +37,6 @@ from . import log as email_log
 logger = logging.getLogger("thundbalance.emails")
 
 SENDER_NAME = "ThundBalance"
-DEFAULT_REPLY_TO = "pt@thundbalance.com"   # MAIL_REPLY_TO overrides it (gmail_api.reply_to_default)
 MAX_SUBJECT = 200
 MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
 

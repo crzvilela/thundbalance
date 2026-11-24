@@ -7,7 +7,7 @@
 // A draft (what the editor holds): the same, but with EVERY key in order and `label` / `title` / `hidden` always present.
 
 import {
-  BLOCKS, BLOCK_PAGES, CUSTOMIZE_KEY, EDITABLE_TEXTS, LABEL_MAX, TEXT_ENTRIES, TEXT_KEYS, blocksOf, editableText, protectedBlocks, MENU_ITEMS, MENU_KEYS, MIN_VISIBLE_AREAS, OVERVIEW_CARDS, OVERVIEW_KEYS, PAGES, PAGE_KEYS,
+  BLOCKS, BLOCK_PAGES, CUSTOMIZE_KEY, EDITABLE_TEXTS, LABEL_MAX, TEXT_ENTRIES, TEXT_KEYS, blocksOf, editableText, protectedBlocks, MENU_ITEMS, MENU_KEYS, MIN_VISIBLE_AREAS, OVERVIEW_CARDS, OVERVIEW_KEYS, PAGE_KEYS,
   MENU_GROUPS, PROTECTED_MENU_KEYS, PROTECTED_OVERVIEW_KEYS, SUBTITLE_MAX
 } from './uiRegistry.js'
 
@@ -342,8 +342,6 @@ export const resetItem = (list, key, field) =>
 
 export const setPageText = (pages, key, field, value) =>
   ({ ...pages, [key]: { ...(pages[key] || { title: '', subtitle: '' }), [field]: String(value ?? '').slice(0, field === 'subtitle' ? SUBTITLE_MAX : LABEL_MAX) } })
-
-export const pageDefaults = (pageKey) => PAGES.find(page => page.key === pageKey)
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // Inline editing on the panel itself (the <Editable> component and the edit bar). Everything that decides something lives here, as pure

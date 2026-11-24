@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { uploadProfilePhoto } from '../src/api/profilePhoto.js'
+import { uploadProfilePhoto } from './profilePhoto.js'
 
 const options = { apiUrl: 'https://api.example.test', userId: 42, token: 'test-token', file: new File(['photo'], 'photo.png', { type: 'image/png' }) }
 

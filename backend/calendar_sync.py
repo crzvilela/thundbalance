@@ -186,22 +186,6 @@ def event_body(session):
     )
 
 
-def push_session(cursor, session_id):
-    """Writes the session's CURRENT date, hour, title and description to its
-    existing Google event. Raises the Google error; the caller records it.
-    (Kept for callers that want the raw error; the paths of the app use
-    sync_session_to_google.)"""
-    cursor.execute("SELECT user_id, google_event_id FROM sessions WHERE id = %s", (session_id,))
-    row = cursor.fetchone()
-    if not row or not row[1]:
-        return
-    sessions = load_sessions(cursor, row[0], session_id=session_id)
-    if not sessions:
-        return
-    body = event_body(sessions[0])
-    gc.patch_calendar_event(row[1], {key: body[key] for key in EVENT_FIELDS})
-
-
 # ---------------------------------------------------------------------------
 # The central rule: make Google match the session as it is in the database.
 # ---------------------------------------------------------------------------

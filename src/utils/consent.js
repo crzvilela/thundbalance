@@ -41,16 +41,6 @@ export function saveConsent(choices) {
   window.dispatchEvent(new Event(CHANGE))
 }
 
-export function clearConsent() {
-  memory = null
-  try {
-    window.localStorage.removeItem(CONSENT_KEY)
-  } catch {
-    // nothing to remove
-  }
-  window.dispatchEvent(new Event(CHANGE))
-}
-
 /** The footer link "Cookie settings": opens the panel again so the choice can be changed or withdrawn. */
 export function openPreferences() {
   panelOpen = true
@@ -77,4 +67,3 @@ export const useConsent = () => useSyncExternalStore(subscribe, readConsent, () 
 export const usePreferencesOpen = () => useSyncExternalStore(subscribe, () => panelOpen, () => false)
 /** Is this category accepted right now? false until the visitor accepts it. */
 export const useAllowed = (category) => allows(useConsent(), category)
-export const isAllowed = (category) => allows(readConsent(), category)

@@ -34,7 +34,6 @@ export function studioHours(trainers) {
 // Day and week views on a laptop: every hour of the studio on one screen, no scrolling.
 export const MIN_ROW_PX = 20          // the smallest a half-hour row may be before the grid goes hourly
 export const GRID_CHROME_PX = 92      // the calendar's own toolbar and day header, inside the frame (measured: 92px)
-export const PAGE_BOTTOM_PX = 16      // what is left under the frame
 
 // 30-minute rows while each one stays at least MIN_ROW_PX tall, otherwise hourly rows (the sessions last one hour and
 // start on the hour, so nothing is lost). `frameHeight` is the height of the calendar frame in pixels.

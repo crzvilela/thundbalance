@@ -132,19 +132,6 @@ def _refuse_protected(email, firebase_uid, claims, admin_email):
         )
 
 
-def _account_problem(error):
-    """HTTP error for a Firebase failure (nothing was changed yet)."""
-    if isinstance(error, accounts.AccountsUnavailable):
-        return HTTPException(
-            status_code=503,
-            detail={"code": "firebase_unavailable", "message": f"Firebase Admin no disponible ({error}). / Firebase Admin unavailable."},
-        )
-    return HTTPException(
-        status_code=502,
-        detail={"code": "firebase_failed", "message": "Firebase no respondió. No se ha cambiado nada. / Firebase failed. Nothing was changed."},
-    )
-
-
 def _delete_events(cursor, items):
     """Deletes Google events for [(session_id | None, event_id)]. "Not found /
     gone" is success. Returns (deleted, failed_reasons) and records the outcome

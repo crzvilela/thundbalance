@@ -45,7 +45,6 @@ logger = logging.getLogger("thundbalance.trainer_area")
 
 SESSION_MINUTES = 60
 MAX_RANGE_DAYS = 366
-PERIODS = ("today", "week", "month", "custom")
 TRIAL_PACK_NAME = "Trial Session"
 
 

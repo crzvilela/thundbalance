@@ -526,7 +526,6 @@ web_safety.register_upload_routes(app, UPLOAD_DIR)         # images live in the 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
-ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}      # no .svg: it can carry scripts
 MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024  # 8MB
 
 MAX_VIDEO_SIZE_BYTES = web_safety.MAX_VIDEO_BYTES  # 300MB — raised from 50MB, phone-recorded workout clips were hitting the old limit
@@ -916,34 +915,6 @@ class TrainingVideoUpdate(BaseModel):
 
 class TrainingVideoReorder(BaseModel):
     ordered_ids: list[int]
-
-
-def trainer_is_available(
-    cursor,
-    trainer_id,
-    session_date,
-    session_time
-):
-
-    cursor.execute(
-        """
-        SELECT id
-        FROM sessions
-        WHERE trainer_id = %s
-        AND session_date = %s
-        AND session_time = %s
-        AND status = 'Booked'
-        """,
-        (
-            trainer_id,
-            session_date,
-            session_time
-        )
-    )
-
-    existing_session = cursor.fetchone()
-
-    return existing_session is None
 
 
 @app.get("/")

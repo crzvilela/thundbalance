@@ -2,16 +2,6 @@
 # is added/removed/renamed.
 
 
-def _embed_layout():
-    def all_devices(value):
-        return {device: value for device in ("desktop", "tablet", "mobile")}
-    return {
-        "width": all_devices("100%"), "height": all_devices("152px"),
-        "align": all_devices("left"), "marginTop": all_devices("0px"),
-        "marginBottom": all_devices("0px")
-    }
-
-
 def _text_style(**overrides):
     """Shared shape for every text element's companion 'Style' object.
     Defaults are '' (empty string), meaning 'don't override the Tailwind
@@ -81,46 +71,6 @@ def _ml(en, es, ca):
     render time by the frontend's resolveText() (src/utils/multilingual.js).
     """
     return {"en": en, "es": es, "ca": ca}
-
-
-def make_default_service_item():
-    """Template used when the admin adds a new Service card from the editor."""
-    return {
-        "title": "New Service",
-        "titleStyle": _text_style(),
-        "description": "Describe this service.",
-        "descriptionStyle": _text_style(),
-        "image": None,
-        "imageStyle": _image_style()
-    }
-
-
-def make_default_pricing_plan():
-    """Template used when the admin adds a new Pricing plan from the editor."""
-    return {
-        "name": "New Plan",
-        "nameStyle": _text_style(),
-        "period": _ml("/session", "/sesi\u00f3n", "/sessi\u00f3"),
-        "periodStyle": _text_style(),
-        "description": "Describe this plan.",
-        "descriptionStyle": _text_style(),
-        "features": [_ml("Feature one", "Caracter\u00edstica uno", "Caracter\u00edstica u")],
-        "buttonText": "Get Started",
-        "buttonTextStyle": _text_style(),
-        "highlighted": False
-    }
-
-
-def make_default_testimonial_media(media_type="image"):
-    """Template used when the admin adds a new Testimonials media item
-    (client photo or video) from the editor."""
-    return {
-        "type": media_type,
-        "url": "",
-        "videoSourceType": "upload" if media_type == "video" else "",
-        "clientName": "",
-        "caption": ""
-    }
 
 
 DEFAULT_LANDING_CONTENT = {

@@ -1,19 +1,6 @@
 import { API_URL } from '../config'
 import { adminFetch } from './admin'
 
-export async function saveFooterContent(footer, previousFooter) {
-  const response = await adminFetch(`${API_URL}/landing-page/footer`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ footer, previous_footer: previousFooter })
-  })
-  if (!response.ok) {
-    if (response.status === 409) throw new Error('The footer was changed in another editor. Your changes are still here; reload before saving a new version.')
-    throw new Error(`Could not save the footer (${response.status}). Your changes are preserved. Please try again.`)
-  }
-  return response.json()
-}
-
 const WAKING = new Set([502, 503, 504])
 const RETRY_WAIT_MS = [2000, 4000, 8000]
 

@@ -108,6 +108,3 @@ export function calendarEvents(sessions, freeSlots, color, text) {
   }))
   return [...events, ...free]
 }
-
-// Everything the person may see about a session: nothing else is ever drawn.
-export const SESSION_FIELDS = ['session_id', 'client_display_name', 'session_number', 'pack_name', 'date', 'time', 'status', 'is_trial']

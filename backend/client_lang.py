@@ -31,18 +31,6 @@ def valid_lang(value):
     return code if code in LANGUAGES else None
 
 
-def ensure_column():
-    """Idempotent, run at startup (also on the production database): users.lang, empty for the clients that already exist."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS lang TEXT")
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
-
-
 def stored_lang(user_id=None, email=None):
     """users.lang of a client (by id, else by e-mail), or None."""
     if not user_id and not str(email or "").strip():

@@ -135,9 +135,6 @@ def links_for_email(client_email):
 
 # --------------------------------------------------------------------- feed
 
-def session_summary(trainer_name, session_number=None):
-    """Kept for callers of the old name: the title now lives in calendar_titles.py."""
-    return client_session_title(trainer_name, session_number)
 
 
 def session_event(session_id, day, moment, status, sequence, trainer, number):
@@ -207,11 +204,6 @@ def trial_feed_events(cursor, user_id, since):
             "status": "CONFIRMED" if confirmed_now else "CANCELLED",
         })
     return events
-
-
-def bump_sequence(cursor, session_id):
-    """Call after a session is cancelled or moved."""
-    cursor.execute("UPDATE sessions SET feed_sequence = feed_sequence + 1 WHERE id = %s", (session_id,))
 
 
 # ------------------------------------------------------------------- routes

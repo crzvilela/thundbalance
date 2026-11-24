@@ -27,14 +27,6 @@ export function safeLink(value, allowMail = false) {
   } catch { return undefined }
 }
 
-export function contactHref(item, language) {
-  const value = resolveText(item.value, language)
-  if (item.type === 'email') return `mailto:${value}`
-  if (item.type === 'phone') return `tel:${value.replace(/[^+\d]/g, '')}`
-  if (item.type === 'text') return undefined
-  return safeLink(item.url || (item.type === 'address' ? `https://www.google.com/maps?q=${encodeURIComponent(value)}` : value), true)
-}
-
 /** Convert a Google Maps share URL or a human-readable address to the existing map format. */
 export function mapFromLocation(address, link) {
   let query = ''

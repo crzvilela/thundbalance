@@ -6,9 +6,6 @@ import { dateKey, parseDateKey } from './requests'
 import { WEEKDAYS } from './availability'
 import { Badge, Button, ConfirmDialog, Drawer } from './ui'
 import PackFields from './PackFields'
-import { scheduleLines } from './scheduleText'
-import { TypeBadge } from './SessionKind'
-import { formatMoney } from '../utils/pricing'
 import { packIsComplete, packPayload, startIsInThePast, usePackForm, usePackPreview } from './packForm'
 import RecipientsBox, { SendsTo } from './RecipientsBox'
 import { extraBody } from './recipients'
@@ -22,64 +19,6 @@ export function PackStatusBadge({ status }) {
   const { t } = useAdminText()
   if (!status || status === 'none') return null
   return <Badge tone={STATUS_TONE[status]}>{t(`pk_status_${status}`)}</Badge>
-}
-
-// The client's packs: every ACTIVE pack (period, schedule, trainer and done / left). A client can have several at once:
-// a new pack never touches the others, each one runs and counts on its own.
-export function PackSummary({ packs = [], onNewPack }) {
-  const { t, language, dayLabel } = useAdminText()
-  const locale = language === 'es' ? 'es-ES' : 'en-GB'
-  const fmt = (key) => (key ? parseDateKey(key).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
-  const urgent = packs.length > 0 && packs.every(pack => pack.status === 'expired' || pack.status === 'expiring')
-
-  return (
-    <section>
-      <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">
-        {t('pk_title')}{packs.length > 1 ? ` (${packs.length})` : ''}
-      </h3>
-      <div className="space-y-3">
-        {packs.length === 0 && (
-          <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
-            <p className="text-gray-400">{t('pk_none')}</p>
-          </div>
-        )}
-        {packs.map(pack => (
-          <div key={pack.id} className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-lg font-semibold">{pack.name}</p>
-              <div className="flex items-center gap-2">
-                <TypeBadge type={pack.session_type} secondName={pack.second_person_name} />
-                {!pack.active && <Badge tone="neutral">{t('pk_previous')}</Badge>}
-                <PackStatusBadge status={pack.status} />
-              </div>
-            </div>
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-base">
-              <div><dt className="text-sm text-gray-500">{t('pk_period')}</dt><dd>{fmt(pack.start_date)} → {fmt(pack.end_date)}</dd></div>
-              <div><dt className="text-sm text-gray-500">{t('pk_sessions')}</dt><dd>{pack.done} {t('pk_done')} · {pack.remaining} {t('pk_left')}</dd></div>
-              <div><dt className="text-sm text-gray-500">{t('pk_per_week')}</dt><dd>{pack.sessions_per_week || '—'}</dd></div>
-              <div><dt className="text-sm text-gray-500">{t('pk_trainer')}</dt><dd>{pack.trainer || '—'}</dd></div>
-              {pack.session_type === 'dual' && (
-                <div className="col-span-2"><dt className="text-sm text-gray-500">{t('ty_second_person')}</dt><dd>{pack.second_person_name} · {pack.second_person_email}</dd></div>
-              )}
-              {pack.price_per_session != null && (
-                <>
-                  <div><dt className="text-sm text-gray-500">{t('ty_price_session')}</dt><dd>{formatMoney(pack.price_per_session)}</dd></div>
-                  <div><dt className="text-sm text-gray-500">{t('ty_price_total')}</dt><dd>{formatMoney(pack.total_price)}</dd></div>
-                </>
-              )}
-              <div className="col-span-2">
-                <dt className="text-sm text-gray-500">{t('pk_schedule')}</dt>
-                <dd>{scheduleLines(pack, { dayLabel, t }).map(line => <span key={line} className="block">{line}</span>)}{!scheduleLines(pack, { dayLabel, t }).length && '—'}</dd>
-              </div>
-            </dl>
-          </div>
-        ))}
-        <Button variant={urgent || packs.length === 0 ? 'primary' : 'secondary'} onClick={onNewPack}>
-          {packs.length ? t('pk_add_pack') : t('pk_start_pack')}
-        </Button>
-      </div>
-    </section>
-  )
 }
 
 // Month grid (Monday first) marking the client's training days.

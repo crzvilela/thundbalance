@@ -65,17 +65,6 @@ def _tests_switch_off():
 _enforced = not _tests_switch_off()
 
 
-# --------------------------------------------------------------------------------------------------------- switches (tests only)
-def enable():
-    """Used by test_challenge.py (the rest of the suite runs with the check off, see _tests_switch_off)."""
-    global _enforced
-    _enforced = True
-
-
-def enforced():
-    return _enforced
-
-
 # --------------------------------------------------------------------------------------------------------------------------- secret
 def ensure_tables():
     conn = get_connection()

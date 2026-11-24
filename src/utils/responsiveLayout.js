@@ -1,6 +1,5 @@
 export const LAYOUT_DEVICES = ['desktop', 'tablet', 'mobile']
 export const DEFAULT_EMBED_HEIGHT = 152
-export const MAX_EMBED_HEIGHT = 2000
 
 export const DEFAULT_360_LAYOUT = Object.freeze({
   width: '100%', height: '500px', containerWidth: '100%', containerHeight: 'auto', containerMaxWidth: '1152px',
@@ -54,14 +53,4 @@ export function layoutStyle(layout, device) {
     marginLeft: value.align === 'left' ? '0px' : 'auto',
     marginRight: value.align === 'right' ? '0px' : 'auto'
   }
-}
-
-export function responsiveLayoutVariables(layout) {
-  const variables = {}
-  for (const device of LAYOUT_DEVICES) {
-    for (const [property, value] of Object.entries(layoutStyle(layout, device))) {
-      variables[`--embed-${device}-${property}`] = value
-    }
-  }
-  return variables
 }

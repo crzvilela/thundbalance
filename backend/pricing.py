@@ -115,9 +115,3 @@ def trial_price(cursor, session_type):
     row = cursor.fetchone()
     return row[0] if row else None
 
-
-def type_label(session_type, second_name=None):
-    """"Dual (Ana)" / "Individual": the type as text. Used by the calendar and the emails."""
-    if session_type == DUAL:
-        return f"Dual ({second_name})" if second_name else "Dual"
-    return "Individual"
